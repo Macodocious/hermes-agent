@@ -350,6 +350,7 @@ class CLIAgentSetupMixin:
                 acp_args=runtime.get("args"),
                 credential_pool=runtime.get("credential_pool"),
                 max_tokens=self.max_tokens,
+                temperature=getattr(self, "temperature", None),
                 max_iterations=self.max_turns,
                 enabled_toolsets=self.enabled_toolsets,
                 disabled_toolsets=self.disabled_toolsets,
