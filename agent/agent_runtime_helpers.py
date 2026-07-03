@@ -1106,6 +1106,20 @@ def restore_primary_runtime(agent) -> bool:
                         getattr(entry, "label", "?"),
                     )
 
+        # Notify on return to primary only if we actually completed a fallback cycle.
+        # _fallback_cycle_armed is set on first fallback activation (not rate_limit/billing)
+        # and cleared here so the next primary->fallback cycle fires again.
+        if getattr(agent, "_fallback_cycle_armed", False):
+            if getattr(agent, "notice_callback", None):
+                agent.notice_callback(
+                    f"✅ Primary model restored: {agent.model} via {agent.provider}"
+                )
+            else:
+                agent._emit_status(
+                    f"✅ Primary model restored: {agent.model} via {agent.provider}"
+                )
+            agent._fallback_cycle_armed = False
+
         # ── Reset fallback chain for the new turn ──
         agent._fallback_activated = False
         agent._fallback_index = 0
