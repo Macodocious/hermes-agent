@@ -1147,12 +1147,20 @@ def try_activate_fallback(agent, reason: "FailoverReason | None" = None) -> bool
         ):
             _existing_cooldown = getattr(agent, "_rate_limited_until", 0) or 0
             agent._rate_limited_until = max(
-                _existing_cooldown,
-                time.monotonic() + _FALLBACK_EXHAUSTED_COOLDOWN_S,
+                _existing_cooldown, time.monotonic() + _FALLBACK_EXHAUSTED_COOLDOWN_S,
             )
+        # First fallback activation in this cycle — mark it so restore_primary_runtime
+        # can detect the cycle boundary and notify on return to primary.
+        if not getattr(agent, "_fallback_activated", False) and reason not in {FailoverReason.rate_limit, FailoverReason.billing}:
+            agent._fallback_cycle_armed = True
         return False
     fb = agent._fallback_chain[agent._fallback_index]
     agent._fallback_index += 1
+    # Capture whether this is the primary->fallback switch vs. a chained
+    # fallback->fallback swap. The user-visible notification fires only on the
+    # first activation; chained swaps stay buffered so the retry trace surfaces
+    # solely on total exhaustion.
+    _is_first_fallback_activation = not getattr(agent, "_fallback_activated", False)
     fb_provider = (fb.get("provider") or "").strip().lower()
     fb_model = (fb.get("model") or "").strip()
     if not fb_provider or not fb_model:
@@ -1394,10 +1402,22 @@ def try_activate_fallback(agent, reason: "FailoverReason | None" = None) -> bool
         # answering, so "what model are you?" doesn't report the primary.
         rewrite_prompt_model_identity(agent, fb_model, fb_provider)
 
-        agent._buffer_status(
-            f"🔄 Primary model failed — switching to fallback: "
-            f"{fb_model} via {fb_provider}"
-        )
+        if _is_first_fallback_activation:
+            # Emit via notice_callback to bypass gateway noisy-status filter.
+            # notice_callback renders plaintext (no markdown) and is not
+            # subject to _TELEGRAM_NOISY_STATUS_RE.
+            if getattr(agent, "notice_callback", None):
+                agent.notice_callback(
+                    f"🔄 Primary model failed — switching to fallback: {fb_model} via {fb_provider}"
+                )
+            else:
+                agent._emit_status(
+                f"🔄 Primary model failed — switching to fallback: {fb_model} via {fb_provider}"
+            )
+        else:
+            agent._buffer_status(
+                f"🔄 Switching to next fallback: {fb_model} via {fb_provider}"
+            )
         logger.info(
             "Fallback activated: %s → %s (%s)",
             old_model, fb_model, fb_provider,
