@@ -1407,13 +1407,19 @@ def try_activate_fallback(agent, reason: "FailoverReason | None" = None) -> bool
             # notice_callback renders plaintext (no markdown) and is not
             # subject to _TELEGRAM_NOISY_STATUS_RE.
             if getattr(agent, "notice_callback", None):
+                from agent.credits_tracker import AgentNotice
                 agent.notice_callback(
-                    f"🔄 Primary model failed — switching to fallback: {fb_model} via {fb_provider}"
+                    AgentNotice(
+                        text=f"🔄 Primary model failed — switching to fallback: {fb_model} via {fb_provider}",
+                        level="warn",
+                        kind="sticky",
+                        key="fallback.switch",
+                    )
                 )
             else:
                 agent._emit_status(
-                f"🔄 Primary model failed — switching to fallback: {fb_model} via {fb_provider}"
-            )
+                    f"🔄 Primary model failed — switching to fallback: {fb_model} via {fb_provider}"
+                )
         else:
             agent._buffer_status(
                 f"🔄 Switching to next fallback: {fb_model} via {fb_provider}"
