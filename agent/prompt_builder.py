@@ -1921,6 +1921,75 @@ def _load_cursorrules(cwd_path: Path, context_length: Optional[int] = None) -> s
     )
 
 
+def _load_hermes_rules(
+    hermes_home: Path,
+    context_length: Optional[int] = None,
+) -> str:
+    """Load ``~/.hermes/rules/*.md`` into the system prompt context tier.
+
+    Each rules file is prefixed with a ``## filename`` header and concatenated
+    in sorted order. The joined body is scanned through ``_scan_context_content``
+    so a single rules file that trips the threat library blocks the whole
+    batch (mirrors how AGENTS.md / .hermes.md behave -- partial injection is
+    never the right answer).
+
+    Returns the empty string when the rules directory is missing or empty.
+    Treated identically to a missing SOUL.md: caller drops the section cleanly.
+
+    Rules are user-wide (independent of cwd), so the directory is anchored at
+    ``hermes_home`` -- never the project -- and only walked when ``hermes_home``
+    resolves to an existing directory.
+    """
+    if not hermes_home or not isinstance(hermes_home, Path):
+        return ""
+    if not hermes_home.is_dir():
+        return ""
+
+    rules_dir = hermes_home / "rules"
+    if not rules_dir.is_dir():
+        return ""
+
+    # Sorted order keeps the joined body byte-stable across runs -- important
+    # because the result flows into agent._cached_system_prompt and any
+    # reordering would invalidate the upstream prefix cache.
+    rule_files = sorted(rules_dir.glob("*.md"))
+    if not rule_files:
+        return ""
+
+    parts: List[str] = []
+    for rule_file in rule_files:
+        try:
+            content = rule_file.read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            logger.debug("Could not read %s: %s", rule_file, exc)
+            continue
+        if not content:
+            continue
+        try:
+            rel = str(rule_file.relative_to(hermes_home))
+        except ValueError:
+            rel = rule_file.name
+        parts.append(f"## {rel}\n\n{content}")
+
+    if not parts:
+        return ""
+
+    joined = "\n\n".join(parts)
+    # Single scan over the joined body -- matches the all-or-nothing behavior
+    # of AGENTS.md injection. A malicious rule file cannot sneak past by
+    # relying on per-file isolation.
+    joined = _scan_context_content(joined, "rules/*.md")
+    if joined.startswith("[BLOCKED:"):
+        return joined
+
+    return _truncate_content(
+        joined,
+        "rules/*.md",
+        context_length=context_length,
+        read_path=str(rules_dir),
+    )
+
+
 def build_context_files_prompt(
     cwd: Optional[str] = None,
     skip_soul: bool = False,
@@ -1935,6 +2004,9 @@ def build_context_files_prompt(
       4. .cursorrules / .cursor/rules/*.mdc  (cwd only)
 
     SOUL.md from HERMES_HOME is independent and always included when present.
+
+    User-wide rules from ``~/.hermes/rules/*.md`` are also included when
+    present. Order: project context (cwd) → user rules → SOUL.md (identity).
 
     Each context source is capped before injection. The cap defaults to the
     model's context window (scaled — see ``_dynamic_context_file_max_chars``)
@@ -1959,6 +2031,17 @@ def build_context_files_prompt(
     )
     if project_context:
         sections.append(project_context)
+
+    # User-wide rules from ~/.hermes/rules/*.md. Independent of cwd so the
+    # rules travel with the user across projects. Sorted, glob-merged, capped,
+    # and threat-scanned identically to AGENTS.md so the injection guarantees
+    # stay uniform across all context tiers.
+    try:
+        rules_content = _load_hermes_rules(get_hermes_home(), context_length)
+    except Exception:
+        rules_content = ""
+    if rules_content:
+        sections.append(rules_content)
 
     # SOUL.md from HERMES_HOME only — skip when already loaded as identity
     if not skip_soul:
