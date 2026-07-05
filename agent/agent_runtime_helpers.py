@@ -1028,27 +1028,6 @@ def restore_primary_runtime(agent) -> bool:
         return False
 
     if getattr(agent, "_rate_limited_until", 0) > time.monotonic():
-        # Check if we're blocked from restoring primary due to rate-limit cooldown.
-        # If so, the agent starts this turn on fallback — notify the user (once per cycle).
-        # Only notify once per fallback cycle. The cycle flag is cleared on
-        # successful primary restoration, so this fires on the first turn after
-        # a fallback activation where we're still cooling down.
-        if not getattr(agent, "_fallback_cooldown_notified", False):
-            if getattr(agent, "notice_callback", None):
-                from agent.credits_tracker import AgentNotice
-                agent.notice_callback(
-                    AgentNotice(
-                        text=f"⏳ Still on fallback ({agent.model} via {agent.provider}) — primary cooling down",
-                        level="warn",
-                        kind="sticky",
-                        key="fallback.cooldown",
-                    )
-                )
-            else:
-                agent._emit_status(
-                    f"⏳ Still on fallback ({agent.model} via {agent.provider}) — primary cooling down"
-                )
-            agent._fallback_cooldown_notified = True
         return False  # primary still in rate-limit cooldown, stay on fallback
 
     rt = agent._primary_runtime
@@ -1127,31 +1106,7 @@ def restore_primary_runtime(agent) -> bool:
                         getattr(entry, "label", "?"),
                     )
 
-        # Notify on return to primary only if we actually completed a fallback cycle.
-        # _fallback_cycle_armed is set on first fallback activation (not rate_limit/billing)
-        # and cleared here so the next primary->fallback cycle fires again.
-        if getattr(agent, "_fallback_cycle_armed", False):
-            if getattr(agent, "notice_callback", None):
-                from agent.credits_tracker import AgentNotice
-                agent.notice_callback(
-                    AgentNotice(
-                        text=f"✅ Primary model restored: {agent.model} via {agent.provider}",
-                        level="success",
-                        kind="sticky",
-                        key="fallback.restored",
-                    )
-                )
-            else:
-                agent._emit_status(
-                    f"✅ Primary model restored: {agent.model} via {agent.provider}"
-                )
-            agent._fallback_cycle_armed = False
-
         # ── Reset fallback chain for the new turn ──
-        # Also clear the cooldown notification flag so the next fallback cycle
-        # can notify again if we hit rate-limit.
-        agent._fallback_cooldown_notified = False
-
         agent._fallback_activated = False
         agent._fallback_index = 0
 
