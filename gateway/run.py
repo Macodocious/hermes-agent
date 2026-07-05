@@ -7240,6 +7240,41 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 _phase_elapsed(),
             )
 
+            # Release pending clarify entries BEFORE the drain wait.
+            #
+            # Agent threads blocked inside clarify_gateway.wait_for_response()
+            # sit on a threading.Event that only resolves when clear_session()
+            # sets it.  The normal cleanup path calls clear_session() in the
+            # finally block of run_conversation() (line ~16997), but that code
+            # can never run: the thread is blocked INSIDE wait_for_response(),
+            # which is called INSIDE run_conversation() — the finally block
+            # can't execute until wait_for_response() returns, and
+            # wait_for_response() can't return until clear_session() sets the
+            # event.  This circular dependency pins the worker thread until
+            # the clarify timeout (default 1800 s) fires, keeping the process
+            # alive long after the gateway's async shutdown completed.
+            #
+            # Calling clear_session() here breaks the cycle: the event fires,
+            # wait_for_response() returns an empty sentinel, the agent thread
+            # exits run_conversation(), and _running_agents is cleaned up
+            # before the drain loop even starts polling.
+            try:
+                from tools.clarify_gateway import clear_session as _clear_clarify
+                for _sk in list(self._running_agents.keys()):
+                    if self._running_agents.get(_sk) is _AGENT_PENDING_SENTINEL:
+                        continue
+                    _cleared = _clear_clarify(_sk)
+                    if _cleared:
+                        logger.info(
+                            "Shutdown: cleared %d pending clarify entry(s) "
+                            "for session %s",
+                            _cleared, _sk,
+                        )
+            except Exception as _e:
+                logger.debug(
+                    "Shutdown: pre-drain clarify cleanup failed: %s", _e,
+                )
+
             timeout = self._restart_drain_timeout
 
             # Pre-mark sessions as resume_pending BEFORE the drain wait.
