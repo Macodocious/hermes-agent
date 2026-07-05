@@ -1158,9 +1158,10 @@ def try_activate_fallback(agent, reason: "FailoverReason | None" = None) -> bool
     agent._fallback_index += 1
     # Capture whether this is the primary->fallback switch vs. a chained
     # fallback->fallback swap. The user-visible notification fires only on the
-    # first activation; chained swaps stay buffered so the retry trace surfaces
+    # first activation in a cycle (no active _fallback_cycle_armed); chained
+    # swaps stay buffered so the retry trace surfaces
     # solely on total exhaustion.
-    _is_first_fallback_activation = not getattr(agent, "_fallback_activated", False)
+    _is_first_fallback_activation = not getattr(agent, "_fallback_cycle_armed", False)
     fb_provider = (fb.get("provider") or "").strip().lower()
     fb_model = (fb.get("model") or "").strip()
     if not fb_provider or not fb_model:
