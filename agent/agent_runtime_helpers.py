@@ -1017,6 +1017,26 @@ def restore_primary_runtime(agent) -> bool:
     ``gateway/run.py``), so this restoration IS needed there too.
     """
     if not agent._fallback_activated:
+        # Previous turn completed WITHOUT activating fallback while a cycle
+        # was armed — the primary model genuinely recovered. Emit the
+        # restore notification and clear the cycle flag before any state
+        # mutation below.
+        if getattr(agent, "_fallback_cycle_armed", False):
+            agent._fallback_cycle_armed = False
+            if getattr(agent, "notice_callback", None):
+                from agent.credits_tracker import AgentNotice
+                agent.notice_callback(
+                    AgentNotice(
+                        text=f"✅ Primary model restored: {agent.model} via {agent.provider}",
+                        level="success",
+                        kind="sticky",
+                        key="fallback.restored",
+                    )
+                )
+            else:
+                agent._emit_status(
+                    f"✅ Primary model restored: {agent.model} via {agent.provider}"
+                )
         # Reset the chain index even when no fallback was activated this
         # turn.  Without this, a turn where _try_activate_fallback() was
         # called but returned False (chain exhausted or provider not

@@ -1394,10 +1394,27 @@ def try_activate_fallback(agent, reason: "FailoverReason | None" = None) -> bool
         # answering, so "what model are you?" doesn't report the primary.
         rewrite_prompt_model_identity(agent, fb_model, fb_provider)
 
-        agent._buffer_status(
-            f"🔄 Primary model failed — switching to fallback: "
-            f"{fb_model} via {fb_provider}"
-        )
+        # First primary->fallback switch in this session cycle.
+        # Arm the cycle flag so restore_primary_runtime knows we're in a
+        # fallback cycle, and emit the switch notification immediately via
+        # notice_callback (bypasses the gateway noisy-status filter).
+        if not getattr(agent, "_fallback_cycle_armed", False):
+            agent._fallback_cycle_armed = True
+            if getattr(agent, "notice_callback", None):
+                from agent.credits_tracker import AgentNotice
+                agent.notice_callback(
+                    AgentNotice(
+                        text=f"🔄 Primary model failed — switching to fallback: {fb_model} via {fb_provider}",
+                        level="warn",
+                        kind="sticky",
+                        key="fallback.switch",
+                    )
+                )
+            else:
+                agent._emit_status(
+                    f"🔄 Primary model failed — switching to fallback: "
+                    f"{fb_model} via {fb_provider}"
+                )
         logger.info(
             "Fallback activated: %s → %s (%s)",
             old_model, fb_model, fb_provider,
