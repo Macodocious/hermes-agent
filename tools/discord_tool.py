@@ -390,32 +390,99 @@ def _get_message(
     })
 
 
+def _load_known_thread_ids() -> list[str]:
+    """Return the list of thread IDs tracked in ``~/.hermes/discord_threads.json``.
+
+    The discord tool's guild-channel sweep (``GET /guilds/{id}/channels``)
+    returns only the top-level channels in a guild. Threads are not in that
+    list, so a message-by-ID lookup that only sweeps guild channels misses
+    every thread. The user maintains a tracked-threads file at
+    ``~/.hermes/discord_threads.json``; we read it here so the sweep covers
+    both guild channels and known threads.
+
+    The file is best-effort: missing file, malformed JSON, or an unreadable
+    file path all return an empty list. Errors are not raised because the
+    caller (``_find_message_by_id``) treats this as an additional scan path,
+    not a hard requirement.
+    """
+    paths = [
+        os.path.expanduser("~/.hermes/discord_threads.json"),
+        os.path.expanduser("~/discord_threads.json"),
+    ]
+    for p in paths:
+        try:
+            with open(p, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+        except (OSError, ValueError):
+            continue
+        if isinstance(data, list):
+            return [str(x) for x in data if isinstance(x, (str, int))]
+        return []
+    return []
+
+
 def _find_message_by_id(
     token: str, message_id: str, **_kwargs: Any,
 ) -> str:
     """Locate a Discord message by ID across all channels the bot can see.
 
-    Performs an O(channels) sweep: lists the bot's guilds, lists each
-    guild's channels, then attempts ``GET /channels/{id}/messages/{id}``
-    on each. Returns the first channel where the lookup succeeds. Stops at
-    the first hit so the common case is a small number of round-trips.
+    Performs an O(channels) sweep in two passes:
 
-    This is a best-effort fallback for when the agent has only a message
-    ID and no channel context. Per-channel 10003 (Unknown Channel) errors
-    are treated as "skip and continue" rather than failure. Other HTTP
-    errors (rate limits, transient 5xx) are surfaced as ``error`` entries
-    so the agent can decide whether to retry.
+    1. List the bot's guilds, then list each guild's channels, and call
+       ``GET /channels/{id}/messages/{id}`` on each. Stops at the first hit.
+    2. For each thread ID in ``~/.hermes/discord_threads.json`` (the
+       user-maintained list of known threads), call the same lookup.
+       Threads are not enumerated by ``GET /guilds/{id}/channels``, so this
+       pass is what makes a thread-resident message reachable.
+
+    Per-channel 10003 (Unknown Channel) errors are treated as "skip and
+    continue" rather than failure. Other HTTP errors (rate limits, transient
+    5xx) are surfaced as ``error`` entries so the agent can decide whether
+    to retry.
 
     Use ``_get_message`` instead when the channel_id is known — that path
     is one round-trip and avoids the sweep.
     """
+    channels_scanned = 0
+    errors: list = []
+
+    def _try_lookup(ch_id: str, *, label: str, extra: dict | None = None) -> dict | None:
+        """Try ``GET /channels/{ch_id}/messages/{message_id}``.
+
+        Returns the message dict on a hit, ``None`` on a 404 skip, and
+        records non-404 errors on the caller's ``errors`` list.
+        """
+        nonlocal channels_scanned
+        channels_scanned += 1
+        try:
+            msg = _discord_request(
+                "GET", f"/channels/{ch_id}/messages/{message_id}", token,
+            )
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                return None
+            err = {"channel_id": ch_id, "stage": "get_message", "code": exc.code}
+            if extra:
+                err.update(extra)
+            err["source"] = label
+            errors.append(err)
+            return None
+        except Exception as exc:
+            err = {"channel_id": ch_id, "stage": "get_message", "error": str(exc), "source": label}
+            if extra:
+                err.update(extra)
+            errors.append(err)
+            return None
+        if isinstance(msg, dict) and msg.get("id") == message_id:
+            return msg
+        return None
+
+    # Pass 1: top-level channels the bot can see in any of its guilds.
     try:
         guilds = _discord_request("GET", "/users/@me/guilds", token)
     except Exception as exc:
-        return json.dumps({"found": False, "message_id": message_id, "error": f"list_guilds failed: {exc}"})
-
-    channels_scanned = 0
-    errors: list = []
+        errors.append({"stage": "list_guilds", "error": str(exc)})
+        guilds = []
 
     for guild in guilds or []:
         guild_id = guild.get("id")
@@ -435,43 +502,59 @@ def _find_message_by_id(
             # guaranteed-404 round-trips on every voice channel.
             if ch_type not in (0, 1, 5, 10, 11, 12, 15, 16):
                 continue
-            channels_scanned += 1
-            try:
-                msg = _discord_request(
-                    "GET", f"/channels/{ch_id}/messages/{message_id}", token,
-                )
-            except urllib.error.HTTPError as exc:
-                # 404 (10003) on a per-channel lookup means the message is
-                # not in this channel OR the bot can't read it. Either way,
-                # skip and continue. 5xx is transient — record and continue.
-                if exc.code == 404:
-                    continue
-                errors.append({"channel_id": ch_id, "stage": "get_message", "code": exc.code})
+            hit = _try_lookup(ch_id, label="guild_channel", extra={"guild_id": guild_id})
+            if hit is None:
                 continue
-            except Exception as exc:
-                errors.append({"channel_id": ch_id, "stage": "get_message", "error": str(exc)})
-                continue
-            if isinstance(msg, dict) and msg.get("id") == message_id:
-                author = msg.get("author", {})
-                return json.dumps({
-                    "found": True,
-                    "message_id": message_id,
-                    "channels_scanned": channels_scanned,
-                    "hit": {
-                        "channel_id": ch_id,
-                        "channel_name": ch.get("name"),
-                        "channel_type": ch_type,
-                        "guild_id": guild_id,
-                        "content": msg.get("content", ""),
-                        "author": {
-                            "id": author.get("id"),
-                            "username": author.get("username"),
-                            "bot": author.get("bot", False),
-                        },
-                        "timestamp": msg.get("timestamp"),
-                        "edited_timestamp": msg.get("edited_timestamp"),
+            author = hit.get("author", {})
+            return json.dumps({
+                "found": True,
+                "message_id": message_id,
+                "channels_scanned": channels_scanned,
+                "hit": {
+                    "channel_id": ch_id,
+                    "channel_name": ch.get("name"),
+                    "channel_type": ch_type,
+                    "guild_id": guild_id,
+                    "content": hit.get("content", ""),
+                    "author": {
+                        "id": author.get("id"),
+                        "username": author.get("username"),
+                        "bot": author.get("bot", False),
                     },
-                })
+                    "timestamp": hit.get("timestamp"),
+                    "edited_timestamp": hit.get("edited_timestamp"),
+                },
+            })
+
+    # Pass 2: thread IDs the user has tracked. ``GET /guilds/{id}/channels``
+    # does not return threads, so without this pass a message that lives in
+    # a thread is unreachable to this action. Each tracked thread is a
+    # channel in Discord's data model, so the same GET works on it.
+    known_thread_ids = _load_known_thread_ids()
+    for thread_id in known_thread_ids:
+        hit = _try_lookup(thread_id, label="known_thread")
+        if hit is None:
+            continue
+        author = hit.get("author", {})
+        return json.dumps({
+            "found": True,
+            "message_id": message_id,
+            "channels_scanned": channels_scanned,
+            "hit": {
+                "channel_id": thread_id,
+                "channel_name": None,
+                "channel_type": hit.get("type", 11),
+                "guild_id": hit.get("guild_id"),
+                "content": hit.get("content", ""),
+                "author": {
+                    "id": author.get("id"),
+                    "username": author.get("username"),
+                    "bot": author.get("bot", False),
+                },
+                "timestamp": hit.get("timestamp"),
+                "edited_timestamp": hit.get("edited_timestamp"),
+            },
+        })
 
     return json.dumps({
         "found": False,
