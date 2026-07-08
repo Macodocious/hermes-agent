@@ -348,6 +348,139 @@ def _search_members(token: str, guild_id: str, query: str, limit: int = 20, **_k
     return json.dumps({"members": result, "count": len(result)})
 
 
+def _get_message(
+    token: str, channel_id: str, message_id: str, **_kwargs: Any,
+) -> str:
+    """Fetch a single Discord message by ID. Requires the channel_id.
+
+    Threads are channels in Discord's data model, so ``channel_id`` is the
+    thread ID for messages inside a thread. Returns the full message object
+    (id, content, author, timestamp, edited_timestamp, attachments,
+    reactions, pinned). On 404 returns a JSON object with ``error`` and
+    ``code: 10003`` so the agent can distinguish "wrong channel" from
+    other failures.
+    """
+    msg = _discord_request(
+        "GET", f"/channels/{channel_id}/messages/{message_id}", token,
+    )
+    if not isinstance(msg, dict) or "id" not in msg:
+        return json.dumps({"error": "unexpected response from Discord", "body": msg})
+    author = msg.get("author", {})
+    return json.dumps({
+        "id": msg["id"],
+        "channel_id": msg.get("channel_id", channel_id),
+        "content": msg.get("content", ""),
+        "author": {
+            "id": author.get("id"),
+            "username": author.get("username"),
+            "display_name": author.get("global_name"),
+            "bot": author.get("bot", False),
+        },
+        "timestamp": msg.get("timestamp"),
+        "edited_timestamp": msg.get("edited_timestamp"),
+        "attachments": [
+            {"filename": a.get("filename"), "url": a.get("url"), "size": a.get("size")}
+            for a in msg.get("attachments", [])
+        ],
+        "reactions": [
+            {"emoji": r.get("emoji", {}).get("name"), "count": r.get("count", 0)}
+            for r in msg.get("reactions", [])
+        ] if msg.get("reactions") else [],
+        "pinned": msg.get("pinned", False),
+    })
+
+
+def _find_message_by_id(
+    token: str, message_id: str, **_kwargs: Any,
+) -> str:
+    """Locate a Discord message by ID across all channels the bot can see.
+
+    Performs an O(channels) sweep: lists the bot's guilds, lists each
+    guild's channels, then attempts ``GET /channels/{id}/messages/{id}``
+    on each. Returns the first channel where the lookup succeeds. Stops at
+    the first hit so the common case is a small number of round-trips.
+
+    This is a best-effort fallback for when the agent has only a message
+    ID and no channel context. Per-channel 10003 (Unknown Channel) errors
+    are treated as "skip and continue" rather than failure. Other HTTP
+    errors (rate limits, transient 5xx) are surfaced as ``error`` entries
+    so the agent can decide whether to retry.
+
+    Use ``_get_message`` instead when the channel_id is known — that path
+    is one round-trip and avoids the sweep.
+    """
+    try:
+        guilds = _discord_request("GET", "/users/@me/guilds", token)
+    except Exception as exc:
+        return json.dumps({"found": False, "message_id": message_id, "error": f"list_guilds failed: {exc}"})
+
+    channels_scanned = 0
+    errors: list = []
+
+    for guild in guilds or []:
+        guild_id = guild.get("id")
+        if not guild_id:
+            continue
+        try:
+            channels = _discord_request("GET", f"/guilds/{guild_id}/channels", token)
+        except Exception as exc:
+            errors.append({"guild_id": guild_id, "stage": "list_channels", "error": str(exc)})
+            continue
+        for ch in channels or []:
+            ch_id = ch.get("id")
+            ch_type = ch.get("type")
+            # Skip voice/stage/category channels — messages only live in
+            # text (0), DM (1), announcement (5), thread (10/11/12), forum (15),
+            # and media (16) channels. Skipping non-message channel types avoids
+            # guaranteed-404 round-trips on every voice channel.
+            if ch_type not in (0, 1, 5, 10, 11, 12, 15, 16):
+                continue
+            channels_scanned += 1
+            try:
+                msg = _discord_request(
+                    "GET", f"/channels/{ch_id}/messages/{message_id}", token,
+                )
+            except urllib.error.HTTPError as exc:
+                # 404 (10003) on a per-channel lookup means the message is
+                # not in this channel OR the bot can't read it. Either way,
+                # skip and continue. 5xx is transient — record and continue.
+                if exc.code == 404:
+                    continue
+                errors.append({"channel_id": ch_id, "stage": "get_message", "code": exc.code})
+                continue
+            except Exception as exc:
+                errors.append({"channel_id": ch_id, "stage": "get_message", "error": str(exc)})
+                continue
+            if isinstance(msg, dict) and msg.get("id") == message_id:
+                author = msg.get("author", {})
+                return json.dumps({
+                    "found": True,
+                    "message_id": message_id,
+                    "channels_scanned": channels_scanned,
+                    "hit": {
+                        "channel_id": ch_id,
+                        "channel_name": ch.get("name"),
+                        "channel_type": ch_type,
+                        "guild_id": guild_id,
+                        "content": msg.get("content", ""),
+                        "author": {
+                            "id": author.get("id"),
+                            "username": author.get("username"),
+                            "bot": author.get("bot", False),
+                        },
+                        "timestamp": msg.get("timestamp"),
+                        "edited_timestamp": msg.get("edited_timestamp"),
+                    },
+                })
+
+    return json.dumps({
+        "found": False,
+        "message_id": message_id,
+        "channels_scanned": channels_scanned,
+        "errors": errors[:10],
+    })
+
+
 def _fetch_messages(
     token: str, channel_id: str, limit: int = 50,
     before: Optional[str] = None, after: Optional[str] = None,
@@ -479,6 +612,8 @@ _ACTIONS = {
     "member_info": _member_info,
     "search_members": _search_members,
     "fetch_messages": _fetch_messages,
+    "get_message": _get_message,
+    "find_message_by_id": _find_message_by_id,
     "list_pins": _list_pins,
     "pin_message": _pin_message,
     "unpin_message": _unpin_message,
@@ -488,7 +623,10 @@ _ACTIONS = {
     "remove_role": _remove_role,
 }
 
-_CORE_ACTION_NAMES = frozenset({"fetch_messages", "search_members", "create_thread"})
+_CORE_ACTION_NAMES = frozenset({
+    "fetch_messages", "get_message", "find_message_by_id",
+    "search_members", "create_thread",
+})
 _ADMIN_ACTION_NAMES = frozenset(_ACTIONS.keys()) - _CORE_ACTION_NAMES
 
 _CORE_ACTIONS = {k: v for k, v in _ACTIONS.items() if k in _CORE_ACTION_NAMES}
@@ -506,6 +644,8 @@ _ACTION_MANIFEST: List[Tuple[str, str, str]] = [
     ("member_info", "(guild_id, user_id)", "lookup a specific member"),
     ("search_members", "(guild_id, query)", "find members by name prefix"),
     ("fetch_messages", "(channel_id)", "recent messages; optional before/after snowflakes"),
+    ("get_message", "(channel_id, message_id)", "fetch a single message by ID; requires the channel_id"),
+    ("find_message_by_id", "(message_id)", "locate a message by ID across all channels the bot can see (O(channels) sweep)"),
     ("list_pins", "(channel_id)", "pinned messages in a channel"),
     ("pin_message", "(channel_id, message_id)", "pin a message"),
     ("unpin_message", "(channel_id, message_id)", "unpin a message"),
@@ -527,6 +667,8 @@ _REQUIRED_PARAMS: Dict[str, List[str]] = {
     "search_members": ["guild_id", "query"],
     "channel_info": ["channel_id"],
     "fetch_messages": ["channel_id"],
+    "get_message": ["channel_id", "message_id"],
+    "find_message_by_id": ["message_id"],
     "list_pins": ["channel_id"],
     "pin_message": ["channel_id", "message_id"],
     "unpin_message": ["channel_id", "message_id"],

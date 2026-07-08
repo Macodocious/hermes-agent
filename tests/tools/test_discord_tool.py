@@ -12,6 +12,7 @@ from tools.discord_tool import (
     _ACTIONS,
     _ADMIN_ACTIONS,
     _CORE_ACTIONS,
+    _CORE_ACTION_NAMES,
     _available_actions,
     _channel_type_name,
     _detect_capabilities,
@@ -554,18 +555,29 @@ class TestRegistration:
         assert entry.requires_env == ["DISCORD_BOT_TOKEN"]
 
     def test_core_schema_actions(self):
-        """Core static schema should list only core actions."""
+        """Core static schema should list only core actions.
+
+        Asserts the contract: the core schema's enum equals the source-of-
+        truth ``_CORE_ACTION_NAMES`` frozenset, not a frozen literal. New
+        core actions are picked up automatically when added to
+        ``_CORE_ACTION_NAMES`` in tools/discord_tool.py.
+        """
         from tools.registry import registry
         entry = registry._tools["discord"]
         actions = set(entry.schema["parameters"]["properties"]["action"]["enum"])
-        assert actions == {"fetch_messages", "search_members", "create_thread"}
+        assert actions == set(_CORE_ACTION_NAMES)
 
     def test_admin_schema_actions(self):
-        """Admin static schema should list only admin actions."""
+        """Admin static schema should list only admin actions.
+
+        Asserts the contract: the admin schema's enum equals
+        ``_ACTIONS.keys() - _CORE_ACTION_NAMES``. See
+        ``test_core_schema_actions`` for the rationale.
+        """
         from tools.registry import registry
         entry = registry._tools["discord_admin"]
         actions = set(entry.schema["parameters"]["properties"]["action"]["enum"])
-        expected_admin = set(_ACTIONS.keys()) - {"fetch_messages", "search_members", "create_thread"}
+        expected_admin = set(_ACTIONS.keys()) - set(_CORE_ACTION_NAMES)
         assert actions == expected_admin
 
     def test_all_actions_covered(self):
