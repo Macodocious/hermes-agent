@@ -98,13 +98,34 @@ class TestValidateCategory:
         assert _validate_category("devops") is None
         assert _validate_category("mlops-v2") is None
 
+    def test_valid_multi_segment(self):
+        assert _validate_category("hermes/plugins") is None
+        assert _validate_category("a/b/c") is None
+        assert _validate_category("hermes.plugins/sub-domain/v2") is None
+
     def test_path_traversal_rejected(self):
         err = _validate_category("../escape")
-        assert "Invalid category '../escape'" in err
+        assert err is not None and "Invalid category" in err
+        err2 = _validate_category("a/../escape")
+        assert err2 is not None and "Invalid category segment" in err2
+        err3 = _validate_category("a/..")
+        assert err3 is not None and "Invalid category segment" in err3
 
     def test_absolute_path_rejected(self):
         err = _validate_category("/tmp/escape")
-        assert "Invalid category '/tmp/escape'" in err
+        assert err is not None and "Invalid category" in err
+        err2 = _validate_category("/leading")
+        assert err2 is not None and "Invalid category" in err2
+
+    def test_backslash_rejected(self):
+        err = _validate_category("a\\b")
+        assert err is not None and "backslashes" in err
+        err2 = _validate_category("hermes\\plugins")
+        assert err2 is not None and "backslashes" in err2
+
+    def test_dot_segment_rejected(self):
+        err = _validate_category("a/.hidden/b")
+        assert err is not None and "letter or digit" in err
 
 
 # ---------------------------------------------------------------------------
@@ -243,7 +264,7 @@ class TestCreateSkill:
             result = _create_skill("my-skill", VALID_SKILL_CONTENT, category="../escape")
 
         assert result["success"] is False
-        assert "Invalid category '../escape'" in result["error"]
+        assert "Path-traversal segments are not allowed" in result["error"]
         assert not (tmp_path / "escape").exists()
 
     def test_create_rejects_absolute_category(self, tmp_path):
@@ -256,7 +277,7 @@ class TestCreateSkill:
             result = _create_skill("my-skill", VALID_SKILL_CONTENT, category=str(outside))
 
         assert result["success"] is False
-        assert f"Invalid category '{outside}'" in result["error"]
+        assert "absolute paths are not allowed" in result["error"]
         assert not (outside / "my-skill" / "SKILL.md").exists()
 
 
