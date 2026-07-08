@@ -408,7 +408,16 @@ def _validate_name(name: str) -> Optional[str]:
 
 
 def _validate_category(category: Optional[str]) -> Optional[str]:
-    """Validate an optional category name used as a single directory segment."""
+    """Validate an optional category, which may be a multi-segment namespace path.
+
+    Each `/`-separated segment is validated against the same rules as a single
+    category name (lowercase letters, digits, hyphens, dots, underscores; must
+    start with a letter or digit). Backslashes, empty segments, and any
+    segment that is itself ``..`` / ``.`` / starts with ``.`` are rejected so
+    a category like ``a/../escape`` or ``a//b`` cannot bypass the directory
+    boundary. Forward slashes between segments are the only path separator
+    allowed, and they are validated per segment — not as a free string.
+    """
     if category is None:
         return None
     if not isinstance(category, str):
@@ -417,18 +426,41 @@ def _validate_category(category: Optional[str]) -> Optional[str]:
     category = category.strip()
     if not category:
         return None
-    if "/" in category or "\\" in category:
+    if category.startswith("/"):
         return (
-            f"Invalid category '{category}'. Use lowercase letters, numbers, "
-            "hyphens, dots, and underscores. Categories must be a single directory name."
+            f"Invalid category '{category}'. Categories must be a relative "
+            "namespace path; absolute paths are not allowed."
         )
+    if "\\" in category:
+        return (
+            f"Invalid category '{category}'. Use forward slashes between "
+            "segments (no backslashes)."
+        )
+
+    segments = [seg.strip() for seg in category.split("/") if seg.strip() != ""]
+    if not segments:
+        return "Category must contain at least one segment."
+
     if len(category) > MAX_NAME_LENGTH:
         return f"Category exceeds {MAX_NAME_LENGTH} characters."
-    if not VALID_NAME_RE.match(category):
-        return (
-            f"Invalid category '{category}'. Use lowercase letters, numbers, "
-            "hyphens, dots, and underscores. Categories must be a single directory name."
-        )
+
+    for seg in segments:
+        if seg in {".", ".."}:
+            return (
+                f"Invalid category segment '{seg}' in '{category}'. "
+                "Path-traversal segments are not allowed."
+            )
+        if seg.startswith("."):
+            return (
+                f"Invalid category segment '{seg}' in '{category}'. "
+                "Segments must start with a letter or digit."
+            )
+        if not VALID_NAME_RE.match(seg):
+            return (
+                f"Invalid category segment '{seg}' in '{category}'. Use "
+                "lowercase letters, numbers, hyphens, dots, and underscores; "
+                "each segment must start with a letter or digit."
+            )
     return None
 
 
