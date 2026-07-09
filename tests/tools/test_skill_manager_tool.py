@@ -90,6 +90,33 @@ class TestValidateName:
         err = _validate_name("skill@name")
         assert "Invalid skill name 'skill@name'" in err
 
+    def test_stuffed_namespace_rejected(self):
+        # 4+ hyphen-separated tokens look like a stuffed namespace.
+        # The canonical case: hermes-plugin-reload-verification has
+        # 4 tokens and a real category decomposition (hermes/plugins/).
+        err = _validate_name("hermes-plugin-reload-verification")
+        assert err is not None
+        assert "stuffed namespace" in err
+        # The error message should hint at the multi-segment encoding
+        # by suggesting a category + leaf split.
+        assert "category" in err and "name" in err
+
+    def test_three_token_names_accepted(self):
+        # 3 tokens is the borderline case. Some real skills are
+        # grammatically hyphenated (e.g. webhook-subscriptions = 2 tokens,
+        # curl-based-thing = 3 tokens) and aren't stuffed namespaces.
+        # Allow them through so 3-token grammatically-hyphenated names
+        # can still be created.
+        assert _validate_name("webhook-subscriptions") is None
+        assert _validate_name("get-current-user") is None
+        assert _validate_name("verify-something-here") is None
+
+    def test_two_token_names_accepted(self):
+        # 2 tokens is the common case for a skill name. Always allowed.
+        assert _validate_name("hermes-agent") is None
+        assert _validate_name("code-review") is None
+        assert _validate_name("skill-patterns") is None
+
 
 class TestValidateCategory:
     def test_valid_categories(self):
