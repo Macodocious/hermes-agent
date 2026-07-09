@@ -394,7 +394,18 @@ ALLOWED_SUBDIRS = {"references", "templates", "scripts", "assets"}
 # =============================================================================
 
 def _validate_name(name: str) -> Optional[str]:
-    """Validate a skill name. Returns error message or None if valid."""
+    """Validate a skill name. Returns error message or None if valid.
+
+    Names that look like a stuffed namespace hierarchy (4+ hyphen-separated
+    tokens) are rejected outright: a name like ``hermes-plugin-reload-
+    verification`` is the canonical example of a real namespace (``hermes/
+    plugins/``) being flattened into the leaf. The correct encoding is
+    ``category: hermes/plugins`` + ``name: reload-verification`` — the
+    category carries the namespace, the name stays a flat leaf. 3-token
+    names are warned but allowed, because some real skills are
+    grammatically hyphenated (``webhook-subscriptions``, ``get-current-
+    user``) without being stuffed namespaces.
+    """
     if not name:
         return "Skill name is required."
     if len(name) > MAX_NAME_LENGTH:
@@ -403,6 +414,25 @@ def _validate_name(name: str) -> Optional[str]:
         return (
             f"Invalid skill name '{name}'. Use lowercase letters, numbers, "
             f"hyphens, dots, and underscores. Must start with a letter or digit."
+        )
+    # Stuffed-namespace check: 4+ tokens is a near-certain namespace
+    # collapse. Reject with a remediation hint that points at the
+    # multi-segment `category:` encoding.
+    tokens = name.split("-")
+    if len(tokens) >= 4:
+        # Build the most likely decomposition: take the first two tokens
+        # as a candidate category, last token as the candidate leaf.
+        suggested_category = "/".join(tokens[:-1])
+        suggested_name = tokens[-1]
+        return (
+            f"Skill name '{name}' has {len(tokens)} hyphen-separated tokens, "
+            f"which is the same shape as a stuffed namespace hierarchy. If "
+            f"this concept decomposes as a real namespace, encode the "
+            f"namespace in `category:` as a `/`-separated path and keep "
+            f"`name:` as the leaf — e.g. `category: {suggested_category}` "
+            f"and `name: {suggested_name}` — and try again. If the name is "
+            f"genuinely a single concept, reduce it to 3 or fewer tokens "
+            f"before creating the skill."
         )
     return None
 
