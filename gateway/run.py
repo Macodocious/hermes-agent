@@ -2588,6 +2588,18 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         self._provider_routing = self._load_provider_routing()
         self._fallback_model = self._load_fallback_model()
 
+        # Install conversation-transcript hooks when enabled in config.
+        # This must run after plugin discovery so the hooks are registered
+        # alongside plugin-provided callbacks.
+        _tx_enabled = getattr(getattr(self.config, "transcripts", None), "enabled", False)
+        if _tx_enabled:
+            try:
+                from gateway.transcript import install_transcript_hooks
+                from hermes_cli.plugins import get_plugin_manager
+                install_transcript_hooks(get_plugin_manager(), self.config)
+            except Exception as exc:
+                logger.warning("Failed to install transcript hooks: %s", exc)
+
         # Wire process registry into session store for reset protection.
         # A background process older than the configured threshold (default 24h,
         # session_reset.bg_process_max_age_hours) is treated as stale and no
