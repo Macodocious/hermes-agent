@@ -401,6 +401,24 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
     if _effective_hint:
         stable_parts.append(_effective_hint)
 
+    # Timestamp formatting — tell the model to reformat raw UTC ISO 8601
+    # timestamps it sees in tool output (Discord, terminal date, file mtimes)
+    # into the user's configured timezone. The user-facing `timezone:`
+    # config in `config.yaml` is the source of truth; the helper
+    # `hermes_time.format_in_user_tz(iso_string)` does the conversion when
+    # the LLM has access to `execute_code`, otherwise compute the offset
+    # manually from the configured IANA name. This block is byte-stable so
+    # it does not invalidate the prompt cache.
+    stable_parts.append(
+        "When referencing a timestamp in your response, render it in the "
+        "user's configured timezone (set via `timezone:` in `config.yaml`). "
+        "Tool output may contain raw UTC ISO 8601 strings (e.g. "
+        "`2026-07-08T19:08:02.163000+00:00`); reformat these to a "
+        "human-readable form in the user's zone (e.g. "
+        "`Tue 2026-07-08 15:08:02 EDT`). Do not echo raw UTC ISO 8601 "
+        "timestamps into the conversation."
+    )
+
     # ── Context tier (cwd-dependent, may change between sessions) ─
     context_parts: List[str] = []
 
