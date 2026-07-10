@@ -122,3 +122,51 @@ def now() -> datetime:
     return datetime.now().astimezone()
 
 
+def format_in_user_tz(utc_iso: str, fmt: str = "%a %Y-%m-%d %H:%M:%S %Z") -> str:
+    """
+    Format a UTC ISO 8601 timestamp string in the user's configured timezone.
+
+    Used by the gateway's ``message_timestamps`` injection (default ``tz=``)
+    and exposed as a callable the LLM can invoke when the system prompt
+    instructs it to reformat raw ISO 8601 strings from tool output.
+
+    Behavior:
+      - Empty / non-string input is returned unchanged (defensive — the
+        helper must not raise on garbage, because the agent's prompt is
+        more valuable than a perfectly-formatted timestamp).
+      - Parses ISO 8601 with ``datetime.fromisoformat`` (handles
+        ``+00:00`` and ``Z`` in Python 3.11+; the ``Z`` form is normalized
+        to ``+00:00`` first for older interpreters).
+      - Naive datetimes are assumed UTC (defensive — some tools strip the
+        offset).
+      - On any parse error, the original string is returned unchanged.
+      - When a valid ``timezone`` is configured in ``config.yaml`` (or
+        ``HERMES_TIMEZONE`` env var), output is rendered in that zone.
+      - When no timezone is configured, output falls back to server-local,
+        matching ``now()``'s fallback semantics.
+    """
+    if not isinstance(utc_iso, str) or not utc_iso:
+        return utc_iso
+    text = utc_iso.strip()
+    if not text:
+        return utc_iso
+    # Normalize trailing "Z" to "+00:00" for fromisoformat on 3.10 and earlier.
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(text)
+    except (TypeError, ValueError):
+        return utc_iso
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=ZoneInfo("UTC"))
+    tz = get_timezone()
+    try:
+        if tz is None:
+            dt = dt.astimezone()
+        else:
+            dt = dt.astimezone(tz)
+        return dt.strftime(fmt)
+    except Exception:
+        return utc_iso
+
+

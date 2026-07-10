@@ -12,6 +12,18 @@ from datetime import datetime
 from typing import Any, Optional, Tuple
 
 
+# Resolve the user's configured timezone at import time so we don't pay
+# config-lookup cost on every call to format_message_timestamp. ``None``
+# means "no timezone configured" — caller falls back to server-local,
+# matching pre-fix behavior.
+def _default_tz():
+    try:
+        from hermes_time import get_timezone
+        return get_timezone()
+    except Exception:
+        return None
+
+
 # Current gateway format: [Tue 2026-04-28 13:40:53 CEST]
 _HUMAN_TIMESTAMP_RE = re.compile(
     r"^\[(?P<dow>[A-Z][a-z]{2}) "
@@ -74,7 +86,14 @@ def coerce_message_timestamp(ts_value: Any, tz=None) -> Optional[float]:
 
 
 def format_message_timestamp(ts_value: Any, tz=None) -> str:
-    """Format a timestamp value as ``[Tue 2026-04-28 13:40:53 CEST]``."""
+    """Format a timestamp value as ``[Tue 2026-04-28 13:40:53 CEST]``.
+
+    ``tz`` defaults to the user's configured timezone (from
+    ``hermes_time.get_timezone()``); when no timezone is configured, falls
+    back to server-local. Pass ``tz=some_zone`` to override per-call.
+    """
+    if tz is None:
+        tz = _default_tz()
     epoch = coerce_message_timestamp(ts_value, tz=tz)
     if epoch is None:
         return ""
