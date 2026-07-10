@@ -4743,6 +4743,21 @@ class BasePlatformAdapter(ABC):
                     )
                     _record_delivery(result)
 
+                    # Fire post-gateway delivery hook with the real platform
+                    # message_id now that the adapter has attempted delivery.
+                    try:
+                        from hermes_cli.plugins import invoke_hook as _invoke_hook
+                        _invoke_hook(
+                            "post_gateway_delivery",
+                            event=event,
+                            result=result,
+                            adapter=self,
+                            session_key=session_key,
+                            content=text_content,
+                        )
+                    except Exception as exc:
+                        logger.warning("post_gateway_delivery hook failed: %s", exc)
+
                     # Schedule auto-deletion of system-notice replies.
                     # Detached so the handler returns immediately; errors
                     # (permission denied, message too old) are swallowed.

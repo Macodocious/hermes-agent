@@ -22,6 +22,14 @@ from utils import env_int, is_truthy_value
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class TranscriptConfig:
+    """Conversation transcript persistence settings."""
+
+    enabled: bool = False
+    directory: Path = field(default_factory=lambda: get_hermes_home() / "transcripts")
+
+
 def _coerce_bool(value: Any, default: bool = True) -> bool:
     """Coerce bool-ish config values, preserving a caller-provided default."""
     if value is None:
@@ -34,6 +42,24 @@ def _coerce_bool(value: Any, default: bool = True) -> bool:
             return False
         return default
     return is_truthy_value(value, default=default)
+
+
+def _load_transcript_config(data: Dict[str, Any]) -> "TranscriptConfig":
+    """Parse ``transcripts`` block from gateway config dict.
+
+    Returns a :class:`TranscriptConfig` with defaults when the key is absent
+    or malformed.
+    """
+    _raw = data.get("transcripts")
+    if not isinstance(_raw, dict):
+        return TranscriptConfig()
+    _enabled = _coerce_bool(_raw.get("enabled"), False)
+    _dir = _raw.get("directory")
+    if isinstance(_dir, str):
+        _dir = Path(_dir).expanduser()
+    elif _dir is None:
+        _dir = get_hermes_home() / "transcripts"
+    return TranscriptConfig(enabled=_enabled, directory=_dir)
 
 
 def _coerce_float(value: Any, default: float) -> float:
@@ -562,6 +588,10 @@ class GatewayConfig:
     # fresh session exactly as if the reset policy had fired.  0 = disabled.
     session_store_max_age_days: int = 90
 
+    # Conversation transcript persistence (opt-in; default off).
+    # Writes per-thread append-only JSONL files with real platform message IDs.
+    transcripts: TranscriptConfig = field(default_factory=TranscriptConfig)
+
     def get_connected_platforms(self) -> List[Platform]:
         """Return list of platforms that are enabled and configured."""
         connected = []
@@ -755,6 +785,7 @@ class GatewayConfig:
             unauthorized_dm_behavior=unauthorized_dm_behavior,
             streaming=StreamingConfig.from_dict(data.get("streaming", {})),
             session_store_max_age_days=session_store_max_age_days,
+            transcripts=_load_transcript_config(data),
         )
 
     def get_unauthorized_dm_behavior(self, platform: Optional[Platform] = None) -> str:
