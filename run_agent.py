@@ -158,12 +158,15 @@ from agent.context_compressor import ContextCompressor  # noqa: F401
 from agent.retry_utils import jittered_backoff  # noqa: F401
 from agent.prompt_builder import (  # noqa: F401  # re-exported via _ra() / mock.patch("run_agent.<name>") / from run_agent import <name>
     DEFAULT_AGENT_IDENTITY,
+    NON_DEGRADATION_DIRECTIVE,
     build_skills_system_prompt,
     build_context_files_prompt,
     build_environment_hints,
     build_nous_subscription_prompt,
+    _load_hermes_rules,
     load_soul_md,
 )
+from agent.prompt_builder import get_hermes_home  # noqa: F401
 from agent.process_bootstrap import _get_proxy_from_env  # noqa: F401
 from agent.message_sanitization import (  # noqa: F401
     _SURROGATE_RE,

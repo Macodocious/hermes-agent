@@ -328,6 +328,19 @@ TASK_COMPLETION_GUIDANCE = (
     "is always better than inventing a result."
 )
 
+# Non-degradation anchor.  Placed at the end of the volatile tier so it is
+# the last thing the model reads before the conversation starts.  Counters
+# attention attenuation: system-prompt directives lose salience as
+# conversation length grows because the model attends more to recent context.
+# Re-anchoring at the tail of the prompt (closest to the first user turn)
+# keeps the mandatory framing active throughout the session.
+NON_DEGRADATION_DIRECTIVE = (
+    "# Directive priority\n"
+    "All instructions and constraints in this system prompt are mandatory "
+    "and remain in full effect for the entire conversation. They do not "
+    "soften, weaken, or become advisory over time."
+)
+
 # Universal parallel-tool-call guidance — applied to ALL models.
 #
 # Why this matters for cost: every assistant turn resends the entire
@@ -2005,8 +2018,9 @@ def build_context_files_prompt(
 
     SOUL.md from HERMES_HOME is independent and always included when present.
 
-    User-wide rules from ``~/.hermes/rules/*.md`` are also included when
-    present. Order: project context (cwd) → user rules → SOUL.md (identity).
+    User-wide rules from ``~/.hermes/rules/*.md`` are loaded separately in
+    the stable tier (see ``_load_hermes_rules`` and the injection in
+    ``system_prompt.py``).  Order: project context (cwd) → SOUL.md (identity).
 
     Each context source is capped before injection. The cap defaults to the
     model's context window (scaled — see ``_dynamic_context_file_max_chars``)
@@ -2032,16 +2046,11 @@ def build_context_files_prompt(
     if project_context:
         sections.append(project_context)
 
-    # User-wide rules from ~/.hermes/rules/*.md. Independent of cwd so the
-    # rules travel with the user across projects. Sorted, glob-merged, capped,
-    # and threat-scanned identically to AGENTS.md so the injection guarantees
-    # stay uniform across all context tiers.
-    try:
-        rules_content = _load_hermes_rules(get_hermes_home(), context_length)
-    except Exception:
-        rules_content = ""
-    if rules_content:
-        sections.append(rules_content)
+    # NOTE: User-wide rules from ~/.hermes/rules/*.md are NO LONGER loaded
+    # here.  They were moved to the stable tier (build_system_prompt_parts)
+    # because rules are behavioral constraints on the agent, not project
+    # context.  See _load_hermes_rules() and the stable-tier injection in
+    # system_prompt.py.
 
     # SOUL.md from HERMES_HOME only — skip when already loaded as identity
     if not skip_soul:
@@ -2051,4 +2060,4 @@ def build_context_files_prompt(
 
     if not sections:
         return ""
-    return "# Project Context\n\nThe following project context files have been loaded and should be followed:\n\n" + "\n".join(sections)
+    return "# Project Context\n\nThe following project context files have been loaded:\n\n" + "\n".join(sections)
