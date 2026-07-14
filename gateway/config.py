@@ -902,6 +902,9 @@ def load_gateway_config() -> GatewayConfig:
             if "max_concurrent_sessions" in yaml_cfg:
                 gw_data["max_concurrent_sessions"] = yaml_cfg["max_concurrent_sessions"]
 
+            if "transcripts" in yaml_cfg:
+                gw_data["transcripts"] = yaml_cfg["transcripts"]
+
             streaming_cfg = yaml_cfg.get("streaming")
             if not isinstance(streaming_cfg, dict):
                 # Fall back to nested gateway.streaming written by
