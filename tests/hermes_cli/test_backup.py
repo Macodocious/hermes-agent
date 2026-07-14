@@ -1402,7 +1402,7 @@ class TestQuickSnapshot:
         from hermes_cli.backup import create_quick_snapshot
         snap_id = create_quick_snapshot(hermes_home=hermes_home)
         assert snap_id is not None
-        snap_dir = hermes_home / "state-snapshots" / snap_id
+        snap_dir = hermes_home / "snapshots" / snap_id
         assert snap_dir.is_dir()
         assert (snap_dir / "manifest.json").exists()
 
@@ -1414,7 +1414,7 @@ class TestQuickSnapshot:
     def test_state_db_safely_copied(self, hermes_home):
         from hermes_cli.backup import create_quick_snapshot
         snap_id = create_quick_snapshot(hermes_home=hermes_home)
-        db_copy = hermes_home / "state-snapshots" / snap_id / "state.db"
+        db_copy = hermes_home / "snapshots" / snap_id / "state.db"
         assert db_copy.exists()
 
         conn = sqlite3.connect(str(db_copy))
@@ -1426,19 +1426,19 @@ class TestQuickSnapshot:
     def test_copies_nested_files(self, hermes_home):
         from hermes_cli.backup import create_quick_snapshot
         snap_id = create_quick_snapshot(hermes_home=hermes_home)
-        assert (hermes_home / "state-snapshots" / snap_id / "cron" / "jobs.json").exists()
+        assert (hermes_home / "snapshots" / snap_id / "cron" / "jobs.json").exists()
 
     def test_copies_channel_aliases(self, hermes_home):
         from hermes_cli.backup import create_quick_snapshot
         snap_id = create_quick_snapshot(hermes_home=hermes_home)
-        copied = hermes_home / "state-snapshots" / snap_id / "channel_aliases.json"
+        copied = hermes_home / "snapshots" / snap_id / "channel_aliases.json"
         assert copied.exists()
         assert "120363408391911677@g.us" in copied.read_text()
 
     def test_missing_files_skipped(self, hermes_home):
         from hermes_cli.backup import create_quick_snapshot
         snap_id = create_quick_snapshot(hermes_home=hermes_home)
-        with open(hermes_home / "state-snapshots" / snap_id / "manifest.json") as f:
+        with open(hermes_home / "snapshots" / snap_id / "manifest.json") as f:
             meta = json.load(f)
         # gateway_state.json etc. don't exist in fixture
         assert "gateway_state.json" not in meta["files"]
@@ -1539,7 +1539,7 @@ class TestQuickSnapshot:
         snap_id = create_quick_snapshot(hermes_home=hermes_home)
         assert snap_id is not None
 
-        snap_dir = hermes_home / "state-snapshots" / snap_id
+        snap_dir = hermes_home / "snapshots" / snap_id
         assert (snap_dir / "platforms" / "pairing" / "telegram-approved.json").exists()
         assert (snap_dir / "platforms" / "pairing" / "discord-approved.json").exists()
         assert (snap_dir / "pairing" / "matrix-approved.json").exists()
@@ -1633,7 +1633,7 @@ class TestQuickSnapshot:
 
         snap_id = create_quick_snapshot(hermes_home=hermes_home)
         assert snap_id is not None
-        snap_dir = hermes_home / "state-snapshots" / snap_id
+        snap_dir = hermes_home / "snapshots" / snap_id
 
         # Inject a traversal entry into manifest.json AND seed the source
         # file outside the snapshot directory so a vulnerable implementation
@@ -1705,7 +1705,7 @@ class TestQuickSnapshotProjectsKanban:
     def test_projects_db_snapshotted(self, hermes_home):
         from hermes_cli.backup import create_quick_snapshot
         snap_id = create_quick_snapshot(hermes_home=hermes_home)
-        copy = hermes_home / "state-snapshots" / snap_id / "projects.db"
+        copy = hermes_home / "snapshots" / snap_id / "projects.db"
         assert copy.exists()
         conn = sqlite3.connect(str(copy))
         rows = conn.execute("SELECT * FROM projects").fetchall()
@@ -1715,7 +1715,7 @@ class TestQuickSnapshotProjectsKanban:
     def test_kanban_db_snapshotted(self, hermes_home):
         from hermes_cli.backup import create_quick_snapshot
         snap_id = create_quick_snapshot(hermes_home=hermes_home)
-        copy = hermes_home / "state-snapshots" / snap_id / "kanban.db"
+        copy = hermes_home / "snapshots" / snap_id / "kanban.db"
         assert copy.exists()
         conn = sqlite3.connect(str(copy))
         rows = conn.execute("SELECT * FROM tasks").fetchall()
@@ -1755,7 +1755,7 @@ class TestQuickSnapshotProjectsKanban:
 
         snap_id = create_quick_snapshot(hermes_home=hermes_home)
         copy = (
-            hermes_home / "state-snapshots" / snap_id
+            hermes_home / "snapshots" / snap_id
             / "kanban" / "boards" / "work" / "kanban.db"
         )
         assert copy.exists(), "non-default board kanban.db was not snapshotted"
@@ -1824,7 +1824,7 @@ class TestQuickSnapshotProjectsKanban:
         (board / "attachments" / "t1" / "file.bin").write_bytes(b"y" * 4096)
 
         snap_id = create_quick_snapshot(hermes_home=hermes_home)
-        snap = hermes_home / "state-snapshots" / snap_id / "kanban" / "boards" / "work"
+        snap = hermes_home / "snapshots" / snap_id / "kanban" / "boards" / "work"
         # Board db + metadata captured...
         assert (snap / "kanban.db").exists()
         assert (snap / "board.json").exists()
@@ -1859,7 +1859,7 @@ class TestQuickSnapshotProjectsKanban:
         snap_id = create_quick_snapshot(hermes_home=hermes_home)
         # The board db was copied via _safe_copy_db (not raw copy).
         assert any(s.endswith("boards/work/kanban.db") for s in called["db"]), called["db"]
-        copy = hermes_home / "state-snapshots" / snap_id / "kanban" / "boards" / "work" / "kanban.db"
+        copy = hermes_home / "snapshots" / snap_id / "kanban" / "boards" / "work" / "kanban.db"
         rows = sqlite3.connect(str(copy)).execute("SELECT * FROM tasks").fetchall()
         assert rows == [("w1", "ship")]
 

@@ -161,7 +161,7 @@ class CLICommandsMixin:
                 print("  No state snapshots yet.")
                 print("  Create one: /snapshot create [label]")
                 return
-            print(f"  State snapshots ({display_hermes_home()}/state-snapshots/):\n")
+            print(f"  State snapshots ({display_hermes_home()}/snapshots/):\n")
             print(f"  {'#':>3}  {'ID':<35} {'Files':>5} {'Size':>10} {'Label'}")
             print(f"  {'─'*3}  {'─'*35} {'─'*5} {'─'*10} {'─'*20}")
             for i, s in enumerate(snaps, 1):

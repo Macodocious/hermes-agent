@@ -355,7 +355,7 @@ class TestCreateProfile:
         (default_home / "sessions" / "20260101_old").mkdir(parents=True)
         (default_home / "backups").mkdir(exist_ok=True)
         (default_home / "backups" / "backup.tar.gz").write_text("archive")
-        (default_home / "state-snapshots" / "snap1").mkdir(parents=True)
+        (default_home / "snapshots" / "snap1").mkdir(parents=True)
         (default_home / "checkpoints" / "cp1").mkdir(parents=True)
         # Data that should still copy
         (default_home / "config.yaml").write_text("model: gpt-4")
@@ -367,7 +367,7 @@ class TestCreateProfile:
 
         for history in (
             "state.db", "state.db-wal", "state.db-shm",
-            "sessions", "backups", "state-snapshots", "checkpoints",
+            "sessions", "backups", "snapshots", "checkpoints",
         ):
             assert not (profile_dir / history).exists(), history
         assert (profile_dir / "config.yaml").read_text() == "model: gpt-4"
