@@ -113,7 +113,7 @@ _CLONE_ALL_DEFAULT_EXCLUDE_ROOT: frozenset[str] = frozenset({
 #   state.db (+wal/shm) — SQLite session store (can reach many GB)
 #   sessions            — per-session transcript/data dirs
 #   backups             — `hermes backup` archives
-#   state-snapshots     — quick-backup snapshot trees
+#   snapshots     — quick-backup snapshot trees
 #   checkpoints         — session checkpoint data
 _CLONE_ALL_HISTORY_EXCLUDE_ROOT: frozenset[str] = frozenset({
     "state.db",
@@ -121,7 +121,7 @@ _CLONE_ALL_HISTORY_EXCLUDE_ROOT: frozenset[str] = frozenset({
     "state.db-shm",
     "sessions",
     "backups",
-    "state-snapshots",
+    "snapshots",
     "checkpoints",
 })
 

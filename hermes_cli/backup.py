@@ -781,7 +781,7 @@ _QUICK_STATE_FILES = (
     "feishu_comment_pairing.json",      # Feishu comment subscription pairings
 )
 
-_QUICK_SNAPSHOTS_DIR = "state-snapshots"
+_QUICK_SNAPSHOTS_DIR = "snapshots"
 _QUICK_DEFAULT_KEEP = 20
 
 
@@ -797,7 +797,7 @@ def create_quick_snapshot(
 ) -> Optional[str]:
     """Create a quick state snapshot of critical files.
 
-    Copies STATE_FILES to a timestamped directory under state-snapshots/.
+    Copies STATE_FILES to a timestamped directory under snapshots/.
     Auto-prunes old snapshots beyond the keep limit.
 
     Returns:
@@ -1135,7 +1135,7 @@ def run_quick_backup(args) -> None:
     if snap_id:
         print(f"State snapshot created: {snap_id}")
         snaps = list_quick_snapshots()
-        print(f"  {len(snaps)} snapshot(s) stored in {display_hermes_home()}/state-snapshots/")
+        print(f"  {len(snaps)} snapshot(s) stored in {display_hermes_home()}/snapshots/")
         print(f"  Restore with: /snapshot restore {snap_id}")
     else:
         print("No state files found to snapshot.")
