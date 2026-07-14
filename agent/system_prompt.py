@@ -32,6 +32,7 @@ from agent.prompt_builder import (
     HERMES_AGENT_HELP_GUIDANCE,
     KANBAN_GUIDANCE,
     MEMORY_GUIDANCE,
+    NON_DEGRADATION_DIRECTIVE,
     OPENAI_MODEL_EXECUTION_GUIDANCE,
     PARALLEL_TOOL_CALL_GUIDANCE,
     PLATFORM_HINTS,
@@ -160,6 +161,20 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
     if not _soul_loaded:
         # Fallback to hardcoded identity
         stable_parts.append(DEFAULT_AGENT_IDENTITY)
+
+    # User-wide rules from ~/.hermes/rules/*.md. These are behavioral
+    # constraints on the agent (Priority, Rule, Forbidden, Action taxonomy)
+    # and belong in the stable tier alongside identity and operational
+    # guidance — not in the context tier with project files.  Gated by
+    # agent.skip_context_files (same gate as SOUL.md identity loading above)
+    # so that --ignore-rules / HERMES_IGNORE_RULES=1 disables them.
+    if not agent.skip_context_files:
+        try:
+            _rules_content = _r._load_hermes_rules(_r.get_hermes_home(), _ctx_len)
+            if _rules_content and not _rules_content.startswith("[BLOCKED:"):
+                stable_parts.append(_rules_content)
+        except Exception:
+            pass
 
     # Pointer to the hermes-agent skill + docs for user questions about Hermes itself.
     stable_parts.append(HERMES_AGENT_HELP_GUIDANCE)
@@ -477,6 +492,13 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
     if agent.provider:
         timestamp_line += f"\nProvider: {agent.provider}"
     volatile_parts.append(timestamp_line)
+
+    # Non-degradation anchor: counters attention attenuation.
+    # System-prompt directives lose salience as conversation length grows
+    # because the model attends more to recent context.  Re-anchoring at
+    # the tail of the volatile tier (closest to the first user turn) keeps
+    # the mandatory framing active throughout the session.
+    volatile_parts.append(NON_DEGRADATION_DIRECTIVE)
 
     return {
         "stable":   "\n\n".join(p.strip() for p in stable_parts   if p and p.strip()),
