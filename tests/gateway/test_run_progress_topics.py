@@ -308,7 +308,7 @@ async def test_run_agent_progress_stays_in_originating_topic(monkeypatch, tmp_pa
     assert adapter.sent == [
         {
             "chat_id": "-1001",
-            "content": '💻 terminal: "pwd"',
+            "content": '💻 Running pwd',
             "reply_to": None,
             "metadata": {"thread_id": "17585"},
         }
@@ -496,6 +496,27 @@ async def test_run_agent_feishu_progress_replies_inside_existing_thread(monkeypa
 # ---------------------------------------------------------------------------
 
 
+def _extract_progress_preview(content: str) -> str | None:
+    """Extract the argument-preview portion from a tool-progress message.
+
+    Handles both render styles:
+    - Legacy / custom tools:  ``🔧 tool_name: "<preview>"`` (quoted)
+    - Friendly built-in verb: ``💻 Running <preview>`` (verb prefix, no quotes)
+    """
+    import re
+
+    # Legacy quoted form takes precedence when present.
+    match = re.search(r'"(.+)"', content)
+    if match:
+        return match.group(1)
+    # Friendly form: "<emoji> <verb> <preview>". The terminal verb is "Running".
+    marker = " Running "
+    idx = content.find(marker)
+    if idx != -1:
+        return content[idx + len(marker):].strip()
+    return None
+
+
 def _run_long_preview_helper(monkeypatch, tmp_path, preview_length=0):
     """Shared setup for long-preview truncation tests.
 
@@ -552,13 +573,10 @@ def test_all_mode_default_truncation_40_chars(monkeypatch, tmp_path):
     assert result["final_response"] == "done"
     assert adapter.sent
     content = adapter.sent[0]["content"]
-    # The long command should be truncated — total preview <= 40 chars
+    # The long command should be truncated — the preview portion <= 40 chars.
     assert "..." in content
-    # Extract the preview part between quotes
-    import re
-    match = re.search(r'"(.+)"', content)
-    assert match, f"No quoted preview found in: {content}"
-    preview_text = match.group(1)
+    preview_text = _extract_progress_preview(content)
+    assert preview_text is not None, f"No preview found in: {content}"
     assert len(preview_text) <= 40, f"Preview too long ({len(preview_text)}): {preview_text}"
 
 
@@ -568,11 +586,9 @@ def test_all_mode_respects_custom_preview_length(monkeypatch, tmp_path):
     assert result["final_response"] == "done"
     assert adapter.sent
     content = adapter.sent[0]["content"]
-    # With 120-char cap, the command (165 chars) should still be truncated but longer
-    import re
-    match = re.search(r'"(.+)"', content)
-    assert match, f"No quoted preview found in: {content}"
-    preview_text = match.group(1)
+    # With 120-char cap, the command (165 chars) should still be truncated but longer.
+    preview_text = _extract_progress_preview(content)
+    assert preview_text is not None, f"No preview found in: {content}"
     # Should be longer than the 40-char default
     assert len(preview_text) > 40, f"Preview suspiciously short ({len(preview_text)}): {preview_text}"
     # But still capped at 120
@@ -676,6 +692,48 @@ class QueuedCommentaryAgent:
             self.interim_assistant_callback("I'll inspect the repo first.", already_streamed=False)
         return {
             "final_response": f"final response {type(self).calls}",
+            "messages": [],
+            "api_calls": 1,
+        }
+
+
+class QueuedSilenceAgent:
+    """First turn is intentionally silent; queued follow-up still runs."""
+
+    calls = 0
+
+    def __init__(self, **kwargs):
+        self.tools = []
+
+    def run_conversation(self, message, conversation_history=None, task_id=None):
+        type(self).calls += 1
+        return {
+            "final_response": "NO_REPLY" if type(self).calls == 1 else "follow-up processed",
+            "messages": [],
+            "api_calls": 1,
+        }
+
+
+class QueuedFailedEmptyAgent:
+    """First turn fails empty; its normalized error must send before follow-up."""
+
+    calls = 0
+
+    def __init__(self, **kwargs):
+        self.tools = []
+
+    def run_conversation(self, message, conversation_history=None, task_id=None):
+        type(self).calls += 1
+        if type(self).calls == 1:
+            return {
+                "final_response": "",
+                "messages": [],
+                "api_calls": 1,
+                "failed": True,
+                "error": "provider exploded",
+            }
+        return {
+            "final_response": "follow-up processed",
             "messages": [],
             "api_calls": 1,
         }
@@ -1072,6 +1130,52 @@ async def test_run_agent_queued_message_does_not_treat_commentary_as_final(monke
     assert result["final_response"] == "final response 2"
     assert "I'll inspect the repo first." in sent_texts
     assert "final response 1" in sent_texts
+
+
+@pytest.mark.asyncio
+async def test_run_agent_suppresses_silent_first_turn_and_processes_queued_followup(
+    monkeypatch, tmp_path,
+):
+    """Regression: queued direct-send must not leak NO_REPLY to the channel."""
+    QueuedSilenceAgent.calls = 0
+    adapter, result = await _run_with_agent(
+        monkeypatch,
+        tmp_path,
+        QueuedSilenceAgent,
+        session_id="sess-queued-silence",
+        pending_text="queued follow-up",
+        platform=Platform.SLACK,
+        chat_id="C123",
+        thread_id="1712345678.000100",
+    )
+
+    sent_texts = [call["content"] for call in adapter.sent]
+    assert QueuedSilenceAgent.calls == 2
+    assert result["final_response"] == "follow-up processed"
+    assert "NO_REPLY" not in sent_texts
+
+
+@pytest.mark.asyncio
+async def test_run_agent_sends_normalized_failure_before_queued_followup(
+    monkeypatch, tmp_path,
+):
+    """Queued delivery uses finalized output, not the raw empty agent result."""
+    QueuedFailedEmptyAgent.calls = 0
+    adapter, result = await _run_with_agent(
+        monkeypatch,
+        tmp_path,
+        QueuedFailedEmptyAgent,
+        session_id="sess-queued-failed-empty",
+        pending_text="queued follow-up",
+        platform=Platform.SLACK,
+        chat_id="C123",
+        thread_id="1712345678.000100",
+    )
+
+    sent_texts = [call["content"] for call in adapter.sent]
+    assert QueuedFailedEmptyAgent.calls == 2
+    assert result["final_response"] == "follow-up processed"
+    assert any("The request failed: provider exploded" in text for text in sent_texts)
 
 
 @pytest.mark.asyncio
