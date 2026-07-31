@@ -138,7 +138,7 @@ class ThreadTranscriptWriter:
         _target_id = thread_id or chat_id or "unknown"
         _file = self._directory / f"{_target_id}.jsonl"
 
-        line = json.dumps(record, ensure_ascii=False) + "\n"
+        line = json.dumps(record, ensure_ascii=False, default=str) + "\n"
         _atomic_append(_file, line)
 
 

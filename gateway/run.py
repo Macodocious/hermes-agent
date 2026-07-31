@@ -70,6 +70,11 @@ _PLATFORM_CONNECT_TIMEOUT_SECS_DEFAULT = 30.0
 _ADAPTER_DISCONNECT_TIMEOUT_SECS_DEFAULT = 5.0
 _GATEWAY_PROXY_SSE_BUFFER_MAX_CHARS = 16 * 1024 * 1024
 _TELEGRAM_COMMAND_MENTION_RE = re.compile(r"(?<![\w:/])/([A-Za-z0-9][A-Za-z0-9_-]*)")
+# Ceiling for the planned-restart helper's wait on the old PID.  A hung
+# interpreter finalization must not block the restart indefinitely: once
+# the deadline passes the helper proceeds and systemd stops the old unit
+# itself (SIGTERM -> SIGKILL after TimeoutStopSec).
+_PLANNED_RESTART_WAIT_TIMEOUT_SECS = 30
 
 _TELEGRAM_NOISY_STATUS_RE = re.compile(
     r"("  # transient/auxiliary status that should stay in logs, not gateway chats
@@ -6888,7 +6893,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
             service_arg = shlex.quote(service_name)
             shell_cmd = (
-                f"while kill -0 {current_pid} 2>/dev/null; do sleep 0.2; done; "
+                f"deadline=$(( $(date +%s) + {_PLANNED_RESTART_WAIT_TIMEOUT_SECS} )); "
+                f"while kill -0 {current_pid} 2>/dev/null && "
+                f"[ \"$(date +%s)\" -lt \"$deadline\" ]; do sleep 0.2; done; "
                 f"{systemctl_scope} reset-failed {service_arg}; "
                 f"{systemctl_scope} restart {service_arg}"
             )
