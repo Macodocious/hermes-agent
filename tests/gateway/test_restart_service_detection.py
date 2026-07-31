@@ -112,3 +112,47 @@ async def test_false_external_supervisor_marker_keeps_detached_path(
     await runner._handle_restart_command(_make_restart_event())
 
     runner.request_restart.assert_called_once_with(detached=True, via_service=False)
+
+
+def test_systemd_restart_shortcut_bounds_wait_on_old_pid(monkeypatch):
+    """The planned-restart helper must not wait forever on a hung PID.
+
+    Regression: a gateway hung in interpreter finalization after a clean
+    /restart shutdown left the helper spinning on ``kill -0`` until a
+    manual restart killed the process (13-minute outage).  The wait is
+    now bounded by a deadline so the helper proceeds and systemd stops
+    the old unit itself.
+    """
+    import os
+    import shutil
+    import subprocess
+
+    captured: dict = {}
+
+    def _fake_run(cmd, **kwargs):
+        # system-scope MainPID matches the faked getpid() -> system unit path
+        return MagicMock(stdout="424242")
+
+    def _fake_popen(args, **kwargs):
+        captured["args"] = args
+        return MagicMock()
+
+    monkeypatch.setenv("INVOCATION_ID", "unit-test")
+    monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(os, "getpid", lambda: 424242)
+    monkeypatch.setattr(subprocess, "run", _fake_run)
+    monkeypatch.setattr(subprocess, "Popen", _fake_popen)
+    monkeypatch.setattr(
+        "hermes_cli.gateway.get_service_name", lambda: "hermes-gateway"
+    )
+
+    runner = object.__new__(gateway_run.GatewayRunner)
+    runner._launch_systemd_restart_shortcut()
+
+    assert captured["args"][0] == "/usr/bin/systemd-run"
+    shell_cmd = captured["args"][-1]
+    assert "deadline=$(( $(date +%s) + 30 ))" in shell_cmd
+    assert "while kill -0 424242 2>/dev/null &&" in shell_cmd
+    assert '[ "$(date +%s)" -lt "$deadline" ]' in shell_cmd
+    assert "systemctl reset-failed hermes-gateway" in shell_cmd
+    assert "systemctl restart hermes-gateway" in shell_cmd
