@@ -298,6 +298,7 @@ Discord behavior is controlled through two files: **`~/.hermes/.env`** for crede
 | `DISCORD_COMMAND_SYNC_POLICY` | No | `"safe"` | Controls native slash-command startup sync. `"safe"` diffs existing global commands and only updates what changed, recreating commands when Discord metadata changes cannot be applied via patch. `"bulk"` preserves the old `tree.sync()` behavior. `"off"` skips startup sync entirely. |
 | `DISCORD_REQUIRE_MENTION` | No | `true` | When `true`, the bot only responds in server channels when `@mentioned`. Set to `false` to respond to all messages in every channel. |
 | `DISCORD_THREAD_REQUIRE_MENTION` | No | `false` | When `true`, the in-thread mention shortcut is disabled — threads are gated the same as channels, requiring `@mention` even after the bot has already participated. Use this when multiple bots share a thread and you want each to fire only on explicit `@mention`. |
+| `DISCORD_AUTO_JOIN_CATEGORIES` | No | — | Comma-separated Discord category IDs. When a thread is created in a channel under one of these categories, the bot joins it immediately and responds to every message in it without requiring an `@mention`. |
 | `DISCORD_FREE_RESPONSE_CHANNELS` | No | — | Comma-separated channel IDs where the bot responds without requiring an `@mention`, even when `DISCORD_REQUIRE_MENTION` is `true`. |
 | `DISCORD_IGNORE_NO_MENTION` | No | `true` | When `true`, the bot stays silent if a message `@mentions` other users but does **not** mention the bot. Prevents the bot from jumping into conversations directed at other people. Only applies in server channels, not DMs. |
 | `DISCORD_AUTO_THREAD` | No | `true` | When `true`, automatically creates a new thread for every `@mention` in a text channel, so each conversation is isolated (similar to Slack behavior). Messages already inside threads or DMs are unaffected. |
@@ -334,6 +335,7 @@ The `discord` section in `~/.hermes/config.yaml` mirrors the env vars above. Con
 discord:
   require_mention: true           # Require @mention in server channels
   thread_require_mention: false   # If true, require @mention in threads too (multi-bot threads)
+  auto_join_categories: []  # Category IDs whose threads the bot auto-joins (no @mention needed)
   free_response_channels: ""      # Comma-separated channel IDs (or YAML list)
   auto_thread: true               # Auto-create threads on @mention
   reactions: true                 # Add emoji reactions during processing
@@ -377,6 +379,21 @@ discord:
   require_mention: true
   thread_require_mention: true    # multi-bot setup
 ```
+
+#### `discord.auto_join_categories`
+
+**Type:** list of category IDs — **Default:** empty
+
+When a thread is created in a channel under one of the listed categories, the bot joins it immediately and marks it as participated, so every message in the thread is answered without requiring an `@mention` — even when `require_mention: true`. Useful for per-symbol or per-topic channels where users create threads and expect the bot to follow along.
+
+```yaml
+discord:
+  require_mention: true
+  auto_join_categories:
+    - "1534623943246348459"       # threads in this category are auto-joined
+```
+
+Only public threads are auto-joined; private threads require an explicit add and are out of scope.
 
 #### `discord.free_response_channels`
 

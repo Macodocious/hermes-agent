@@ -1174,6 +1174,16 @@ class DiscordAdapter(BasePlatformAdapter):
                 await adapter_self._dispatch_discord_message(message)
 
             @self._client.event
+            async def on_thread_create(thread):
+                """Auto-join threads created in configured categories.
+
+                Joining makes the bot a thread member, so every message in
+                the thread is delivered and — once marked participated —
+                answered without an @mention (thread_require_mention=false).
+                """
+                await adapter_self._auto_join_thread(thread)
+
+            @self._client.event
             async def on_voice_state_update(member, before, after):
                 """Track voice channel join/leave events."""
                 # Only track channels where the bot is connected
@@ -5845,6 +5855,23 @@ class DiscordAdapter(BasePlatformAdapter):
             return bool(configured)
         return os.getenv("DISCORD_THREAD_REQUIRE_MENTION", "false").lower() in {"true", "1", "yes", "on"}
 
+    def _discord_auto_join_categories(self) -> set:
+        """Return Discord category IDs whose threads the bot auto-joins.
+
+        When a thread is created in a channel under one of these categories,
+        the bot joins it immediately and marks it as participated, so every
+        message in the thread is answered without requiring an @mention.
+        """
+        raw = self.config.extra.get("auto_join_categories")
+        if raw is None:
+            raw = os.getenv("DISCORD_AUTO_JOIN_CATEGORIES", "")
+        if isinstance(raw, list):
+            return {str(part).strip() for part in raw if str(part).strip()}
+        s = str(raw).strip() if raw is not None else ""
+        if s:
+            return {part.strip() for part in s.split(",") if part.strip()}
+        return set()
+
     def _discord_history_backfill(self) -> bool:
         """Return whether history backfill is enabled for shared sessions."""
         configured = self.config.extra.get("history_backfill")
@@ -6881,6 +6908,35 @@ class DiscordAdapter(BasePlatformAdapter):
         if parent_id is not None:
             return str(parent_id)
         return None
+
+    async def _auto_join_thread(self, thread: Any) -> None:
+        """Join a newly created thread when its parent channel's category is configured.
+
+        Only public threads (``type`` 11/12) are joined; private threads
+        require an explicit add, which is out of scope for auto-join. The
+        thread is marked participated so follow-up messages are answered
+        without an @mention.
+        """
+        try:
+            thread_type = getattr(thread, "type", None)
+            type_value = getattr(thread_type, "value", thread_type)
+            if type_value not in (11, 12):
+                return
+            parent = getattr(thread, "parent", None)
+            if parent is None:
+                return
+            category = getattr(parent, "category", None)
+            category_id = str(getattr(category, "id", "")) if category is not None else ""
+            if category_id not in self._discord_auto_join_categories():
+                return
+            await thread.join()
+            self._threads.mark(str(thread.id))
+            logger.info(
+                "[%s] Auto-joined thread %s in category %s",
+                self.name, thread.id, category_id,
+            )
+        except Exception as exc:  # noqa: BLE001 -- joining is best-effort; never break the gateway
+            logger.warning("[%s] Auto-join thread %s failed: %s", self.name, getattr(thread, "id", "?"), exc)
 
     def _is_forum_parent(self, channel: Any) -> bool:
         """Best-effort check for whether a Discord channel is a forum channel."""
@@ -9318,6 +9374,11 @@ def _apply_yaml_config(yaml_cfg: dict, discord_cfg: dict) -> dict | None:
         os.environ["DISCORD_REQUIRE_MENTION"] = str(discord_cfg["require_mention"]).lower()
     if "thread_require_mention" in discord_cfg and not os.getenv("DISCORD_THREAD_REQUIRE_MENTION"):
         os.environ["DISCORD_THREAD_REQUIRE_MENTION"] = str(discord_cfg["thread_require_mention"]).lower()
+    if "auto_join_categories" in discord_cfg and not os.getenv("DISCORD_AUTO_JOIN_CATEGORIES"):
+        _auto_join_cats = discord_cfg["auto_join_categories"]
+        if isinstance(_auto_join_cats, list):
+            _auto_join_cats = ",".join(str(part).strip() for part in _auto_join_cats if str(part).strip())
+        os.environ["DISCORD_AUTO_JOIN_CATEGORIES"] = str(_auto_join_cats)
     if "bots_require_inline_mention" in discord_cfg and not os.getenv("DISCORD_BOTS_REQUIRE_INLINE_MENTION"):
         os.environ["DISCORD_BOTS_REQUIRE_INLINE_MENTION"] = str(discord_cfg["bots_require_inline_mention"]).lower()
     platforms_cfg = yaml_cfg.get("platforms")
