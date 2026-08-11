@@ -200,9 +200,13 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
     # constraints on the agent (Priority, Rule, Forbidden, Action taxonomy)
     # and belong in the stable tier alongside identity and operational
     # guidance — not in the context tier with project files.  Gated by
-    # agent.skip_context_files (same gate as SOUL.md identity loading above)
-    # so that --ignore-rules / HERMES_IGNORE_RULES=1 disables them.
-    if not agent.skip_context_files:
+    # agent.load_rules (resolved at construction: explicit value, else
+    # ``not skip_context_files``) so that --ignore-rules /
+    # HERMES_IGNORE_RULES=1 disables them, while delegated subagents can
+    # opt back in via load_rules=True without loading project context
+    # files.  The getattr fallback keeps agents constructed without the
+    # attribute (tests, minimal callers) on the historical behavior.
+    if getattr(agent, "load_rules", not agent.skip_context_files):
         try:
             _rules_content = _r._load_hermes_rules(_r.get_hermes_home(), _ctx_len)
             if _rules_content and not _rules_content.startswith("[BLOCKED:"):
