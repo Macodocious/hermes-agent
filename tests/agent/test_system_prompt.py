@@ -10,6 +10,7 @@ def _make_agent(**overrides):
     base = dict(
         load_soul_identity=False,
         skip_context_files=False,
+        load_rules=True,
         valid_tool_names=[],
         _task_completion_guidance=False,
         _tool_use_enforcement=False,
@@ -102,6 +103,49 @@ class TestCodingContextBlock:
         monkeypatch.setenv("TERMINAL_CWD", str(tmp_path))
         agent = _make_agent(valid_tool_names=[], platform="cli")
         assert "coding agent" not in _stable_prompt(agent)
+
+
+class TestRulesLoadingGate:
+    """~/.hermes/rules/*.md loading is gated by agent.load_rules, decoupled
+    from skip_context_files so delegated subagents can stay rule-bound."""
+
+    def _rules_prompt(self, agent):
+        with (
+            patch("run_agent.load_soul_md", return_value=""),
+            patch("run_agent.build_nous_subscription_prompt", return_value=""),
+            patch("run_agent.build_environment_hints", return_value=""),
+            patch("run_agent.build_context_files_prompt", return_value=""),
+            patch(
+                "run_agent._load_hermes_rules",
+                return_value="## rules/01-test.md\n\nAlways verify.",
+            ),
+        ):
+            return build_system_prompt_parts(agent)["stable"]
+
+    def test_rules_load_when_load_rules_true_and_context_skipped(self):
+        """Subagent posture: skip_context_files=True but load_rules=True —
+        rules must still be injected."""
+        agent = _make_agent(skip_context_files=True, load_rules=True)
+        assert "Always verify." in self._rules_prompt(agent)
+
+    def test_rules_suppressed_when_load_rules_false(self):
+        """Explicit opt-out (--ignore-rules) suppresses rules even when
+        context files are not skipped."""
+        agent = _make_agent(skip_context_files=False, load_rules=False)
+        assert "Always verify." not in self._rules_prompt(agent)
+
+    def test_rules_suppressed_when_context_skipped_and_no_load_rules(self):
+        """Historical behavior: skip_context_files=True with no load_rules
+        attribute keeps rules suppressed (getattr fallback)."""
+        agent = _make_agent(skip_context_files=True)
+        del agent.load_rules
+        assert "Always verify." not in self._rules_prompt(agent)
+
+    def test_rules_load_by_default_when_context_not_skipped(self):
+        """Default posture: rules load when context files are not skipped."""
+        agent = _make_agent(skip_context_files=False)
+        del agent.load_rules
+        assert "Always verify." in self._rules_prompt(agent)
 
 
 class TestTelegramRichMessagesHint:

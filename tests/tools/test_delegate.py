@@ -525,6 +525,56 @@ class TestDelegateTask(unittest.TestCase):
 
         self.assertIs(mock_child._print_fn, sink)
 
+    def test_child_inherits_parent_rules_posture(self):
+        """Subagents inherit the parent's effective load_rules so delegated
+        work stays bound by ~/.hermes/rules/*.md (and explicit opt-outs
+        propagate too)."""
+        parent = _make_mock_parent(depth=0)
+        parent.load_rules = True
+
+        with patch("run_agent.AIAgent") as MockAgent:
+            mock_child = MagicMock()
+            MockAgent.return_value = mock_child
+
+            _build_child_agent(
+                task_index=0,
+                goal="Stay rule-bound",
+                context=None,
+                toolsets=None,
+                model=None,
+                max_iterations=10,
+                parent_agent=parent,
+                task_count=1,
+            )
+
+        _, kwargs = MockAgent.call_args
+        self.assertIs(kwargs["load_rules"], True)
+        self.assertTrue(kwargs["skip_context_files"])
+
+    def test_child_inherits_parent_rules_opt_out(self):
+        """An explicit rules opt-out on the parent (--ignore-rules) must
+        propagate to children so they do not silently regain rules."""
+        parent = _make_mock_parent(depth=0)
+        parent.load_rules = False
+
+        with patch("run_agent.AIAgent") as MockAgent:
+            mock_child = MagicMock()
+            MockAgent.return_value = mock_child
+
+            _build_child_agent(
+                task_index=0,
+                goal="No rules here",
+                context=None,
+                toolsets=None,
+                model=None,
+                max_iterations=10,
+                parent_agent=parent,
+                task_count=1,
+            )
+
+        _, kwargs = MockAgent.call_args
+        self.assertIs(kwargs["load_rules"], False)
+
     def test_child_uses_thinking_callback_when_progress_callback_available(self):
         parent = _make_mock_parent(depth=0)
         parent.tool_progress_callback = MagicMock()
