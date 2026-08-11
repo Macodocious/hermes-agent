@@ -9242,6 +9242,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             elif base_cmd.lstrip("/") in _get_plugin_cmd_handler_names():
                 from hermes_cli.plugins import (
                     get_plugin_command_handler,
+                    is_plugin_handoff_result,
                     resolve_plugin_command_result,
                 )
                 plugin_handler = get_plugin_command_handler(base_cmd.lstrip("/"))
@@ -9251,7 +9252,17 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                         result = resolve_plugin_command_result(
                             plugin_handler(user_args)
                         )
-                        if result:
+                        if is_plugin_handoff_result(result):
+                            # Plugin handoff: print the ack, then queue the
+                            # seed message as the next turn (the /queue and
+                            # bundle-invocation pattern).
+                            _ack = result.get("response") or ""
+                            if _ack:
+                                _cprint(_ack)
+                            _seed = result.get("agent_continue") or ""
+                            if _seed and hasattr(self, '_pending_input'):
+                                self._pending_input.put(_seed)
+                        elif result:
                             _cprint(str(result))
                     except Exception as e:
                         _cprint(f"\033[1;31mPlugin command error: {e}{_RST}")
