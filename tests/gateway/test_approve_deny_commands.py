@@ -172,6 +172,60 @@ class TestBlockingGatewayApproval:
         assert e1.event.is_set()
         assert e2.event.is_set()
 
+    def test_unregister_with_stale_cb_does_not_clobber_new_run(self):
+        """A stale run's delayed unregister must not pop a newer run's callback.
+
+        Regression for the interrupt re-dispatch race: the old run's finally
+        block unregisters with its own callback identity; if a newer run has
+        already registered, the stale unregister must leave the new callback
+        and its pending approval entries untouched.
+        """
+        from tools.approval import (
+            register_gateway_notify, unregister_gateway_notify,
+            _ApprovalEntry, _gateway_queues, _gateway_notify_cbs,
+        )
+        session_key = "test-race"
+        stale_cb = lambda d: None  # noqa: E731
+        fresh_cb = lambda d: None  # noqa: E731
+        register_gateway_notify(session_key, stale_cb)
+        register_gateway_notify(session_key, fresh_cb)
+
+        e1 = _ApprovalEntry({"command": "cmd1"})
+        _gateway_queues[session_key] = [e1]
+
+        # The stale run's finally fires with its own (old) callback identity.
+        unregister_gateway_notify(session_key, stale_cb)
+
+        assert _gateway_notify_cbs.get(session_key) is fresh_cb
+        assert _gateway_queues.get(session_key) == [e1]
+        assert not e1.event.is_set()
+
+        # The fresh run's own unregister still cleans up fully.
+        unregister_gateway_notify(session_key, fresh_cb)
+        assert session_key not in _gateway_notify_cbs
+        assert session_key not in _gateway_queues
+        assert e1.event.is_set()
+
+    def test_unregister_with_matching_cb_cleans_up(self):
+        """unregister_gateway_notify with the registered callback identity
+        removes the callback and signals pending entries."""
+        from tools.approval import (
+            register_gateway_notify, unregister_gateway_notify,
+            _ApprovalEntry, _gateway_queues, _gateway_notify_cbs,
+        )
+        session_key = "test-match"
+        cb = lambda d: None  # noqa: E731
+        register_gateway_notify(session_key, cb)
+
+        e1 = _ApprovalEntry({"command": "cmd1"})
+        _gateway_queues[session_key] = [e1]
+
+        unregister_gateway_notify(session_key, cb)
+
+        assert session_key not in _gateway_notify_cbs
+        assert session_key not in _gateway_queues
+        assert e1.event.is_set()
+
     def test_clear_session_denies_and_signals_all_entries(self):
         """clear_session must wake blocked entries during boundary cleanup."""
         from tools.approval import clear_session, _ApprovalEntry, _gateway_queues
