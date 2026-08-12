@@ -26,6 +26,17 @@ class _FakeTodoStore:
     def _hydrate(self, *_a, **_k):
         pass
 
+    def format_for_turn(self):
+        # No active block: the P2 injection must leave the user message
+        # content untouched in the default test flow.
+        return None
+
+    def capture_request(self, _content):
+        return None
+
+    def pending_captures(self):
+        return []
+
 
 class _FakeGuardrails:
     def __init__(self):

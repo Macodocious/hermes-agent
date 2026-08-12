@@ -161,6 +161,122 @@ def append_notes_to_multimodal_content(content: Any, notes: str) -> bool:
         return False
 
 
+# Goal-loop continuation prompts (hermes_cli/goals.py) are synthetic
+# user-role scaffolding fed back into run_conversation while a standing goal
+# is active. They are not new user requests and must never enter the P3
+# capture buffer. All three templates share this prefix.
+_GOAL_CONTINUATION_PREFIX = "[Continuing toward your standing goal]"
+
+# Synthetic scaffolding that must be excluded from P3 request capture:
+# system-injected notes (gateway resume/interrupt recovery) and goal-loop
+# continuations. Structural prefix checks only — no natural-language parsing.
+_CAPTURE_EXCLUDED_PREFIXES = (
+    "[System note:",
+    "[System:",
+    _GOAL_CONTINUATION_PREFIX,
+)
+
+
+def _last_assistant_issued_clarify(messages: List[Dict[str, Any]]) -> bool:
+    """True when the most recent assistant turn issued a ``clarify`` tool call.
+
+    A user answer to a pending clarify question is a response, not a new
+    request (P3 capture rule part 2). Scans backwards from the tail for the
+    nearest assistant message and checks its tool calls structurally.
+    """
+    for message in reversed(messages):
+        if not isinstance(message, dict):
+            continue
+        if message.get("role") != "assistant":
+            continue
+        tool_calls = message.get("tool_calls")
+        if not isinstance(tool_calls, list):
+            return False
+        for tool_call in tool_calls:
+            if isinstance(tool_call, dict):
+                function = tool_call.get("function")
+                name = function.get("name", "") if isinstance(function, dict) else ""
+            else:
+                function = getattr(tool_call, "function", None)
+                name = getattr(function, "name", "") or ""
+            if name == "clarify":
+                return True
+        return False
+    return False
+
+
+def _should_capture_user_request(
+    messages: List[Dict[str, Any]],
+    user_message: Any,
+    store: Any,
+) -> bool:
+    """Deterministic capture rule for the P3 candidate buffer (structural only).
+
+    Capture when BOTH hold:
+      1. The store has active items (pending/in_progress) — the "new request
+         while busy" case, exactly where tasks get lost. An empty list means
+         the message *is* the plan; normal flow, no capture.
+      2. The last assistant turn did not issue a ``clarify`` tool call — a
+         user answer to a pending question is a response, not a new request.
+
+    Over-capture is the default; junk is rejected by the model via explicit
+    disposition, never filtered here. Synthetic scaffolding (system notes,
+    goal-loop continuations) is excluded by prefix. The final determination
+    of whether a message is a new request belongs to the model, made against
+    the injected candidate buffer every turn.
+    """
+    if not getattr(store, "has_items", lambda: False)():
+        return False
+    text = str(user_message or "").strip()
+    if not text:
+        return False
+    if text.startswith(_CAPTURE_EXCLUDED_PREFIXES):
+        return False
+    if _last_assistant_issued_clarify(messages):
+        return False
+    return True
+
+
+def _apply_task_injection_and_capture(agent: Any, messages: List[Dict[str, Any]], user_msg: dict) -> None:
+    """P2/P3: fold the active-task block into the user turn and capture requests.
+
+    P2 (always-on visibility): when the store has active items or pending
+    captures, the rendered block is merged into the current user message's
+    content (anchor-first, mirroring ``_merge_anchor_into_user_message``) so
+    the model sees its task list on every user turn without a second
+    user-role message (#55677 role alternation) and without touching the
+    cached system prompt.
+
+    P3 (new-request capture): a structurally qualifying user turn is
+    captured into the persistent candidate buffer before the injection is
+    rendered, so the model dispositions it this same turn.
+
+    The API-facing message may carry the block while the persisted transcript
+    stays clean via the ``_persist_user_message_override`` mechanism
+    (``_apply_persist_user_message_override`` in run_agent.py), which the
+    persistence path applies at finalize time.
+    """
+    store = getattr(agent, "_todo_store", None)
+    if store is None:
+        return
+    capture = None
+    if _should_capture_user_request(messages, user_msg.get("content"), store):
+        capture = store.capture_request(user_msg.get("content"))
+    block = store.format_for_turn()
+    if not block:
+        return
+    content = user_msg.get("content")
+    if isinstance(content, list):
+        parts = list(content) if isinstance(content, list) else [
+            {"type": "text", "text": str(content or "")}
+        ]
+        user_msg["content"] = [
+            {"type": "text", "text": block}
+        ] + parts
+    else:
+        user_msg["content"] = f"{block}\n\n{str(content or '')}".strip()
+
+
 def reanchor_current_turn_user_idx(messages: List[Any], user_message: Any) -> int:
     """Locate this turn's user message after compaction rebuilt ``messages``.
 
@@ -454,6 +570,23 @@ def build_turn_context(
     # Hydrate todo store from conversation history.
     if conversation_history and not agent._todo_store.has_items():
         agent._hydrate_todo_store(conversation_history)
+
+    # P2/P3: fold the active task block into the user turn and capture new
+    # requests deterministically (structural rule, no NL parsing). Best-effort:
+    # a failure here must not break the turn (mirrors the hydration guard).
+    # The API-facing message carries the block; the persisted transcript stays
+    # clean via the _persist_user_message_override mechanism, unless the caller
+    # (gateway resume/voice) already pinned its own clean override.
+    try:
+        _apply_task_injection_and_capture(agent, messages, user_msg)
+        _clean_content = persist_user_message if persist_user_message is not None else user_message
+        if (
+            user_msg.get("content") != _clean_content
+            and getattr(agent, "_persist_user_message_override", None) is None
+        ):
+            agent._persist_user_message_override = _clean_content
+    except Exception:
+        pass
 
     # Hydrate per-session nudge counters from persisted history (issue #22357).
     if conversation_history and agent._user_turn_count == 0:

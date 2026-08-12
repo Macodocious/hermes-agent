@@ -2459,14 +2459,21 @@ def invoke_tool(agent, function_name: str, function_args: dict, effective_task_i
     if function_name == "todo":
         def _execute(next_args: dict) -> Any:
             from tools.todo_tool import todo_tool as _todo_tool
-            return _finish_agent_tool(
-                _todo_tool(
-                    todos=next_args.get("todos"),
-                    merge=next_args.get("merge", False),
-                    store=agent._todo_store,
-                ),
-                next_args,
+            result = _todo_tool(
+                todos=next_args.get("todos"),
+                merge=next_args.get("merge", False),
+                dispositions=next_args.get("dispositions"),
+                store=agent._todo_store,
             )
+            # Write-through (P1): persist after any mutating call so the
+            # state_meta row survives the per-message agent. Reads skip it.
+            if (
+                next_args.get("todos") is not None
+                or next_args.get("dispositions") is not None
+            ):
+                from hermes_cli.tasks import persist_todo_store
+                persist_todo_store(agent)
+            return _finish_agent_tool(result, next_args)
     elif function_name == "session_search":
         def _execute(next_args: dict) -> Any:
             session_db = agent._get_session_db_for_recall()

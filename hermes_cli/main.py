@@ -11601,6 +11601,7 @@ def _coalesce_session_name_args(argv: list) -> list:
         "tools",
         "mcp",
         "sessions",
+        "tasks",
         "insights",
         "version",
         "update",
@@ -12960,7 +12961,7 @@ _BUILTIN_SUBCOMMANDS = frozenset(
         "project", "proxy",
         "prompt-size",
         "send", "sessions", "setup",
-        "skills", "slack", "status", "tools", "uninstall", "update",
+        "skills", "slack", "status", "tasks", "tools", "uninstall", "update",
         "version", "webhook", "whatsapp", "whatsapp-cloud", "chat", "secrets", "security",
         # Help-ish invocations — plugin commands not being listed in
         # top-level --help is an acceptable trade-off for skipping an
@@ -15202,6 +15203,163 @@ def main():
         db.close()
 
     sessions_parser.set_defaults(func=cmd_sessions)
+
+    # =========================================================================
+    # tasks command
+    # =========================================================================
+    tasks_parser = subparsers.add_parser(
+        "tasks",
+        help="Manage persisted task state (list, show, clear)",
+        description="View and manage the persistent todo store "
+        "(state_meta todo:<session_id> rows)",
+    )
+    tasks_subparsers = tasks_parser.add_subparsers(dest="tasks_action")
+
+    tasks_list = tasks_subparsers.add_parser(
+        "list", help="List sessions with persisted task state"
+    )
+    tasks_list.add_argument(
+        "--session-id",
+        help="Show the full task list for one session (id or unique prefix)",
+    )
+
+    tasks_clear = tasks_subparsers.add_parser(
+        "clear", help="Delete persisted task state"
+    )
+    tasks_clear.add_argument(
+        "session_id", nargs="?", help="Session id (or unique prefix) to clear"
+    )
+    tasks_clear.add_argument(
+        "--all", action="store_true", help="Clear persisted task state for every session"
+    )
+    tasks_clear.add_argument(
+        "--yes", "-y", action="store_true", help="Skip confirmation"
+    )
+
+    def cmd_tasks(args):
+        from hermes_cli.tasks import clear_todo, load_todo
+
+        action = args.tasks_action
+
+        try:
+            from hermes_state import SessionDB
+
+            db = SessionDB()
+        except Exception as e:
+            print(f"Error: Could not open session database: {e}")
+            return
+
+        def _resolve_session(session_id: str) -> Optional[str]:
+            """Resolve a session id or unique prefix to a todo: key."""
+            keys = db.list_meta_keys("todo:")
+            if f"todo:{session_id}" in keys:
+                return session_id
+            matches = [
+                k[len("todo:"):]
+                for k in keys
+                if k.startswith(f"todo:{session_id}")
+            ]
+            if len(matches) == 1:
+                return matches[0]
+            return None
+
+        def _confirm(prompt: str) -> bool:
+            try:
+                return input(prompt).strip().lower() in {"y", "yes"}
+            except (EOFError, KeyboardInterrupt):
+                return False
+
+        if action == "list":
+            if args.session_id:
+                resolved = _resolve_session(args.session_id)
+                if resolved is None:
+                    print(f"No persisted task state for session {args.session_id}.")
+                    db.close()
+                    return
+                store = load_todo(resolved)
+                if store is None:
+                    print(f"No persisted task state for session {resolved}.")
+                    db.close()
+                    return
+                items = store.read()
+                if not items:
+                    print(f"Session {resolved}: no task items.")
+                for item in items:
+                    source = " (user)" if item.get("source") == "user" else ""
+                    print(f"  [{item['status']}] {item['id']}. {item['content']}{source}")
+                captures = store.pending_captures()
+                if captures:
+                    print("Captured requests:")
+                    for c in captures:
+                        print(f"  [captured] {c['id']}. {c['content']}")
+                db.close()
+                return
+
+            keys = db.list_meta_keys("todo:")
+            if not keys:
+                print("No persisted task state found.")
+                db.close()
+                return
+            print(f"{'Session':<24} {'Active':<8} {'Captures':<10} Preview")
+            print("─" * 90)
+            for key in keys:
+                session_id = key[len("todo:"):]
+                store = load_todo(session_id)
+                if store is None:
+                    continue
+                items = store.read()
+                active = [
+                    i for i in items if i["status"] in {"pending", "in_progress"}
+                ]
+                preview = active[0]["content"][:40] if active else "(no active items)"
+                print(
+                    f"{session_id:<24} {len(active):<8} "
+                    f"{len(store.pending_captures()):<10} {preview}"
+                )
+            db.close()
+            return
+
+        if action == "clear":
+            if args.all:
+                keys = db.list_meta_keys("todo:")
+                if not keys:
+                    print("No persisted task state found.")
+                    db.close()
+                    return
+                if not args.yes and not _confirm(
+                    f"Clear task state for {len(keys)} session(s)? [y/N] "
+                ):
+                    print("Aborted.")
+                    db.close()
+                    return
+                cleared = 0
+                for key in keys:
+                    if clear_todo(key[len("todo:"):]):
+                        cleared += 1
+                print(f"Cleared task state for {cleared} session(s).")
+                db.close()
+                return
+
+            if not args.session_id:
+                tasks_parser.print_help()
+                db.close()
+                return
+            resolved = _resolve_session(args.session_id)
+            if resolved is None:
+                print(f"No persisted task state for session {args.session_id}.")
+                db.close()
+                return
+            if clear_todo(resolved):
+                print(f"Cleared task state for session {resolved}.")
+            else:
+                print(f"No persisted task state for session {resolved}.")
+            db.close()
+            return
+
+        tasks_parser.print_help()
+        db.close()
+
+    tasks_parser.set_defaults(func=cmd_tasks)
 
     # =========================================================================
     # insights command  (parser built in hermes_cli/subcommands/insights.py)

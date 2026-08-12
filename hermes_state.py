@@ -7004,6 +7004,23 @@ class SessionDB:
             )
         self._execute_write(_do)
 
+    def delete_meta(self, key: str) -> None:
+        """Delete a value from the state_meta key/value store."""
+        def _do(conn):
+            conn.execute("DELETE FROM state_meta WHERE key = ?", (key,))
+        self._execute_write(_do)
+
+    def list_meta_keys(self, prefix: str = "") -> List[str]:
+        """List keys in the state_meta key/value store matching a prefix."""
+        if self._conn is None:
+            return []
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT key FROM state_meta WHERE key LIKE ? ORDER BY key",
+                (prefix + "%",),
+            ).fetchall()
+        return [r["key"] if isinstance(r, sqlite3.Row) else r[0] for r in rows]
+
     def apply_telegram_topic_migration(self) -> None:
         """Create Telegram DM topic-mode tables on explicit /topic opt-in.
 
