@@ -346,6 +346,7 @@ def init_agent(
     gateway_session_key: str = None,
     skip_context_files: bool = False,
     load_soul_identity: bool = False,
+    load_rules: bool = None,
     skip_memory: bool = False,
     session_db=None,
     parent_session_id: str = None,
@@ -408,6 +409,10 @@ def init_agent(
         load_soul_identity (bool): If True, still use ~/.hermes/SOUL.md as the primary
             identity even when skip_context_files=True. Project context files from the cwd
             remain skipped.
+        load_rules (bool): If True, load ~/.hermes/rules/*.md into the system prompt even
+            when skip_context_files=True. If False, suppress rules. If None (default),
+            rules load unless skip_context_files is True. Delegated subagents pass the
+            parent's effective value so delegated work stays bound by the same rules.
     """
     _install_safe_stdio()
 
@@ -440,6 +445,10 @@ def init_agent(
     agent.memory_notifications = "on"  # Memory update notifications: "off", "on", "verbose"
     agent.skip_context_files = skip_context_files
     agent.load_soul_identity = load_soul_identity
+    # Rules are user-wide behavioral constraints, independent of project
+    # context files. Explicit value wins; otherwise default to loading them
+    # unless context files were skipped (preserves --ignore-rules semantics).
+    agent.load_rules = load_rules if load_rules is not None else (not skip_context_files)
     agent.pass_session_id = pass_session_id
     agent.log_prefix_chars = log_prefix_chars
     agent.log_prefix = f"{log_prefix} " if log_prefix else ""

@@ -11270,7 +11270,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         # Plugin-registered slash commands
         if command:
             try:
-                from hermes_cli.plugins import get_plugin_command_handler
+                from hermes_cli.plugins import (
+                    get_plugin_command_handler,
+                    is_plugin_handoff_result,
+                )
                 # Normalize underscores to hyphens so Telegram's underscored
                 # autocomplete form matches plugin commands registered with
                 # hyphens. See hermes_cli/commands.py:_build_telegram_menu.
@@ -11280,7 +11283,28 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     result = plugin_handler(user_args)
                     if asyncio.iscoroutine(result):
                         result = await result
-                    return str(result) if result else None
+                    if is_plugin_handoff_result(result):
+                        # Plugin handoff: show the ack immediately, then
+                        # rewrite the turn to the seed message and fall
+                        # through to _handle_message_with_agent so the agent
+                        # continues the flow conversationally (the /blueprint
+                        # agent_seed pattern). The seed enters as a normal
+                        # user turn, preserving role alternation.
+                        _ack = result.get("response") or ""
+                        if _ack:
+                            try:
+                                adapter = self._adapter_for_source(source)
+                                if adapter:
+                                    _ack_meta = self._thread_metadata_for_source(source)
+                                    await adapter.send(str(source.chat_id), _ack, metadata=_ack_meta)
+                            except Exception:
+                                logger.debug("plugin handoff ack send failed", exc_info=True)
+                        try:
+                            event.text = result["agent_continue"]
+                        except Exception:
+                            return _ack or None
+                    else:
+                        return str(result) if result else None
             except Exception as e:
                 logger.warning("Plugin command dispatch failed: %s", e)
 
@@ -11415,7 +11439,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     # Normalize to hyphenated form before checking known
                     # built-ins (command may be an alias target set by the
                     # quick-command block above, so _cmd_def can be stale).
-                    if command.replace("_", "-") not in GATEWAY_KNOWN_COMMANDS:
+                    if not is_gateway_known_command(command.replace("_", "-")):
                         logger.warning(
                             "Unrecognized slash command /%s from %s — "
                             "replying with unknown-command notice",
@@ -21004,7 +21028,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     _conversation_kwargs["persist_user_timestamp"] = _persist_user_timestamp_override
                 result = agent.run_conversation(_api_run_message, **_conversation_kwargs)
             finally:
-                unregister_gateway_notify(_approval_session_key)
+                unregister_gateway_notify(_approval_session_key, _approval_notify_sync)
                 # Cancel any pending clarify entries so blocked agent
                 # threads don't hang past the end of the run (interrupt,
                 # completion, gateway shutdown).  Idempotent.

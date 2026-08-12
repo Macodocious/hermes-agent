@@ -2057,15 +2057,25 @@ def register_gateway_notify(session_key: str, cb) -> None:
         _gateway_notify_cbs[session_key] = cb
 
 
-def unregister_gateway_notify(session_key: str) -> None:
+def unregister_gateway_notify(session_key: str, cb=None) -> None:
     """Unregister the per-session gateway approval callback.
 
     Signals ALL blocked threads for this session so they don't hang forever
     (e.g. when the agent run finishes or is interrupted).
+
+    When *cb* is provided, the callback (and this session's pending approval
+    entries) are only removed if *cb* is the one currently registered for the
+    session. This makes unregister identity-aware: a stale run's delayed
+    cleanup (interrupt re-dispatch) can no longer clobber a newer run's
+    freshly-registered callback, which previously caused legitimate tool calls
+    to fail-closed as "User denied".
     """
     with _lock:
-        _gateway_notify_cbs.pop(session_key, None)
-        entries = _gateway_queues.pop(session_key, [])
+        if cb is None or _gateway_notify_cbs.get(session_key) is cb:
+            _gateway_notify_cbs.pop(session_key, None)
+            entries = _gateway_queues.pop(session_key, [])
+        else:
+            entries = []
     for entry in entries:
         entry.event.set()
 

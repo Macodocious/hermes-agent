@@ -13183,12 +13183,25 @@ def _(rid, params: dict) -> dict:
     try:
         from hermes_cli.plugins import (
             get_plugin_command_handler,
+            is_plugin_handoff_result,
             resolve_plugin_command_result,
         )
 
         handler = get_plugin_command_handler(name)
         if handler:
             result = resolve_plugin_command_result(handler(arg))
+            if is_plugin_handoff_result(result):
+                # Plugin handoff: the frontend's {type: "send"} path submits
+                # the seed as a user message and shows the notice as a
+                # system line (the same channel bundles and /queue use).
+                return _ok(
+                    rid,
+                    {
+                        "type": "send",
+                        "message": result["agent_continue"],
+                        "notice": result.get("response") or "",
+                    },
+                )
             return _ok(rid, {"type": "plugin", "output": str(result or "")})
     except Exception:
         pass
@@ -14827,6 +14840,7 @@ def _(rid, params: dict) -> dict:
         try:
             from hermes_cli.plugins import (
                 get_plugin_command_handler,
+                is_plugin_handoff_result,
                 resolve_plugin_command_result,
             )
 
@@ -14838,6 +14852,19 @@ def _(rid, params: dict) -> dict:
     if plugin_handler and resolve_plugin_command_result:
         try:
             result = resolve_plugin_command_result(plugin_handler(_cmd_arg))
+            if is_plugin_handoff_result(result):
+                # Plugin handoff: the generic slash.exec consumer routes
+                # dispatch-shaped payloads (any response with a string
+                # "type") through handleDispatch, which submits the seed
+                # as a user message and shows the notice as a system line.
+                return _ok(
+                    rid,
+                    {
+                        "type": "send",
+                        "message": result["agent_continue"],
+                        "notice": result.get("response") or "",
+                    },
+                )
             return _ok(rid, {"output": str(result or "(no output)")})
         except Exception as e:
             return _ok(rid, {"output": f"Plugin command error: {e}"})

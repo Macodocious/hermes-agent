@@ -1361,6 +1361,14 @@ def _build_child_agent(
     if isinstance(child_max_tokens, int):
         child_optional_kwargs["max_tokens"] = child_max_tokens
 
+    # Inherit the parent's rules posture so delegated work stays bound by
+    # the same ~/.hermes/rules/*.md constraints as the parent.  The parent's
+    # effective value is resolved at construction (agent.load_rules), so an
+    # explicit opt-out (--ignore-rules) propagates to children too.
+    child_load_rules = getattr(
+        parent_agent, "load_rules", not getattr(parent_agent, "skip_context_files", False)
+    )
+
     child = AIAgent(
         base_url=effective_base_url,
         api_key=effective_api_key,
@@ -1381,6 +1389,7 @@ def _build_child_agent(
         log_prefix=f"[subagent-{task_index}]",
         platform="subagent",
         skip_context_files=True,
+        load_rules=child_load_rules,
         skip_memory=True,
         clarify_callback=None,
         thinking_callback=child_thinking_cb,

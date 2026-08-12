@@ -2402,6 +2402,17 @@ def resolve_plugin_command_result(result: Any) -> Any:
     return outcome.get("value")
 
 
+def is_plugin_handoff_result(result: Any) -> bool:
+    """Return True if a plugin command result is a handoff dict.
+
+    A handoff dict carries ``agent_continue`` (the message injected as the
+    next user turn) and ``response`` (the immediate ack shown to the user).
+    Dispatch sites use this to continue the flow conversationally instead
+    of returning the raw result string to the platform.
+    """
+    return isinstance(result, dict) and bool(result.get("agent_continue"))
+
+
 def get_plugin_commands() -> Dict[str, dict]:
     """Return the full plugin commands dict (name → {handler, description, plugin}).
 
