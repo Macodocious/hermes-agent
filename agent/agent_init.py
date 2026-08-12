@@ -1381,6 +1381,21 @@ def init_agent(
     # In-memory todo list for task planning (one per agent/session)
     from tools.todo_tool import TodoStore
     agent._todo_store = TodoStore()
+
+    # DB-first load (P1): the persisted todo row (state_meta todo:<session_id>)
+    # is the source of truth across per-message agents. The history-scan
+    # hydration in turn_context stays as the legacy fallback for sessions
+    # with no row. Skipped for agents that must not touch the session store
+    # (background forks share a session_id and never go through init_agent,
+    # but the guard is cheap and matches _persist_disabled semantics).
+    try:
+        if session_id and not getattr(agent, "_persist_disabled", False):
+            from hermes_cli.tasks import load_todo as _load_todo
+            _persisted_store = _load_todo(session_id)
+            if _persisted_store is not None:
+                agent._todo_store = _persisted_store
+    except Exception:
+        pass
     
     # Load config once for memory, skills, and compression sections
     try:

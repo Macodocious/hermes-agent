@@ -15,6 +15,7 @@ Design:
 """
 
 import json
+from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 
 
@@ -37,6 +38,19 @@ MAX_TODO_ITEMS = 256
 MAX_TODO_RESULT_CHARS = 512_000
 _TRUNCATION_MARKER = "… [truncated]"
 
+# Bounds on the captured-request candidate buffer (P3). The buffer is
+# re-injected every turn alongside the active list, so it is bounded the
+# same way as the item list: a handful of candidates, content capped at the
+# same limit as todo items.
+MAX_CAPTURED_REQUESTS = 8
+# Lifecycle states for a captured request candidate. "captured" awaits
+# disposition; "merged"/"addressed"/"rejected" are archived outcomes.
+CAPTURE_STATUSES = {"captured", "merged", "addressed", "rejected"}
+# Provenance tag for user-sourced items (P4). Agent-authored items carry no
+# source key (backward compatible); user-sourced items are tagged and
+# protected from silent replacement.
+USER_SOURCE = "user"
+
 
 class TodoStore:
     """
@@ -50,6 +64,12 @@ class TodoStore:
 
     def __init__(self):
         self._items: List[Dict[str, str]] = []
+        # Persistent candidate buffer for new-request capture (P3). Each
+        # entry: {id, content, source: "user", status, captured_at}. Bounded
+        # to MAX_CAPTURED_REQUESTS; disposition is the model's explicit,
+        # recorded action (see disposition_captures).
+        self._captures: List[Dict[str, str]] = []
+        self._next_capture_id = 1
 
     def write(self, todos: List[Dict[str, Any]], merge: bool = False) -> List[Dict[str, str]]:
         """
@@ -61,8 +81,20 @@ class TodoStore:
                    existing items by id and append new ones.
         """
         if not merge:
-            # Replace mode: new list entirely
-            self._items = [self._validate(t) for t in self._dedupe_by_id(todos)]
+            # Replace mode: new list entirely. User-sourced active items are
+            # append-only (P4): a replace may mark them (complete/cancel) but
+            # never silently drop them, so any active user item missing from
+            # the new list is re-appended at the tail.
+            incoming = [self._validate(t) for t in self._dedupe_by_id(todos)]
+            incoming_ids = {item["id"] for item in incoming}
+            for item in self._items:
+                if (
+                    item.get("source") == USER_SOURCE
+                    and item["status"] in {"pending", "in_progress"}
+                    and item["id"] not in incoming_ids
+                ):
+                    incoming.append(item)
+            self._items = incoming
         else:
             # Merge mode: update existing items by id, append new ones
             existing = {item["id"]: item for item in self._items}
@@ -142,6 +174,171 @@ class TodoStore:
 
         return "\n".join(lines)
 
+    def format_for_turn(self) -> Optional[str]:
+        """Render the per-turn task block merged into the user turn (P2/P3).
+
+        Unlike ``format_for_injection`` (compression-only snapshot), this is
+        the always-on visibility block: the active list with the single
+        ``in_progress`` item flagged as the current task, plus any captured
+        request candidates awaiting disposition. Returns None when there is
+        nothing to show (no active items and no pending captures) so an idle
+        list injects zero tokens.
+        """
+        active_items = [
+            item for item in self._items
+            if item["status"] in {"pending", "in_progress"}
+        ]
+        pending_captures = self.pending_captures()
+        if not active_items and not pending_captures:
+            return None
+
+        markers = {
+            "completed": "[x]",
+            "in_progress": "[>]",
+            "pending": "[ ]",
+            "cancelled": "[~]",
+        }
+        lines = ["[Active tasks]"]
+        for item in active_items:
+            marker = markers.get(item["status"], "[?]")
+            suffix = "   ← CURRENT TASK" if item["status"] == "in_progress" else ""
+            lines.append(f"- {marker} {item['id']}. {item['content']} ({item['status']}){suffix}")
+        if pending_captures:
+            lines.append("[Captured requests]")
+            for capture in pending_captures:
+                lines.append(f"- [captured] {capture['id']}. {capture['content']}")
+            lines.append(
+                "Disposition each captured request: merge into your plan, "
+                "mark addressed, or reject."
+            )
+        return "\n".join(lines)
+
+    def capture_request(self, content: str) -> Optional[Dict[str, str]]:
+        """Capture a user turn as a candidate request (P3, deterministic tier).
+
+        Structural capture only — no natural-language parsing. The model
+        dispositions the candidate later via ``disposition_captures``; junk
+        is rejected explicitly, never filtered here. Returns the capture
+        entry, or None for empty content.
+        """
+        content = str(content).strip()
+        if not content:
+            return None
+        capture = {
+            "id": f"c{self._next_capture_id}",
+            "content": self._cap_content(content),
+            "source": USER_SOURCE,
+            "status": "captured",
+            "captured_at": datetime.now(timezone.utc).isoformat(),
+        }
+        self._next_capture_id += 1
+        self._captures.append(capture)
+        # Bound the buffer: keep the most recent candidates, dropping the
+        # oldest first (archived entries included — the audit trail is the
+        # DB row, which persists the same bounded buffer).
+        if len(self._captures) > MAX_CAPTURED_REQUESTS:
+            self._captures = self._captures[-MAX_CAPTURED_REQUESTS:]
+        return capture
+
+    def pending_captures(self) -> List[Dict[str, str]]:
+        """Candidates still awaiting disposition."""
+        return [c for c in self._captures if c["status"] == "captured"]
+
+    def disposition_captures(
+        self, dispositions: Any
+    ) -> List[Dict[str, str]]:
+        """Record explicit dispositions for captured candidates (P3).
+
+        Accepts a mapping ``{capture_id: status}`` or a list of
+        ``{"id": ..., "status": ...}`` dicts. Only known capture ids and
+        valid lifecycle statuses are applied; everything else is ignored so
+        a malformed model payload cannot corrupt the buffer. Returns the
+        still-pending captures after the update.
+        """
+        if isinstance(dispositions, dict):
+            pairs = dispositions.items()
+        elif isinstance(dispositions, list):
+            pairs = [
+                (str(d.get("id", "")).strip(), str(d.get("status", "")).strip().lower())
+                for d in dispositions
+                if isinstance(d, dict)
+            ]
+        else:
+            return self.pending_captures()
+
+        by_id = {c["id"]: c for c in self._captures}
+        for capture_id, status in pairs:
+            capture = by_id.get(capture_id)
+            if capture is not None and status in CAPTURE_STATUSES:
+                capture["status"] = status
+        return self.pending_captures()
+
+    def to_json(self) -> str:
+        """Serialize the full store state for persistence (P1)."""
+        return json.dumps(
+            {
+                "items": self._items,
+                "captures": self._captures,
+                "next_capture_id": self._next_capture_id,
+            },
+            ensure_ascii=False,
+        )
+
+    @classmethod
+    def from_json(cls, raw: str) -> "TodoStore":
+        """Restore a store from ``to_json`` output (P1).
+
+        Raises ValueError on malformed input so callers can fall back to
+        the history-scan path (mirrors ``GoalState.from_json``). Items are
+        re-validated through the same pipeline as writes; capture entries
+        are normalized defensively and invalid ones dropped.
+        """
+        data = json.loads(raw)
+        if not isinstance(data, dict):
+            raise ValueError("todo state must be a JSON object")
+        items = data.get("items")
+        if not isinstance(items, list):
+            raise ValueError("todo state 'items' must be a list")
+
+        store = cls()
+        store._items = [store._validate(t) for t in items]
+
+        captures = data.get("captures")
+        if isinstance(captures, list):
+            for c in captures:
+                if not isinstance(c, dict):
+                    continue
+                capture_id = str(c.get("id", "")).strip()
+                content = str(c.get("content", "")).strip()
+                if not capture_id or not content:
+                    continue
+                status = str(c.get("status", "captured")).strip().lower()
+                if status not in CAPTURE_STATUSES:
+                    status = "captured"
+                store._captures.append({
+                    "id": capture_id,
+                    "content": store._cap_content(content),
+                    "source": USER_SOURCE,
+                    "status": status,
+                    "captured_at": str(c.get("captured_at", "")).strip(),
+                })
+
+        # Never reuse a capture id that already exists in the restored
+        # buffer; the parsed counter wins only when it is strictly larger.
+        max_existing = 0
+        for c in store._captures:
+            try:
+                max_existing = max(max_existing, int(c["id"].lstrip("c")) or 0)
+            except ValueError:
+                continue
+        parsed_counter = data.get("next_capture_id")
+        try:
+            parsed_counter = int(parsed_counter) if parsed_counter is not None else 0
+        except (TypeError, ValueError):
+            parsed_counter = 0
+        store._next_capture_id = max(parsed_counter, max_existing + 1)
+        return store
+
     @staticmethod
     def _cap_content(content: str) -> str:
         """Truncate oversized todo content to MAX_TODO_CONTENT_CHARS.
@@ -180,7 +377,12 @@ class TodoStore:
         if status not in VALID_STATUSES:
             status = "pending"
 
-        return {"id": item_id, "content": content, "status": status}
+        validated = {"id": item_id, "content": content, "status": status}
+        # Provenance (P4): only the user tag is recognized; agent-authored
+        # items stay untagged for backward compatibility.
+        if str(item.get("source", "")).strip().lower() == USER_SOURCE:
+            validated["source"] = USER_SOURCE
+        return validated
 
     @staticmethod
     def _dedupe_by_id(todos: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -200,6 +402,7 @@ def todo_tool(
     todos: Optional[List[Dict[str, Any]]] = None,
     merge: bool = False,
     store: Optional[TodoStore] = None,
+    dispositions: Any = None,
 ) -> str:
     """
     Single entry point for the todo tool. Reads or writes depending on params.
@@ -208,9 +411,13 @@ def todo_tool(
         todos: if provided, write these items. If None, read current list.
         merge: if True, update by id. If False (default), replace entire list.
         store: the TodoStore instance from the AIAgent.
+        dispositions: optional mapping/list of captured-request dispositions
+            (P3). Applied after any write so a single call can both update
+            the plan and disposition captured requests.
 
     Returns:
-        JSON string with the full current list and summary metadata.
+        JSON string with the full current list, pending captured requests,
+        and summary metadata.
     """
     if store is None:
         return tool_error("TodoStore not initialized")
@@ -230,6 +437,9 @@ def todo_tool(
     else:
         items = store.read()
 
+    if dispositions is not None:
+        store.disposition_captures(dispositions)
+
     # Build summary counts
     pending = sum(1 for i in items if i["status"] == "pending")
     in_progress = sum(1 for i in items if i["status"] == "in_progress")
@@ -238,6 +448,7 @@ def todo_tool(
 
     return json.dumps({
         "todos": items,
+        "captures": store.pending_captures(),
         "summary": {
             "total": len(items),
             "pending": pending,
@@ -270,10 +481,17 @@ TODO_SCHEMA = {
         "- merge=false (default): replace the entire list with a fresh plan\n"
         "- merge=true: update existing items by id, add any new ones\n\n"
         "Each item: {id: string, content: string, "
-        "status: pending|in_progress|completed|cancelled}\n"
+        "status: pending|in_progress|completed|cancelled, "
+        "source?: user}\n"
+        "Items tagged source=user are the user's own tasks: you may mark "
+        "them completed/cancelled but never silently drop them.\n"
         "List order is priority. Only ONE item in_progress at a time.\n"
         "Mark items completed immediately when done. If something fails, "
         "cancel it and add a revised item.\n\n"
+        "Captured requests: when the response includes 'captures', "
+        "disposition each one explicitly via the 'dispositions' parameter "
+        "(merge into your plan, mark addressed, or reject). "
+        "Never leave a captured request undispositioned.\n\n"
         "Always returns the full current list."
     ),
     "parameters": {
@@ -297,6 +515,14 @@ TODO_SCHEMA = {
                             "type": "string",
                             "enum": ["pending", "in_progress", "completed", "cancelled"],
                             "description": "Current status"
+                        },
+                        "source": {
+                            "type": "string",
+                            "enum": ["user"],
+                            "description": (
+                                "Provenance tag. Only 'user' is recognized; "
+                                "omit for agent-authored items."
+                            )
                         }
                     },
                     "required": ["id", "content", "status"]
@@ -309,6 +535,29 @@ TODO_SCHEMA = {
                     "false (default): replace the entire list."
                 ),
                 "default": False
+            },
+            "dispositions": {
+                "type": "array",
+                "description": (
+                    "Captured-request dispositions: list of "
+                    "{id: capture_id, status: merged|addressed|rejected}. "
+                    "Disposition every captured request explicitly."
+                ),
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "type": "string",
+                            "description": "Captured request id (e.g. c1)"
+                        },
+                        "status": {
+                            "type": "string",
+                            "enum": ["merged", "addressed", "rejected"],
+                            "description": "Disposition outcome"
+                        }
+                    },
+                    "required": ["id", "status"]
+                }
             }
         },
         "required": []
@@ -324,7 +573,8 @@ registry.register(
     toolset="todo",
     schema=TODO_SCHEMA,
     handler=lambda args, **kw: todo_tool(
-        todos=args.get("todos"), merge=args.get("merge", False), store=kw.get("store")),
+        todos=args.get("todos"), merge=args.get("merge", False),
+        dispositions=args.get("dispositions"), store=kw.get("store")),
     check_fn=check_todo_requirements,
     emoji="📋",
 )

@@ -1346,6 +1346,15 @@ def compress_context(
                         migrate_goal_to_session(old_session_id, agent.session_id, reason="compression")
                     except Exception as _goal_err:
                         logger.debug("Could not migrate goal on compression: %s", _goal_err)
+                    # Carry the persisted todo store onto the continuation
+                    # session (P1). Compression rotates the session id; a
+                    # flat todo:<session_id> lookup dies at the boundary
+                    # without this (mirror migrate_goal_to_session).
+                    try:
+                        from hermes_cli.tasks import migrate_todo_to_session
+                        migrate_todo_to_session(old_session_id, agent.session_id, reason="compression")
+                    except Exception as _todo_err:
+                        logger.debug("Could not migrate todo on compression: %s", _todo_err)
                     # Auto-number the title for the continuation session
                     if old_title:
                         try:
