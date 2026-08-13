@@ -37,6 +37,7 @@ from agent.model_metadata import (
     estimate_messages_tokens_rough,
     estimate_request_tokens_rough,
 )
+from tools.todo_tool import USER_SOURCE
 
 logger = logging.getLogger(__name__)
 
@@ -235,6 +236,44 @@ def _should_capture_user_request(
     if _last_assistant_issued_clarify(messages):
         return False
     return True
+
+
+def _seed_todo_store_from_user_message(agent: Any, user_message: Any) -> None:
+    """Deterministic bootstrap: seed an empty todo store with the user turn.
+
+    The store is only ever populated by the model calling ``todo``, which is
+    voluntary behavior — nothing forces the first write, so a session can run
+    indefinitely with an empty list and ``/task`` reports "The task list for
+    this session is empty" even though the user has an active request. This
+    closes that hole mechanically: when the store has zero items after the
+    DB load and history-scan hydration, the current user message becomes the
+    active task (``in_progress``, ``source=user``) and is persisted, so the
+    P2 injection block renders it on every turn and ``/task`` always has
+    something to show.
+
+    The model keeps full ownership of the plan: the seeded item is a normal
+    user-sourced item, so ``todo`` writes may restructure or complete it
+    (P4 append-only protects it from silent replacement, never from the
+    model's explicit actions). Best-effort: a persistence failure must not
+    break the turn.
+    """
+    store = getattr(agent, "_todo_store", None)
+    if store is None or store.has_items():
+        return
+    text = str(user_message or "").strip()
+    if not text:
+        return
+    if text.startswith(_CAPTURE_EXCLUDED_PREFIXES):
+        return
+    store.write(
+        [{"id": "1", "content": text, "status": "in_progress", "source": USER_SOURCE}]
+    )
+    try:
+        from hermes_cli.tasks import persist_todo_store
+
+        persist_todo_store(agent)
+    except Exception:  # pragma: no cover - defensive, mirrors hydration guard
+        pass
 
 
 def _apply_task_injection_and_capture(agent: Any, messages: List[Dict[str, Any]], user_msg: dict) -> None:
@@ -570,6 +609,15 @@ def build_turn_context(
     # Hydrate todo store from conversation history.
     if conversation_history and not agent._todo_store.has_items():
         agent._hydrate_todo_store(conversation_history)
+
+    # Deterministic bootstrap: an empty store after load+hydration means the
+    # model never wrote a first todo — seed it with this user turn so the P2
+    # injection below has something to render and /task can never report an
+    # empty list. Best-effort, mirrors the hydration guard.
+    try:
+        _seed_todo_store_from_user_message(agent, user_message)
+    except Exception:
+        pass
 
     # P2/P3: fold the active task block into the user turn and capture new
     # requests deterministically (structural rule, no NL parsing). Best-effort:
