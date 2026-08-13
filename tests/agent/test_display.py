@@ -158,12 +158,13 @@ class TestBuildToolPreview:
     def test_todo_tool_read(self):
         result = build_tool_preview("todo", {"merge": False})
         assert result is not None
-        assert "reading" in result
+        assert "Reading the task list" in result
 
     def test_todo_tool_with_todos(self):
         result = build_tool_preview("todo", {"todos": [{"id": "1", "content": "test", "status": "pending"}]})
         assert result is not None
-        assert "1 task" in result
+        assert "Planning 1 task" in result
+        assert "task(s)" not in result
 
     def test_memory_tool_add(self):
         result = build_tool_preview("memory", {"action": "add", "target": "user", "content": "test note"})

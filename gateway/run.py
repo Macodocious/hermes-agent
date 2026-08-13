@@ -19481,8 +19481,8 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     preview = preview[:_cap - 3] + "..."
                 # Task-start notification: a todo call that moved an item to
                 # in_progress renders "Working on: <task>" instead of the
-                # generic "Updating tasks" bubble. The started item arrives
-                # via the started_task kwarg (see _detect_todo_task_start).
+                # generic todo bubble. The started item arrives via the
+                # started_task kwarg (see _detect_todo_task_start).
                 _started_task = kwargs.get("started_task")
                 if (
                     tool_name == "todo"
@@ -19494,19 +19494,25 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                         _started_content = _started_content[:_cap - 3] + "..."
                     msg = f"{emoji} Working on: {_started_content}"
                 else:
-                    # Friendly labels: render a human-phrased line for built-in
-                    # tools ("🔍 Searching the web for ...") by prefixing the verb
-                    # onto the preview the callback already computed (so the
-                    # command/url/query is preserved).  Custom/plugin/MCP tools
-                    # have no verb and fall back to the raw "tool_name: ..." form.
-                    _verb = get_tool_verb(tool_name)
-                    if _verb:
-                        if verb_drops_preview(tool_name):
-                            msg = f"{emoji} {_verb}"
-                        else:
-                            msg = f"{emoji} {_verb}{tool_verb_connector(tool_name)}{preview}"
+                    # todo's preview is a complete capitalized phrase
+                    # ("Reading the task list") — render it standalone
+                    # instead of the quoted "todo: …" legacy form.
+                    if tool_name == "todo":
+                        msg = f"{emoji} {preview}"
                     else:
-                        msg = f"{emoji} {tool_name}: \"{preview}\""
+                        # Friendly labels: render a human-phrased line for built-in
+                        # tools ("🔍 Searching the web for ...") by prefixing the verb
+                        # onto the preview the callback already computed (so the
+                        # command/url/query is preserved).  Custom/plugin/MCP tools
+                        # have no verb and fall back to the raw "tool_name: ..." form.
+                        _verb = get_tool_verb(tool_name)
+                        if _verb:
+                            if verb_drops_preview(tool_name):
+                                msg = f"{emoji} {_verb}"
+                            else:
+                                msg = f"{emoji} {_verb}{tool_verb_connector(tool_name)}{preview}"
+                        else:
+                            msg = f"{emoji} {tool_name}: \"{preview}\""
                 last_was_terminal_block[0] = False
             else:
                 msg = f"{emoji} {tool_name}..."
