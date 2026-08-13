@@ -116,6 +116,26 @@ class TestPlanToolBatchSegments:
         assert _kinds(segments) == ["parallel", "sequential"]
         assert [tc.id for tc in segments[1][1]] == ["c1"]
 
+    @pytest.mark.parametrize("name", ["write_file", "patch"])
+    def test_mutating_tools_never_parallelize(self, name):
+        """write_file/patch are approval-gated: a batch containing them must
+        never stack them in a parallel segment (N simultaneous approval
+        prompts on one turn)."""
+        calls = [
+            _tc("web_search", call_id="r1"),
+            _tc("web_search", call_id="r2"),
+            _tc(name, '{"path":"a.py"}', call_id="m1"),
+            _tc(name, '{"path":"b.py"}', call_id="m2"),
+            _tc("web_search", call_id="r3"),
+            _tc("web_search", call_id="r4"),
+        ]
+        segments = _plan_tool_batch_segments(calls)
+        kinds = _kinds(segments)
+        # Reads stay parallel around a strictly sequential mutating block.
+        assert kinds == ["parallel", "sequential", "parallel"]
+        assert [tc.id for tc in segments[1][1]] == ["m1", "m2"]
+        assert _flatten_ids(segments) == ["r1", "r2", "m1", "m2", "r3", "r4"]
+
     def test_malformed_args_call_is_a_barrier_not_a_batch_poison(self):
         calls = [
             _tc("web_search", call_id="r1"),
@@ -147,7 +167,7 @@ class TestPlanToolBatchSegments:
         ]
         segments = _plan_tool_batch_segments(calls)
         # w2 conflicts with w1 → closes the first run; w2+r2 form the second.
-        assert _kinds(segments) == ["parallel", "parallel"]
+        assert _kinds(segments) == ["parallel", "sequential"]
         assert [tc.id for tc in segments[0][1]] == ["w1", "r1"]
         assert [tc.id for tc in segments[1][1]] == ["w2", "r2"]
         # Order and completeness preserved.

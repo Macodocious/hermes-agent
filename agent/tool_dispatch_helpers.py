@@ -39,8 +39,9 @@ from tools.threat_patterns import scan_for_threats
 logger = logging.getLogger(__name__)
 
 # Tools that must never run concurrently (interactive / user-facing).
-# When any of these appear in a batch, we fall back to sequential execution.
-_NEVER_PARALLEL_TOOLS = frozenset({"clarify"})
+# Mutating file tools join the barrier: a parallel batch of them would
+# stack N simultaneous approval prompts on one turn.
+_NEVER_PARALLEL_TOOLS = frozenset({"clarify", "write_file", "patch"})
 
 # Read-only tools with no shared mutable session state.
 _PARALLEL_SAFE_TOOLS = frozenset({
