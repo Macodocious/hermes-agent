@@ -3,7 +3,8 @@
 Drives the real gateway ``progress_callback`` path (via ``_run_agent`` with a
 fake agent, mirroring ``test_run_progress_topics.py``) and asserts that a
 todo ``tool.started`` event carrying ``started_task`` renders a
-"📋 Working on: <task>" bubble instead of the generic "Updating tasks" line.
+"📋 Working on: <task>" bubble, while a plain todo update renders the
+standalone "📋 Updating 2 tasks" preview.
 """
 
 import importlib
@@ -76,7 +77,7 @@ class TaskStartAgent:
         assert cb is not None
         started_task = {"id": "1", "content": "ship the feature", "status": "in_progress"}
         cb(
-            "tool.started", "todo", "updating 1 task(s)",
+            "tool.started", "todo", "Updating 1 task",
             {"todos": [started_task]},
             started_task=started_task,
         )
@@ -99,7 +100,7 @@ class PlainTodoAgent:
         cb = self.tool_progress_callback
         assert cb is not None
         cb(
-            "tool.started", "todo", "updating 2 task(s)",
+            "tool.started", "todo", "Updating 2 tasks",
             {"todos": [{"id": "1", "content": "a", "status": "pending"}]},
         )
         time.sleep(0.35)
@@ -207,7 +208,7 @@ async def test_run_agent_generic_todo_bubble_without_started_task(monkeypatch, t
 
     assert result["final_response"] == "done"
     assert any(
-        "Updating tasks" in call["content"]
+        "Updating 2 tasks" in call["content"]
         for call in adapter.sent
     ), f"expected generic todo bubble in {adapter.sent}"
     assert not any(

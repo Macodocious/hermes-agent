@@ -10784,7 +10784,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             _pl = get_tool_preview_max_len()
             # Task-start notification: a todo call that moved an item to
             # in_progress shows "Working on: <task>" in the spinner instead
-            # of the generic "Updating tasks" label (started_task kwarg comes
+            # of the generic todo preview (started_task kwarg comes
             # from agent.tool_executor._detect_todo_task_start).
             _started_task = kwargs.get("started_task")
             if (

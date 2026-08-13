@@ -476,11 +476,12 @@ def build_tool_preview(tool_name: str, args: dict, max_len: int | None = None) -
         todos_arg = args.get("todos")
         merge = args.get("merge", False)
         if todos_arg is None:
-            return "reading task list"
-        elif merge:
-            return f"updating {len(todos_arg)} task(s)"
-        else:
-            return f"planning {len(todos_arg)} task(s)"
+            return "Reading the task list"
+        task_count = len(todos_arg)
+        noun = "task" if task_count == 1 else "tasks"
+        if merge:
+            return f"Updating {task_count} {noun}"
+        return f"Planning {task_count} {noun}"
 
     if tool_name in {"terminal", "execute_code"}:
         key = "code" if tool_name == "execute_code" else "command"
@@ -592,7 +593,6 @@ _TOOL_VERBS: dict[str, str] = {
     "cronjob": "Scheduling",
     "clarify": "Asking",
     "memory": "Updating memory",
-    "todo": "Updating tasks",
 }
 
 # Verbs that read better without the raw argument preview appended.
@@ -669,20 +669,30 @@ def build_status_phrase(tool_name: str, args: dict | None, max_len: int = 49) ->
         return None
 
     verb = _TOOL_VERBS.get(tool_name)
-    if verb:
-        head = f"is {verb[0].lower()}{verb[1:]}"
+    if tool_name == "todo":
+        # todo has no curated verb: its preview is a complete capitalized
+        # phrase ("Reading the task list"), so the preview becomes the status
+        # itself, lowercased to follow the "is …" phrasing.
+        phrase = "is working with tasks"
+        if args:
+            preview = build_tool_preview(tool_name, args, max_len=None)
+            if preview:
+                phrase = f"is {preview[0].lower()}{preview[1:]}"
     else:
-        # Custom / plugin / MCP tools: generic but still informative.
-        head = f"is using {tool_name}"
+        if verb:
+            head = f"is {verb[0].lower()}{verb[1:]}"
+        else:
+            # Custom / plugin / MCP tools: generic but still informative.
+            head = f"is using {tool_name}"
 
-    phrase = head
-    if args and verb and tool_name not in _TOOL_VERBS_NO_PREVIEW:
-        preview = build_tool_preview(tool_name, args, max_len=None)
-        if preview:
-            # Previews can contain newlines (terminal commands); keep the
-            # status to the first line.
-            preview = preview.splitlines()[0].strip()
-            phrase = f"{head}{tool_verb_connector(tool_name)}{preview}"
+        phrase = head
+        if args and verb and tool_name not in _TOOL_VERBS_NO_PREVIEW:
+            preview = build_tool_preview(tool_name, args, max_len=None)
+            if preview:
+                # Previews can contain newlines (terminal commands); keep the
+                # status to the first line.
+                preview = preview.splitlines()[0].strip()
+                phrase = f"{head}{tool_verb_connector(tool_name)}{preview}"
 
     if len(phrase) > max_len - 1:
         phrase = phrase[: max_len - 2].rstrip() + "…"
@@ -1422,16 +1432,21 @@ def _get_cute_tool_message(
                 pass
         if todos_arg is None:
             if total > 0:
-                return _wrap(f"┊ 📋 plan      {done}/{total} task(s)  {dur}")
-            return _wrap(f"┊ 📋 plan      reading tasks  {dur}")
+                noun = "task" if total == 1 else "tasks"
+                return _wrap(f"┊ 📋 plan      {done}/{total} {noun}  {dur}")
+            return _wrap(f"┊ 📋 plan      reading the task list  {dur}")
         elif merge:
             if total > 0 and done > 0:
-                return _wrap(f"┊ 📋 plan      update {done}/{total} ✓  {dur}")
-            return _wrap(f"┊ 📋 plan      update {len(todos_arg)} task(s)  {dur}")
+                noun = "task" if total == 1 else "tasks"
+                return _wrap(f"┊ 📋 plan      updated {done}/{total} {noun} ✓  {dur}")
+            noun = "task" if len(todos_arg) == 1 else "tasks"
+            return _wrap(f"┊ 📋 plan      updating {len(todos_arg)} {noun}  {dur}")
         else:
             if total > 0 and done > 0:
-                return _wrap(f"┊ 📋 plan      {done}/{total} task(s)  {dur}")
-            return _wrap(f"┊ 📋 plan      {len(todos_arg)} task(s)  {dur}")
+                noun = "task" if total == 1 else "tasks"
+                return _wrap(f"┊ 📋 plan      {done}/{total} {noun}  {dur}")
+            noun = "task" if len(todos_arg) == 1 else "tasks"
+            return _wrap(f"┊ 📋 plan      planning {len(todos_arg)} {noun}  {dur}")
     if tool_name == "session_search":
         return _wrap(f"┊ 🔍 recall    \"{_trunc(args.get('query', ''), 35)}\"  {dur}")
     if tool_name == "memory":

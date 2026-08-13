@@ -75,7 +75,7 @@ class TestCliSpinnerTaskStart:
     def test_working_on_label_replaces_generic(self):
         cli, _ = self._make_cli()
         cli._on_tool_progress(
-            "tool.started", "todo", "updating 1 task(s)",
+            "tool.started", "todo", "Updating 1 task",
             {"todos": [{"id": "1", "content": "ship the feature", "status": "in_progress"}]},
             started_task={"id": "1", "content": "ship the feature", "status": "in_progress"},
         )
@@ -84,9 +84,9 @@ class TestCliSpinnerTaskStart:
     def test_generic_label_when_no_started_task(self):
         cli, _ = self._make_cli()
         cli._on_tool_progress(
-            "tool.started", "todo", "reading task list", {},
+            "tool.started", "todo", "Reading the task list", {},
         )
-        assert cli._spinner_text == "📋 reading task list"
+        assert cli._spinner_text == "📋 Reading the task list"
 
     def test_working_on_truncates_long_content(self, monkeypatch):
         import agent.display
@@ -94,7 +94,7 @@ class TestCliSpinnerTaskStart:
         cli, _ = self._make_cli()
         long_content = "x" * 200
         cli._on_tool_progress(
-            "tool.started", "todo", "updating 1 task(s)",
+            "tool.started", "todo", "Updating 1 task",
             {"todos": [{"id": "1", "content": long_content, "status": "in_progress"}]},
             started_task={"id": "1", "content": long_content, "status": "in_progress"},
         )
