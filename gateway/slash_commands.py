@@ -1067,6 +1067,77 @@ class GatewaySlashCommandsMixin:
 
         return "\n".join(lines)
 
+    async def _handle_task_command(self, event: MessageEvent) -> str:
+        """Handle /task — show the current task and full task list.
+
+        Read-only and safe mid-run: never interrupts the running agent.
+        Resolution order mirrors /status — the live agent's in-memory todo
+        store first (it owns the authoritative per-turn state), then the
+        persisted SessionDB row as a fallback so the command stays useful
+        between turns and after restarts.
+        """
+        from gateway.run import _AGENT_PENDING_SENTINEL
+
+        session_entry = await self.async_session_store.get_or_create_session(event.source)
+        session_key = session_entry.session_key
+        session_id = session_entry.session_id
+
+        agent = (getattr(self, "_running_agents", {}) or {}).get(session_key)
+        is_running = agent is not None and agent is not _AGENT_PENDING_SENTINEL
+
+        store = getattr(agent, "_todo_store", None) if is_running else None
+        if store is None:
+            # Fall back to the persisted row for this session so /task works
+            # between turns and after gateway restarts.
+            if session_id:
+                try:
+                    from hermes_cli.tasks import load_todo
+                    store = load_todo(session_id)
+                except Exception:
+                    store = None
+
+        if store is None:
+            return "No task list for this session yet. Ask me to create one, or I'll track tasks as I work."
+
+        items = store.read()
+        if not items:
+            return "The task list for this session is empty."
+
+        current = None
+        for item in items:
+            if item.get("status") == "in_progress":
+                current = item
+                break
+
+        lines = []
+        if current is not None:
+            lines.append(f"**Working on:** {current['content']}")
+            lines.append("")
+        else:
+            lines.append("**Working on:** *(no task in progress)*")
+            lines.append("")
+
+        markers = {
+            "completed": "[x]",
+            "in_progress": "[>]",
+            "pending": "[ ]",
+            "cancelled": "[~]",
+        }
+        for item in items:
+            marker = markers.get(item.get("status", ""), "[?]")
+            suffix = "   ← CURRENT TASK" if item.get("status") == "in_progress" else ""
+            source_tag = " (user)" if item.get("source") == "user" else ""
+            lines.append(f"- {marker} {item['id']}. {item['content']}{source_tag}{suffix}")
+
+        captures = store.pending_captures()
+        if captures:
+            lines.append("")
+            lines.append("**Captured requests:**")
+            for capture in captures:
+                lines.append(f"- [captured] {capture['id']}. {capture['content']}")
+
+        return "\n".join(lines)
+
     async def _handle_stop_command(self, event: MessageEvent) -> Union[str, EphemeralReply]:
         """Handle /stop command - interrupt a running agent.
 

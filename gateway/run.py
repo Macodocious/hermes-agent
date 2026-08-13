@@ -10412,6 +10412,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             if event.get_command() == "status":
                 return await self._handle_status_command(event)
 
+            if event.get_command() == "task":
+                return await self._handle_task_command(event)
+
             # Resolve the command once for all early-intercept checks below.
             from hermes_cli.commands import (
                 ACTIVE_SESSION_BYPASS_COMMANDS as _DEDICATED_HANDLERS,
@@ -10946,6 +10949,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
         if canonical == "status":
             return await self._handle_status_command(event)
+
+        if canonical == "task":
+            return await self._handle_task_command(event)
 
         if canonical == "agents":
             return await self._handle_agents_command(event)
@@ -19473,19 +19479,34 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 _cap = _pl if _pl > 0 else 40
                 if len(preview) > _cap:
                     preview = preview[:_cap - 3] + "..."
-                # Friendly labels: render a human-phrased line for built-in
-                # tools ("🔍 Searching the web for ...") by prefixing the verb
-                # onto the preview the callback already computed (so the
-                # command/url/query is preserved).  Custom/plugin/MCP tools
-                # have no verb and fall back to the raw "tool_name: ..." form.
-                _verb = get_tool_verb(tool_name)
-                if _verb:
-                    if verb_drops_preview(tool_name):
-                        msg = f"{emoji} {_verb}"
-                    else:
-                        msg = f"{emoji} {_verb}{tool_verb_connector(tool_name)}{preview}"
+                # Task-start notification: a todo call that moved an item to
+                # in_progress renders "Working on: <task>" instead of the
+                # generic "Updating tasks" bubble. The started item arrives
+                # via the started_task kwarg (see _detect_todo_task_start).
+                _started_task = kwargs.get("started_task")
+                if (
+                    tool_name == "todo"
+                    and isinstance(_started_task, dict)
+                    and str(_started_task.get("content", "")).strip()
+                ):
+                    _started_content = str(_started_task["content"]).strip()
+                    if len(_started_content) > _cap:
+                        _started_content = _started_content[:_cap - 3] + "..."
+                    msg = f"{emoji} Working on: {_started_content}"
                 else:
-                    msg = f"{emoji} {tool_name}: \"{preview}\""
+                    # Friendly labels: render a human-phrased line for built-in
+                    # tools ("🔍 Searching the web for ...") by prefixing the verb
+                    # onto the preview the callback already computed (so the
+                    # command/url/query is preserved).  Custom/plugin/MCP tools
+                    # have no verb and fall back to the raw "tool_name: ..." form.
+                    _verb = get_tool_verb(tool_name)
+                    if _verb:
+                        if verb_drops_preview(tool_name):
+                            msg = f"{emoji} {_verb}"
+                        else:
+                            msg = f"{emoji} {_verb}{tool_verb_connector(tool_name)}{preview}"
+                    else:
+                        msg = f"{emoji} {tool_name}: \"{preview}\""
                 last_was_terminal_block[0] = False
             else:
                 msg = f"{emoji} {tool_name}..."

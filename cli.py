@@ -9104,6 +9104,8 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             self._handle_stop_command()
         elif canonical == "agents":
             self._handle_agents_command()
+        elif canonical == "task":
+            self._handle_task_command()
         elif canonical == "journey":
             self._handle_journey_command(cmd_original)
         elif canonical == "background":
@@ -10778,9 +10780,21 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         if function_name and not function_name.startswith("_"):
             from agent.display import get_tool_emoji
             emoji = get_tool_emoji(function_name)
-            label = preview or function_name
             from agent.display import get_tool_preview_max_len
             _pl = get_tool_preview_max_len()
+            # Task-start notification: a todo call that moved an item to
+            # in_progress shows "Working on: <task>" in the spinner instead
+            # of the generic "Updating tasks" label (started_task kwarg comes
+            # from agent.tool_executor._detect_todo_task_start).
+            _started_task = kwargs.get("started_task")
+            if (
+                function_name == "todo"
+                and isinstance(_started_task, dict)
+                and str(_started_task.get("content", "")).strip()
+            ):
+                label = f"Working on: {str(_started_task['content']).strip()}"
+            else:
+                label = preview or function_name
             if _pl > 0 and len(label) > _pl:
                 label = label[:_pl - 3] + "..."
             self._spinner_text = f"{emoji} {label}"

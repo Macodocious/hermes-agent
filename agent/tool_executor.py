@@ -20,7 +20,7 @@ import os
 import random
 import threading
 import time
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 
 from agent.display import (
     KawaiiSpinner,
@@ -51,6 +51,31 @@ from tools.tool_result_storage import (
 from tools.budget_config import BudgetConfig, DEFAULT_BUDGET, budget_for_context_window
 
 logger = logging.getLogger(__name__)
+
+
+def _detect_todo_task_start(agent, tool_name: str, args: dict) -> Optional[Dict[str, str]]:
+    """Detect a task-start transition in a pending todo write (task notification).
+
+    Called on ``tool.started`` — before the tool executes — so the store still
+    holds pre-call state. When the call is a todo write that moves an item to
+    ``in_progress`` (or creates a new item directly in_progress), returns that
+    item so the UI can render a "working on" bubble instead of the generic
+    "updating tasks" line. Returns None for every other call (reads, non-todo
+    tools, agents without a todo store).
+    """
+    if tool_name != "todo":
+        return None
+    store = getattr(agent, "_todo_store", None)
+    if store is None:
+        return None
+    try:
+        from tools.todo_tool import TodoStore
+        if not isinstance(store, TodoStore):
+            return None
+        return store.detect_task_start(args.get("todos"), bool(args.get("merge", False)))
+    except Exception:
+        logging.debug("Todo task-start detection failed", exc_info=True)
+        return None
 
 
 def _ensure_file_checkpoint(
@@ -568,7 +593,11 @@ def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effe
             try:
                 display_args = _redact_tool_args_for_display(name, args) or args
                 preview = _build_tool_preview(name, display_args)
-                agent.tool_progress_callback("tool.started", name, preview, display_args)
+                started_task = _detect_todo_task_start(agent, name, display_args)
+                agent.tool_progress_callback(
+                    "tool.started", name, preview, display_args,
+                    started_task=started_task,
+                )
             except Exception as cb_err:
                 logging.debug(f"Tool progress callback error: {cb_err}")
 
@@ -1198,7 +1227,11 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
             try:
                 display_args = _redact_tool_args_for_display(function_name, function_args) or function_args
                 preview = _build_tool_preview(function_name, display_args)
-                agent.tool_progress_callback("tool.started", function_name, preview, display_args)
+                started_task = _detect_todo_task_start(agent, function_name, display_args)
+                agent.tool_progress_callback(
+                    "tool.started", function_name, preview, display_args,
+                    started_task=started_task,
+                )
             except Exception as cb_err:
                 logging.debug(f"Tool progress callback error: {cb_err}")
 

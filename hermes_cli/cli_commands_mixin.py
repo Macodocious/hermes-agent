@@ -299,6 +299,56 @@ class CLICommandsMixin:
         agent_running = getattr(self, "_agent_running", False)
         _cprint(f"  Agent: {'running' if agent_running else 'idle'}")
 
+    def _handle_task_command(self):
+        """Handle /task — show the current task and full task list."""
+        from cli import _cprint
+
+        store = getattr(getattr(self, "agent", None), "_todo_store", None)
+        if store is None:
+            try:
+                from hermes_cli.tasks import load_todo
+                store = load_todo(self.session_id)
+            except Exception:
+                store = None
+
+        if store is None:
+            _cprint("  No task list for this session yet. Ask me to create one, or I'll track tasks as I work.")
+            return
+
+        items = store.read()
+        if not items:
+            _cprint("  The task list for this session is empty.")
+            return
+
+        current = None
+        for item in items:
+            if item.get("status") == "in_progress":
+                current = item
+                break
+
+        if current is not None:
+            _cprint(f"  Working on: {current['content']}")
+        else:
+            _cprint("  Working on: (no task in progress)")
+
+        markers = {
+            "completed": "[x]",
+            "in_progress": "[>]",
+            "pending": "[ ]",
+            "cancelled": "[~]",
+        }
+        for item in items:
+            marker = markers.get(item.get("status", ""), "[?]")
+            suffix = "   ← CURRENT TASK" if item.get("status") == "in_progress" else ""
+            source_tag = " (user)" if item.get("source") == "user" else ""
+            _cprint(f"    - {marker} {item['id']}. {item['content']}{source_tag}{suffix}")
+
+        captures = store.pending_captures()
+        if captures:
+            _cprint("  Captured requests:")
+            for capture in captures:
+                _cprint(f"    - [captured] {capture['id']}. {capture['content']}")
+
     def _handle_journey_command(self, cmd_original: str) -> None:
         """Handle /journey — the learning timeline (see `hermes journey`).
 
