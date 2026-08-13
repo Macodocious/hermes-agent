@@ -818,6 +818,27 @@ def _read_discord_prompt_timeout() -> int:
     return seconds
 
 
+def _read_clarify_view_timeout() -> int:
+    """Return the timeout (in seconds) for the clarify button view.
+
+    Reads ``agent.clarify_timeout`` via the gateway's canonical reader
+    (``tools.clarify_gateway.get_clarify_timeout``) so the Discord buttons
+    share the exact deadline the agent thread blocks on in
+    ``wait_for_response``. No upper clamp: the prompt is sent as a regular
+    channel message, so every button click is a fresh interaction with a
+    fresh token — Discord's ~15-minute token expiry only applies to the
+    initial interaction response (and to ephemeral messages), not to
+    component buttons on normal messages. Falls back to the historical 300s
+    default only if the config read itself explodes, so view construction
+    can never crash.
+    """
+    try:
+        from tools.clarify_gateway import get_clarify_timeout
+        return int(get_clarify_timeout())
+    except Exception:
+        return _DISCORD_PROMPT_TIMEOUT_DEFAULT
+
+
 class DiscordAdapter(BasePlatformAdapter):
     """
     Discord bot adapter.
@@ -8647,7 +8668,12 @@ def _define_discord_view_classes() -> None:
             allowed_user_ids: set,
             allowed_role_ids: Optional[set] = None,
         ):
-            super().__init__(timeout=_read_discord_prompt_timeout())
+            # Honor agent.clarify_timeout (same deadline the agent thread
+            # blocks on) so the buttons stay live as long as the prompt is
+            # answerable. No clamp — regular-message buttons get a fresh
+            # interaction token per click, so they outlive the 15-min
+            # initial-response token window.
+            super().__init__(timeout=_read_clarify_view_timeout())
             self.choices = list(choices)[:24]
             self.clarify_id = clarify_id
             self.allowed_user_ids = allowed_user_ids
