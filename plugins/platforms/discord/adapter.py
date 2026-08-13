@@ -6956,6 +6956,28 @@ class DiscordAdapter(BasePlatformAdapter):
                 "[%s] Auto-joined thread %s in category %s",
                 self.name, thread.id, category_id,
             )
+            # Observer hook for plugins that react to thread creation
+            # (e.g. seeding a discussion thread with context). Fired
+            # after join+mark so observers see a fully-participated
+            # thread. Best-effort: a plugin failure must not break the
+            # gateway event loop.
+            try:
+                from hermes_cli.plugins import invoke_hook as _invoke_hook
+
+                _invoke_hook(
+                    "on_thread_create",
+                    thread_id=str(thread.id),
+                    parent_channel_id=str(getattr(parent, "id", "")),
+                    guild_id=str(getattr(thread, "guild", None).id)
+                    if getattr(thread, "guild", None) is not None
+                    else "",
+                    thread_name=str(getattr(thread, "name", "")),
+                )
+            except Exception as hook_exc:  # noqa: BLE001 -- observer hook is best-effort
+                logger.warning(
+                    "[%s] on_thread_create hook failed for thread %s: %s",
+                    self.name, thread.id, hook_exc,
+                )
         except Exception as exc:  # noqa: BLE001 -- joining is best-effort; never break the gateway
             logger.warning("[%s] Auto-join thread %s failed: %s", self.name, getattr(thread, "id", "?"), exc)
 
