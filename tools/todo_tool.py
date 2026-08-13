@@ -140,6 +140,55 @@ class TodoStore:
         """Check if there are any items in the list."""
         return bool(self._items)
 
+    def detect_task_start(
+        self, todos: Optional[List[Dict[str, Any]]], merge: bool = False
+    ) -> Optional[Dict[str, str]]:
+        """Detect which task (if any) a pending write transitions to in_progress.
+
+        A task "starts" when an item that was not ``in_progress`` before the
+        call becomes ``in_progress``: either an existing item moving from
+        another status, or a brand-new item created directly as
+        ``in_progress``. Re-asserting the same item as ``in_progress`` is not
+        a start. Returns the first started item (list order is priority), or
+        None when no item starts. Mirrors the write pipeline's normalization
+        (string payloads, list shape, content fallback) so the detection
+        matches what ``write`` will actually store.
+        """
+        if todos is None:
+            return None
+        if isinstance(todos, str):
+            try:
+                todos = json.loads(todos)
+            except (json.JSONDecodeError, TypeError):
+                return None
+        if not isinstance(todos, list):
+            return None
+
+        previous = {item["id"]: item for item in self._items}
+        for t in todos:
+            if not isinstance(t, dict):
+                continue
+            item_id = str(t.get("id", "")).strip()
+            if not item_id:
+                continue
+            status = str(t.get("status", "")).strip().lower()
+            if status != "in_progress":
+                continue
+            prev_item = previous.get(item_id)
+            if prev_item is not None and prev_item["status"] == "in_progress":
+                continue  # Re-asserting the current task is not a start
+            content = str(t.get("content", "")).strip()
+            if not content and prev_item is not None:
+                content = prev_item["content"]
+            if not content:
+                content = "(no description)"
+            return {
+                "id": item_id,
+                "content": self._cap_content(content),
+                "status": "in_progress",
+            }
+        return None
+
     def format_for_injection(self) -> Optional[str]:
         """
         Render the todo list for post-compression injection.

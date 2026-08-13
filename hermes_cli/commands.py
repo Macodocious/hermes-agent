@@ -103,6 +103,7 @@ COMMAND_REGISTRY: list[CommandDef] = [
                aliases=("bg", "btw"), args_hint="<prompt>"),
     CommandDef("agents", "Show active agents and running tasks", "Session",
                aliases=("tasks",)),
+    CommandDef("task", "Show the current task and full task list", "Session"),
     CommandDef("journey", "Open the learning journey timeline",
                "Session", aliases=("learning", "memory-graph"), cli_only=True,
                args_hint="[list|delete <id>|edit <id>]",
