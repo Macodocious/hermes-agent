@@ -217,6 +217,14 @@ VALID_HOOKS: Set[str] = {
     "kanban_task_claimed",
     "kanban_task_completed",
     "kanban_task_blocked",
+    # Gateway thread-creation hook. Fired once per Discord thread created
+    # in a configured auto-join category, AFTER the adapter has joined
+    # and marked the thread participated. Observers only: return values
+    # are ignored. Plugins use this to react to thread creation (e.g.
+    # seed a discussion thread with context).
+    # Kwargs: thread_id: str, parent_channel_id: str, guild_id: str,
+    #         thread_name: str.
+    "on_thread_create",
 }
 
 ENTRY_POINTS_GROUP = "hermes_agent.plugins"
