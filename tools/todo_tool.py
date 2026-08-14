@@ -57,7 +57,7 @@ class TodoStore:
     In-memory todo list. One instance per AIAgent (one per session).
 
     Items are ordered -- list position is priority. Each item has:
-      - id: unique string identifier (agent-chosen)
+      - id: sequential integer identifier (store-assigned, 1..N in list order)
       - content: task description
       - status: pending | in_progress | completed | cancelled
     """
@@ -80,6 +80,9 @@ class TodoStore:
             merge: if False, replace the entire list. If True, update
                    existing items by id and append new ones.
         """
+        # Detect which task (if any) this write starts before mutating the
+        # list, so the invariant enforcement can keep it current.
+        started = self.detect_task_start(todos, merge=merge)
         if not merge:
             # Replace mode: new list entirely. User-sourced active items are
             # append-only (P4): a replace may mark them (complete/cancel) but
@@ -112,10 +115,17 @@ class TodoStore:
                         if status in VALID_STATUSES:
                             existing[item_id]["status"] = status
                 else:
-                    # New item -- validate fully and append to end
+                    # New item -- validate fully, assign the next sequential
+                    # id (merge mode keeps existing ids stable so merge-by-id
+                    # stays safe), append to end
                     validated = self._validate(t)
+                    validated["id"] = self._next_item_id()
                     existing[validated["id"]] = validated
                     self._items.append(validated)
+                    # The write-started placeholder resolves to the assigned
+                    # id so the invariant keeps THIS task current.
+                    if started is not None and started["id"] == item_id:
+                        started["id"] = validated["id"]
             # Rebuild _items preserving order for existing items
             seen = set()
             rebuilt = []
@@ -130,6 +140,13 @@ class TodoStore:
         # (list order is priority).
         if len(self._items) > MAX_TODO_ITEMS:
             self._items = self._items[:MAX_TODO_ITEMS]
+        # Enforce the single-current-task invariant (see
+        # _enforce_invariants). The started task (if any) is the one that
+        # stays current. Replace mode then renumbers to sequential ids;
+        # merge mode keeps existing ids stable (merge-by-id stays safe).
+        self._enforce_invariants(started_id=(started or {}).get("id"))
+        if not merge:
+            self._renumber_items(self._items)
         return self.read()
 
     def read(self) -> List[Dict[str, str]]:
@@ -139,6 +156,51 @@ class TodoStore:
     def has_items(self) -> bool:
         """Check if there are any items in the list."""
         return bool(self._items)
+
+    def _enforce_invariants(self, started_id: Optional[str] = None) -> None:
+        """Enforce the single-current-task invariant.
+
+        At most one item may be ``in_progress``. The kept item is the task
+        this write started (``started_id``, the same transition
+        ``detect_task_start`` detects) when it is present and
+        ``in_progress``; otherwise the first ``in_progress`` in list order
+        (list order is priority). Any others demote to ``pending``. This
+        makes two ``[>]`` rows impossible at the data layer regardless of
+        what the model writes, and makes a task switch via merge keep the
+        newly started task current.
+
+        Renumbering is NOT part of this method: replace-mode writes and
+        the load path renumber (see _renumber_items); merge-mode writes
+        keep existing ids stable so merge-by-id stays safe.
+        """
+        current_id = started_id
+        if current_id is not None:
+            current = next(
+                (item for item in self._items if item["id"] == current_id),
+                None,
+            )
+            if current is None or current["status"] != "in_progress":
+                current_id = None  # Started item not current in the new list
+        if current_id is None:
+            current = next(
+                (item for item in self._items if item["status"] == "in_progress"),
+                None,
+            )
+        for item in self._items:
+            if item["status"] == "in_progress" and item is not current:
+                item["status"] = "pending"
+
+    @classmethod
+    def _renumber_items(cls, items: List[Dict[str, str]]) -> List[Dict[str, str]]:
+        """Renumber a list of validated items to sequential ids (1..N)."""
+        for index, item in enumerate(items, start=1):
+            item["id"] = str(index)
+        return items
+
+    def _next_item_id(self) -> str:
+        """Next sequential id for merge-mode new items (max existing + 1)."""
+        numeric_ids = [int(item["id"]) for item in self._items if item["id"].isdigit()]
+        return str(max(numeric_ids, default=0) + 1)
 
     def detect_task_start(
         self, todos: Optional[List[Dict[str, Any]]], merge: bool = False
@@ -350,6 +412,10 @@ class TodoStore:
 
         store = cls()
         store._items = [store._validate(t) for t in items]
+        # Heal polluted persisted state on load: enforce the same
+        # single-current-task invariant and renumber to sequential ids.
+        store._enforce_invariants()
+        store._renumber_items(store._items)
 
         captures = data.get("captures")
         if isinstance(captures, list):
@@ -531,9 +597,15 @@ TODO_SCHEMA = {
         "Each item: {id: string, content: string, "
         "status: pending|in_progress|completed|cancelled, "
         "source?: user}\n"
+        "Ids are store-assigned: replace-mode writes renumber the list to "
+        "1..N in list order; merge-mode writes keep existing ids stable and "
+        "assign new items the next integer. Pass any unique placeholder "
+        "and read back the assigned id.\n"
         "Items tagged source=user are the user's own tasks: you may mark "
         "them completed/cancelled but never silently drop them.\n"
-        "List order is priority. Only ONE item in_progress at a time.\n"
+        "List order is priority. Only ONE item in_progress at a time — "
+        "the store enforces this: starting a new task automatically demotes "
+        "the previous current task to pending.\n"
         "Mark items completed immediately when done. If something fails, "
         "cancel it and add a revised item.\n\n"
         "Captured requests: when the response includes 'captures', "

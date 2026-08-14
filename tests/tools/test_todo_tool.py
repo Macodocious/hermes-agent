@@ -31,9 +31,11 @@ class TestWriteAndRead:
             {"id": "2", "content": "Other task", "status": "pending"},
             {"id": "1", "content": "Latest version", "status": "in_progress"},
         ])
+        # Duplicate ids keep the last occurrence; replace-mode renumbers to
+        # sequential ids in list order.
         assert result == [
-            {"id": "2", "content": "Other task", "status": "pending"},
-            {"id": "1", "content": "Latest version", "status": "in_progress"},
+            {"id": "1", "content": "Other task", "status": "pending"},
+            {"id": "2", "content": "Latest version", "status": "in_progress"},
         ]
 
 
