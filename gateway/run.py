@@ -19480,7 +19480,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 if len(preview) > _cap:
                     preview = preview[:_cap - 3] + "..."
                 # Task-start notification: a todo call that moved an item to
-                # in_progress renders "Working on: <task>" instead of the
+                # in_progress renders "Working on <task>" instead of the
                 # generic todo bubble. The started item arrives via the
                 # started_task kwarg (see _detect_todo_task_start).
                 _started_task = kwargs.get("started_task")
@@ -19492,7 +19492,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     _started_content = str(_started_task["content"]).strip()
                     if len(_started_content) > _cap:
                         _started_content = _started_content[:_cap - 3] + "..."
-                    msg = f"{emoji} Working on: {_started_content}"
+                    msg = f"{emoji} Working on {_started_content}"
                 else:
                     # todo's preview is a complete capitalized phrase
                     # ("Reading the task list") — render it standalone

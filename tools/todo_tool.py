@@ -250,8 +250,7 @@ class TodoStore:
         lines = ["[Active tasks]"]
         for item in active_items:
             marker = markers.get(item["status"], "[?]")
-            suffix = "   ← CURRENT TASK" if item["status"] == "in_progress" else ""
-            lines.append(f"- {marker} {item['id']}. {item['content']} ({item['status']}){suffix}")
+            lines.append(f"- {marker} {item['id']}. {item['content']}")
         if pending_captures:
             lines.append("[Captured requests]")
             for capture in pending_captures:

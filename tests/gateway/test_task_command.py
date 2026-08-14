@@ -107,9 +107,10 @@ async def test_task_command_shows_current_task_and_full_list():
 
     result = await runner._handle_message(_make_event("/task"))
 
-    assert "**Working on:** Working thing" in result
+    assert "**Working on:**" not in result
     assert "- [x] 1. Done thing" in result
-    assert "- [>] 2. Working thing   ← CURRENT TASK" in result
+    assert "- [>] 2. Working thing" in result
+    assert "← CURRENT TASK" not in result
     assert "- [ ] 3. Next thing" in result
     assert "**Captured requests:**" in result
     assert "- [captured] c1. Captured ask" in result
@@ -132,8 +133,9 @@ async def test_task_command_does_not_require_running_agent(monkeypatch):
 
     result = await runner._handle_message(_make_event("/task"))
 
-    assert "**Working on:** Working thing" in result
-    assert "- [>] 2. Working thing   ← CURRENT TASK" in result
+    assert "**Working on:**" not in result
+    assert "- [>] 2. Working thing" in result
+    assert "← CURRENT TASK" not in result
 
 
 @pytest.mark.asyncio
@@ -166,7 +168,7 @@ async def test_task_command_no_in_progress_reports_none():
 
     result = await runner._handle_message(_make_event("/task"))
 
-    assert "**Working on:** *(no task in progress)*" in result
+    assert "**Working on:**" not in result
     assert "- [x] 1. Done thing" in result
     assert "- [ ] 2. Next thing" in result
 

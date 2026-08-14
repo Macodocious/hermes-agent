@@ -1103,20 +1103,7 @@ class GatewaySlashCommandsMixin:
         if not items:
             return "The task list for this session is empty."
 
-        current = None
-        for item in items:
-            if item.get("status") == "in_progress":
-                current = item
-                break
-
         lines = []
-        if current is not None:
-            lines.append(f"**Working on:** {current['content']}")
-            lines.append("")
-        else:
-            lines.append("**Working on:** *(no task in progress)*")
-            lines.append("")
-
         markers = {
             "completed": "[x]",
             "in_progress": "[>]",
@@ -1125,9 +1112,8 @@ class GatewaySlashCommandsMixin:
         }
         for item in items:
             marker = markers.get(item.get("status", ""), "[?]")
-            suffix = "   ← CURRENT TASK" if item.get("status") == "in_progress" else ""
             source_tag = " (user)" if item.get("source") == "user" else ""
-            lines.append(f"- {marker} {item['id']}. {item['content']}{source_tag}{suffix}")
+            lines.append(f"- {marker} {item['id']}. {item['content']}{source_tag}")
 
         captures = store.pending_captures()
         if captures:
