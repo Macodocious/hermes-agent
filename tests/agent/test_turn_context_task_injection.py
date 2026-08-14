@@ -14,6 +14,7 @@ import pytest
 from agent.turn_context import (
     _apply_task_injection_and_capture,
     _last_assistant_issued_clarify,
+    _seed_todo_store_from_user_message,
     _should_capture_user_request,
 )
 from tools.todo_tool import TodoStore
@@ -139,3 +140,60 @@ class TestApplyTaskInjection:
 
 def _agent_with_store(store):
     return types.SimpleNamespace(_todo_store=store)
+
+
+class TestSeedTodoStoreFromUserMessage:
+    def test_seeds_empty_store_with_user_message(self):
+        store = TodoStore()
+        agent = _agent_with_store(store)
+        _seed_todo_store_from_user_message(agent, "Build the thing")
+        items = store.read()
+        assert len(items) == 1
+        assert items[0]["content"] == "Build the thing"
+        assert items[0]["status"] == "in_progress"
+        assert items[0]["source"] == "user"
+
+    def test_no_seed_when_store_has_items(self):
+        store = TodoStore()
+        store.write([{"id": "1", "content": "busy", "status": "in_progress"}])
+        agent = _agent_with_store(store)
+        _seed_todo_store_from_user_message(agent, "New request")
+        assert len(store.read()) == 1
+        assert store.read()[0]["content"] == "busy"
+
+    def test_no_seed_when_no_store(self):
+        agent = types.SimpleNamespace()  # no _todo_store
+        _seed_todo_store_from_user_message(agent, "hi")  # must not raise
+
+    def test_no_seed_for_empty_message(self):
+        store = TodoStore()
+        agent = _agent_with_store(store)
+        _seed_todo_store_from_user_message(agent, "   ")
+        assert store.read() == []
+
+    def test_no_seed_for_system_note_prefix(self):
+        store = TodoStore()
+        agent = _agent_with_store(store)
+        _seed_todo_store_from_user_message(agent, "[System note: A new message has arrived]")
+        assert store.read() == []
+
+    def test_seeded_item_survives_replace_write(self):
+        # P4: a user-sourced active item is append-only — a model replace
+        # that omits it must not silently drop it.
+        store = TodoStore()
+        agent = _agent_with_store(store)
+        _seed_todo_store_from_user_message(agent, "Build the thing")
+        store.write([{"id": "2", "content": "Different plan", "status": "pending"}])
+        contents = [item["content"] for item in store.read()]
+        assert "Build the thing" in contents
+        assert "Different plan" in contents
+
+    def test_seeded_item_round_trips_through_json(self):
+        store = TodoStore()
+        agent = _agent_with_store(store)
+        _seed_todo_store_from_user_message(agent, "Build the thing")
+        restored = TodoStore.from_json(store.to_json())
+        items = restored.read()
+        assert len(items) == 1
+        assert items[0]["content"] == "Build the thing"
+        assert items[0]["source"] == "user"
