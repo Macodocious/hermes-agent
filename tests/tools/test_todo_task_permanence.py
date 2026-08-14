@@ -168,10 +168,12 @@ class TestProvenance:
         # Model replaces the list with only its own new plan.
         store.write([{"id": "9", "content": "New plan", "status": "pending"}])
         items = store.read()
-        ids = {item["id"] for item in items}
-        assert "1" in ids  # user item re-appended
-        assert "9" in ids
-        assert items[-1]["id"] == "1"  # appended at the tail
+        contents = [item["content"] for item in items]
+        assert "User task" in contents  # user item re-appended
+        assert "New plan" in contents
+        assert items[-1]["content"] == "User task"  # appended at the tail
+        # Sequential numbering schema: ids are 1..N in list order.
+        assert [item["id"] for item in items] == ["1", "2"]
 
     def test_user_item_can_be_marked_completed(self):
         store = TodoStore()
@@ -187,8 +189,8 @@ class TestProvenance:
             {"id": "1", "content": "Done task", "status": "completed", "source": "user"},
         ])
         store.write([{"id": "9", "content": "New plan", "status": "pending"}])
-        ids = {item["id"] for item in store.read()}
-        assert "1" not in ids  # completed user items may leave the list
+        contents = [item["content"] for item in store.read()]
+        assert "Done task" not in contents  # completed user items may leave the list
 
 
 class TestFormatForTurn:

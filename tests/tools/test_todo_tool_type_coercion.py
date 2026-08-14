@@ -23,7 +23,8 @@ class TestJsonStringCoercion:
         result = json.loads(todo_tool(todos=todos_str, store=store))
         assert "error" not in result
         assert result["summary"]["total"] == 2
-        assert result["todos"][0]["id"] == "t1"
+        # Replace-mode write renumbers ids to sequential 1..N in list order.
+        assert result["todos"][0]["id"] == "1"
         assert result["todos"][1]["status"] == "in_progress"
 
     def test_unparseable_string_returns_error(self):
@@ -50,7 +51,6 @@ class TestNonDictListItems:
         store = TodoStore()
         result = store.write(["not-a-dict"])
         assert len(result) == 1
-        assert result[0]["id"] == "?"
         assert result[0]["content"] == "(invalid item)"
         assert result[0]["status"] == "pending"
 
@@ -63,10 +63,10 @@ class TestNonDictListItems:
             {"id": "2", "content": "Another task", "status": "completed"},
         ])
         assert len(result) == 4
-        # Valid items are preserved
+        # Valid items are preserved (replace-mode renumbers ids to 1..N)
         assert result[0]["id"] == "1"
         assert result[0]["content"] == "Real task"
-        assert result[3]["id"] == "2"
+        assert result[3]["id"] == "4"
         # Invalid items get placeholder values
         assert result[1]["content"] == "(invalid item)"
         assert result[2]["content"] == "(invalid item)"
@@ -75,7 +75,7 @@ class TestNonDictListItems:
         store = TodoStore()
         result = store.write([None])
         assert len(result) == 1
-        assert result[0]["id"] == "?"
+        assert result[0]["content"] == "(invalid item)"
 
     def test_integer_item_in_list(self):
         store = TodoStore()
