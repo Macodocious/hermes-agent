@@ -320,17 +320,6 @@ class CLICommandsMixin:
             _cprint("  The task list for this session is empty.")
             return
 
-        current = None
-        for item in items:
-            if item.get("status") == "in_progress":
-                current = item
-                break
-
-        if current is not None:
-            _cprint(f"  Working on: {current['content']}")
-        else:
-            _cprint("  Working on: (no task in progress)")
-
         markers = {
             "completed": "[x]",
             "in_progress": "[>]",
@@ -339,9 +328,8 @@ class CLICommandsMixin:
         }
         for item in items:
             marker = markers.get(item.get("status", ""), "[?]")
-            suffix = "   ← CURRENT TASK" if item.get("status") == "in_progress" else ""
             source_tag = " (user)" if item.get("source") == "user" else ""
-            _cprint(f"    - {marker} {item['id']}. {item['content']}{source_tag}{suffix}")
+            _cprint(f"    - {marker} {item['id']}. {item['content']}{source_tag}")
 
         captures = store.pending_captures()
         if captures:

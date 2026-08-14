@@ -3,7 +3,7 @@
 Drives the real gateway ``progress_callback`` path (via ``_run_agent`` with a
 fake agent, mirroring ``test_run_progress_topics.py``) and asserts that a
 todo ``tool.started`` event carrying ``started_task`` renders a
-"📋 Working on: <task>" bubble, while a plain todo update renders the
+"📋 Working on <task>" bubble, while a plain todo update renders the
 standalone "📋 Updating 2 tasks" preview.
 """
 
@@ -175,7 +175,7 @@ async def test_run_agent_working_on_bubble_when_task_starts(monkeypatch, tmp_pat
 
     assert result["final_response"] == "done"
     assert any(
-        "Working on: ship the feature" in call["content"]
+        "Working on ship the feature" in call["content"]
         for call in adapter.sent
     ), f"expected working-on bubble in {adapter.sent}"
 
@@ -212,6 +212,6 @@ async def test_run_agent_generic_todo_bubble_without_started_task(monkeypatch, t
         for call in adapter.sent
     ), f"expected generic todo bubble in {adapter.sent}"
     assert not any(
-        "Working on:" in call["content"]
+        "Working on " in call["content"]
         for call in adapter.sent
     ), f"unexpected working-on bubble in {adapter.sent}"

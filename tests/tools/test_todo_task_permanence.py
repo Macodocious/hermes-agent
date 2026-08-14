@@ -205,8 +205,8 @@ class TestFormatForTurn:
         text = store.format_for_turn()
         assert text is not None
         assert "[Active tasks]" in text
-        assert "- [ ] 1. Waiting (pending)" in text
-        assert "← CURRENT TASK" in text
+        assert "- [ ] 1. Waiting" in text
+        assert "← CURRENT TASK" not in text
         assert "Working" in text
 
     def test_completed_items_not_rendered(self):

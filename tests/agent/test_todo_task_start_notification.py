@@ -2,7 +2,7 @@
 
 Covers ``_detect_todo_task_start`` (the pre-call transition hook wired into
 both ``tool.started`` emitter sites) and the CLI spinner override that
-renders "Working on: <task>" instead of the generic todo label.
+renders "Working on <task>" instead of the generic todo label.
 """
 
 from types import SimpleNamespace
@@ -79,7 +79,7 @@ class TestCliSpinnerTaskStart:
             {"todos": [{"id": "1", "content": "ship the feature", "status": "in_progress"}]},
             started_task={"id": "1", "content": "ship the feature", "status": "in_progress"},
         )
-        assert cli._spinner_text == "📋 Working on: ship the feature"
+        assert cli._spinner_text == "📋 Working on ship the feature"
 
     def test_generic_label_when_no_started_task(self):
         cli, _ = self._make_cli()
@@ -98,6 +98,6 @@ class TestCliSpinnerTaskStart:
             {"todos": [{"id": "1", "content": long_content, "status": "in_progress"}]},
             started_task={"id": "1", "content": long_content, "status": "in_progress"},
         )
-        assert cli._spinner_text.startswith("📋 Working on: ")
+        assert cli._spinner_text.startswith("📋 Working on ")
         assert cli._spinner_text.endswith("...")
         assert len(cli._spinner_text) < 60
