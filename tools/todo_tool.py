@@ -15,6 +15,7 @@ Design:
 """
 
 import json
+import re
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 
@@ -51,6 +52,83 @@ CAPTURE_STATUSES = {"captured", "merged", "addressed", "rejected"}
 # protected from silent replacement.
 USER_SOURCE = "user"
 
+# ---------------------------------------------------------------------------
+# User-message scaffold stripping (P5)
+#
+# The gateway prepends structural scaffolding to inbound user messages:
+# the Discord triggering-message envelope, reply-to pointers, and
+# (optionally) message timestamps. That scaffolding is routing metadata for
+# the model, not task content — when it is stored verbatim as a seeded task
+# or a captured request it pollutes the todo list and /task output (the
+# "[Triggering message id: ...]" rows).
+#
+# System notes and goal-loop continuations are NOT stripped here: they are
+# exclusion markers. The seed/capture callers check the stripped text
+# against the excluded prefixes and skip the message entirely, so the
+# markers must survive stripping to be seen.
+#
+# Stripping is structural and leading-only: each pattern is matched at the
+# very start of the text (after any already-stripped prefixes), so genuine
+# user content that merely contains a similar phrase mid-message is never
+# touched. The sender-name prefix ("[Mac] ...") is only removed when it
+# directly follows a stripped header line, because a bare "[Mac] ..." at the
+# start of a message is the user's own text on platforms that do not add
+# sender prefixes.
+# ---------------------------------------------------------------------------
+
+# Discord: "[Triggering message id: `123` — use as `message_id` for
+# reply/react/pin via the discord tools.]" (gateway/run.py).
+_TRIGGERING_MESSAGE_ID_RE = re.compile(
+    r"^\[Triggering message id: `[^`]+`[^\]]*\]\s*"
+)
+# Reply pointers: "[Replying to: \"...\"]" and
+# "[Replying to your previous message: \"...\"]" (gateway/run.py).
+_REPLY_TO_RE = re.compile(r"^\[Replying to(?: your previous message)?: \"[^\"]*\"\]\s*")
+# Optional gateway message timestamps: "[Wed 2026-08-13 09:15:00 UTC]"
+# and the older "[2026-08-13T09:15:00+00:00]" format
+# (gateway/message_timestamps.py).
+_TIMESTAMP_RE = re.compile(
+    r"^\[(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} [^\]]+\]\s*"
+)
+_ISO_TIMESTAMP_RE = re.compile(r"^\[\d{4}-\d{2}-\d{2}T[^\]]+\]\s*")
+# Sender-name prefix ("[Mac] ...") — only stripped when it follows a header.
+_SENDER_PREFIX_RE = re.compile(r"^\[[^\]]+\]\s*")
+
+_HEADER_STRIP_PATTERNS = (
+    _TRIGGERING_MESSAGE_ID_RE,
+    _REPLY_TO_RE,
+    _TIMESTAMP_RE,
+    _ISO_TIMESTAMP_RE,
+)
+
+
+def strip_user_scaffold(text: Any) -> str:
+    """Strip leading gateway scaffolding from a user message.
+
+    Removes, in order: the Discord triggering-message envelope, reply-to
+    pointers, and message timestamps. A sender-name prefix (``[Name]``) is
+    removed only when it directly follows one of those headers. System notes
+    and goal-loop continuations are left intact — they are exclusion markers
+    the callers check before storing content. Returns the stripped text;
+    non-string input is stringified first.
+    """
+    text = str(text or "")
+    stripped_header = False
+    changed = True
+    while changed:
+        changed = False
+        for pattern in _HEADER_STRIP_PATTERNS:
+            match = pattern.match(text)
+            if match:
+                text = text[match.end():]
+                stripped_header = True
+                changed = True
+    if stripped_header:
+        sender_match = _SENDER_PREFIX_RE.match(text)
+        if sender_match:
+            text = text[sender_match.end():]
+    return text.strip()
+
 
 class TodoStore:
     """
@@ -70,6 +148,30 @@ class TodoStore:
         # recorded action (see disposition_captures).
         self._captures: List[Dict[str, str]] = []
         self._next_capture_id = 1
+        # True while the only item is the deterministic seed of the opening
+        # user message (P5). The model has not yet authored the plan; the
+        # per-turn block nudges it to rename the seed into a concise title
+        # on the first todo write. Any model write clears the flag.
+        self._seeded = False
+
+    def seed_from_user_message(self, text: Any) -> Optional[Dict[str, str]]:
+        """Seed an empty store with the user's opening message (P5).
+
+        Stores the scaffold-stripped text as the active user-sourced task
+        and marks the store as seeded so the per-turn block can nudge the
+        model to rename it. Returns the seeded item, or None when the text
+        is empty after stripping or the store already has items.
+        """
+        if self.has_items():
+            return None
+        content = strip_user_scaffold(text)
+        if not content:
+            return None
+        self._seeded = True
+        self._items = [
+            {"id": "1", "content": self._cap_content(content), "status": "in_progress", "source": USER_SOURCE}
+        ]
+        return self._items[0].copy()
 
     def write(self, todos: List[Dict[str, Any]], merge: bool = False) -> List[Dict[str, str]]:
         """
@@ -83,6 +185,10 @@ class TodoStore:
         # Detect which task (if any) this write starts before mutating the
         # list, so the invariant enforcement can keep it current.
         started = self.detect_task_start(todos, merge=merge)
+        # Any model write means the plan is now model-owned: the seeded
+        # placeholder (if any) is no longer the only item, so the rename
+        # nudge stops rendering.
+        self._seeded = False
         if not merge:
             # Replace mode: new list entirely. User-sourced active items are
             # append-only (P4): a replace may mark them (complete/cancel) but
@@ -313,6 +419,11 @@ class TodoStore:
         for item in active_items:
             marker = markers.get(item["status"], "[?]")
             lines.append(f"- {marker} {item['id']}. {item['content']}")
+        if self._seeded and len(active_items) == 1:
+            lines.append(
+                "Rename the seeded task above into a concise title on your "
+                "first todo write (the seed is the user's opening message)."
+            )
         if pending_captures:
             lines.append("[Captured requests]")
             for capture in pending_captures:
@@ -331,7 +442,7 @@ class TodoStore:
         is rejected explicitly, never filtered here. Returns the capture
         entry, or None for empty content.
         """
-        content = str(content).strip()
+        content = strip_user_scaffold(content)
         if not content:
             return None
         capture = {
@@ -390,6 +501,7 @@ class TodoStore:
                 "items": self._items,
                 "captures": self._captures,
                 "next_capture_id": self._next_capture_id,
+                "seeded": self._seeded,
             },
             ensure_ascii=False,
         )
@@ -416,6 +528,9 @@ class TodoStore:
         # single-current-task invariant and renumber to sequential ids.
         store._enforce_invariants()
         store._renumber_items(store._items)
+        # Restore the seeded flag (P5). Old persisted state without the key
+        # defaults to False, so pre-existing sessions never render the nudge.
+        store._seeded = bool(data.get("seeded", False))
 
         captures = data.get("captures")
         if isinstance(captures, list):
@@ -485,7 +600,7 @@ class TodoStore:
         if not content:
             content = "(no description)"
         else:
-            content = TodoStore._cap_content(content)
+            content = TodoStore._cap_content(strip_user_scaffold(content))
 
         status = str(item.get("status", "pending")).strip().lower()
         if status not in VALID_STATUSES:

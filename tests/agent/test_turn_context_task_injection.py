@@ -152,6 +152,22 @@ class TestSeedTodoStoreFromUserMessage:
         assert items[0]["content"] == "Build the thing"
         assert items[0]["status"] == "in_progress"
         assert items[0]["source"] == "user"
+        assert store._seeded is True
+
+    def test_seed_strips_gateway_scaffold(self):
+        store = TodoStore()
+        agent = _agent_with_store(store)
+        _seed_todo_store_from_user_message(
+            agent,
+            "[Triggering message id: `1` — use as `message_id` for "
+            "reply/react/pin via the discord tools.]\n\n"
+            "[Mac] Build the thing",
+        )
+        items = store.read()
+        assert len(items) == 1
+        assert items[0]["content"] == "Build the thing"
+        assert "Triggering message id" not in items[0]["content"]
+        assert "[Mac]" not in items[0]["content"]
 
     def test_no_seed_when_store_has_items(self):
         store = TodoStore()
