@@ -37,7 +37,7 @@ from agent.model_metadata import (
     estimate_messages_tokens_rough,
     estimate_request_tokens_rough,
 )
-from tools.todo_tool import USER_SOURCE
+from tools.todo_tool import strip_user_scaffold
 
 logger = logging.getLogger(__name__)
 
@@ -228,7 +228,7 @@ def _should_capture_user_request(
     """
     if not getattr(store, "has_items", lambda: False)():
         return False
-    text = str(user_message or "").strip()
+    text = strip_user_scaffold(user_message)
     if not text:
         return False
     if text.startswith(_CAPTURE_EXCLUDED_PREFIXES):
@@ -251,6 +251,13 @@ def _seed_todo_store_from_user_message(agent: Any, user_message: Any) -> None:
     P2 injection block renders it on every turn and ``/task`` always has
     something to show.
 
+    The stored content is the scaffold-stripped message (P5): gateway
+    envelopes, reply pointers, and timestamps are routing metadata, not
+    task content, and the sender-name prefix is dropped when it follows
+    such a header. The store is marked seeded so the per-turn block nudges
+    the model to rename the placeholder into a concise title on its first
+    ``todo`` write.
+
     The model keeps full ownership of the plan: the seeded item is a normal
     user-sourced item, so ``todo`` writes may restructure or complete it
     (P4 append-only protects it from silent replacement, never from the
@@ -260,14 +267,12 @@ def _seed_todo_store_from_user_message(agent: Any, user_message: Any) -> None:
     store = getattr(agent, "_todo_store", None)
     if store is None or store.has_items():
         return
-    text = str(user_message or "").strip()
+    text = strip_user_scaffold(user_message)
     if not text:
         return
     if text.startswith(_CAPTURE_EXCLUDED_PREFIXES):
         return
-    store.write(
-        [{"id": "1", "content": text, "status": "in_progress", "source": USER_SOURCE}]
-    )
+    store.seed_from_user_message(text)
     try:
         from hermes_cli.tasks import persist_todo_store
 
