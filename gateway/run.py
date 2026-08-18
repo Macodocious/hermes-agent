@@ -20640,6 +20640,46 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 if not _status_adapter:
                     return ""
 
+                # Deliver the agent's pre-clarify message as its own chat
+                # message so the prompt is not the only thing the user sees.
+                # The agent captures the visible content of a turn that ends
+                # in tool calls on _last_content_with_tools (see
+                # agent/conversation_loop.py capture site); with interim
+                # assistant messages disabled (e.g. Discord), that content
+                # would otherwise be silently dropped — the user would get
+                # only the bare clarify prompt, with the agent's message
+                # nowhere in the chat.
+                #
+                # Safe against double-delivery: when interim messages are
+                # enabled, the content was already delivered through
+                # _emit_interim_assistant_message, so _interim_text_was_delivered
+                # is True and this block is skipped. Clearing the field also
+                # prevents the post-clarify empty-response fallback
+                # (conversation_loop.py) from re-sending the same text.
+                pending_content = getattr(agent, "_last_content_with_tools", None)
+                if pending_content:
+                    from agent.redact import redact_sensitive_text
+
+                    visible_pending = agent._strip_think_blocks(pending_content).strip()
+                    visible_pending = redact_sensitive_text(visible_pending, force=True)
+                    if (
+                        visible_pending
+                        and visible_pending != "(empty)"
+                        and not agent._interim_text_was_delivered(visible_pending)
+                    ):
+                        safe_schedule_threadsafe(
+                            _status_adapter.send(
+                                _status_chat_id,
+                                visible_pending,
+                                metadata=_status_thread_metadata,
+                            ),
+                            _loop_for_step,
+                            logger=logger,
+                            log_message="Clarify pending-content send failed to schedule",
+                        )
+                    agent._last_content_with_tools = None
+                    agent._last_content_tools_all_housekeeping = False
+
                 clarify_id = _uuid.uuid4().hex[:10]
                 _clarify_mod.register(
                     clarify_id=clarify_id,
