@@ -106,8 +106,11 @@ async def test_task_command_shows_current_task_and_full_list():
     runner._running_agents[build_session_key(_make_source())] = running_agent
 
     result = await runner._handle_message(_make_event("/task"))
+    assert result is not None
 
     assert "**Working on:**" not in result
+    assert "── Current Tasks ───────" in result
+    assert result.splitlines()[0] == "── Current Tasks ───────"
     assert "- [x] 1. Done thing" in result
     assert "- [>] 2. Working thing" in result
     assert "← CURRENT TASK" not in result
