@@ -2029,6 +2029,66 @@ def run_conversation(
                                 f"(may re-hit filter)...",
                                 force=True,
                             )
+
+                        # ── Thinking-only prefill (length-truncated) ──
+                        # DeepSeek V4 (via Ollama Cloud) with
+                        # reasoning_effort=max can burn the ENTIRE output
+                        # budget on structured reasoning (reasoning_content)
+                        # and hit finish_reason="length" with zero visible
+                        # text. The thinking-exhausted detector above only
+                        # catches inline think tags, never the structured
+                        # reasoning_content field, so this case used to fall
+                        # through to the continuation loop — which re-thinks
+                        # from scratch 4 times and dies with "Response
+                        # remained truncated after 4 continuation attempts".
+                        # Route it through the same thinking-prefill
+                        # recovery the empty-response path uses: append the
+                        # assistant message (reasoning + minimal content
+                        # stub) and continue; the model sees its own
+                        # reasoning and writes the text with a fresh budget.
+                        _trunc_thinking_only = agent._is_thinking_only_assistant(
+                            {
+                                "role": "assistant",
+                                "content": _trunc_content,
+                                "reasoning": getattr(_trunc_msg, "reasoning", None),
+                                "reasoning_content": getattr(
+                                    _trunc_msg, "reasoning_content", None
+                                ),
+                                "reasoning_details": getattr(
+                                    _trunc_msg, "reasoning_details", None
+                                ),
+                            }
+                        )
+                        if (
+                            _trunc_thinking_only
+                            and agent._thinking_prefill_retries < 2
+                        ):
+                            agent._thinking_prefill_retries += 1
+                            logger.info(
+                                "Length-truncated thinking-only response — "
+                                "prefilling to continue (%d/2)",
+                                agent._thinking_prefill_retries,
+                            )
+                            agent._buffer_status(
+                                f"↻ Thinking-only response hit output limit — "
+                                f"prefilling to continue "
+                                f"({agent._thinking_prefill_retries}/2)"
+                            )
+                            interim_msg = agent._build_assistant_message(
+                                _trunc_msg, "incomplete"
+                            )
+                            # Minimal content stub: the thinking-only drop
+                            # filter strips empty-content + reasoning turns
+                            # from the wire copy, which would silently
+                            # defeat the prefill. The stub is ephemeral
+                            # scaffolding (excluded from persistence) and
+                            # the reasoning carries the actual context.
+                            interim_msg["content"] = "(thinking complete — continue)"
+                            interim_msg["_thinking_prefill"] = True
+                            messages.append(interim_msg)
+                            agent._session_messages = messages
+                            _retry.restart_with_length_continuation = True
+                            break
                         if assistant_message is not None and not _trunc_has_tool_calls:
                             length_continue_retries += 1
                             interim_msg = agent._build_assistant_message(assistant_message, finish_reason)
