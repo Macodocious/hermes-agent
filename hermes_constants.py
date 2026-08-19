@@ -1248,6 +1248,13 @@ def apply_ipv4_preference(force: bool = False) -> None:
     socket.getaddrinfo = _ipv4_getaddrinfo  # type: ignore[assignment]
 
 
+# ─── Task Command Constants ─────────────────────────────────────────────────
+
+# Header rendered above the task list by the /task command. Shared between the
+# gateway and CLI renderers so the surfaces stay visually consistent.
+TASK_LIST_HEADER = "── Current Tasks ───────"
+
+
 # ─── Streaming Response Constants ────────────────────────────────────────────
 
 # Response ID for partial stream stubs used during error recovery

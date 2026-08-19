@@ -38,6 +38,7 @@ def test_task_command_shows_current_task_and_full_list():
     lines = _run(_Stub(agent=agent))
 
     assert any("Working on:" not in line for line in lines)
+    assert any(line.strip() == "── Current Tasks ───────" for line in lines)
     assert any("- [x] 1. Done thing" in line for line in lines)
     assert any("- [>] 2. Working thing" in line for line in lines)
     assert not any("← CURRENT TASK" in line for line in lines)

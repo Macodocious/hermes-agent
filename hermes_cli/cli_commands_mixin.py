@@ -320,6 +320,9 @@ class CLICommandsMixin:
             _cprint("  The task list for this session is empty.")
             return
 
+        from hermes_constants import TASK_LIST_HEADER
+
+        _cprint(f"  {TASK_LIST_HEADER}")
         markers = {
             "completed": "[x]",
             "in_progress": "[>]",
