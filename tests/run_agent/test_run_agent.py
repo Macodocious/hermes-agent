@@ -5421,6 +5421,56 @@ class TestRunConversation:
         assert result["api_calls"] == 4
         assert result["completed"] is False
 
+    def test_length_thinking_only_structured_reasoning_prefills(self, agent):
+        """When finish_reason='length' with empty content but structured
+        reasoning (DeepSeek V4 via Ollama Cloud at reasoning_effort=max),
+        route through the thinking-prefill recovery instead of the doomed
+        4× continuation loop: append the assistant message (reasoning +
+        content stub) and continue; the next call succeeds."""
+        self._setup_agent(agent)
+        truncated = _mock_response(
+            content=None,
+            finish_reason="length",
+            reasoning_content="long chain of thought that exhausted the budget",
+        )
+        final = _mock_response(content="Here is the actual answer", finish_reason="stop")
+        agent.client.chat.completions.create.side_effect = [truncated, final]
+
+        with (
+            patch.object(agent, "_persist_session"),
+            patch.object(agent, "_save_trajectory"),
+            patch.object(agent, "_cleanup_task_resources"),
+        ):
+            result = agent.run_conversation("hello")
+
+        assert result["completed"] is True
+        assert result["api_calls"] == 2
+        assert result["final_response"] == "Here is the actual answer"
+
+    def test_length_thinking_only_prefill_caps_at_two_then_continues(self, agent):
+        """After 2 prefill attempts, fall through to the normal continuation
+        loop (which exhausts its 4 attempts and reports the truncation
+        error) — the prefill must not loop forever."""
+        self._setup_agent(agent)
+        truncated = _mock_response(
+            content=None,
+            finish_reason="length",
+            reasoning_content="still thinking, still no text",
+        )
+        agent.client.chat.completions.create.return_value = truncated
+
+        with (
+            patch.object(agent, "_persist_session"),
+            patch.object(agent, "_save_trajectory"),
+            patch.object(agent, "_cleanup_task_resources"),
+        ):
+            result = agent.run_conversation("hello")
+
+        # 2 prefill attempts + 4 continuation attempts = 6 API calls
+        assert result["api_calls"] == 6
+        assert result["completed"] is False
+        assert "truncated after 4 continuation attempts" in result["error"]
+
     def test_length_with_tool_calls_returns_partial_without_executing_tools(self, agent):
         self._setup_agent(agent)
         bad_tc = _mock_tool_call(
