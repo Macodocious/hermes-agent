@@ -1282,7 +1282,27 @@ def build_assistant_message(agent, assistant_message, finish_reason: str) -> dic
 
     # Sanitize surrogates from API response — some models (e.g. Kimi/GLM via Ollama)
     # can return invalid surrogate code points that crash json.dumps() on persist.
-    _raw_content = flatten_message_text(getattr(assistant_message, "content", None))
+    # DeepSeek V4 (via Ollama Cloud) returns content as typed blocks:
+    #   [{"type": "thinking", "thinking": "..."}, {"type": "output", "text": "..."}]
+    # extract_reasoning() already captured the thinking text into the reasoning
+    # field, so the thinking block in content is redundant. flatten_message_text()
+    # does not exclude "thinking" blocks, so without this filter the deliberation
+    # leaks into stored content, the transcript, and gateway delivery (observed:
+    # 14 Discord chunks of chain-of-thought). Gated on
+    # _needs_deepseek_tool_reasoning() so no other provider's content handling
+    # changes.
+    _raw_content_blocks = getattr(assistant_message, "content", None)
+    _needs_deepseek_strip = getattr(agent, "_needs_deepseek_tool_reasoning", None)
+    if _needs_deepseek_strip and _needs_deepseek_strip() and isinstance(_raw_content_blocks, list):
+        _raw_content_blocks = [
+            block
+            for block in _raw_content_blocks
+            if not (
+                isinstance(block, dict)
+                and str(block.get("type", "")).strip().lower() == "thinking"
+            )
+        ]
+    _raw_content = flatten_message_text(_raw_content_blocks)
     _san_content = _sanitize_surrogates(_raw_content)
     if reasoning_text:
         reasoning_text = _sanitize_surrogates(reasoning_text)
