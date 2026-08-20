@@ -19472,6 +19472,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 from agent.display import (
                     get_tool_preview_max_len,
                     get_tool_verb,
+                    get_tool_action_phrase,
                     tool_verb_connector,
                     verb_drops_preview,
                 )
@@ -19500,19 +19501,28 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     if tool_name == "todo":
                         msg = f"{emoji} {preview}"
                     else:
-                        # Friendly labels: render a human-phrased line for built-in
-                        # tools ("🔍 Searching the web for ...") by prefixing the verb
-                        # onto the preview the callback already computed (so the
-                        # command/url/query is preserved).  Custom/plugin/MCP tools
-                        # have no verb and fall back to the raw "tool_name: ..." form.
-                        _verb = get_tool_verb(tool_name)
-                        if _verb:
-                            if verb_drops_preview(tool_name):
-                                msg = f"{emoji} {_verb}"
-                            else:
-                                msg = f"{emoji} {_verb}{tool_verb_connector(tool_name)}{preview}"
+                        # Action-driven tools (cronjob/skill_manage/memory)
+                        # render their complete standalone phrase ("⏰ Reading
+                        # scheduled jobs") — a fixed verb + raw action noun
+                        # ("Scheduling list") would misstate what the call
+                        # does.
+                        _action_phrase = get_tool_action_phrase(tool_name, args)
+                        if _action_phrase:
+                            msg = f"{emoji} {_action_phrase}"
                         else:
-                            msg = f"{emoji} {tool_name}: \"{preview}\""
+                            # Friendly labels: render a human-phrased line for built-in
+                            # tools ("🔍 Searching the web for ...") by prefixing the verb
+                            # onto the preview the callback already computed (so the
+                            # command/url/query is preserved).  Custom/plugin/MCP tools
+                            # have no verb and fall back to the raw "tool_name: ..." form.
+                            _verb = get_tool_verb(tool_name)
+                            if _verb:
+                                if verb_drops_preview(tool_name):
+                                    msg = f"{emoji} {_verb}"
+                                else:
+                                    msg = f"{emoji} {_verb}{tool_verb_connector(tool_name)}{preview}"
+                            else:
+                                msg = f"{emoji} {tool_name}: \"{preview}\""
                 last_was_terminal_block[0] = False
             else:
                 msg = f"{emoji} {tool_name}..."

@@ -495,6 +495,86 @@ class TestBuildToolLabel:
             assert label, f"{tool_name} produced empty label"
 
 
+class TestToolActionPhrases:
+    """Action-aware standalone phrases for cronjob / skill_manage / memory."""
+
+    @pytest.fixture(autouse=True)
+    def _enable_friendly(self):
+        from agent.display import set_friendly_tool_labels
+        set_friendly_tool_labels(True)
+        yield
+        set_friendly_tool_labels(True)
+
+    def test_cronjob_list_reads_jobs(self):
+        from agent.display import build_tool_label
+        # The regression: "⏰ Scheduling list" implied creation for a read-only
+        # listing.  The label must state what the call actually does.
+        label = build_tool_label("cronjob", {"action": "list"})
+        assert label == "Reading scheduled jobs"
+
+    def test_cronjob_create_schedules_job(self):
+        from agent.display import build_tool_label
+        label = build_tool_label("cronjob", {"action": "create", "name": "daily-brief"})
+        assert label == "Creating a scheduled job"
+
+    def test_cronjob_run_aliases(self):
+        from agent.display import build_tool_label
+        for action in ("run", "run_now", "trigger"):
+            label = build_tool_label("cronjob", {"action": action, "job_id": "42"})
+            assert label == "Running a scheduled job", f"{action} → {label}"
+
+    def test_cronjob_unknown_action_falls_back(self):
+        from agent.display import build_tool_label, build_tool_preview
+        args = {"action": "frobnicate"}
+        label = build_tool_label("cronjob", args)
+        assert label == build_tool_preview("cronjob", args)
+
+    def test_skill_manage_action_phrases(self):
+        from agent.display import build_tool_label
+        expected = {
+            "create": "Creating skill",
+            "patch": "Updating skill",
+            "edit": "Rewriting skill",
+            "delete": "Deleting skill",
+            "write_file": "Writing skill file",
+            "remove_file": "Removing skill file",
+        }
+        for action, phrase in expected.items():
+            label = build_tool_label("skill_manage", {"action": action, "name": "my-skill"})
+            assert label.startswith(phrase), f"{action} → {label}"
+            assert "my-skill" in label, f"{action} should carry the skill name"
+
+    def test_memory_action_phrases(self):
+        from agent.display import build_tool_label
+        assert build_tool_label("memory", {"action": "add"}) == "Saving to memory"
+        assert build_tool_label("memory", {"action": "replace"}) == "Updating memory"
+        assert build_tool_label("memory", {"action": "remove"}) == "Removing from memory"
+
+    def test_action_phrases_disabled_falls_back_to_preview(self):
+        from agent.display import (
+            build_tool_label,
+            build_tool_preview,
+            set_friendly_tool_labels,
+        )
+        set_friendly_tool_labels(False)
+        args = {"action": "list"}
+        label = build_tool_label("cronjob", args)
+        assert label == build_tool_preview("cronjob", args)
+        assert "Reading scheduled jobs" not in (label or "")
+
+    def test_status_phrase_uses_action_phrase(self):
+        from agent.display import build_status_phrase
+        assert build_status_phrase("cronjob", {"action": "list"}) == "is reading scheduled jobs…"
+        assert build_status_phrase("skill_manage", {"action": "delete", "name": "x"}) == "is deleting skill x…"
+        assert build_status_phrase("memory", {"action": "add"}) == "is saving to memory…"
+
+    def test_status_phrase_verb_mode_falls_back_generic(self):
+        from agent.display import build_status_phrase
+        # args=None (live_status "verb") cannot resolve an action phrase.
+        phrase = build_status_phrase("cronjob", None)
+        assert phrase == "is working…"
+
+
 class TestBuildStatusPhrase:
     """build_status_phrase — live working-state text for Slack's status line."""
 
