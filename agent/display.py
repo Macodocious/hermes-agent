@@ -516,7 +516,16 @@ def build_tool_preview(tool_name: str, args: dict, max_len: int | None = None) -
         elif action == "remove":
             old = _oneline(args.get("old_text") or "") or "<missing old_text>"
             return f"-{target}: \"{old[:20]}\""
-        return action
+        # Action-driven tools render the standalone action phrase instead of
+        # the raw action noun (a bare "list" glued to a verb reads as a
+        # creation action).  Fall back to the raw action only when no phrase
+        # exists (unknown action).
+        return get_tool_action_phrase(tool_name, args) or action
+
+    if tool_name in _TOOL_ACTION_PHRASES:
+        # cronjob / skill_manage: the preview is the standalone action phrase
+        # ("Reading scheduled jobs"), never the bare action noun.
+        return get_tool_action_phrase(tool_name, args)
 
     if tool_name == "send_message":
         target = args.get("target", "?")
@@ -588,11 +597,47 @@ _TOOL_VERBS: dict[str, str] = {
     "session_search": "Searching past sessions",
     "skill_view": "Reading skill",
     "skills_list": "Listing skills",
-    "skill_manage": "Updating skill",
     "delegate_task": "Delegating",
-    "cronjob": "Scheduling",
     "clarify": "Asking",
-    "memory": "Updating memory",
+}
+
+# Tools whose single curated verb cannot describe every action get a complete
+# standalone phrase per action instead (the fixed verb would lie: "Scheduling
+# list" implies creating something when the action is a read-only listing).
+# Phrases are capitalized standalone lines, rendered like todo's preview
+# (no verb prefix).  Keyed by normalized tool action (lowercased).
+_TOOL_ACTION_PHRASES: dict[str, dict[str, str]] = {
+    "cronjob": {
+        "list": "Reading scheduled jobs",
+        "create": "Creating a scheduled job",
+        "update": "Updating a scheduled job",
+        "remove": "Removing a scheduled job",
+        "pause": "Pausing a scheduled job",
+        "resume": "Resuming a scheduled job",
+        # run/run_now/trigger are aliases for the same immediate execution.
+        "run": "Running a scheduled job",
+        "run_now": "Running a scheduled job",
+        "trigger": "Running a scheduled job",
+    },
+    "skill_manage": {
+        "create": "Creating skill",
+        "patch": "Updating skill",
+        "edit": "Rewriting skill",
+        "delete": "Deleting skill",
+        "write_file": "Writing skill file",
+        "remove_file": "Removing skill file",
+    },
+    "memory": {
+        "add": "Saving to memory",
+        "replace": "Updating memory",
+        "remove": "Removing from memory",
+    },
+}
+
+# For these tools the action phrase should carry the primary argument value
+# (e.g. the skill name) appended to the phrase when present.
+_TOOL_ACTION_PHRASE_APPEND: dict[str, str] = {
+    "skill_manage": "name",
 }
 
 # Verbs that read better without the raw argument preview appended.
@@ -645,6 +690,41 @@ def verb_drops_preview(tool_name: str) -> bool:
     return tool_name in _TOOL_VERBS_NO_PREVIEW
 
 
+def get_tool_action_phrase(tool_name: str, args: dict | None) -> str | None:
+    """Return a complete standalone phrase for an action-driven tool call.
+
+    Tools whose semantics vary by ``action`` (``cronjob``, ``skill_manage``,
+    ``memory``) render a fixed verb that can lie about what the call actually
+    does — e.g. "Scheduling list" implies creating a job when the action is a
+    read-only listing.  This resolves the action-aware phrase (e.g. "Reading
+    scheduled jobs").  Returns None when friendly labels are disabled, the
+    tool has no action map, or the action is unknown (callers fall back to
+    the generic verb path / raw preview).
+    """
+    if not _friendly_tool_labels:
+        return None
+    phrases = _TOOL_ACTION_PHRASES.get(tool_name)
+    if not phrases:
+        return None
+    if not args:
+        return None
+    action = str(args.get("action") or "").strip().lower()
+    if not action:
+        return None
+    phrase = phrases.get(action)
+    if not phrase:
+        return None
+    # Append the primary argument value (e.g. the skill name) when configured.
+    append_key = _TOOL_ACTION_PHRASE_APPEND.get(tool_name)
+    if append_key:
+        value = args.get(append_key)
+        if value:
+            value_str = _oneline(str(value))
+            if value_str:
+                phrase = f"{phrase} {value_str}"
+    return phrase
+
+
 def build_status_phrase(tool_name: str, args: dict | None, max_len: int = 49) -> str | None:
     """Build a short present-tense status phrase for platform status surfaces.
 
@@ -678,6 +758,14 @@ def build_status_phrase(tool_name: str, args: dict | None, max_len: int = 49) ->
             preview = build_tool_preview(tool_name, args, max_len=None)
             if preview:
                 phrase = f"is {preview[0].lower()}{preview[1:]}"
+    elif tool_name in _TOOL_ACTION_PHRASES:
+        # Action-driven tools (cronjob/skill_manage/memory) render their
+        # standalone action phrase ("Reading scheduled jobs") as the status.
+        phrase = "is working"
+        if args:
+            action_phrase = get_tool_action_phrase(tool_name, args)
+            if action_phrase:
+                phrase = f"is {action_phrase[0].lower()}{action_phrase[1:]}"
     else:
         if verb:
             head = f"is {verb[0].lower()}{verb[1:]}"
@@ -712,6 +800,12 @@ def build_tool_label(tool_name: str, args: dict, max_len: int | None = None) -> 
     """
     if not _friendly_tool_labels:
         return build_tool_preview(tool_name, args, max_len=max_len)
+
+    # Action-driven tools (cronjob/skill_manage/memory) render a complete
+    # standalone phrase per action instead of a fixed verb + raw action.
+    action_phrase = get_tool_action_phrase(tool_name, args)
+    if action_phrase:
+        return action_phrase
 
     verb = _TOOL_VERBS.get(tool_name)
     if not verb:
