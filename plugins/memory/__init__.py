@@ -25,6 +25,7 @@ import importlib
 import importlib.machinery
 import importlib.util
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -37,6 +38,70 @@ _MEMORY_PLUGINS_DIR = Path(__file__).parent
 # Synthetic parent package for user-installed providers, so they don't
 # collide with bundled providers in sys.modules.
 _USER_NAMESPACE = "_hermes_user_memory"
+
+# Top-level names a provider may import that must resolve to the real
+# site-packages package even when a plugin directory shadows the name on
+# sys.path.  A shadowed import (e.g. ``import mnemosyne`` resolving to a
+# plugin dir that lacks the package's submodules) breaks the provider at
+# load time and silently disables memory for the whole session.
+_SHADOWABLE_TOP_LEVEL_NAMES = ("mnemosyne",)
+
+
+def _register_shadowable_packages() -> None:
+    """Pre-register real site-packages packages that plugin dirs may shadow.
+
+    Import machinery consults ``sys.modules`` before any path lookup, so
+    registering the real package here makes every later ``import
+    <name>`` inside a provider resolve to site-packages regardless of
+    what a plugin inserted at ``sys.path[0]``.  The package is resolved
+    with the plugins dir removed from ``sys.path`` so the lookup cannot
+    be hijacked by the shadowing entry itself.
+    """
+    for name in _SHADOWABLE_TOP_LEVEL_NAMES:
+        if name in sys.modules:
+            continue
+        try:
+            with _scrubbed_sys_path():
+                spec = importlib.util.find_spec(name)
+            if spec is None or spec.origin is None:
+                continue
+            plugins_dir = _get_user_plugins_dir()
+            if plugins_dir is not None and spec.origin.startswith(str(plugins_dir)):
+                continue  # never pre-register a resolution that lands in the plugins dir
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[name] = module
+            if spec.loader is not None:
+                spec.loader.exec_module(module)
+        except Exception as exc:
+            logger.debug("Failed to pre-register shadowable package '%s': %s", name, exc)
+            sys.modules.pop(name, None)
+
+
+class _scrubbed_sys_path:
+    """Context manager that hides the user plugins dir from sys.path.
+
+    Used while resolving shadowable packages so a plugin directory that
+    shares a top-level name with a site-packages package cannot hijack
+    the lookup.
+    """
+
+    def __init__(self) -> None:
+        self._plugins_dir = _get_user_plugins_dir()
+        self._removed: List[str] = []
+
+    def __enter__(self) -> "_scrubbed_sys_path":
+        if self._plugins_dir is None:
+            return self
+        plugins_str = str(self._plugins_dir)
+        for entry in list(sys.path):
+            if entry == plugins_str or entry.startswith(plugins_str + os.sep):
+                self._removed.append(entry)
+                sys.path.remove(entry)
+        return self
+
+    def __exit__(self, *exc) -> None:
+        for entry in reversed(self._removed):
+            sys.path.insert(0, entry)
 
 
 def _register_synthetic_package(name: str, search_locations: List[str]) -> None:
@@ -459,3 +524,10 @@ def discover_plugin_cli_commands() -> List[dict]:
         logger.debug("Failed to scan CLI for memory plugin '%s': %s", active_provider, e)
 
     return results
+
+
+# Pre-register shadowable packages up front so every provider load path
+# (discovery, load_memory_provider, CLI registration) resolves them to
+# site-packages even if a plugin dir polluted sys.path first.  Runs at
+# the end of module import so every helper it depends on is defined.
+_register_shadowable_packages()
