@@ -4342,6 +4342,11 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             "base_url": getattr(agent, "base_url", None),
             "api_mode": getattr(agent, "api_mode", None),
             "fallback_active": bool(getattr(agent, "_fallback_activated", False)),
+            # Cycle flag rides the same metadata so a mid-session fallback
+            # cycle survives agent eviction/rebuilds (interrupt path, /new
+            # compression splits) — the in-memory flag alone is lost when
+            # the gateway constructs a fresh AIAgent for the session key.
+            "fallback_cycle_active": bool(getattr(agent, "_fallback_cycle_armed", False)),
         }
         runtime = {k: v for k, v in runtime.items() if v not in (None, "")}
 

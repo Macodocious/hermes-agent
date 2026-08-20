@@ -19,6 +19,7 @@ preserved.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -57,6 +58,41 @@ from utils import base_url_host_matches, is_truthy_value
 # ``logger = logging.getLogger(__name__)``, which resolves to "run_agent"
 # from inside that module.)
 logger = logging.getLogger("run_agent")
+
+
+def _rehydrate_fallback_cycle_state(agent) -> None:
+    """Restore persisted fallback-cycle flags onto a freshly built agent.
+
+    The gateway evicts and rebuilds cached agents mid-cycle (interrupt
+    path, /clear, compression splits). The in-memory cycle flags die with
+    the evicted instance, so the "restored" notification could never fire
+    after a rebuild.  The gateway's per-turn runtime sync
+    (``_sync_session_model_from_agent``) persists both flags into
+    ``model_config.gateway_runtime``; this reads them back so the cycle
+    survives the rebuild and keeps its once-per-session semantics.
+    """
+    try:
+        if getattr(agent, "_persist_disabled", False):
+            return
+        db = getattr(agent, "_session_db", None)
+        if db is None or not getattr(agent, "session_id", None):
+            return
+        row = db.get_session(agent.session_id)
+        if not row:
+            return
+        raw_config = row.get("model_config")
+        config = json.loads(raw_config) if raw_config else {}
+        if not isinstance(config, dict):
+            return
+        runtime = config.get("gateway_runtime") or {}
+        if not isinstance(runtime, dict):
+            return
+        if runtime.get("fallback_cycle_active"):
+            agent._fallback_cycle_armed = True
+        if runtime.get("fallback_active"):
+            agent._fallback_activated = True
+    except Exception:
+        logger.debug("Failed to rehydrate fallback cycle state", exc_info=True)
 
 
 def _ra():
@@ -1380,6 +1416,11 @@ def init_agent(
     # background skill/memory review fork so its harness turn can't leak into
     # the user's real session and hijack the next live turn. Default False.
     agent._persist_disabled = False
+    # Restore persisted fallback-cycle flags (gateway rebuild path). Must
+    # run after _session_db / session_id / _persist_disabled are set, and
+    # after the init-time fallback block so it can only ADD state, never
+    # clobber the freshly resolved primary.
+    _rehydrate_fallback_cycle_state(agent)
     agent._session_init_model_config = {
         "max_iterations": agent.max_iterations,
         "reasoning_config": reasoning_config,
