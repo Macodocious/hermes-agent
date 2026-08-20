@@ -2315,6 +2315,12 @@ def switch_model(agent, new_model, new_provider, api_key='', base_url='', api_mo
     # ── Reset fallback state ──
     agent._fallback_activated = False
     agent._fallback_index = 0
+    # A deliberate /model switch starts a fresh fallback cycle: clear the
+    # armed flag so a restore notification from the PREVIOUS cycle can't
+    # fire against the newly chosen primary, and so the next genuine
+    # primary failure re-notifies instead of being suppressed as an
+    # in-cycle chained swap.
+    agent._fallback_cycle_armed = False
 
     # When the user deliberately swaps primary providers (e.g. openrouter
     # → anthropic), drop any fallback entries that target the OLD primary
