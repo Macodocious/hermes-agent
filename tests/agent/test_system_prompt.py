@@ -189,3 +189,32 @@ class TestTelegramRichMessagesHint:
             stable = _stable_prompt(agent)
         assert "Standard Markdown is automatically converted" in stable
         assert "lean into it" not in stable
+
+
+class TestAssistantDefinition:
+    """The universal assistant definition is part of the stable tier for
+    every agent — with a SOUL loaded, without one, and for subagents."""
+
+    def test_present_without_soul(self):
+        agent = _make_agent()
+        stable = _stable_prompt(agent)
+        assert "An assistant serves a principal. The user is the principal." in stable
+        assert "It is the principal's hands, not their brain." in stable
+        assert "## Responsibilities" in stable
+
+    def test_present_with_soul(self):
+        agent = _make_agent()
+        with (
+            patch("run_agent.load_soul_md", return_value="You are Nexus."),
+            patch("run_agent.build_nous_subscription_prompt", return_value=""),
+            patch("run_agent.build_environment_hints", return_value=""),
+            patch("run_agent.build_context_files_prompt", return_value=""),
+        ):
+            stable = build_system_prompt_parts(agent)["stable"]
+        assert "You are Nexus." in stable
+        assert "An assistant serves a principal. The user is the principal." in stable
+
+    def test_present_for_subagent_posture(self):
+        agent = _make_agent(skip_context_files=True, load_rules=True)
+        stable = _stable_prompt(agent)
+        assert "An assistant serves a principal. The user is the principal." in stable
