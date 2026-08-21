@@ -1103,9 +1103,9 @@ class GatewaySlashCommandsMixin:
         if not items:
             return "The task list for this session is empty."
 
-        from hermes_constants import TASK_LIST_HEADER
+        from hermes_constants import TASK_LIST_TITLE
 
-        lines = [f"**{TASK_LIST_HEADER}**"]
+        lines = [f"── **{TASK_LIST_TITLE}** ───────"]
         markers = {
             "completed": "[x]",
             "in_progress": "[>]",

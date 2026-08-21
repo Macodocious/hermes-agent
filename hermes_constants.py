@@ -1251,8 +1251,11 @@ def apply_ipv4_preference(force: bool = False) -> None:
 # ─── Task Command Constants ─────────────────────────────────────────────────
 
 # Header rendered above the task list by the /task command. Shared between the
-# gateway and CLI renderers so the surfaces stay visually consistent.
-TASK_LIST_HEADER = "── Current Tasks ───────"
+# gateway and CLI renderers so the surfaces stay visually consistent. The title
+# is kept separate so renderers can apply emphasis (bold) to the text without
+# bolding the surrounding rule lines.
+TASK_LIST_TITLE = "Current Tasks"
+TASK_LIST_HEADER = f"── {TASK_LIST_TITLE} ───────"
 
 
 # ─── Streaming Response Constants ────────────────────────────────────────────
