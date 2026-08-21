@@ -1068,7 +1068,7 @@ class GatewaySlashCommandsMixin:
         return "\n".join(lines)
 
     async def _handle_task_command(self, event: MessageEvent) -> str:
-        """Handle /task — show the current task and full task list.
+        """Handle /tasks — show the current task and full task list.
 
         Read-only and safe mid-run: never interrupts the running agent.
         Resolution order mirrors /status — the live agent's in-memory todo
@@ -1116,13 +1116,6 @@ class GatewaySlashCommandsMixin:
             marker = markers.get(item.get("status", ""), "[?]")
             source_tag = " (user)" if item.get("source") == "user" else ""
             lines.append(f"- {marker} {item['content']}{source_tag}")
-
-        captures = store.pending_captures()
-        if captures:
-            lines.append("")
-            lines.append("**Captured requests:**")
-            for capture in captures:
-                lines.append(f"- [ ] {capture['content']} (captured)")
 
         return "\n".join(lines)
 

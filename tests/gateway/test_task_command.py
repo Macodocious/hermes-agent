@@ -1,4 +1,4 @@
-"""Tests for the gateway /task slash command."""
+"""Tests for the gateway /tasks slash command."""
 
 from datetime import datetime
 from types import SimpleNamespace
@@ -105,7 +105,7 @@ async def test_task_command_shows_current_task_and_full_list():
     running_agent._todo_store = _make_store()
     runner._running_agents[build_session_key(_make_source())] = running_agent
 
-    result = await runner._handle_message(_make_event("/task"))
+    result = await runner._handle_message(_make_event("/tasks"))
     assert result is not None
 
     assert "**Working on:**" not in result
@@ -115,8 +115,9 @@ async def test_task_command_shows_current_task_and_full_list():
     assert "- [>] Working thing" in result
     assert "← CURRENT TASK" not in result
     assert "- [ ] Next thing" in result
-    assert "**Captured requests:**" in result
-    assert "- [ ] Captured ask (captured)" in result
+    # Captured requests are not rendered into /tasks output.
+    assert "**Captured requests:**" not in result
+    assert "Captured ask" not in result
     running_agent.interrupt.assert_not_called()
     assert runner._pending_messages == {}
 
@@ -134,7 +135,7 @@ async def test_task_command_does_not_require_running_agent(monkeypatch):
         lambda session_id: _make_store() if session_id == "sess-1" else None,
     )
 
-    result = await runner._handle_message(_make_event("/task"))
+    result = await runner._handle_message(_make_event("/tasks"))
 
     assert "**Working on:**" not in result
     assert "- [>] Working thing" in result
@@ -149,7 +150,7 @@ async def test_task_command_empty_store_reports_empty():
     running_agent._todo_store = TodoStore()
     runner._running_agents[build_session_key(_make_source())] = running_agent
 
-    result = await runner._handle_message(_make_event("/task"))
+    result = await runner._handle_message(_make_event("/tasks"))
 
     assert result == "The task list for this session is empty."
 
@@ -169,7 +170,7 @@ async def test_task_command_no_in_progress_reports_none():
     running_agent._todo_store = store
     runner._running_agents[build_session_key(_make_source())] = running_agent
 
-    result = await runner._handle_message(_make_event("/task"))
+    result = await runner._handle_message(_make_event("/tasks"))
 
     assert "**Working on:**" not in result
     assert "- [x] Done thing" in result
@@ -182,6 +183,6 @@ async def test_task_command_no_store_and_no_row_reports_absent(monkeypatch):
     runner = _make_runner(session_entry)
     monkeypatch.setattr("hermes_cli.tasks.load_todo", lambda session_id: None)
 
-    result = await runner._handle_message(_make_event("/task"))
+    result = await runner._handle_message(_make_event("/tasks"))
 
     assert "No task list for this session yet" in result

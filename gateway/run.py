@@ -10417,7 +10417,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             if event.get_command() == "status":
                 return await self._handle_status_command(event)
 
-            if event.get_command() == "task":
+            if event.get_command() == "tasks":
                 return await self._handle_task_command(event)
 
             # Resolve the command once for all early-intercept checks below.
@@ -10955,7 +10955,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         if canonical == "status":
             return await self._handle_status_command(event)
 
-        if canonical == "task":
+        if canonical == "tasks":
             return await self._handle_task_command(event)
 
         if canonical == "agents":
