@@ -211,7 +211,7 @@ class TestFormatForTurn:
         assert "← CURRENT TASK" not in text
         assert "Working" in text
 
-    def test_completed_items_not_rendered(self):
+    def test_completed_items_rendered_as_done(self):
         store = TodoStore()
         store.write([
             {"id": "1", "content": "Done", "status": "completed"},
@@ -219,7 +219,9 @@ class TestFormatForTurn:
         ])
         text = store.format_for_turn()
         assert text is not None
-        assert "Done" not in text
+        # Completed items persist visibly, marked [x], never re-proposed
+        assert "[x] Done" in text
+        assert "Completed:" in text
         assert "Active" in text
 
     def test_captures_rendered_with_disposition_nudge(self):

@@ -63,9 +63,9 @@ class TestFormatForInjection:
             {"id": "3", "content": "Working", "status": "in_progress"},
         ])
         text = store.format_for_injection()
-        # Completed items are filtered out of injection
-        assert "[x]" not in text
-        assert "Do thing" not in text
+        # Completed items persist visibly, marked done (never re-proposed)
+        assert "[x] Do thing" in text
+        assert "Completed — do not redo" in text
         # Active items are included
         assert "[ ]" in text
         assert "[>]" in text

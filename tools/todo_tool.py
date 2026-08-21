@@ -359,10 +359,15 @@ class TodoStore:
 
     def format_for_injection(self) -> Optional[str]:
         """
-        Render the todo list for post-compression injection.
+        Render the task list for post-compression injection.
 
-        Returns a human-readable string to append to the compressed
-        message history, or None if the list is empty.
+        Completed items are injected alongside active ones under a
+        "Completed — do not redo" header, so the full list survives
+        compression instead of vanishing when nothing is active. An
+        all-completed list still renders (the compressed history keeps a
+        visible task anchor); cancelled items are excluded because they
+        were deliberately abandoned. Returns None only when the store is
+        empty.
         """
         if not self._items:
             return None
@@ -375,19 +380,25 @@ class TodoStore:
             "cancelled": "[~]",
         }
 
-        # Only inject pending/in_progress items — completed/cancelled ones
-        # cause the model to re-do finished work after compression.
+        # Completed items are visible (marked [x]) so finished work
+        # persists across compression without being re-proposed; the
+        # header explicitly flags them as done to prevent redoing.
         active_items = [
             item for item in self._items
             if item["status"] in {"pending", "in_progress"}
         ]
-        if not active_items:
-            return None
+        completed_items = [
+            item for item in self._items if item["status"] == "completed"
+        ]
 
         lines = ["[Your active task list was preserved across context compression]"]
         for item in active_items:
             marker = markers.get(item["status"], "[?]")
             lines.append(f"- {marker} {item['content']} ({item['status']})")
+        if completed_items:
+            lines.append("Completed — do not redo:")
+            for item in completed_items:
+                lines.append(f"- [x] {item['content']}")
 
         return "\n".join(lines)
 
@@ -396,17 +407,21 @@ class TodoStore:
 
         Unlike ``format_for_injection`` (compression-only snapshot), this is
         the always-on visibility block: the active list with the single
-        ``in_progress`` item flagged as the current task, plus any captured
-        request candidates awaiting disposition. Returns None when there is
-        nothing to show (no active items and no pending captures) so an idle
-        list injects zero tokens.
+        ``in_progress`` item flagged as the current task, completed items
+        marked ``[x]``, plus any captured request candidates awaiting
+        disposition. Returns None when there is nothing to show (no items
+        at all and no pending captures) so an idle list injects zero
+        tokens.
         """
         active_items = [
             item for item in self._items
             if item["status"] in {"pending", "in_progress"}
         ]
+        completed_items = [
+            item for item in self._items if item["status"] == "completed"
+        ]
         pending_captures = self.pending_captures()
-        if not active_items and not pending_captures:
+        if not active_items and not completed_items and not pending_captures:
             return None
 
         markers = {
@@ -419,6 +434,10 @@ class TodoStore:
         for item in active_items:
             marker = markers.get(item["status"], "[?]")
             lines.append(f"- {marker} {item['content']}")
+        if completed_items:
+            lines.append("Completed:")
+            for item in completed_items:
+                lines.append(f"- [x] {item['content']}")
         if self._seeded and len(active_items) == 1:
             lines.append(
                 "Rename the seeded task above into a concise title on your "
