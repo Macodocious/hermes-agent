@@ -322,7 +322,7 @@ class CLICommandsMixin:
 
         from hermes_constants import TASK_LIST_HEADER
 
-        _cprint(f"  {TASK_LIST_HEADER}")
+        _cprint(f"  \x1b[1m{TASK_LIST_HEADER}\x1b[0m")
         markers = {
             "completed": "[x]",
             "in_progress": "[>]",
@@ -332,13 +332,13 @@ class CLICommandsMixin:
         for item in items:
             marker = markers.get(item.get("status", ""), "[?]")
             source_tag = " (user)" if item.get("source") == "user" else ""
-            _cprint(f"    - {marker} {item['id']}. {item['content']}{source_tag}")
+            _cprint(f"    - {marker} {item['content']}{source_tag}")
 
         captures = store.pending_captures()
         if captures:
             _cprint("  Captured requests:")
             for capture in captures:
-                _cprint(f"    - [captured] {capture['id']}. {capture['content']}")
+                _cprint(f"    - [ ] {capture['content']} (captured)")
 
     def _handle_journey_command(self, cmd_original: str) -> None:
         """Handle /journey — the learning timeline (see `hermes journey`).

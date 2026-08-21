@@ -69,6 +69,23 @@ class TestShouldCaptureUserRequest:
         messages = []
         assert _should_capture_user_request(messages, "   ", store) is False
 
+    def test_no_capture_when_message_equals_seeded_task(self):
+        store = TodoStore()
+        store.seed_from_user_message("Build the thing")
+        messages = [{"role": "user", "content": "old"}]
+        # The seed already made this exact message the active task; capturing
+        # it again would duplicate it as both a task and a candidate.
+        assert _should_capture_user_request(messages, "Build the thing", store) is False
+
+    def test_captures_identical_message_after_seed_renamed(self):
+        store = TodoStore()
+        store.seed_from_user_message("Build the thing")
+        # A model write clears the seeded state; the same text later is a
+        # genuine re-request, not the seed duplicate.
+        store.write([{"id": "1", "content": "Build the thing", "status": "in_progress"}])
+        messages = [{"role": "user", "content": "old"}]
+        assert _should_capture_user_request(messages, "Build the thing", store) is True
+
     def test_clarify_detection_with_object_tool_calls(self):
         store = TodoStore()
         store.write([{"id": "1", "content": "busy", "status": "in_progress"}])

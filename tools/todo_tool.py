@@ -387,7 +387,7 @@ class TodoStore:
         lines = ["[Your active task list was preserved across context compression]"]
         for item in active_items:
             marker = markers.get(item["status"], "[?]")
-            lines.append(f"- {marker} {item['id']}. {item['content']} ({item['status']})")
+            lines.append(f"- {marker} {item['content']} ({item['status']})")
 
         return "\n".join(lines)
 
@@ -418,7 +418,7 @@ class TodoStore:
         lines = ["[Active tasks]"]
         for item in active_items:
             marker = markers.get(item["status"], "[?]")
-            lines.append(f"- {marker} {item['id']}. {item['content']}")
+            lines.append(f"- {marker} {item['content']}")
         if self._seeded and len(active_items) == 1:
             lines.append(
                 "Rename the seeded task above into a concise title on your "
@@ -427,7 +427,7 @@ class TodoStore:
         if pending_captures:
             lines.append("[Captured requests]")
             for capture in pending_captures:
-                lines.append(f"- [captured] {capture['id']}. {capture['content']}")
+                lines.append(f"- [ ] {capture['content']} (captured)")
             lines.append(
                 "Disposition each captured request: merge into your plan, "
                 "mark addressed, or reject."
@@ -446,7 +446,7 @@ class TodoStore:
         if not content:
             return None
         capture = {
-            "id": f"c{self._next_capture_id}",
+            "id": str(self._next_capture_id),
             "content": self._cap_content(content),
             "source": USER_SOURCE,
             "status": "captured",
@@ -554,6 +554,8 @@ class TodoStore:
 
         # Never reuse a capture id that already exists in the restored
         # buffer; the parsed counter wins only when it is strictly larger.
+        # Legacy persisted ids may carry the old "c" prefix (pre-inline
+        # scheme); strip it so the counter stays numeric.
         max_existing = 0
         for c in store._captures:
             try:

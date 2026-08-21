@@ -235,6 +235,12 @@ def _should_capture_user_request(
         return False
     if _last_assistant_issued_clarify(messages):
         return False
+    # The deterministic seed (P5) already made this exact message the active
+    # task this turn; capturing it again would duplicate the same request as
+    # both a task and a candidate. Only skip when the store is still in the
+    # seeded state — a later identical message is a genuine re-request.
+    if getattr(store, "_seeded", False) and store.read() and store.read()[0]["content"] == text:
+        return False
     return True
 
 

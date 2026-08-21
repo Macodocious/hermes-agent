@@ -81,7 +81,7 @@ class TestCaptureBuffer:
         assert capture is not None
         assert capture["status"] == "captured"
         assert capture["source"] == "user"
-        assert capture["id"].startswith("c")
+        assert capture["id"] == "1"
         assert "captured_at" in capture
         assert len(store.pending_captures()) == 1
 
@@ -207,7 +207,7 @@ class TestFormatForTurn:
         text = store.format_for_turn()
         assert text is not None
         assert "[Active tasks]" in text
-        assert "- [ ] 1. Waiting" in text
+        assert "- [ ] Waiting" in text
         assert "← CURRENT TASK" not in text
         assert "Working" in text
 
@@ -229,7 +229,7 @@ class TestFormatForTurn:
         text = store.format_for_turn()
         assert text is not None
         assert "[Captured requests]" in text
-        assert "[captured]" in text
+        assert "- [ ] New request (captured)" in text
         assert "Disposition each captured request" in text
 
     def test_captures_without_items_still_render(self):
