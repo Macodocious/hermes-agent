@@ -29,6 +29,7 @@ from typing import Any, Dict, List, Optional
 
 from agent.prompt_builder import (
     DEFAULT_AGENT_IDENTITY,
+    ASSISTANT_DEFINITION,
     GOOGLE_MODEL_OPERATIONAL_GUIDANCE,
     HERMES_AGENT_HELP_GUIDANCE,
     KANBAN_GUIDANCE,
@@ -195,6 +196,11 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
     if not _soul_loaded:
         # Fallback to hardcoded identity
         stable_parts.append(DEFAULT_AGENT_IDENTITY)
+
+    # Universal definition of what an assistant is and its responsibilities.
+    # Injected for every agent regardless of profile, SOUL, or platform — the
+    # single source that reaches main, sub-agents, CLI, gateway, and cron.
+    stable_parts.append(ASSISTANT_DEFINITION)
 
     # User-wide rules from ~/.hermes/rules/*.md. These are behavioral
     # constraints on the agent (Priority, Rule, Forbidden, Action taxonomy)
