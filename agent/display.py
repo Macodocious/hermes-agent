@@ -426,6 +426,12 @@ def build_tool_preview(tool_name: str, args: dict, max_len: int | None = None) -
     if max_len is None:
         max_len = _tool_preview_max_len
     if not args:
+        # A no-argument call is still a meaningful action for some tools:
+        # todo() with no args reads the task list, and its preview is a
+        # complete standalone phrase.  Returning None here would render the
+        # bare "todo..." fallback in the gateway bubble.
+        if tool_name == "todo":
+            return "Reading the task list"
         return None
     args = redact_tool_args_for_display(tool_name, args) or args
     primary_args = {
