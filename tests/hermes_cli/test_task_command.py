@@ -1,4 +1,4 @@
-"""Tests for the CLI `/task` command (current task + full task list)."""
+"""Tests for the CLI `/tasks` command (current task + full task list)."""
 
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -43,8 +43,9 @@ def test_task_command_shows_current_task_and_full_list():
     assert any("- [>] Working thing" in line for line in lines)
     assert not any("← CURRENT TASK" in line for line in lines)
     assert any("- [ ] Next thing" in line for line in lines)
-    assert any("Captured requests:" in line for line in lines)
-    assert any("[ ] Captured ask (captured)" in line for line in lines)
+    # Captured requests are not rendered into /tasks output.
+    assert not any("Captured" in line for line in lines)
+    assert not any("Captured ask" in line for line in lines)
 
 
 def test_task_command_falls_back_to_persisted_store(monkeypatch):

@@ -9104,7 +9104,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             self._handle_stop_command()
         elif canonical == "agents":
             self._handle_agents_command()
-        elif canonical == "task":
+        elif canonical == "tasks":
             self._handle_task_command()
         elif canonical == "journey":
             self._handle_journey_command(cmd_original)

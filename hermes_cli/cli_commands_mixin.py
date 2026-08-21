@@ -300,7 +300,7 @@ class CLICommandsMixin:
         _cprint(f"  Agent: {'running' if agent_running else 'idle'}")
 
     def _handle_task_command(self):
-        """Handle /task — show the current task and full task list."""
+        """Handle /tasks — show the current task and full task list."""
         from cli import _cprint
 
         store = getattr(getattr(self, "agent", None), "_todo_store", None)
@@ -333,12 +333,6 @@ class CLICommandsMixin:
             marker = markers.get(item.get("status", ""), "[?]")
             source_tag = " (user)" if item.get("source") == "user" else ""
             _cprint(f"    - {marker} {item['content']}{source_tag}")
-
-        captures = store.pending_captures()
-        if captures:
-            _cprint("  Captured requests:")
-            for capture in captures:
-                _cprint(f"    - [ ] {capture['content']} (captured)")
 
     def _handle_journey_command(self, cmd_original: str) -> None:
         """Handle /journey — the learning timeline (see `hermes journey`).

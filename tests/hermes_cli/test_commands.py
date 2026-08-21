@@ -112,7 +112,12 @@ class TestResolveCommand:
         assert resolve_command("set-home").name == "sethome"
         assert resolve_command("reload_mcp").name == "reload-mcp"
         assert resolve_command("codex_runtime").name == "codex-runtime"
-        assert resolve_command("tasks").name == "agents"
+        assert resolve_command("tasks").name == "tasks"
+
+    def test_task_singular_no_longer_resolves(self):
+        # /task was renamed to /tasks — the singular name is dead.
+        assert resolve_command("task") is None
+        assert resolve_command("/task") is None
 
     def test_topic_is_gateway_command(self):
         topic = resolve_command("topic")
