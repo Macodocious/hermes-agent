@@ -207,3 +207,24 @@ async def test_memory_add_bubble_saves_to_memory(monkeypatch, tmp_path):
     rendered = await _run_bubble(monkeypatch, tmp_path, Agent)
     assert "🧠 Saving to memory" in rendered, f"missing memory bubble in {rendered}"
     assert "Updating memory" not in rendered
+
+
+@pytest.mark.asyncio
+async def test_todo_no_args_bubble_reads_task_list(monkeypatch, tmp_path):
+    """A bare todo() call (no args) must render the standalone read phrase.
+
+    Mirrors the real emitter (agent/tool_executor.py): the preview is
+    computed via build_tool_preview with the call's (empty) args, then the
+    gateway renders it.  Regression for the bare "📋 todo..." bubble.
+    """
+
+    class Agent(SingleToolAgent):
+        def __init__(self, **kwargs):
+            from agent.display import build_tool_preview
+
+            preview = build_tool_preview("todo", {})
+            super().__init__("todo", preview, {}, **kwargs)
+
+    rendered = await _run_bubble(monkeypatch, tmp_path, Agent)
+    assert "📋 Reading the task list" in rendered, f"missing todo read bubble in {rendered}"
+    assert "todo..." not in rendered

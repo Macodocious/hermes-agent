@@ -160,6 +160,13 @@ class TestBuildToolPreview:
         assert result is not None
         assert "Reading the task list" in result
 
+    def test_todo_tool_no_args(self):
+        """A bare todo() call (no args) reads the task list — it must render
+        the standalone phrase, not fall through to the bare "todo..." bubble."""
+        result = build_tool_preview("todo", {})
+        assert result is not None
+        assert result == "Reading the task list"
+
     def test_todo_tool_with_todos(self):
         result = build_tool_preview("todo", {"todos": [{"id": "1", "content": "test", "status": "pending"}]})
         assert result is not None
