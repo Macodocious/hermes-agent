@@ -1729,7 +1729,14 @@ class DiscordAdapter(BasePlatformAdapter):
         if retry_after_until > now:
             remaining = max(1, int(retry_after_until - now))
             return f"Discord asked us to wait before syncing slash commands; retry in {remaining}s"
-        if entry.get("fingerprint") == fingerprint and entry.get("last_success_at"):
+        # Only trust a recorded success if it is at least as recent as the
+        # last attempt. A sync that was interrupted mid-flight leaves a new
+        # fingerprint with a stale last_success_at; trusting it would skip
+        # the re-sync and permanently miss commands added since the last
+        # completed sync.
+        last_success_at = float(entry.get("last_success_at") or 0)
+        last_attempt_at = float(entry.get("last_attempt_at") or 0)
+        if entry.get("fingerprint") == fingerprint and last_success_at >= last_attempt_at:
             return "same slash-command fingerprint already synced"
         return None
 
@@ -1743,6 +1750,11 @@ class DiscordAdapter(BasePlatformAdapter):
             ),
             "fingerprint": fingerprint,
             "last_attempt_at": time.time(),
+            # A new attempt invalidates any prior success claim: the previous
+            # sync may have been interrupted before completing, so its
+            # fingerprint must not be treated as synced.
+            "last_success_at": 0,
+            "summary": None,
         }
         self._write_command_sync_state(state)
 
@@ -1759,6 +1771,10 @@ class DiscordAdapter(BasePlatformAdapter):
             "last_attempt_at": time.time(),
             "retry_after_until": time.time() + retry_after,
             "retry_after": retry_after,
+            # A rate-limited attempt did not complete; clear any prior
+            # success claim so the next startup re-syncs.
+            "last_success_at": 0,
+            "summary": None,
         }
         self._write_command_sync_state(state)
 
