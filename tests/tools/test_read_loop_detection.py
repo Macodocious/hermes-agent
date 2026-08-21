@@ -285,9 +285,9 @@ class TestSearchLoopDetection(unittest.TestCase):
 
 
 class TestTodoInjectionFiltering(unittest.TestCase):
-    """Verify that format_for_injection filters completed/cancelled todos."""
+    """Verify format_for_injection keeps the full list visible (P4)."""
 
-    def test_filters_completed_and_cancelled(self):
+    def test_completed_rendered_as_done_not_redone(self):
         from tools.todo_tool import TodoStore
         store = TodoStore()
         store.write([
@@ -297,19 +297,27 @@ class TestTodoInjectionFiltering(unittest.TestCase):
             {"id": "4", "content": "Abandoned", "status": "cancelled"},
         ])
         injection = store.format_for_injection()
-        self.assertNotIn("Read codebase", injection)
+        # Completed items persist visibly, marked done, never re-proposed.
+        self.assertIn("[x] Read codebase", injection)
+        self.assertIn("Completed — do not redo", injection)
+        # Cancelled items are excluded — deliberately abandoned.
         self.assertNotIn("Abandoned", injection)
-        self.assertIn("Write fix", injection)
-        self.assertIn("Run tests", injection)
+        self.assertIn("[>] Write fix", injection)
+        self.assertIn("[ ] Run tests", injection)
 
-    def test_all_completed_returns_none(self):
+    def test_all_completed_still_renders(self):
         from tools.todo_tool import TodoStore
         store = TodoStore()
         store.write([
             {"id": "1", "content": "Done", "status": "completed"},
-            {"id": "2", "content": "Also done", "status": "cancelled"},
+            {"id": "2", "content": "Also done", "status": "completed"},
         ])
-        self.assertIsNone(store.format_for_injection())
+        # An all-completed list must still inject a visible task anchor
+        # after compression — this is the empty-frame regression case.
+        injection = store.format_for_injection()
+        self.assertIsNotNone(injection)
+        self.assertIn("[x] Done", injection)
+        self.assertIn("[x] Also done", injection)
 
     def test_empty_store_returns_none(self):
         from tools.todo_tool import TodoStore
