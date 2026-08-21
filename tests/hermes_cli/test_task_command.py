@@ -38,13 +38,13 @@ def test_task_command_shows_current_task_and_full_list():
     lines = _run(_Stub(agent=agent))
 
     assert any("Working on:" not in line for line in lines)
-    assert any(line.strip() == "── Current Tasks ───────" for line in lines)
-    assert any("- [x] 1. Done thing" in line for line in lines)
-    assert any("- [>] 2. Working thing" in line for line in lines)
+    assert any("\x1b[1m── Current Tasks ───────\x1b[0m" in line for line in lines)
+    assert any("- [x] Done thing" in line for line in lines)
+    assert any("- [>] Working thing" in line for line in lines)
     assert not any("← CURRENT TASK" in line for line in lines)
-    assert any("- [ ] 3. Next thing" in line for line in lines)
+    assert any("- [ ] Next thing" in line for line in lines)
     assert any("Captured requests:" in line for line in lines)
-    assert any("[captured] c1. Captured ask" in line for line in lines)
+    assert any("[ ] Captured ask (captured)" in line for line in lines)
 
 
 def test_task_command_falls_back_to_persisted_store(monkeypatch):
@@ -55,7 +55,7 @@ def test_task_command_falls_back_to_persisted_store(monkeypatch):
     lines = _run(_Stub(agent=None))
 
     assert any("Working on:" not in line for line in lines)
-    assert any("- [>] 2. Working thing" in line for line in lines)
+    assert any("- [>] Working thing" in line for line in lines)
     assert not any("← CURRENT TASK" in line for line in lines)
 
 
@@ -77,8 +77,8 @@ def test_task_command_no_in_progress_reports_none():
     lines = _run(_Stub(agent=SimpleNamespace(_todo_store=store)))
 
     assert any("Working on:" not in line for line in lines)
-    assert any("- [x] 1. Done thing" in line for line in lines)
-    assert any("- [ ] 2. Next thing" in line for line in lines)
+    assert any("- [x] Done thing" in line for line in lines)
+    assert any("- [ ] Next thing" in line for line in lines)
 
 
 def test_task_command_no_store_and_no_row_reports_absent(monkeypatch):

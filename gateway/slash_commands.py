@@ -1105,7 +1105,7 @@ class GatewaySlashCommandsMixin:
 
         from hermes_constants import TASK_LIST_HEADER
 
-        lines = [TASK_LIST_HEADER]
+        lines = [f"**{TASK_LIST_HEADER}**"]
         markers = {
             "completed": "[x]",
             "in_progress": "[>]",
@@ -1115,14 +1115,14 @@ class GatewaySlashCommandsMixin:
         for item in items:
             marker = markers.get(item.get("status", ""), "[?]")
             source_tag = " (user)" if item.get("source") == "user" else ""
-            lines.append(f"- {marker} {item['id']}. {item['content']}{source_tag}")
+            lines.append(f"- {marker} {item['content']}{source_tag}")
 
         captures = store.pending_captures()
         if captures:
             lines.append("")
             lines.append("**Captured requests:**")
             for capture in captures:
-                lines.append(f"- [captured] {capture['id']}. {capture['content']}")
+                lines.append(f"- [ ] {capture['content']} (captured)")
 
         return "\n".join(lines)
 
