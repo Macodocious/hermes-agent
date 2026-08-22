@@ -393,7 +393,17 @@ def mark_running_jobs_interrupted(reason: str) -> list:
     Returns the list of job IDs marked, for the caller to log.
     """
     with _running_lock:
-        job_ids = list(_running_job_ids)
+        # Idempotent per shutdown: the gateway marks in-flight jobs at drain
+        # start AND again during final teardown. A job still in flight at the
+        # second call was already marked by the first — re-marking it would
+        # double-increment the ``completed`` counter inside ``mark_job_run``
+        # and double-advance ``next_run_at``. Jobs that raced the first call
+        # (a tick dispatched mid-drain) are still captured by the second.
+        job_ids = [
+            job_id
+            for job_id in _running_job_ids
+            if job_id not in _interrupted_job_ids
+        ]
         _interrupted_job_ids.update(job_ids)
     marked = []
     for job_id in job_ids:
@@ -433,6 +443,69 @@ def _consume_interrupted_flag(job_id: str) -> bool:
             _interrupted_job_ids.discard(job_id)
             return True
         return False
+
+
+# Job agents currently executing, keyed by job ID. Kept separate from
+# ``_running_job_ids`` (which tracks dispatch, not the agent object): the
+# gateway shutdown path needs the LIVE agent handle to break a wedged cron
+# loop at drain start — cron agents run on the scheduler's own thread pool,
+# entirely outside ``GatewayRunner._running_agents``, so the drain has no
+# other way to interrupt them. See ``interrupt_running_job_agents``.
+_job_agents: dict = {}
+_job_agents_lock = threading.Lock()
+
+
+def register_cron_agent(job_id: str, agent) -> None:
+    """Record the live agent of an in-flight cron job.
+
+    Called by ``run_job`` after agent construction. The gateway shutdown path
+    uses the registry to interrupt cron agents at drain start so a job wedged
+    in a hung API call / stuck tool cannot pin the drain until its inactivity
+    timeout.
+    """
+    with _job_agents_lock:
+        _job_agents[job_id] = agent
+
+
+def unregister_cron_agent(job_id: str) -> None:
+    """Drop the job's live agent from the registry.
+
+    Called from ``_teardown_cron_agent``, which every cron job's completion
+    path reaches (direct and deferred-delivery), so the registry cannot leak
+    an agent object past its run. Idempotent — teardown may be invoked once
+    per path and is reached from both.
+    """
+    with _job_agents_lock:
+        _job_agents.pop(job_id, None)
+
+
+def get_running_job_agents() -> dict:
+    """Thread-safe snapshot of live cron job agents (job_id -> agent)."""
+    with _job_agents_lock:
+        return dict(_job_agents)
+
+
+def interrupt_running_job_agents(reason: str) -> list:
+    """Best-effort: request an interrupt on every live cron agent.
+
+    Called by the gateway shutdown path at drain start (see
+    ``GatewayRunner._stop_impl_body``). An in-flight cron job's agent loop
+    checks ``_interrupt_requested`` between iterations and aborts promptly,
+    so the drain no longer waits out a wedged job's full inactivity timeout;
+    ``run_one_job``'s interrupted-flag checks then report the run honestly.
+    A cron run has no human waiting to resume it, so interrupting it early is
+    always safe — the schedule re-fires on the next tick.
+
+    Returns the list of job IDs interrupted, for the caller to log.
+    """
+    interrupted = []
+    for job_id, agent in get_running_job_agents().items():
+        try:
+            agent.interrupt(reason)
+            interrupted.append(job_id)
+        except Exception as e:
+            logger.warning("Failed to interrupt cron job %s agent: %s", job_id, e)
+    return interrupted
 
 
 # Sequential (env-mutating) cron jobs — workdir jobs that touch
@@ -3369,7 +3442,15 @@ def run_job(
             session_id=_cron_session_id,
             session_db=_session_db,
         )
-        
+
+        # Publish the live agent to the scheduler's registry so the gateway
+        # shutdown path can interrupt this job at drain start. Cron agents
+        # run on the scheduler's own thread pool — outside
+        # ``GatewayRunner._running_agents`` — so without this registry the
+        # drain has no handle on a wedged job and would wait out its full
+        # inactivity timeout before killing its tool subprocesses under it.
+        register_cron_agent(job_id, agent)
+
         # Run the agent with an *inactivity*-based timeout: the job can run
         # for hours if it's actively calling tools / receiving stream tokens,
         # but a hung API call or stuck tool with no activity for the configured
@@ -3692,6 +3773,9 @@ def _teardown_cron_agent(agent, job_id: str) -> None:
     client) and reaps stale async clients whose loop has since closed. Idempotent
     and independently guarded, matching the original inline behavior.
     """
+    # Drop the registry entry first: a finished agent must not stay
+    # interruptible, and a stale entry would leak the agent object.
+    unregister_cron_agent(job_id)
     try:
         if agent is not None:
             agent.close()

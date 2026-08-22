@@ -9004,6 +9004,55 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             self._running = False
             self._draining = True
 
+            # Drain-start cron interrupt: from this instant the process is
+            # tearing down, so any cron job still in flight is doomed — the
+            # tool subprocess sweep below will kill its tools out from under
+            # it (or the process will die under it). Mark it interrupted NOW,
+            # at the START of the drain, instead of only at the final tool
+            # sweep: the run_one_job completion path checks _is_interrupted()
+            # before writing last_status, so a job that finishes its response
+            # during the drain (like Friday's post-market run, which escaped
+            # as "ok" by ~0.4 s) can no longer false-report success (#60432).
+            # A job that genuinely completes in this window is still reported
+            # interrupted — over-reporting beats the false "ok" on a run
+            # whose tool subprocesses are about to be killed anyway.
+            #
+            # Best-effort, matching the end-of-drain call's error handling:
+            # a scheduler that cannot mark is not going to stop the shutdown.
+            try:
+                from cron.scheduler import mark_running_jobs_interrupted
+                _drain_interrupted = mark_running_jobs_interrupted(
+                    "Gateway shutting down (drain began before the run finished)."
+                )
+                if _drain_interrupted:
+                    logger.warning(
+                        "Shutdown (drain-start): marked %d in-flight cron job(s) interrupted: %s",
+                        len(_drain_interrupted), ", ".join(_drain_interrupted),
+                    )
+            except Exception as _e:
+                logger.debug("mark_running_jobs_interrupted (drain-start) error: %s", _e)
+
+            # Interrupt wedged cron agents at drain start so the drain exits
+            # fast and honestly: cron agents run on the scheduler's own thread
+            # pool, entirely outside _running_agents, so without this the
+            # drain would wait out a hung job's full inactivity timeout
+            # (default 600 s) before the tool sweep kills it. The agent loop
+            # checks _interrupt_requested between iterations and aborts
+            # promptly; run_one_job's interrupted-flag checks then report the
+            # run honestly.
+            try:
+                from cron.scheduler import interrupt_running_job_agents
+                _drain_interrupted_agents = interrupt_running_job_agents(
+                    "Gateway shutting down (drain started)."
+                )
+                if _drain_interrupted_agents:
+                    logger.info(
+                        "Shutdown (drain-start): interrupted %d cron agent(s): %s",
+                        len(_drain_interrupted_agents), ", ".join(_drain_interrupted_agents),
+                    )
+            except Exception as _e:
+                logger.debug("interrupt_running_job_agents (drain-start) error: %s", _e)
+
             stop_watchdog = getattr(self, "_stop_systemd_watchdog", None)
             if callable(stop_watchdog):
                 await stop_watchdog()
