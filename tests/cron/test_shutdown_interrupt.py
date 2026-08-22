@@ -11,7 +11,7 @@ Covers the cron/scheduler.py primitives directly:
     result AFTER its tool was already killed out from under it
 """
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -24,9 +24,11 @@ def _reset_scheduler_state():
 
     sched._running_job_ids.clear()
     sched._interrupted_job_ids.clear()
+    sched._job_agents.clear()
     yield
     sched._running_job_ids.clear()
     sched._interrupted_job_ids.clear()
+    sched._job_agents.clear()
 
 
 class TestGetRunningJobIds:
@@ -276,3 +278,111 @@ class TestRunOneJobHonoursInterruptedFlag:
 
         assert result is False
         mock_mark.assert_not_called()
+
+
+class TestMarkRunningJobsInterruptedIdempotent:
+    """The drain-start mark (new) plus the final-cleanup mark (existing)
+    both fire during one shutdown. Re-marking a job already marked by the
+    first call would double-increment ``completed`` and double-advance
+    ``next_run_at`` inside ``mark_job_run``, so the second call must be a
+    no-op for jobs it already saw."""
+
+    def test_second_call_does_not_remark_already_marked_jobs(self):
+        import cron.scheduler as sched
+
+        sched._running_job_ids.update({"job-1", "job-2"})
+
+        with patch("cron.scheduler.mark_job_run") as mock_mark:
+            first = sched.mark_running_jobs_interrupted("drain started")
+            second = sched.mark_running_jobs_interrupted("final cleanup")
+
+        # First call marks everything in flight; second call marks nothing.
+        assert sorted(first) == ["job-1", "job-2"]
+        assert second == []
+        assert mock_mark.call_count == 2  # only the first call's writes
+
+    def test_jobs_dispatched_after_drain_start_are_still_captured(self):
+        """A tick that dispatches a job mid-drain (before the final sweep)
+        races the first mark. The second call must catch it — it wasn't in
+        the first call's snapshot, so it is not protected by idempotency."""
+        import cron.scheduler as sched
+
+        sched._running_job_ids.add("early-job")
+
+        with patch("cron.scheduler.mark_job_run") as mock_mark:
+            sched.mark_running_jobs_interrupted("drain started")
+            sched._running_job_ids.add("late-job")  # dispatched mid-drain
+            second = sched.mark_running_jobs_interrupted("final cleanup")
+
+        assert second == ["late-job"]
+        called_ids = {c.args[0] for c in mock_mark.call_args_list}
+        assert called_ids == {"early-job", "late-job"}
+
+
+class TestJobAgentRegistry:
+    """Drain-start wedged-agent interrupt: the gateway needs the live agent
+    handle per in-flight job. Exercises register/unregister/get/
+    interrupt_running_job_agents."""
+
+    def test_register_then_get_returns_agent(self):
+        import cron.scheduler as sched
+
+        agent = MagicMock()
+        sched.register_cron_agent("job-1", agent)
+
+        assert sched.get_running_job_agents() == {"job-1": agent}
+
+    def test_unregister_drops_agent(self):
+        import cron.scheduler as sched
+
+        sched.register_cron_agent("job-1", MagicMock())
+        sched.unregister_cron_agent("job-1")
+
+        assert sched.get_running_job_agents() == {}
+
+    def test_unregister_unknown_id_is_safe(self):
+        import cron.scheduler as sched
+
+        sched.unregister_cron_agent("never-registered")  # must not raise
+
+    def test_get_returns_independent_snapshot(self):
+        import cron.scheduler as sched
+
+        sched.register_cron_agent("job-1", MagicMock())
+        snapshot = sched.get_running_job_agents()
+        sched.register_cron_agent("job-2", MagicMock())
+
+        assert snapshot == {"job-1": snapshot["job-1"]}
+
+    def test_interrupt_hits_every_registered_agent(self):
+        import cron.scheduler as sched
+
+        agent_1 = MagicMock()
+        agent_2 = MagicMock()
+        sched.register_cron_agent("job-1", agent_1)
+        sched.register_cron_agent("job-2", agent_2)
+
+        interrupted = sched.interrupt_running_job_agents("drain started")
+
+        assert sorted(interrupted) == ["job-1", "job-2"]
+        agent_1.interrupt.assert_called_once_with("drain started")
+        agent_2.interrupt.assert_called_once_with("drain started")
+
+    def test_interrupt_never_raises_when_nothing_registered(self):
+        import cron.scheduler as sched
+
+        assert sched.interrupt_running_job_agents("drain started") == []
+
+    def test_interrupt_one_failure_does_not_block_others(self):
+        import cron.scheduler as sched
+
+        agent_1 = MagicMock()
+        agent_1.interrupt.side_effect = RuntimeError("boom")
+        agent_2 = MagicMock()
+        sched.register_cron_agent("job-1", agent_1)
+        sched.register_cron_agent("job-2", agent_2)
+
+        interrupted = sched.interrupt_running_job_agents("drain started")
+
+        assert interrupted == ["job-2"]
+        agent_2.interrupt.assert_called_once_with("drain started")
