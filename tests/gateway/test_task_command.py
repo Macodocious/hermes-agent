@@ -109,8 +109,9 @@ async def test_task_command_shows_current_task_and_full_list():
     assert result is not None
 
     assert "**Working on:**" not in result
-    assert "── Current Tasks ───────" in result
-    assert result.splitlines()[0] == "**── Current Tasks ───────**"
+    # Only the title text is bolded; the ── rule lines must stay plain.
+    assert "**──" not in result
+    assert result.splitlines()[0] == "── **Current Tasks** ───────"
     assert "- [x] Done thing" in result
     assert "- [>] Working thing" in result
     assert "← CURRENT TASK" not in result
