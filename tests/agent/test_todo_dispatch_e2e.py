@@ -64,6 +64,8 @@ def dispatched(monkeypatch):
         lambda agent: FakeGoalManager(calls),
     )
     monkeypatch.setattr(task_manager, "_persist", lambda agent: None)
+    # The post-close review must not fire real LLM calls in E2E tests.
+    monkeypatch.setattr(task_manager, "_review_config", lambda: {"enabled": False})
     store = TodoStore()
     _seed(store, "1", "Build the thing")
     return _make_agent(store), calls

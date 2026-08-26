@@ -175,13 +175,16 @@ class TodoStore:
         # on the first todo write. Any model write clears the flag.
         self._seeded = False
 
-    def seed_from_user_message(self, text: Any) -> Optional[Dict[str, str]]:
+    def seed_from_user_message(self, text: Any, origin: str = "") -> Optional[Dict[str, str]]:
         """Seed an empty store with the user's opening message (P5).
 
         Stores the scaffold-stripped text as the seeded user-sourced task
         (born ``pending`` — the lifecycle begins with an explicit ``begin``
         transition) and marks the store as seeded so the per-turn block can
-        nudge the model to rename it. Returns the seeded item, or None when
+        nudge the model to rename it. ``origin`` is the triggering message
+        id captured before the scaffold strip — it anchors the inline-plan
+        window for the post-close review (a plan/proposal lives in the
+        conversation, not a file). Returns the seeded item, or None when
         the text is empty after stripping or the store already has items.
         """
         if self.has_items():
@@ -190,9 +193,10 @@ class TodoStore:
         if not content:
             return None
         self._seeded = True
-        self._items = [
-            {"id": "1", "content": self._cap_content(content), "status": "pending", "source": USER_SOURCE}
-        ]
+        item = {"id": "1", "content": self._cap_content(content), "status": "pending", "source": USER_SOURCE}
+        if origin:
+            item["origin"] = origin
+        self._items = [item]
         return self._items[0].copy()
 
     def write(self, todos: List[Dict[str, Any]], merge: bool = False) -> List[Dict[str, str]]:
@@ -740,6 +744,24 @@ class TodoStore:
         # items stay untagged for backward compatibility.
         if str(item.get("source", "")).strip().lower() == USER_SOURCE:
             validated["source"] = USER_SOURCE
+        # Review lineage (P6): the post-close review spawns fix tasks with
+        # source=review and a review_of parent id. Both survive validation
+        # so the lineage depth cap and the fix-task lookup work; the tag
+        # is code-owned (task_manager), never model-authorable.
+        if str(item.get("source", "")).strip().lower() == "review":
+            validated["source"] = "review"
+            if str(item.get("review_of", "")).strip():
+                validated["review_of"] = str(item["review_of"]).strip()
+        # Review metadata (P6): the explicit plan reference and the
+        # seed-captured origin message id survive validation so the
+        # post-close review can resolve the plan half of its packet.
+        # origin is seed-owned — the model can never set it via writes;
+        # only an explicit plan ref is model-authorable.
+        if isinstance(item.get("plan"), str) and str(item["plan"]).strip():
+            validated["plan"] = str(item["plan"]).strip()
+        origin = str(item.get("origin", "")).strip()
+        if origin:
+            validated["origin"] = origin
         return validated
 
     @staticmethod

@@ -30,6 +30,8 @@ def _seed(store: TodoStore, item_id: str, content: str) -> None:
 def _lifecycle_on(monkeypatch) -> None:
     """Pin the lifecycle config so tests are independent of the host config."""
     monkeypatch.setattr(task_manager, "_lifecycle_config", lambda: {"enabled": True})
+    # The post-close review must not fire real LLM calls in unit tests.
+    monkeypatch.setattr(task_manager, "_review_config", lambda: {"enabled": False})
 
 
 # ── on_todo_write: GoalEngine arming ──────────────────────────────────

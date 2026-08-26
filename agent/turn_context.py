@@ -25,6 +25,7 @@ move-and-name refactor with no semantic change.
 from __future__ import annotations
 
 import logging
+import re
 import threading
 import uuid
 from dataclasses import dataclass
@@ -244,6 +245,25 @@ def _should_capture_user_request(
     return True
 
 
+def _extract_origin_id(user_message: Any) -> str:
+    """Pull the triggering message id from raw gateway scaffolding.
+
+    The seed stores the scaffold-stripped content, but the triggering
+    message id anchors the inline-plan window for the post-close review
+    (a plan/proposal lives in the conversation, not a file). Captured
+    here, before stripping, and stored on the seeded item. Returns ""
+    when the message carries no triggering envelope.
+    """
+    try:
+        text = str(user_message or "")
+    except Exception:  # pragma: no cover - defensive
+        return ""
+    match = re.search(r"^\[Triggering message id: `([^`]+)`", text)
+    if not match:
+        return ""
+    return match.group(1).strip()
+
+
 def _seed_todo_store_from_user_message(agent: Any, user_message: Any) -> None:
     """Deterministic bootstrap: seed an empty todo store with the user turn.
 
@@ -280,7 +300,7 @@ def _seed_todo_store_from_user_message(agent: Any, user_message: Any) -> None:
         return
     if text.startswith(_CAPTURE_EXCLUDED_PREFIXES):
         return
-    store.seed_from_user_message(text)
+    store.seed_from_user_message(text, origin=_extract_origin_id(user_message))
     try:
         from hermes_cli.tasks import persist_todo_store
 

@@ -2429,6 +2429,18 @@ DEFAULT_CONFIG = {
             # used when task_manager arms the loop on begin.
             "max_turns": 20,
         },
+        "review": {
+            "enabled": True,
+            # Post-close review (P6): when a task finalizes as done, a
+            # parallel completion call reviews the implementation against
+            # its plan (explicit ref → item content → inline origin
+            # window). A needs_work verdict mechanically spawns a fix
+            # task. max_rounds caps the review lineage depth — past the
+            # cap the fix task is mechanically escalated instead of
+            # spawning another review round (prevents a runaway
+            # review → fix → review machine).
+            "max_rounds": 2,
+        },
     },
 
     # Mixture of Agents — named presets used by /moa. A preset is an execution
