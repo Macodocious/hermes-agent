@@ -21,7 +21,28 @@ from typing import Dict, Any, List, Optional
 
 
 # Valid status values for todo items
-VALID_STATUSES = {"pending", "in_progress", "completed", "cancelled"}
+VALID_STATUSES = {
+    "pending", "in_progress", "completed", "cancelled",
+    "paused", "closing", "escalated",
+}
+
+# Lifecycle actions the agent can issue against a single task (P1). Each
+# action is a deterministic state transition enforced by TodoStore.transition;
+# the model never writes lifecycle statuses directly through the todos list.
+LIFECYCLE_ACTIONS = {"begin", "pause", "resume", "close", "escalate"}
+
+# Allowed transitions per lifecycle action, keyed by the item's current
+# status. Anything not listed is refused with an error. "finalize" is the
+# internal closing -> closed step driven by the task lifecycle judge (the
+# second key of the two-key close); it is not a model-facing action.
+_LIFECYCLE_TRANSITIONS = {
+    "begin": {"pending", "paused"},
+    "pause": {"in_progress"},
+    "resume": {"paused", "closing"},
+    "close": {"in_progress", "paused"},
+    "escalate": {"pending", "in_progress", "paused", "closing"},
+    "finalize": {"closing"},
+}
 
 # Bounds on persisted todo state. The todo list is a planning aid the model
 # re-reads after every context-compression event (see format_for_injection),
@@ -157,10 +178,11 @@ class TodoStore:
     def seed_from_user_message(self, text: Any) -> Optional[Dict[str, str]]:
         """Seed an empty store with the user's opening message (P5).
 
-        Stores the scaffold-stripped text as the active user-sourced task
-        and marks the store as seeded so the per-turn block can nudge the
-        model to rename it. Returns the seeded item, or None when the text
-        is empty after stripping or the store already has items.
+        Stores the scaffold-stripped text as the seeded user-sourced task
+        (born ``pending`` — the lifecycle begins with an explicit ``begin``
+        transition) and marks the store as seeded so the per-turn block can
+        nudge the model to rename it. Returns the seeded item, or None when
+        the text is empty after stripping or the store already has items.
         """
         if self.has_items():
             return None
@@ -169,7 +191,7 @@ class TodoStore:
             return None
         self._seeded = True
         self._items = [
-            {"id": "1", "content": self._cap_content(content), "status": "in_progress", "source": USER_SOURCE}
+            {"id": "1", "content": self._cap_content(content), "status": "pending", "source": USER_SOURCE}
         ]
         return self._items[0].copy()
 
@@ -357,6 +379,86 @@ class TodoStore:
             }
         return None
 
+    def transition(self, action: str, item_id: Any) -> Dict[str, Any]:
+        """Apply a lifecycle action to one task (P1).
+
+        Deterministic state machine: ``begin`` / ``pause`` / ``resume`` /
+        ``close`` / ``escalate`` move a single item between lifecycle
+        statuses per ``_LIFECYCLE_TRANSITIONS``; anything else is refused
+        with an error dict. ``begin`` is refused while another task is
+        ``in_progress`` (the pivot rule: the agent must pause, close, or
+        escalate the current task before starting a new one). ``close``
+        moves the task to ``closing`` — the judge's ``done`` verdict is the
+        second key that finalizes it via ``finalize`` (internal, not
+        model-facing).
+
+        Returns ``{"ok": True, "item": {...}}`` on success or
+        ``{"ok": False, "error": "..."}`` on refusal. Never raises.
+        """
+        action = str(action or "").strip().lower()
+        item_id = str(item_id or "").strip()
+        if action not in LIFECYCLE_ACTIONS:
+            return {"ok": False, "error": f"unknown lifecycle action: {action}"}
+        item = next((i for i in self._items if i["id"] == item_id), None)
+        if item is None:
+            return {"ok": False, "error": f"no task with id {item_id}"}
+        allowed = _LIFECYCLE_TRANSITIONS.get(action, set())
+        if item["status"] not in allowed:
+            return {
+                "ok": False,
+                "error": (
+                    f"cannot {action} task {item_id} in status "
+                    f"'{item['status']}' (allowed from: {sorted(allowed) or 'none'})"
+                ),
+            }
+        if action == "begin":
+            # Pivot rule: a new task cannot start while another is
+            # current. The agent must pause, close, or escalate the
+            # current task first — refusal, not silent demotion.
+            for other in self._items:
+                if other is not item and other["status"] == "in_progress":
+                    return {
+                        "ok": False,
+                        "error": (
+                            f"cannot begin task {item_id}: task {other['id']} "
+                            "is still in_progress — pause, close, or escalate "
+                            "it first"
+                        ),
+                    }
+            item["status"] = "in_progress"
+        elif action == "pause":
+            item["status"] = "paused"
+        elif action == "resume":
+            item["status"] = "in_progress"
+        elif action == "close":
+            item["status"] = "closing"
+        elif action == "escalate":
+            item["status"] = "escalated"
+        return {"ok": True, "item": item.copy()}
+
+    def finalize(self, item_id: Any) -> Dict[str, Any]:
+        """Finalize a closing task as completed (the judge's second key).
+
+        Internal counterpart to ``transition``: only a task in ``closing``
+        may be finalized, and only the task-lifecycle judge path calls this
+        (never the model directly). Returns the same shape as
+        ``transition``.
+        """
+        item_id = str(item_id or "").strip()
+        item = next((i for i in self._items if i["id"] == item_id), None)
+        if item is None:
+            return {"ok": False, "error": f"no task with id {item_id}"}
+        if item["status"] != "closing":
+            return {
+                "ok": False,
+                "error": (
+                    f"cannot finalize task {item_id} in status "
+                    f"'{item['status']}' (only 'closing' tasks finalize)"
+                ),
+            }
+        item["status"] = "completed"
+        return {"ok": True, "item": item.copy()}
+
     def format_for_injection(self) -> Optional[str]:
         """
         Render the task list for post-compression injection.
@@ -378,6 +480,9 @@ class TodoStore:
             "in_progress": "[>]",
             "pending": "[ ]",
             "cancelled": "[~]",
+            "paused": "[‖]",
+            "closing": "[>]",
+            "escalated": "[!]",
         }
 
         # Completed items are visible (marked [x]) so finished work
@@ -385,7 +490,7 @@ class TodoStore:
         # header explicitly flags them as done to prevent redoing.
         active_items = [
             item for item in self._items
-            if item["status"] in {"pending", "in_progress"}
+            if item["status"] in {"pending", "in_progress", "paused", "closing", "escalated"}
         ]
         completed_items = [
             item for item in self._items if item["status"] == "completed"
@@ -415,7 +520,7 @@ class TodoStore:
         """
         active_items = [
             item for item in self._items
-            if item["status"] in {"pending", "in_progress"}
+            if item["status"] in {"pending", "in_progress", "paused", "closing", "escalated"}
         ]
         completed_items = [
             item for item in self._items if item["status"] == "completed"
@@ -429,6 +534,9 @@ class TodoStore:
             "in_progress": "[>]",
             "pending": "[ ]",
             "cancelled": "[~]",
+            "paused": "[‖]",
+            "closing": "[>]",
+            "escalated": "[!]",
         }
         lines = ["[Active tasks]"]
         for item in active_items:
@@ -653,6 +761,8 @@ def todo_tool(
     merge: bool = False,
     store: Optional[TodoStore] = None,
     dispositions: Any = None,
+    action: Optional[str] = None,
+    item_id: Any = None,
 ) -> str:
     """
     Single entry point for the todo tool. Reads or writes depending on params.
@@ -664,6 +774,11 @@ def todo_tool(
         dispositions: optional mapping/list of captured-request dispositions
             (P3). Applied after any write so a single call can both update
             the plan and disposition captured requests.
+        action: lifecycle action (begin|pause|resume|close|escalate) applied
+            to the task named by item_id (P1). Mutually exclusive with
+            todos; when both are provided the lifecycle action wins and the
+            write is ignored.
+        item_id: id of the task the lifecycle action targets.
 
     Returns:
         JSON string with the full current list, pending captured requests,
@@ -672,7 +787,12 @@ def todo_tool(
     if store is None:
         return tool_error("TodoStore not initialized")
 
-    if todos is not None:
+    if action is not None:
+        result = store.transition(action, item_id)
+        if not result.get("ok"):
+            return tool_error(result.get("error", "lifecycle transition refused"))
+        items = store.read()
+    elif todos is not None:
         # Guard: LLM sometimes sends todos as a JSON string instead of a list
         if isinstance(todos, str):
             try:
@@ -695,6 +815,9 @@ def todo_tool(
     in_progress = sum(1 for i in items if i["status"] == "in_progress")
     completed = sum(1 for i in items if i["status"] == "completed")
     cancelled = sum(1 for i in items if i["status"] == "cancelled")
+    paused = sum(1 for i in items if i["status"] == "paused")
+    closing = sum(1 for i in items if i["status"] == "closing")
+    escalated = sum(1 for i in items if i["status"] == "escalated")
 
     return json.dumps({
         "todos": items,
@@ -705,6 +828,9 @@ def todo_tool(
             "in_progress": in_progress,
             "completed": completed,
             "cancelled": cancelled,
+            "paused": paused,
+            "closing": closing,
+            "escalated": escalated,
         },
     }, ensure_ascii=False)
 
@@ -726,6 +852,16 @@ TODO_SCHEMA = {
         "Manage your task list for the current session. Use for complex tasks "
         "with 3+ steps or when the user provides multiple tasks. "
         "Call with no parameters to read the current list.\n\n"
+        "Lifecycle (task state machine):\n"
+        "- begin: start a pending/paused task (it becomes in_progress). "
+        "Starting a new task while another is in_progress is refused — "
+        "pause, close, or escalate the current task first.\n"
+        "- pause: stop the current task (it becomes paused; resume later).\n"
+        "- resume: continue a paused task.\n"
+        "- close: declare the current task finished (it enters closing; "
+        "the lifecycle judge's done verdict finalizes it as completed).\n"
+        "- escalate: abandon the current task and surface it to the user.\n"
+        "Use action + item_id to apply a lifecycle action.\n\n"
         "Writing:\n"
         "- Provide 'todos' array to create/update items\n"
         "- merge=false (default): replace the entire list with a fresh plan\n"
@@ -792,6 +928,18 @@ TODO_SCHEMA = {
                 ),
                 "default": False
             },
+            "action": {
+                "type": "string",
+                "enum": ["begin", "pause", "resume", "close", "escalate"],
+                "description": (
+                    "Lifecycle action applied to the task named by item_id. "
+                    "Mutually exclusive with todos."
+                )
+            },
+            "item_id": {
+                "type": "string",
+                "description": "Id of the task a lifecycle action targets."
+            },
             "dispositions": {
                 "type": "array",
                 "description": (
@@ -830,7 +978,8 @@ registry.register(
     schema=TODO_SCHEMA,
     handler=lambda args, **kw: todo_tool(
         todos=args.get("todos"), merge=args.get("merge", False),
-        dispositions=args.get("dispositions"), store=kw.get("store")),
+        dispositions=args.get("dispositions"), store=kw.get("store"),
+        action=args.get("action"), item_id=args.get("item_id")),
     check_fn=check_todo_requirements,
     emoji="📋",
 )

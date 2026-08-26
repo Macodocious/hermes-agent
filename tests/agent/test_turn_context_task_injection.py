@@ -167,7 +167,9 @@ class TestSeedTodoStoreFromUserMessage:
         items = store.read()
         assert len(items) == 1
         assert items[0]["content"] == "Build the thing"
-        assert items[0]["status"] == "in_progress"
+        # Seeds are born pending: the lifecycle begins with an explicit
+        # begin transition, never an implicit current task.
+        assert items[0]["status"] == "pending"
         assert items[0]["source"] == "user"
         assert store._seeded is True
 

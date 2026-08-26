@@ -2470,15 +2470,25 @@ def invoke_tool(agent, function_name: str, function_args: dict, effective_task_i
                 merge=next_args.get("merge", False),
                 dispositions=next_args.get("dispositions"),
                 store=agent._todo_store,
+                action=next_args.get("action"),
+                item_id=next_args.get("item_id"),
             )
             # Write-through (P1): persist after any mutating call so the
             # state_meta row survives the per-message agent. Reads skip it.
             if (
                 next_args.get("todos") is not None
                 or next_args.get("dispositions") is not None
+                or next_args.get("action") is not None
             ):
                 from hermes_cli.tasks import persist_todo_store
                 persist_todo_store(agent)
+                # Lifecycle hook (P1/P2): arm or clear the GoalEngine loop
+                # to mirror the task state after every todo write.
+                try:
+                    from agent.task_manager import on_todo_write
+                    on_todo_write(agent, next_args)
+                except Exception:
+                    pass
             return _finish_agent_tool(result, next_args)
     elif function_name == "session_search":
         def _execute(next_args: dict) -> Any:

@@ -9526,8 +9526,26 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         The empty-response skip mirrors the gateway guard at
         ``_handle_message`` in ``gateway/run.py``.
         """
+        # Task-lifecycle pull-back (P1/P2): the turn-end audit stamps a
+        # nudge on the agent when work happened with no open task. It
+        # must be delivered even when no goal loop is running. Only a
+        # real non-empty string counts (mocked agents auto-create
+        # attributes, which must not hijack the queue).
+        _lifecycle_nudge = ""
+        _agent = getattr(self, "agent", None)
+        if _agent is not None:
+            _nudge_value = getattr(_agent, "_task_lifecycle_nudge", "")
+            if isinstance(_nudge_value, str) and _nudge_value:
+                _lifecycle_nudge = _nudge_value
+                _agent._task_lifecycle_nudge = ""
+
         mgr = self._get_goal_manager()
         if mgr is None or not mgr.is_active():
+            if _lifecycle_nudge:
+                try:
+                    self._pending_input.put(_lifecycle_nudge)
+                except Exception as exc:
+                    logging.debug("task-lifecycle nudge enqueue failed: %s", exc)
             return
 
         # If a real user message is already queued, don't inject a
@@ -9624,13 +9642,40 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         if msg:
             _cprint(f"  {msg}")
 
+        # Task-lifecycle two-key close (P1/P2): observe the judge's verdict
+        # against the live agent's todo store — a closing task finalizes on
+        # done, a premature close returns to in_progress, and a done
+        # verdict on an open task finalizes it with a nudge.
+        _verdict_nudge = ""
+        if _agent is not None:
+            try:
+                from agent.task_manager import observe_verdict
+
+                _verdict_nudge = str(observe_verdict(_agent, decision) or "")
+            except Exception as _verdict_exc:
+                logging.debug("task-lifecycle verdict observation failed: %s", _verdict_exc)
+
         if decision.get("should_continue"):
             prompt = decision.get("continuation_prompt")
-            if prompt:
+            if prompt or _lifecycle_nudge or _verdict_nudge:
                 try:
-                    self._pending_input.put(prompt)
+                    # The lifecycle pull-back nudge goes first — it
+                    # outranks the goal continuation.
+                    if _lifecycle_nudge:
+                        self._pending_input.put(_lifecycle_nudge)
+                    if _verdict_nudge:
+                        self._pending_input.put(_verdict_nudge)
+                    if prompt:
+                        self._pending_input.put(prompt)
                 except Exception as exc:
                     logging.debug("goal continuation enqueue failed: %s", exc)
+        elif _lifecycle_nudge:
+            # The loop is stopping (done/paused/cleared) but the audit
+            # nudge still needs delivery.
+            try:
+                self._pending_input.put(_lifecycle_nudge)
+            except Exception as exc:
+                logging.debug("task-lifecycle nudge enqueue failed: %s", exc)
 
 
 

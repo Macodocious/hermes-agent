@@ -11596,10 +11596,20 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     except Exception:
                         session_entry = None
                     if session_entry is not None:
+                        # Task-lifecycle pull-back (P1/P2): if the turn-end
+                        # audit flagged work with no open task, enqueue the
+                        # nudge ahead of any goal continuation so the agent
+                        # is pulled back to the lifecycle.
+                        _lifecycle_nudge = ""
+                        if isinstance(_agent_result, dict):
+                            _lifecycle_nudge = str(
+                                _agent_result.get("task_lifecycle_nudge") or ""
+                            )
                         await self._post_turn_goal_continuation(
                             session_entry=session_entry,
                             source=source,
                             final_response=_final_text,
+                            task_lifecycle_nudge=_lifecycle_nudge,
                         )
             except Exception as _goal_exc:
                 logger.debug("goal continuation hook failed: %s", _goal_exc)
@@ -14298,6 +14308,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         session_entry: Any,
         source: Any,
         final_response: str,
+        task_lifecycle_nudge: str = "",
     ) -> None:
         """Run the goal judge after a gateway turn and, if still active,
         enqueue a continuation prompt for the same session.
@@ -14308,6 +14319,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         We use the adapter's pending-message / FIFO machinery so any real
         user message that arrives simultaneously is handled by the same
         queue and takes priority naturally.
+
+        ``task_lifecycle_nudge`` (P1/P2): a pull-back nudge produced by the
+        turn-end audit. It is enqueued ahead of any goal continuation so
+        the agent is pulled back to the task lifecycle first.
         """
         try:
             from hermes_cli.goals import GoalManager
@@ -14323,6 +14338,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
         mgr = GoalManager(session_id=sid, default_max_turns=max_turns)
         if not mgr.is_active():
+            # No goal loop running. The lifecycle nudge still applies —
+            # the audit fired because work happened with no open task.
+            if task_lifecycle_nudge and source is not None:
+                await self._enqueue_lifecycle_nudge(source, task_lifecycle_nudge)
             return
 
         try:
@@ -14338,6 +14357,18 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         )
         msg = decision.get("message") or ""
 
+        # Task-lifecycle two-key close (P1/P2): observe the judge's verdict
+        # against the persisted todo store — a closing task finalizes on
+        # done, a premature close returns to in_progress, and a done
+        # verdict on an open task finalizes it with a nudge.
+        try:
+            from agent.task_manager import observe_verdict_for_session
+
+            _verdict_nudge = observe_verdict_for_session(sid, decision)
+        except Exception as _verdict_exc:
+            logger.debug("task-lifecycle verdict observation failed: %s", _verdict_exc)
+            _verdict_nudge = None
+
         # Defer the status line until after the adapter has delivered the
         # agent's visible final response. The judge runs after the response is
         # produced but before BasePlatformAdapter sends it, so sending here
@@ -14348,28 +14379,81 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             await self._defer_goal_status_notice_after_delivery(source, msg)
 
         if not decision.get("should_continue"):
+            # The loop is stopping (done/paused/cleared). A lifecycle
+            # nudge still needs delivery — the audit fired independently
+            # of the goal loop.
+            if task_lifecycle_nudge and source is not None:
+                await self._enqueue_lifecycle_nudge(source, task_lifecycle_nudge)
             return
 
         prompt = decision.get("continuation_prompt") or ""
-        if not prompt or source is None:
+        if not prompt and not task_lifecycle_nudge and not _verdict_nudge:
+            return
+        if source is None:
             return
 
         # Enqueue via the adapter's FIFO so a user message already in
-        # flight preempts the continuation naturally.
+        # flight preempts the continuation naturally. The lifecycle
+        # pull-back nudge goes first — it outranks the goal continuation.
         try:
             adapter = self._adapter_for_source(source)
             _quick_key = self._session_key_for_source(source)
             if adapter and _quick_key:
-                cont_event = MessageEvent(
-                    text=prompt,
-                    message_type=MessageType.TEXT,
-                    source=source,
-                    message_id=None,
-                    channel_prompt=None,
-                )
-                self._enqueue_fifo(_quick_key, cont_event, adapter)
+                if task_lifecycle_nudge:
+                    self._enqueue_fifo(
+                        _quick_key,
+                        MessageEvent(
+                            text=task_lifecycle_nudge,
+                            message_type=MessageType.TEXT,
+                            source=source,
+                            message_id=None,
+                            channel_prompt=None,
+                        ),
+                        adapter,
+                    )
+                if _verdict_nudge:
+                    self._enqueue_fifo(
+                        _quick_key,
+                        MessageEvent(
+                            text=_verdict_nudge,
+                            message_type=MessageType.TEXT,
+                            source=source,
+                            message_id=None,
+                            channel_prompt=None,
+                        ),
+                        adapter,
+                    )
+                if prompt:
+                    cont_event = MessageEvent(
+                        text=prompt,
+                        message_type=MessageType.TEXT,
+                        source=source,
+                        message_id=None,
+                        channel_prompt=None,
+                    )
+                    self._enqueue_fifo(_quick_key, cont_event, adapter)
         except Exception as exc:
             logger.debug("goal continuation: enqueue failed: %s", exc)
+
+    async def _enqueue_lifecycle_nudge(self, source: Any, nudge: str) -> None:
+        """Enqueue a task-lifecycle pull-back nudge through the adapter FIFO."""
+        try:
+            adapter = self._adapter_for_source(source)
+            _quick_key = self._session_key_for_source(source)
+            if adapter and _quick_key:
+                self._enqueue_fifo(
+                    _quick_key,
+                    MessageEvent(
+                        text=nudge,
+                        message_type=MessageType.TEXT,
+                        source=source,
+                        message_id=None,
+                        channel_prompt=None,
+                    ),
+                    adapter,
+                )
+        except Exception as exc:
+            logger.debug("task-lifecycle nudge enqueue failed: %s", exc)
 
 
 

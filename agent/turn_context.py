@@ -252,10 +252,12 @@ def _seed_todo_store_from_user_message(agent: Any, user_message: Any) -> None:
     indefinitely with an empty list and ``/task`` reports "The task list for
     this session is empty" even though the user has an active request. This
     closes that hole mechanically: when the store has zero items after the
-    DB load and history-scan hydration, the current user message becomes the
-    active task (``in_progress``, ``source=user``) and is persisted, so the
+    DB load and history-scan hydration, the current user message becomes
+    the seeded task (``pending``, ``source=user``) and is persisted, so the
     P2 injection block renders it on every turn and ``/task`` always has
-    something to show.
+    something to show. The seed is born ``pending``, not ``in_progress``:
+    the lifecycle begins with an explicit ``begin`` transition, never an
+    implicit current task.
 
     The stored content is the scaffold-stripped message (P5): gateway
     envelopes, reply pointers, and timestamps are routing metadata, not
