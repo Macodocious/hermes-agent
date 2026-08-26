@@ -20,7 +20,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent import task_manager
 from agent.agent_runtime_helpers import invoke_tool
 from tools.todo_tool import TodoStore
 
@@ -53,22 +52,49 @@ class FakeGoalManager:
 
 @pytest.fixture
 def dispatched(monkeypatch):
-    """Pin persistence + GoalManager, return (agent, calls)."""
+    """Pin persistence + GoalManager, return (agent, calls).
+
+    The patches resolve ``agent.task_manager`` by *string* at fixture
+    time (and the verdict calls re-import the module) so they survive
+    suites that delete ``agent.*`` from ``sys.modules`` mid-session
+    (e.g. test_empty_tool_name_loop_dampening): the dispatch re-imports
+    the module at call time, so patching the collection-time binding
+    would silently miss.
+    """
     calls: list = []
     monkeypatch.setattr(
         "hermes_cli.tasks.persist_todo_store", lambda agent: calls.append("persist")
     )
     monkeypatch.setattr(
-        task_manager,
-        "_load_goal_manager",
+        "agent.task_manager._load_goal_manager",
         lambda agent: FakeGoalManager(calls),
     )
-    monkeypatch.setattr(task_manager, "_persist", lambda agent: None)
+    monkeypatch.setattr("agent.task_manager._persist", lambda agent: None)
+    # Pin the lifecycle gate: the E2E must be independent of the host
+    # config (a config-touching test earlier in the suite can change what
+    # load_config returns and silently disable the gate).
+    monkeypatch.setattr(
+        "agent.task_manager._lifecycle_config", lambda: {"enabled": True}
+    )
     # The post-close review must not fire real LLM calls in E2E tests.
-    monkeypatch.setattr(task_manager, "_review_config", lambda: {"enabled": False})
+    monkeypatch.setattr(
+        "agent.task_manager._review_config", lambda: {"enabled": False}
+    )
     store = TodoStore()
     _seed(store, "1", "Build the thing")
     return _make_agent(store), calls
+
+
+def _task_manager():
+    """Re-import at call time so verdict calls hit the live module.
+
+    The same sys.modules wipe that can orphan module-object patches also
+    orphans a collection-time ``from agent import task_manager`` binding;
+    re-importing here resolves whatever the dispatch would resolve.
+    """
+    import importlib
+
+    return importlib.import_module("agent.task_manager")
 
 
 def _invoke(agent, action: str, item_id: str) -> None:
@@ -105,7 +131,7 @@ def test_close_write_keeps_goal_armed_and_judge_done_finalizes(dispatched) -> No
     assert "clear" not in calls
     assert agent._todo_store.read()[0]["status"] == "closing"
 
-    nudge = task_manager.observe_verdict(agent, {"verdict": "done"})
+    nudge = _task_manager().observe_verdict(agent, {"verdict": "done"})
     assert nudge is None
     assert agent._todo_store.read()[0]["status"] == "completed"
 
@@ -115,7 +141,7 @@ def test_close_write_with_continue_verdict_returns_to_work(dispatched) -> None:
     _invoke(agent, "begin", "1")
     _invoke(agent, "close", "1")
 
-    nudge = task_manager.observe_verdict(agent, {"verdict": "continue"})
+    nudge = _task_manager().observe_verdict(agent, {"verdict": "continue"})
     assert nudge is None
     assert agent._todo_store.read()[0]["status"] == "in_progress"
 
