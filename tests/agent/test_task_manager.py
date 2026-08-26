@@ -100,6 +100,37 @@ def test_on_todo_write_stamps_action_flag(monkeypatch) -> None:
     assert agent._task_lifecycle_action_issued is True
 
 
+def test_on_todo_write_stays_armed_while_close_in_flight(monkeypatch) -> None:
+    """A close in flight must NOT clear the goal — the judge's done
+    verdict is the second key of the two-key close. Clearing here would
+    strand the task in closing forever (regression: PR review)."""
+    store = TodoStore()
+    _seed(store, "1", "Build the thing")
+    agent = _make_agent(store)
+    calls: list[str] = []
+
+    class FakeMgr:
+        def __init__(self, **kwargs):
+            calls.append("init")
+
+        def set(self, text: str) -> None:
+            calls.append("set")
+
+        def clear(self) -> None:
+            calls.append("clear")
+
+    monkeypatch.setattr(task_manager, "_load_goal_manager", lambda a: FakeMgr())
+    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
+
+    store.transition("begin", "1")
+    task_manager.on_todo_write(agent, {"action": "begin", "item_id": "1"})
+    store.transition("close", "1")
+    task_manager.on_todo_write(agent, {"action": "close", "item_id": "1"})
+
+    assert "clear" not in calls
+    assert calls.count("set") == 2
+
+
 # ── config toggle: tasks.lifecycle.enabled=false disables the lifecycle ─
 
 

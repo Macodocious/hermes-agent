@@ -136,9 +136,11 @@ def on_todo_write(agent: Any, args: Dict[str, Any]) -> None:
     """Post-write lifecycle hook for the todo dispatch point.
 
     Called after every todo tool execution (read or write). Arms the
-    GoalEngine loop when a task begins, clears it when the current task
-    leaves ``in_progress`` (pause/close/escalate), and persists the store.
-    Deterministic: the goal is a mirror of the task state, never a
+    GoalEngine loop when a task begins, stays armed while a close is in
+    flight (the judge's done verdict is the second key — clearing here
+    would strand the task in closing forever), clears it when the task
+    leaves in_progress via pause/escalate or finalizes, and persists the
+    store. Deterministic: the goal is a mirror of the task state, never a
     separate decision.
 
     A lifecycle action issued this turn is stamped on the agent so the
@@ -155,19 +157,24 @@ def on_todo_write(agent: Any, args: Dict[str, Any]) -> None:
     if args.get("action") is not None:
         agent._task_lifecycle_action_issued = True
     current = _current_item(agent)
+    closing = _closing_item(agent)
     mgr = _load_goal_manager(agent)
-    if current is not None:
-        # A task is in_progress: the loop must be armed. set() is
-        # idempotent — re-arming on every write keeps the goal text in
-        # sync with the item content without resetting the turn budget.
+    target = current if current is not None else closing
+    if target is not None:
+        # A task is in_progress, or a close is in flight: the loop must
+        # stay armed. A closing task MUST stay armed — the judge's done
+        # verdict is the second key, and clearing here would strand the
+        # task in closing forever. set() also covers close-from-paused,
+        # where pause already cleared the goal; re-arming keeps the goal
+        # text in sync with the item content.
         try:
             if mgr is not None:
-                mgr.set(_goal_text_for_item(current))
+                mgr.set(_goal_text_for_item(target))
         except Exception as exc:  # pragma: no cover - defensive
             logger.debug("task_manager: goal arm failed: %s", exc)
     else:
-        # No open task: the loop must not run. clear() is a no-op when no
-        # goal is set.
+        # No open task and no close in flight: the loop must not run.
+        # clear() is a no-op when no goal is set.
         try:
             if mgr is not None:
                 mgr.clear()
