@@ -7,6 +7,8 @@ audit (work with no open task must not end cleanly).
 
 from types import SimpleNamespace
 
+import pytest
+
 from agent import task_manager
 from tools.todo_tool import TodoStore
 
@@ -15,7 +17,6 @@ def _make_agent(store: TodoStore) -> SimpleNamespace:
     return SimpleNamespace(
         _todo_store=store,
         session_id="test-session",
-        _task_lifecycle_max_turns=0,
         _task_lifecycle_action_issued=False,
         _task_lifecycle_nudge="",
     )
@@ -23,6 +24,12 @@ def _make_agent(store: TodoStore) -> SimpleNamespace:
 
 def _seed(store: TodoStore, item_id: str, content: str) -> None:
     store.write([{"id": item_id, "content": content, "status": "pending"}])
+
+
+@pytest.fixture(autouse=True)
+def _lifecycle_on(monkeypatch) -> None:
+    """Pin the lifecycle config so tests are independent of the host config."""
+    monkeypatch.setattr(task_manager, "_lifecycle_config", lambda: {"enabled": True})
 
 
 # ── on_todo_write: GoalEngine arming ──────────────────────────────────
@@ -91,6 +98,30 @@ def test_on_todo_write_stamps_action_flag(monkeypatch) -> None:
 
     task_manager.on_todo_write(agent, {"action": "begin", "item_id": "1"})
     assert agent._task_lifecycle_action_issued is True
+
+
+# ── config toggle: tasks.lifecycle.enabled=false disables the lifecycle ─
+
+
+def test_disabled_lifecycle_short_circuits_hooks(monkeypatch) -> None:
+    store = TodoStore()
+    _seed(store, "1", "Build the thing")
+    agent = _make_agent(store)
+    monkeypatch.setattr(task_manager, "_lifecycle_config", lambda: {"enabled": False})
+
+    # No goal arming, no action stamp, no persistence.
+    task_manager.on_todo_write(agent, {"action": "begin", "item_id": "1"})
+    assert agent._task_lifecycle_action_issued is False
+
+    # No audit nudge.
+    nudge = task_manager.audit_turn_end(
+        agent, final_response="I did the work.", interrupted=False, tool_call_count=2
+    )
+    assert nudge is None
+
+    # No verdict observation.
+    assert task_manager.observe_verdict(agent, {"verdict": "done"}) is None
+    assert task_manager.observe_verdict_for_session("test-session", {"verdict": "done"}) is None
 
 
 # ── observe_verdict: the two-key close ────────────────────────────────

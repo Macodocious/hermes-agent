@@ -56,6 +56,27 @@ def _goal_text_for_item(item: Dict[str, Any]) -> str:
     return f"Complete the task: {item.get('content', '(no description)')}"
 
 
+def _lifecycle_config() -> Dict[str, Any]:
+    """The tasks.lifecycle config block (best-effort, never raises)."""
+    try:
+        from hermes_cli.config import load_config as _load_config
+
+        cfg = _load_config() or {}
+        tasks_cfg = cfg.get("tasks") if isinstance(cfg, dict) else None
+        if isinstance(tasks_cfg, dict):
+            block = tasks_cfg.get("lifecycle")
+            if isinstance(block, dict):
+                return block
+    except Exception:  # pragma: no cover - defensive
+        pass
+    return {}
+
+
+def _lifecycle_enabled() -> bool:
+    """Whether the task lifecycle is active (config tasks.lifecycle.enabled)."""
+    return bool(_lifecycle_config().get("enabled", True))
+
+
 def _load_goal_manager(agent: Any) -> Any:
     """Return a GoalManager bound to the agent's session, or None.
 
@@ -71,7 +92,9 @@ def _load_goal_manager(agent: Any) -> Any:
         logger.debug("task_manager: goals module unavailable: %s", exc)
         return None
     try:
-        max_turns = int(getattr(agent, "_task_lifecycle_max_turns", 0) or 0)
+        block = _lifecycle_config()
+        raw_max_turns = block.get("max_turns", 0)
+        max_turns = int(raw_max_turns or 0)
     except (TypeError, ValueError):
         max_turns = 0
     return GoalManager(session_id=session_id, default_max_turns=max_turns or 20)
@@ -120,8 +143,12 @@ def on_todo_write(agent: Any, args: Dict[str, Any]) -> None:
 
     A lifecycle action issued this turn is stamped on the agent so the
     turn-end audit knows the turn ended with a legitimate transition
-    (pause/escalate/close) rather than a silent stop.
+    (pause/escalate/close) rather than a silent stop. When
+    ``tasks.lifecycle.enabled`` is false the hook is a no-op (legacy
+    todo behavior).
     """
+    if not _lifecycle_enabled():
+        return
     store = getattr(agent, "_todo_store", None)
     if store is None:
         return
@@ -165,8 +192,11 @@ def audit_turn_end(
 
     The audit is the mechanical boundary: the model cannot be prevented
     from acting without the tool, but it cannot get away with it — the
-    turn does not end cleanly and the loop pulls it back.
+    turn does not end cleanly and the loop pulls it back. When
+    ``tasks.lifecycle.enabled`` is false the audit is a no-op.
     """
+    if not _lifecycle_enabled():
+        return None
     if interrupted:
         return None
     if getattr(agent, "_task_lifecycle_action_issued", False):
@@ -198,8 +228,11 @@ def observe_verdict(agent: Any, decision: Dict[str, Any]) -> Optional[str]:
     Called from the goal-loop paths that still hold the live agent (CLI,
     TUI). See ``_apply_verdict`` for the state machine. Persists whenever
     the store is present — the verdict may have finalized a task, and the
-    write-through must survive the per-message agent rebuild.
+    write-through must survive the per-message agent rebuild. When
+    ``tasks.lifecycle.enabled`` is false the observation is a no-op.
     """
+    if not _lifecycle_enabled():
+        return None
     store = getattr(agent, "_todo_store", None)
     if store is None:
         return None
@@ -213,8 +246,11 @@ def observe_verdict_for_session(session_id: str, decision: Dict[str, Any]) -> Op
 
     The gateway mints a fresh agent per message, so the post-turn hook has
     no live agent — load the store from SessionDB, apply the verdict, and
-    persist. Best-effort: a missing row or DB failure is a no-op.
+    persist. Best-effort: a missing row or DB failure is a no-op. When
+    ``tasks.lifecycle.enabled`` is false the observation is a no-op.
     """
+    if not _lifecycle_enabled():
+        return None
     if not session_id:
         return None
     try:
