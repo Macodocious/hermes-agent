@@ -10217,6 +10217,21 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
             # a system line so the user sees progress regardless of
             # outcome. Mirrors gateway/run._post_turn_goal_continuation.
             if status == "complete" and isinstance(raw, str) and raw.strip():
+                # Task-lifecycle pull-back (P1/P2): the turn-end audit
+                # stamps a nudge on the result when work happened with no
+                # open task. It must be delivered even when no goal loop
+                # is running. Only a real non-empty string counts
+                # (mocked agents auto-create attributes, which must not
+                # hijack the followup).
+                _lifecycle_nudge = ""
+                _nudge_from_result = result.get("task_lifecycle_nudge")
+                if isinstance(_nudge_from_result, str) and _nudge_from_result:
+                    _lifecycle_nudge = _nudge_from_result
+                else:
+                    _nudge_value = getattr(agent, "_task_lifecycle_nudge", "")
+                    if isinstance(_nudge_value, str) and _nudge_value:
+                        _lifecycle_nudge = _nudge_value
+                        agent._task_lifecycle_nudge = ""
                 try:
                     from hermes_cli.goals import GoalManager
 
@@ -10249,10 +10264,37 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
                                     sid,
                                     {"kind": "goal", "text": verdict_msg},
                                 )
+                            # Task-lifecycle two-key close (P1/P2): observe
+                            # the judge's verdict against the live agent's
+                            # todo store — a closing task finalizes on
+                            # done, a premature close returns to
+                            # in_progress, and a done verdict on an open
+                            # task finalizes it with a nudge.
+                            _verdict_nudge = ""
+                            try:
+                                from agent.task_manager import observe_verdict
+
+                                _verdict_nudge = str(observe_verdict(agent, decision) or "")
+                            except Exception as _verdict_exc:
+                                print(
+                                    f"[tui_gateway] task-lifecycle verdict observation failed: "
+                                    f"{type(_verdict_exc).__name__}: {_verdict_exc}",
+                                    file=sys.stderr,
+                                )
                             if decision.get("should_continue"):
                                 cont_prompt = decision.get("continuation_prompt") or ""
-                                if cont_prompt:
+                                # Lifecycle nudges outrank the goal
+                                # continuation; the next turn re-judges.
+                                if _lifecycle_nudge:
+                                    goal_followup = _lifecycle_nudge
+                                elif _verdict_nudge:
+                                    goal_followup = _verdict_nudge
+                                elif cont_prompt:
                                     goal_followup = cont_prompt
+                        elif _lifecycle_nudge:
+                            # No goal loop running — the audit nudge still
+                            # chains a follow-up turn.
+                            goal_followup = _lifecycle_nudge
                 except Exception as _goal_exc:
                     print(
                         f"[tui_gateway] goal continuation hook failed: "

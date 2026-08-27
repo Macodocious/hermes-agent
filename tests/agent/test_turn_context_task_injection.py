@@ -167,7 +167,9 @@ class TestSeedTodoStoreFromUserMessage:
         items = store.read()
         assert len(items) == 1
         assert items[0]["content"] == "Build the thing"
-        assert items[0]["status"] == "in_progress"
+        # Seeds are born pending: the lifecycle begins with an explicit
+        # begin transition, never an implicit current task.
+        assert items[0]["status"] == "pending"
         assert items[0]["source"] == "user"
         assert store._seeded is True
 
@@ -185,6 +187,32 @@ class TestSeedTodoStoreFromUserMessage:
         assert items[0]["content"] == "Build the thing"
         assert "Triggering message id" not in items[0]["content"]
         assert "[Mac]" not in items[0]["content"]
+
+    def test_seed_captures_origin_message_id(self):
+        # P6: the seed captures the triggering message id BEFORE the
+        # scaffold strip, so the post-close review can resolve an inline
+        # plan from the conversation window anchored on that message.
+        store = TodoStore()
+        agent = _agent_with_store(store)
+        _seed_todo_store_from_user_message(
+            agent,
+            "[Triggering message id: `1542227519858802728` — use as "
+            "`message_id` for reply/react/pin via the discord tools.]\n\n"
+            "[Mac] Build the thing",
+        )
+        items = store.read()
+        assert len(items) == 1
+        assert items[0]["origin"] == "1542227519858802728"
+        # The origin id is routing metadata, not task content.
+        assert "1542227519858802728" not in items[0]["content"]
+
+    def test_seed_without_scaffold_has_no_origin(self):
+        store = TodoStore()
+        agent = _agent_with_store(store)
+        _seed_todo_store_from_user_message(agent, "Build the thing")
+        items = store.read()
+        assert len(items) == 1
+        assert "origin" not in items[0]
 
     def test_no_seed_when_store_has_items(self):
         store = TodoStore()

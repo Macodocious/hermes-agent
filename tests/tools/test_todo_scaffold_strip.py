@@ -112,7 +112,9 @@ class TestSeedFromUserMessage:
         )
         assert item is not None
         assert item["content"] == "Build the thing"
-        assert item["status"] == "in_progress"
+        # Seeds are born pending: the lifecycle begins with an explicit
+        # begin transition, never an implicit in_progress.
+        assert item["status"] == "pending"
         assert item["source"] == "user"
         assert store._seeded is True
 

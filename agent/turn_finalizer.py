@@ -547,6 +547,25 @@ def finalize_turn(
         ).get("service_tier"),
         "session_id": agent.session_id,
     }
+    # Task-lifecycle turn-end audit (P1/P2): if the turn did substantive
+    # work with no open task and no lifecycle action, it must not end
+    # cleanly — the loop pulls the agent back with a continuation nudge.
+    try:
+        from agent.task_manager import audit_turn_end as _audit_turn_end
+
+        _lifecycle_nudge = _audit_turn_end(
+            agent,
+            final_response=final_response,
+            interrupted=interrupted,
+            tool_call_count=_turn_tool_count,
+        )
+        if _lifecycle_nudge:
+            result["task_lifecycle_nudge"] = _lifecycle_nudge
+            # Also stamp the agent: the CLI/TUI loop paths read the nudge
+            # off the live agent (no result dict in scope there).
+            agent._task_lifecycle_nudge = _lifecycle_nudge
+    except Exception as _audit_exc:
+        logger.debug("task-lifecycle audit failed: %s", _audit_exc)
     if agent._tool_guardrail_halt_decision is not None:
         result["guardrail"] = agent._tool_guardrail_halt_decision.to_metadata()
     # Surface any post-loop cleanup failures so the caller can distinguish a

@@ -2414,6 +2414,35 @@ DEFAULT_CONFIG = {
         "max_turns": 20,
     },
 
+    # Tasks — the task lifecycle (todo begin/close/escalate + task_manager).
+    # The todo list is a physical, code-enforced task state machine: the
+    # agent works on exactly one task at a time, every transition goes
+    # through the todo lifecycle actions, and the GoalEngine loop (armed
+    # on begin) pulls the agent back after every turn until the task is
+    # done. enabled=false restores the legacy todo behavior (no
+    # lifecycle enforcement, no goal arming, no turn-end audit).
+    "tasks": {
+        "lifecycle": {
+            "enabled": True,
+            # Max GoalEngine continuation turns per task before the
+            # lifecycle escalates to the user. Mirrors goals.max_turns;
+            # used when task_manager arms the loop on begin.
+            "max_turns": 20,
+        },
+        "review": {
+            "enabled": True,
+            # Post-close review (P6): when a task finalizes as done, a
+            # parallel completion call reviews the implementation against
+            # its plan (explicit ref → item content → inline origin
+            # window). A needs_work verdict mechanically spawns a fix
+            # task. max_rounds caps the review lineage depth — past the
+            # cap the fix task is mechanically escalated instead of
+            # spawning another review round (prevents a runaway
+            # review → fix → review machine).
+            "max_rounds": 2,
+        },
+    },
+
     # Mixture of Agents — named presets used by /moa. A preset is an execution
     # mode around the main model, not a provider/model itself: references +
     # aggregator synthesize private guidance before each main-model iteration.
