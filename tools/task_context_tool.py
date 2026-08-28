@@ -6,6 +6,11 @@ Lets the agent declare, in the moment, whether the current work is `general`
 conversation or `coding` output. The declaration is recorded on the agent and
 applied at the pre-LLM-call temperature chokepoint for the next API request.
 
+The tool also carries an optional user-directed `temperature` argument: when
+the operator tells the agent to run a request at a specific temperature
+(e.g. "retry with temperature 1.0"), the agent declares that exact value and
+the chokepoint applies it to the next API request.
+
 The tool's schema is only exposed when the operator has enabled the
 temperature override (``agent.temperature.override.enabled: true`` in
 config.yaml) — enforced via ``check_fn``. Without the override, the tool
@@ -18,12 +23,24 @@ from typing import Optional
 # The only valid declaration values.
 VALID_CONTEXTS = ("general", "coding")
 
+# Bounds on user-directed temperatures. OpenAI-compatible sampling range.
+MIN_TEMPERATURE = 0.0
+MAX_TEMPERATURE = 2.0
 
-def declare_task_context(context: Optional[str], agent=None) -> str:
+
+def declare_task_context(
+    context: Optional[str],
+    temperature: Optional[float] = None,
+    agent=None,
+) -> str:
     """Record the agent's per-turn task-context declaration.
 
     Args:
         context: The declared context — ``"general"`` or ``"coding"``.
+        temperature: Optional user-directed explicit temperature for the
+            next API request (e.g. the operator said "retry with
+            temperature 1.0"). Takes precedence over the context knob for
+            that request.
         agent:   The AIAgent instance, injected by the tool executor.
 
     Returns:
@@ -41,11 +58,27 @@ def declare_task_context(context: Optional[str], agent=None) -> str:
             f"context must be one of {list(VALID_CONTEXTS)}, got {context!r}."
         )
 
+    explicit = None
+    if temperature is not None:
+        try:
+            explicit = float(temperature)
+        except (TypeError, ValueError):
+            return tool_error(f"temperature must be a number, got {temperature!r}.")
+        if not (MIN_TEMPERATURE <= explicit <= MAX_TEMPERATURE):
+            return tool_error(
+                f"temperature must be between {MIN_TEMPERATURE} and "
+                f"{MAX_TEMPERATURE}, got {explicit}."
+            )
+
     agent._declared_task_context = normalized
-    return tool_result(
-        declared=normalized,
-        applied_to="next API request",
-    )
+    agent._declared_explicit_temperature = explicit
+    payload: dict = {
+        "declared": normalized,
+        "applied_to": "next API request",
+    }
+    if explicit is not None:
+        payload["explicit_temperature"] = explicit
+    return tool_result(payload)
 
 
 def check_task_context_requirements() -> bool:
@@ -78,7 +111,10 @@ TASK_CONTEXT_SCHEMA = {
         "the new context. The declaration sets the sampling temperature of "
         "your next response — `general` for conversation, `coding` for "
         "code work — as configured by the operator's temperature override. "
-        "Default when never called: `general`."
+        "Default when never called: `general`. When the operator explicitly "
+        "asks for a specific temperature (e.g. \"retry with temperature "
+        "1.0\"), call this with `context` set to the current work type and "
+        "`temperature` set to the exact value they stated."
     ),
     "parameters": {
         "type": "object",
@@ -89,6 +125,15 @@ TASK_CONTEXT_SCHEMA = {
                 "description": (
                     "The task context you are declaring: `general` for "
                     "conversation, `coding` for coding work."
+                ),
+            },
+            "temperature": {
+                "type": "number",
+                "description": (
+                    "Optional user-directed explicit temperature for the "
+                    "next API request (0.0–2.0). Use ONLY when the operator "
+                    "explicitly states a temperature. Takes precedence over "
+                    "the context knob for that request."
                 ),
             },
         },
@@ -105,7 +150,9 @@ registry.register(
     toolset="task_context",
     schema=TASK_CONTEXT_SCHEMA,
     handler=lambda args, **kw: declare_task_context(
-        context=args.get("context"), agent=kw.get("agent")),
+        context=args.get("context"),
+        temperature=args.get("temperature"),
+        agent=kw.get("agent")),
     check_fn=check_task_context_requirements,
     emoji="🎛️",
 )

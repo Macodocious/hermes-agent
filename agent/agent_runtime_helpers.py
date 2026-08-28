@@ -2485,6 +2485,7 @@ def invoke_tool(agent, function_name: str, function_args: dict, effective_task_i
             from tools.task_context_tool import declare_task_context as _declare
             return _finish_agent_tool(_declare(
                 context=next_args.get("context"),
+                temperature=next_args.get("temperature"),
                 agent=agent,
             ), next_args)
     elif function_name == "session_search":

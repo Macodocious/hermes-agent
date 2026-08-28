@@ -1435,6 +1435,10 @@ def init_agent(
     # Per-turn task-context declaration (temperature override selection).
     # None means "general" — the agent's declare_task_context calls update it.
     agent._declared_task_context = None
+    # Optional user-directed explicit temperature (declared through
+    # declare_task_context when the operator states a specific value).
+    # None means no explicit override — the context knob applies.
+    agent._declared_explicit_temperature = None
 
     # DB-first load (P1): the persisted todo row (state_meta todo:<session_id>)
     # is the source of truth across per-message agents. The history-scan

@@ -1335,6 +1335,7 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
                 from tools.task_context_tool import declare_task_context as _declare
                 return _declare(
                     context=next_args.get("context"),
+                    temperature=next_args.get("temperature"),
                     agent=agent,
                 )
             function_result, function_args = _run_agent_tool_execution_middleware(

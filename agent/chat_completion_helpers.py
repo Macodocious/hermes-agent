@@ -992,7 +992,10 @@ def _resolve_effective_temperature(agent) -> Optional[float]:
       "general": <float>, "coding": <float>}}``. The base ``value`` is
       used while the override switch is off; when it is on, the
       coding/general knob is chosen by the agent's most recent
-      ``declare_task_context`` declaration (default ``general``).
+      ``declare_task_context`` declaration (default ``general``). An
+      explicit user-directed temperature declared through the same tool
+      (``_declared_explicit_temperature``) takes precedence over the
+      knob for that request.
 
     This per-call read lives here because neither the CLI nor the gateway
     path passes ``temperature`` into ``AIAgent`` (``agent.temperature`` is
@@ -1007,6 +1010,12 @@ def _resolve_effective_temperature(agent) -> Optional[float]:
     override = raw.get("override") or {}
     if not override.get("enabled"):
         return value
+    # A user-directed explicit temperature (declared through
+    # declare_task_context at the operator's instruction) wins over the
+    # context knob for this request.
+    explicit = getattr(agent, "_declared_explicit_temperature", None)
+    if explicit is not None:
+        return explicit
     declared = getattr(agent, "_declared_task_context", None)
     knob = declared if declared in ("general", "coding") else "general"
     temperature = override.get(knob, value)
