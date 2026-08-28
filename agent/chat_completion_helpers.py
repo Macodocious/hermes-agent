@@ -981,6 +981,54 @@ def interruptible_api_call(agent, api_kwargs: dict):
 
 
 
+def _resolve_effective_temperature(agent) -> Optional[float]:
+    """Resolve the temperature to send for this API call.
+
+    ``agent.temperature`` may be:
+
+    * ``None`` — provider/model default (unchanged legacy behavior).
+    * a scalar float — used verbatim (legacy config shape).
+    * a dict — ``{"value": <float>, "override": {"enabled": bool,
+      "general": <float>, "coding": <float>}}``. The base ``value`` is
+      used while the override switch is off; when it is on, the
+      coding/general knob is chosen by the same runtime-posture
+      resolution the system prompt uses (``resolve_runtime_mode``).
+
+    This per-call read lives here because neither the CLI nor the gateway
+    path passes ``temperature`` into ``AIAgent`` (``agent.temperature`` is
+    ``None`` on both), so this chokepoint is the single place the
+    configured value is applied consistently. The transport's own
+    omit/fixed temperature priority still wins over the resolved value.
+    """
+    raw = getattr(agent, "temperature", None)
+    if not isinstance(raw, dict):
+        return raw
+    value = raw.get("value")
+    override = raw.get("override") or {}
+    if not override.get("enabled"):
+        return value
+    try:
+        from agent.coding_context import resolve_runtime_mode
+        from agent.runtime_cwd import resolve_context_cwd
+
+        mode = resolve_runtime_mode(
+            platform=getattr(agent, "platform", None),
+            cwd=resolve_context_cwd(),
+        )
+        knob = "coding" if mode.is_coding else "general"
+        temperature = override.get(knob, value)
+    except Exception:
+        # Posture resolution must never fail an API call; fall back to the
+        # base value and surface the failure at debug level.
+        logger.debug(
+            "Temperature override resolution failed; using base value %s",
+            value,
+            exc_info=True,
+        )
+        temperature = value
+    return temperature
+
+
 def build_api_kwargs(agent, api_messages: list) -> dict:
     """Build the keyword arguments dict for the active API mode."""
     tools_for_api = agent.tools
@@ -1190,6 +1238,7 @@ def build_api_kwargs(agent, api_messages: list) -> dict:
             anthropic_max_output=_ant_max,
             supports_reasoning=agent._supports_reasoning_extra_body(),
             qwen_session_metadata=_qwen_meta,
+            temperature=_resolve_effective_temperature(agent),
         )
 
     # ── Legacy flag path ────────────────────────────────────────────
@@ -1232,7 +1281,7 @@ def build_api_kwargs(agent, api_messages: list) -> dict:
         qwen_session_metadata=_qwen_meta,
         fixed_temperature=_fixed_temp,
         omit_temperature=_omit_temp,
-        temperature=getattr(agent, "temperature", None),
+        temperature=_resolve_effective_temperature(agent),
         supports_reasoning=agent._supports_reasoning_extra_body(),
         github_reasoning_extra=agent._github_models_reasoning_extra_body() if _is_gh else None,
         lmstudio_reasoning_options=agent._lmstudio_reasoning_options_cached() if _is_lmstudio else None,
