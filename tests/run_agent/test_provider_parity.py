@@ -65,7 +65,7 @@ def _reset_auxiliary_provider_state():
     _reset_aux_unhealthy_cache()
 
 
-def _make_agent(monkeypatch, provider, api_mode="chat_completions", base_url="https://openrouter.ai/api/v1", model=None):
+def _make_agent(monkeypatch, provider, api_mode="chat_completions", base_url="https://openrouter.ai/api/v1", model=None, temperature=None, platform=None):
     monkeypatch.setattr("run_agent.get_tool_definitions", lambda **kw: _tool_defs("web_search", "terminal"))
     monkeypatch.setattr("run_agent.check_toolset_requirements", lambda: {})
     monkeypatch.setattr("run_agent.OpenAI", _FakeOpenAI)
@@ -79,6 +79,10 @@ def _make_agent(monkeypatch, provider, api_mode="chat_completions", base_url="ht
         skip_context_files=True,
         skip_memory=True,
     )
+    if temperature is not None:
+        kwargs["temperature"] = temperature
+    if platform is not None:
+        kwargs["platform"] = platform
     if model:
         kwargs["model"] = model
     elif provider == "nous":
@@ -415,6 +419,107 @@ class TestBuildApiKwargsKimiNoTemperatureOverride:
         messages = [{"role": "user", "content": "hi"}]
         kwargs = agent._build_api_kwargs(messages)
         assert "temperature" not in kwargs
+
+
+class TestBuildApiKwargsTemperatureOverride:
+    """Config-driven temperature override (agent.temperature dict shape)."""
+
+    def test_legacy_scalar_passes_through(self, monkeypatch):
+        agent = _make_agent(monkeypatch, "openrouter", temperature=0.0)
+        messages = [{"role": "user", "content": "hi"}]
+        kwargs = agent._build_api_kwargs(messages)
+        assert kwargs.get("temperature") == 0.0
+
+    def test_none_omits_temperature(self, monkeypatch):
+        agent = _make_agent(monkeypatch, "openrouter", temperature=None)
+        messages = [{"role": "user", "content": "hi"}]
+        kwargs = agent._build_api_kwargs(messages)
+        assert "temperature" not in kwargs
+
+    def test_override_disabled_uses_base_value(self, monkeypatch):
+        agent = _make_agent(
+            monkeypatch,
+            "openrouter",
+            temperature={
+                "value": 0.0,
+                "override": {"enabled": False, "general": 0.7, "coding": 0.0},
+            },
+        )
+        messages = [{"role": "user", "content": "hi"}]
+        kwargs = agent._build_api_kwargs(messages)
+        assert kwargs.get("temperature") == 0.0
+
+    def test_override_enabled_general_uses_general_knob(self, monkeypatch):
+        agent = _make_agent(
+            monkeypatch,
+            "openrouter",
+            temperature={
+                "value": 0.0,
+                "override": {"enabled": True, "general": 0.7, "coding": 0.0},
+            },
+            platform="cli",
+        )
+        messages = [{"role": "user", "content": "hi"}]
+        with patch(
+            "agent.coding_context.resolve_runtime_mode"
+        ) as mock_resolve:
+            mock_resolve.return_value = SimpleNamespace(is_coding=False)
+            kwargs = agent._build_api_kwargs(messages)
+        assert kwargs.get("temperature") == 0.7
+
+    def test_override_enabled_coding_uses_coding_knob(self, monkeypatch):
+        agent = _make_agent(
+            monkeypatch,
+            "openrouter",
+            temperature={
+                "value": 0.0,
+                "override": {"enabled": True, "general": 0.7, "coding": 0.0},
+            },
+            platform="cli",
+        )
+        messages = [{"role": "user", "content": "hi"}]
+        with patch(
+            "agent.coding_context.resolve_runtime_mode"
+        ) as mock_resolve:
+            mock_resolve.return_value = SimpleNamespace(is_coding=True)
+            kwargs = agent._build_api_kwargs(messages)
+        assert kwargs.get("temperature") == 0.0
+
+    def test_override_enabled_missing_knob_falls_back_to_base(self, monkeypatch):
+        agent = _make_agent(
+            monkeypatch,
+            "openrouter",
+            temperature={
+                "value": 0.0,
+                "override": {"enabled": True, "general": 0.7},
+            },
+            platform="cli",
+        )
+        messages = [{"role": "user", "content": "hi"}]
+        with patch(
+            "agent.coding_context.resolve_runtime_mode"
+        ) as mock_resolve:
+            mock_resolve.return_value = SimpleNamespace(is_coding=True)
+            kwargs = agent._build_api_kwargs(messages)
+        assert kwargs.get("temperature") == 0.0
+
+    def test_override_resolution_failure_falls_back_to_base(self, monkeypatch):
+        agent = _make_agent(
+            monkeypatch,
+            "openrouter",
+            temperature={
+                "value": 0.0,
+                "override": {"enabled": True, "general": 0.7, "coding": 0.0},
+            },
+            platform="cli",
+        )
+        messages = [{"role": "user", "content": "hi"}]
+        with patch(
+            "agent.coding_context.resolve_runtime_mode"
+        ) as mock_resolve:
+            mock_resolve.side_effect = RuntimeError("boom")
+            kwargs = agent._build_api_kwargs(messages)
+        assert kwargs.get("temperature") == 0.0
 
 
 class TestBuildApiKwargsNousPortal:

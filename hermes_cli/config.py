@@ -1043,6 +1043,15 @@ DEFAULT_CONFIG = {
         "service_tier": "",
         # Sampling temperature for model inference. None = provider default.
         # Ignored when the provider has a fixed temperature or omit_temperature.
+        # May be a scalar float (legacy) or a dict:
+        #   temperature:
+        #     value: 0.0            # base temperature
+        #     override:
+        #       enabled: false      # true/false switch (default off)
+        #       general: 0.7        # knob for general conversation
+        #       coding: 0.0         # knob for coding tasks
+        # When override.enabled is true, the general/coding knob is used
+        # per task type; when false, the base value is used for all tasks.
         "temperature": None,
         # Tool-use enforcement: injects system prompt guidance that tells the
         # model to actually call tools instead of describing intended actions.
