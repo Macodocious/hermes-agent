@@ -546,13 +546,27 @@ def pytest_configure(config):  # noqa: D401 — pytest hook
         "behaviour — e.g. PTY tests that signal their own child).",
     )
 
-    # The pyproject addopts pin ``--timeout-method=signal`` relies on
-    # ``signal.SIGALRM``, which does not exist on Windows — pytest-timeout
-    # raises AttributeError at timer setup and the whole run aborts before any
-    # test executes. Fall back to the thread-based timer on Windows so the
-    # suite runs natively there (POSIX keeps the more reliable signal method).
+    # The pyproject pin sets ``timeout_method=thread`` (see pyproject.toml
+    # comment). POSIX ``signal`` and ``thread`` agree today, but the Windows
+    # fallback below stays because CI matrix runners keep exercising it —
+    # signal.SIGALRM does not exist on Windows, and pytest-timeout would
+    # abort the whole run at timer setup before any test executes.
     if sys.platform == "win32" and getattr(config.option, "timeout_method", None) == "signal":
         config.option.timeout_method = "thread"
+
+    # HERMES_TEST_TIMEOUT — operator/agent per-run override for the per-test
+    # hang guard. RAISE-ONLY: the pinned 300s default is the floor, so a
+    # mistyped or hostile value can never silently disable the guard (any
+    # non-positive/invalid value is ignored, keeping the pyproject pin).
+    env_timeout = os.environ.get("HERMES_TEST_TIMEOUT")
+    if env_timeout:
+        try:
+            override = float(env_timeout)
+            if override > config.option.timeout:
+                config.option.timeout = override
+        except (TypeError, ValueError):
+            # Invalid value must not disable the guard: keep the pyproject pin.
+            pass
 
 
 @pytest.fixture(autouse=True)
