@@ -991,8 +991,11 @@ def _resolve_effective_temperature(agent) -> Optional[float]:
     * a dict — ``{"value": <float>, "override": {"enabled": bool,
       "general": <float>, "coding": <float>}}``. The base ``value`` is
       used while the override switch is off; when it is on, the
-      coding/general knob is chosen by the same runtime-posture
-      resolution the system prompt uses (``resolve_runtime_mode``).
+      coding/general knob is chosen by the agent's most recent
+      ``declare_task_context`` declaration (default ``general``). An
+      explicit user-directed temperature declared through the same tool
+      (``_declared_explicit_temperature``) takes precedence over the
+      knob for that request.
 
     This per-call read lives here because neither the CLI nor the gateway
     path passes ``temperature`` into ``AIAgent`` (``agent.temperature`` is
@@ -1007,25 +1010,20 @@ def _resolve_effective_temperature(agent) -> Optional[float]:
     override = raw.get("override") or {}
     if not override.get("enabled"):
         return value
-    try:
-        from agent.coding_context import resolve_runtime_mode
-        from agent.runtime_cwd import resolve_context_cwd
-
-        mode = resolve_runtime_mode(
-            platform=getattr(agent, "platform", None),
-            cwd=resolve_context_cwd(),
-        )
-        knob = "coding" if mode.is_coding else "general"
-        temperature = override.get(knob, value)
-    except Exception:
-        # Posture resolution must never fail an API call; fall back to the
-        # base value and surface the failure at debug level.
-        logger.debug(
-            "Temperature override resolution failed; using base value %s",
-            value,
-            exc_info=True,
-        )
-        temperature = value
+    # A user-directed explicit temperature (declared through
+    # declare_task_context at the operator's instruction) wins over the
+    # context knob for this request.
+    explicit = getattr(agent, "_declared_explicit_temperature", None)
+    if explicit is not None:
+        return explicit
+    declared = getattr(agent, "_declared_task_context", None)
+    knob = declared if declared in ("general", "coding") else "general"
+    temperature = override.get(knob, value)
+    if temperature is None and knob != "general":
+        # The coding knob is unset — fall back to the general knob, then
+        # to the base value, so a partial override config never yields
+        # a None temperature for a coding-declared turn.
+        temperature = override.get("general", value)
     return temperature
 
 
