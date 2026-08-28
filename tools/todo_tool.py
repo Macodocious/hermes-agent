@@ -31,6 +31,17 @@ VALID_STATUSES = {
 # the model never writes lifecycle statuses directly through the todos list.
 LIFECYCLE_ACTIONS = {"begin", "pause", "resume", "close", "escalate"}
 
+# Lifecycle statuses that must never be written through the todos list
+# (P7). The model drives task state through the ``action`` parameter; a
+# direct status write silently disables the enforcement — an
+# ``in_progress`` write silences the turn-end audit (a task is "open"),
+# never arms the GoalEngine (arming keys on ``action``), and never
+# reaches the judge or the post-close review. ``completed`` is blocked
+# for agent-authored items only: finishing via a write skips the
+# two-key close and the mandatory review, while user-sourced items
+# (P4) must stay markable completed/cancelled directly.
+LIFECYCLE_TRANSITION_STATUSES = {"in_progress", "paused", "closing", "escalated"}
+
 # Allowed transitions per lifecycle action, keyed by the item's current
 # status. Anything not listed is refused with an error. "finalize" is the
 # internal closing -> closed step driven by the task lifecycle judge (the
@@ -778,6 +789,50 @@ class TodoStore:
         return [todos[i] for i in sorted(last_index.values())]
 
 
+def _lifecycle_write_violation(todos: List[Any], store: "TodoStore") -> Optional[str]:
+    """Return an error message if a write would change a lifecycle status.
+
+    P7: the model drives task state through the ``action`` parameter; a
+    direct status write through the todos list silently disables the
+    enforcement — an ``in_progress`` write silences the turn-end audit (a
+    task is "open"), never arms the GoalEngine (arming keys on ``action``),
+    and never reaches the judge or the post-close review. No-op echoes of
+    the current state are allowed so replace-mode list maintenance keeps
+    working; any write that would CHANGE a lifecycle status is refused with
+    the corrective action. ``completed`` is refused for agent-authored items
+    only — user-sourced items (P4) stay markable directly.
+    """
+    current = {item["id"]: item for item in store.read()}
+    for t in todos:
+        if not isinstance(t, dict):
+            continue
+        item_id = str(t.get("id", "")).strip()
+        status = str(t.get("status", "")).strip().lower()
+        if not status:
+            continue
+        prev = current.get(item_id)
+        if prev is not None and prev["status"] == status:
+            continue  # no-op echo of current state — never a transition
+        if status in LIFECYCLE_TRANSITION_STATUSES:
+            return (
+                f"cannot write status '{status}' for task "
+                f"{item_id or '(new)'} through the todos list — lifecycle "
+                "states are driven by the action parameter: action=begin to "
+                "start, action=pause/resume to pause/resume, action=close "
+                "to finish, action=escalate to abandon"
+            )
+        if status == "completed" and not (
+            prev is not None and prev.get("source") == USER_SOURCE
+        ):
+            return (
+                f"cannot write status 'completed' for task "
+                f"{item_id or '(new)'} through the todos list — use "
+                "action=close so the lifecycle judge and the post-close "
+                "review run"
+            )
+    return None
+
+
 def todo_tool(
     todos: Optional[List[Dict[str, Any]]] = None,
     merge: bool = False,
@@ -825,6 +880,9 @@ def todo_tool(
             return tool_error(
                 f"todos must be a list, got {type(todos).__name__}"
             )
+        violation = _lifecycle_write_violation(todos, store)
+        if violation is not None:
+            return tool_error(violation)
         items = store.write(todos, merge)
     else:
         items = store.read()
@@ -887,7 +945,12 @@ TODO_SCHEMA = {
         "Writing:\n"
         "- Provide 'todos' array to create/update items\n"
         "- merge=false (default): replace the entire list with a fresh plan\n"
-        "- merge=true: update existing items by id, add any new ones\n\n"
+        "- merge=true: update existing items by id, add any new ones\n"
+        "Lifecycle statuses (in_progress, paused, closing, escalated) are "
+        "driven by the action parameter — a write that changes one is "
+        "refused. Finish tasks with action=close (the judge finalizes it); "
+        "user-sourced items (source=user) may be marked completed/cancelled "
+        "directly.\n\n"
         "Each item: {id: string, content: string, "
         "status: pending|in_progress|completed|cancelled, "
         "source?: user}\n"

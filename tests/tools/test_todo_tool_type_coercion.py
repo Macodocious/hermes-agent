@@ -18,14 +18,14 @@ class TestJsonStringCoercion:
         store = TodoStore()
         todos_str = json.dumps([
             {"id": "t1", "content": "Do A", "status": "pending"},
-            {"id": "t2", "content": "Do B", "status": "in_progress"},
+            {"id": "t2", "content": "Do B", "status": "pending"},
         ])
         result = json.loads(todo_tool(todos=todos_str, store=store))
         assert "error" not in result
         assert result["summary"]["total"] == 2
         # Replace-mode write renumbers ids to sequential 1..N in list order.
         assert result["todos"][0]["id"] == "1"
-        assert result["todos"][1]["status"] == "in_progress"
+        assert result["todos"][1]["status"] == "pending"
 
     def test_unparseable_string_returns_error(self):
         store = TodoStore()
@@ -99,22 +99,22 @@ class TestWellFormedInputUnchanged:
         store = TodoStore()
         items = [
             {"id": "a", "content": "First", "status": "pending"},
-            {"id": "b", "content": "Second", "status": "in_progress"},
+            {"id": "b", "content": "Second", "status": "cancelled"},
         ]
         result = json.loads(todo_tool(todos=items, store=store))
         assert result["summary"]["total"] == 2
         assert result["summary"]["pending"] == 1
-        assert result["summary"]["in_progress"] == 1
+        assert result["summary"]["cancelled"] == 1
 
     def test_merge_mode_still_works(self):
         store = TodoStore()
         store.write([{"id": "1", "content": "Original", "status": "pending"}])
         result = json.loads(todo_tool(
-            todos=[{"id": "1", "status": "completed"}],
+            todos=[{"id": "1", "status": "cancelled"}],
             merge=True,
             store=store,
         ))
-        assert result["summary"]["completed"] == 1
+        assert result["summary"]["cancelled"] == 1
         assert result["todos"][0]["content"] == "Original"
 
     def test_read_mode_still_works(self):
