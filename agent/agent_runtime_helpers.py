@@ -2480,6 +2480,13 @@ def invoke_tool(agent, function_name: str, function_args: dict, effective_task_i
                 from hermes_cli.tasks import persist_todo_store
                 persist_todo_store(agent)
             return _finish_agent_tool(result, next_args)
+    elif function_name == "declare_task_context":
+        def _execute(next_args: dict) -> Any:
+            from tools.task_context_tool import declare_task_context as _declare
+            return _finish_agent_tool(_declare(
+                context=next_args.get("context"),
+                agent=agent,
+            ), next_args)
     elif function_name == "session_search":
         def _execute(next_args: dict) -> Any:
             session_db = agent._get_session_db_for_recall()

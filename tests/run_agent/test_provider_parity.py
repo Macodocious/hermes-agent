@@ -457,14 +457,10 @@ class TestBuildApiKwargsTemperatureOverride:
                 "value": 0.0,
                 "override": {"enabled": True, "general": 0.7, "coding": 0.0},
             },
-            platform="cli",
         )
+        agent._declared_task_context = "general"
         messages = [{"role": "user", "content": "hi"}]
-        with patch(
-            "agent.coding_context.resolve_runtime_mode"
-        ) as mock_resolve:
-            mock_resolve.return_value = SimpleNamespace(is_coding=False)
-            kwargs = agent._build_api_kwargs(messages)
+        kwargs = agent._build_api_kwargs(messages)
         assert kwargs.get("temperature") == 0.7
 
     def test_override_enabled_coding_uses_coding_knob(self, monkeypatch):
@@ -475,14 +471,40 @@ class TestBuildApiKwargsTemperatureOverride:
                 "value": 0.0,
                 "override": {"enabled": True, "general": 0.7, "coding": 0.0},
             },
-            platform="cli",
         )
+        agent._declared_task_context = "coding"
         messages = [{"role": "user", "content": "hi"}]
-        with patch(
-            "agent.coding_context.resolve_runtime_mode"
-        ) as mock_resolve:
-            mock_resolve.return_value = SimpleNamespace(is_coding=True)
-            kwargs = agent._build_api_kwargs(messages)
+        kwargs = agent._build_api_kwargs(messages)
+        assert kwargs.get("temperature") == 0.0
+
+    def test_override_enabled_undeclared_defaults_to_general(self, monkeypatch):
+        agent = _make_agent(
+            monkeypatch,
+            "openrouter",
+            temperature={
+                "value": 0.0,
+                "override": {"enabled": True, "general": 0.7, "coding": 0.0},
+            },
+        )
+        # No declaration recorded — default must be the general knob.
+        assert getattr(agent, "_declared_task_context", None) is None
+        messages = [{"role": "user", "content": "hi"}]
+        kwargs = agent._build_api_kwargs(messages)
+        assert kwargs.get("temperature") == 0.7
+
+    def test_override_enabled_stale_declaration_honored(self, monkeypatch):
+        agent = _make_agent(
+            monkeypatch,
+            "openrouter",
+            temperature={
+                "value": 0.0,
+                "override": {"enabled": True, "general": 0.7, "coding": 0.0},
+            },
+        )
+        # The declaration from the previous turn governs this request.
+        agent._declared_task_context = "coding"
+        messages = [{"role": "user", "content": "hi"}]
+        kwargs = agent._build_api_kwargs(messages)
         assert kwargs.get("temperature") == 0.0
 
     def test_override_enabled_missing_knob_falls_back_to_base(self, monkeypatch):
@@ -493,33 +515,76 @@ class TestBuildApiKwargsTemperatureOverride:
                 "value": 0.0,
                 "override": {"enabled": True, "general": 0.7},
             },
-            platform="cli",
         )
+        agent._declared_task_context = "coding"
         messages = [{"role": "user", "content": "hi"}]
-        with patch(
-            "agent.coding_context.resolve_runtime_mode"
-        ) as mock_resolve:
-            mock_resolve.return_value = SimpleNamespace(is_coding=True)
-            kwargs = agent._build_api_kwargs(messages)
+        kwargs = agent._build_api_kwargs(messages)
         assert kwargs.get("temperature") == 0.0
 
-    def test_override_resolution_failure_falls_back_to_base(self, monkeypatch):
-        agent = _make_agent(
-            monkeypatch,
-            "openrouter",
-            temperature={
+    def test_declare_task_context_records_declaration(self):
+        from tools.task_context_tool import declare_task_context
+
+        class _StubAgent:
+            _declared_task_context = None
+
+        agent = _StubAgent()
+        result = declare_task_context(context="coding", agent=agent)
+        assert agent._declared_task_context == "coding"
+        assert '"declared": "coding"' in result
+
+    def test_declare_task_context_rejects_invalid_value(self):
+        from tools.task_context_tool import declare_task_context
+
+        class _StubAgent:
+            _declared_task_context = None
+
+        agent = _StubAgent()
+        result = declare_task_context(context="yolo", agent=agent)
+        # Invalid values are rejected; the previous declaration stands.
+        assert agent._declared_task_context is None
+        assert "error" in result
+
+    def test_check_fn_gates_schema_on_override_enabled(self, monkeypatch):
+        import tools.task_context_tool as tct
+
+        monkeypatch.setattr(
+            tct, "load_config", lambda: {
+                "agent": {"temperature": {
+                    "value": 0.0,
+                    "override": {"enabled": True, "general": 0.7, "coding": 0.0},
+                }},
+            }, raising=False,
+        )
+        # check_fn imports load_config from hermes_cli.config, so patch there
+        import hermes_cli.config as cfg_mod
+        monkeypatch.setattr(cfg_mod, "load_config", lambda: {
+            "agent": {"temperature": {
                 "value": 0.0,
                 "override": {"enabled": True, "general": 0.7, "coding": 0.0},
-            },
-            platform="cli",
-        )
-        messages = [{"role": "user", "content": "hi"}]
-        with patch(
-            "agent.coding_context.resolve_runtime_mode"
-        ) as mock_resolve:
-            mock_resolve.side_effect = RuntimeError("boom")
-            kwargs = agent._build_api_kwargs(messages)
-        assert kwargs.get("temperature") == 0.0
+            }},
+        })
+        assert tct.check_task_context_requirements() is True
+
+    def test_check_fn_hides_schema_when_override_disabled(self, monkeypatch):
+        import tools.task_context_tool as tct
+        import hermes_cli.config as cfg_mod
+
+        monkeypatch.setattr(cfg_mod, "load_config", lambda: {
+            "agent": {"temperature": {
+                "value": 0.0,
+                "override": {"enabled": False, "general": 0.7, "coding": 0.0},
+            }},
+        })
+        assert tct.check_task_context_requirements() is False
+
+    def test_check_fn_hides_schema_for_scalar_temperature(self, monkeypatch):
+        import tools.task_context_tool as tct
+        import hermes_cli.config as cfg_mod
+
+        monkeypatch.setattr(cfg_mod, "load_config", lambda: {
+            "agent": {"temperature": 0.0},
+        })
+        assert tct.check_task_context_requirements() is False
 
 
 class TestBuildApiKwargsNousPortal:

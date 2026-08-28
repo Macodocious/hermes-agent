@@ -1432,6 +1432,10 @@ def init_agent(
     from tools.todo_tool import TodoStore
     agent._todo_store = TodoStore()
 
+    # Per-turn task-context declaration (temperature override selection).
+    # None means "general" — the agent's declare_task_context calls update it.
+    agent._declared_task_context = None
+
     # DB-first load (P1): the persisted todo row (state_meta todo:<session_id>)
     # is the source of truth across per-message agents. The history-scan
     # hydration in turn_context stays as the legacy fallback for sessions
