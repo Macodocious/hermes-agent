@@ -1309,15 +1309,28 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
                     merge=next_args.get("merge", False),
                     dispositions=next_args.get("dispositions"),
                     store=agent._todo_store,
+                    action=next_args.get("action"),
+                    item_id=next_args.get("item_id"),
                 )
                 # Write-through (P1): persist after any mutating call so the
                 # state_meta row survives the per-message agent. Reads skip it.
+                # Lifecycle actions (begin/close/...) are mutations too —
+                # dropping them here left store transitions unpersisted and
+                # never armed the GoalEngine on the sequential dispatch path.
                 if (
                     next_args.get("todos") is not None
                     or next_args.get("dispositions") is not None
+                    or next_args.get("action") is not None
                 ):
                     from hermes_cli.tasks import persist_todo_store
                     persist_todo_store(agent)
+                    # Lifecycle hook (P1/P2): arm or clear the GoalEngine loop
+                    # to mirror the task state after every todo write.
+                    try:
+                        from agent.task_manager import on_todo_write
+                        on_todo_write(agent, next_args)
+                    except Exception:
+                        pass
                 return result
             function_result, function_args = _run_agent_tool_execution_middleware(
                 agent,
