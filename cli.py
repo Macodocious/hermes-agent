@@ -10839,7 +10839,23 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             ):
                 label = f"Working on {str(_started_task['content']).strip()}"
             else:
-                label = preview or function_name
+                # Task-stop notification: a todo call that moved an item
+                # out of in_progress/closing into cancelled/escalated shows
+                # "Task cancelled/escalated" in the spinner instead of the
+                # generic todo preview (stopped_task kwarg comes from
+                # agent.tool_executor._detect_todo_task_stop).
+                _stopped_task = kwargs.get("stopped_task")
+                if (
+                    function_name == "todo"
+                    and isinstance(_stopped_task, dict)
+                    and str(_stopped_task.get("content", "")).strip()
+                ):
+                    if str(_stopped_task.get("status", "")).strip() == "cancelled":
+                        label = f"Task cancelled: {str(_stopped_task['content']).strip()}"
+                    else:
+                        label = f"Task escalated: {str(_stopped_task['content']).strip()}"
+                else:
+                    label = preview or function_name
             if _pl > 0 and len(label) > _pl:
                 label = label[:_pl - 3] + "..."
             self._spinner_text = f"{emoji} {label}"
