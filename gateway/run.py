@@ -11610,6 +11610,12 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                             source=source,
                             final_response=_final_text,
                             task_lifecycle_nudge=_lifecycle_nudge,
+                            user_message=(
+                                ""
+                                if self._is_goal_continuation_event(event)
+                                else str(getattr(event, "text", "") or "")
+                            ),
+                            user_initiated=not self._is_goal_continuation_event(event),
                         )
             except Exception as _goal_exc:
                 logger.debug("goal continuation hook failed: %s", _goal_exc)
@@ -14309,11 +14315,13 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         source: Any,
         final_response: str,
         task_lifecycle_nudge: str = "",
+        user_message: str = "",
+        user_initiated: bool = True,
     ) -> None:
         """Run the goal judge after a gateway turn and, if still active,
         enqueue a continuation prompt for the same session.
 
-        Called from ``_handle_message_with_agent`` at turn boundary, AFTER
+        Called from ``_handle_message`` at turn boundary, AFTER
         the response has been delivered. Safe when no goal is set.
 
         We use the adapter's pending-message / FIFO machinery so any real
@@ -14323,6 +14331,16 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         ``task_lifecycle_nudge`` (P1/P2): a pull-back nudge produced by the
         turn-end audit. It is enqueued ahead of any goal continuation so
         the agent is pulled back to the task lifecycle first.
+
+        ``user_message`` is the raw user message that triggered this turn
+        (empty for a self-fed continuation). It is handed to the judge so a
+        rejection/denial of the agent's answer is weighed as evidence the
+        goal is NOT done.
+
+        ``user_initiated`` is computed mechanically by the caller: True for
+        a real user message, False for a synthetic goal-continuation event.
+        A real user message bypasses the wait barrier so the loop judges the
+        fresh exchange instead of staying parked.
         """
         try:
             from hermes_cli.goals import GoalManager
@@ -14352,8 +14370,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
         decision = mgr.evaluate_after_turn(
             final_response or "",
-            user_initiated=True,
+            user_initiated=user_initiated,
             background_processes=_bg_procs,
+            user_message=user_message or None,
         )
         msg = decision.get("message") or ""
 

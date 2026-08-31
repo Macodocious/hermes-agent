@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import time
+from types import SimpleNamespace
 from unittest.mock import patch, MagicMock
 
 import pytest
@@ -861,9 +862,11 @@ class TestWaitBarrier:
             assert mgr.is_waiting() is True
 
             # The judge must NOT be called while parked, and no turn is burned.
+            # A self-fed continuation (user_initiated=False) stays parked; a
+            # real user message would bypass the barrier by design.
             judge = MagicMock(return_value=("continue", "x", False, None, False))
             with patch.object(goals, "judge_goal", judge):
-                decision = mgr.evaluate_after_turn("still waiting on CI")
+                decision = mgr.evaluate_after_turn("still waiting on CI", user_initiated=False)
 
             judge.assert_not_called()
             assert decision["verdict"] == "waiting"
@@ -1026,9 +1029,10 @@ class TestJudgeDrivenWait:
             assert mgr.is_waiting() is True
 
             # Next turn while still parked: judge must NOT be called again.
+            # A self-fed continuation (user_initiated=False) stays parked.
             judge = MagicMock()
             with patch.object(goals, "judge_goal", judge):
-                d2 = mgr.evaluate_after_turn("still going")
+                d2 = mgr.evaluate_after_turn("still going", user_initiated=False)
             judge.assert_not_called()
             assert d2["verdict"] == "waiting"
             assert d2["should_continue"] is False
@@ -1083,6 +1087,220 @@ class TestJudgeDrivenWait:
         assert decision["verdict"] == "continue"
         assert decision["should_continue"] is True
         assert mgr.state.waiting_on_pid is None
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Acknowledgment gate — a user rejection must never finalize the goal
+# ──────────────────────────────────────────────────────────────────────
+
+
+class TestAcknowledgmentGate:
+    """The 'answered despite rejection' bug: a done verdict must be refused
+    when the triggering user message rejects/denies the agent's answer."""
+
+    def test_done_with_rejection_message_refuses_done(self, hermes_home):
+        from hermes_cli import goals
+        from hermes_cli.goals import GoalManager
+
+        mgr = GoalManager(session_id="ack-reject")
+        mgr.set("answer the question")
+
+        with patch.object(goals, "judge_goal", return_value=("done", "here is the answer", False, None, False)):
+            decision = mgr.evaluate_after_turn(
+                "Here is the answer.",
+                user_message="Wrong again. That's not what I asked.",
+            )
+
+        assert decision["verdict"] == "continue"
+        assert decision["should_continue"] is True
+        assert decision["continuation_prompt"] is not None
+        assert mgr.state.status == "active"  # NOT done
+        assert "rejected" in decision["reason"]
+
+    def test_done_without_user_message_finalizes(self, hermes_home):
+        from hermes_cli import goals
+        from hermes_cli.goals import GoalManager
+
+        mgr = GoalManager(session_id="ack-plain")
+        mgr.set("ship it")
+
+        with patch.object(goals, "judge_goal", return_value=("done", "shipped", False, None, False)):
+            decision = mgr.evaluate_after_turn("I shipped the feature.")
+
+        assert decision["verdict"] == "done"
+        assert mgr.state.status == "done"
+
+    def test_done_with_benign_user_message_finalizes(self, hermes_home):
+        from hermes_cli import goals
+        from hermes_cli.goals import GoalManager
+
+        mgr = GoalManager(session_id="ack-benign")
+        mgr.set("ship it")
+
+        with patch.object(goals, "judge_goal", return_value=("done", "shipped", False, None, False)):
+            decision = mgr.evaluate_after_turn(
+                "I shipped the feature.",
+                user_message="Great, thanks!",
+            )
+
+        assert decision["verdict"] == "done"
+        assert mgr.state.status == "done"
+
+    def test_rejection_detector(self, hermes_home):
+        from hermes_cli.goals import _is_rejection_message
+
+        assert _is_rejection_message("Wrong again.") is True
+        assert _is_rejection_message("No, that's not right") is True
+        assert _is_rejection_message("FUCKING REVERT THAT") is True
+        assert _is_rejection_message("That answer is incorrect") is True
+        assert _is_rejection_message("Great, thanks!") is False
+        assert _is_rejection_message("") is False
+        assert _is_rejection_message(None) is False
+
+
+# ──────────────────────────────────────────────────────────────────────
+# User-message plumbing — the judge sees the triggering user message
+# ──────────────────────────────────────────────────────────────────────
+
+
+class TestJudgeUserMessagePlumbing:
+    def test_judge_goal_renders_user_message_block(self, hermes_home):
+        from hermes_cli import goals
+
+        captured = {}
+
+        def _fake_call_llm(**kwargs):
+            captured["prompt"] = kwargs["messages"][1]["content"]
+            return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content='{"verdict": "continue", "reason": "r"}'))])
+
+        with patch("agent.auxiliary_client.call_llm", _fake_call_llm):
+            goals.judge_goal("goal", "response", user_message="Wrong again.")
+
+        assert "The user's message that triggered this turn:" in captured["prompt"]
+        assert "Wrong again." in captured["prompt"]
+
+    def test_judge_goal_omits_block_without_user_message(self, hermes_home):
+        from hermes_cli import goals
+
+        captured = {}
+
+        def _fake_call_llm(**kwargs):
+            captured["prompt"] = kwargs["messages"][1]["content"]
+            return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content='{"verdict": "continue", "reason": "r"}'))])
+
+        with patch("agent.auxiliary_client.call_llm", _fake_call_llm):
+            goals.judge_goal("goal", "response")
+
+        assert "The user's message that triggered this turn:" not in captured["prompt"]
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Wait-barrier bypass — a real user message un-parks the loop
+# ──────────────────────────────────────────────────────────────────────
+
+
+class TestWaitBarrierUserBypass:
+    def test_user_initiated_bypasses_wait_barrier(self, hermes_home):
+        from hermes_cli import goals
+        from hermes_cli.goals import GoalManager
+
+        mgr = GoalManager(session_id="wb-bypass")
+        mgr.set("g", max_turns=5)
+        mgr.wait_for_seconds(120, reason="backoff")
+        assert mgr.is_waiting() is True
+
+        judge = MagicMock(return_value=("continue", "more", False, None, False))
+        with patch.object(goals, "judge_goal", judge):
+            decision = mgr.evaluate_after_turn(
+                "here is the answer",
+                user_initiated=True,
+                user_message="Wrong again.",
+            )
+
+        judge.assert_called_once()
+        assert decision["verdict"] == "continue"
+        assert decision["should_continue"] is True
+
+    def test_continuation_stays_parked(self, hermes_home):
+        from hermes_cli import goals
+        from hermes_cli.goals import GoalManager
+
+        mgr = GoalManager(session_id="wb-stayparked")
+        mgr.set("g", max_turns=5)
+        mgr.wait_for_seconds(120, reason="backoff")
+
+        judge = MagicMock()
+        with patch.object(goals, "judge_goal", judge):
+            decision = mgr.evaluate_after_turn("still waiting", user_initiated=False)
+
+        judge.assert_not_called()
+        assert decision["verdict"] == "waiting"
+        assert decision["should_continue"] is False
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Parked-notice announce-once — no per-turn spam while parked
+# ──────────────────────────────────────────────────────────────────────
+
+
+class TestParkedNoticeAnnounceOnce:
+    def test_parked_notice_emitted_once_then_silent(self, hermes_home):
+        from hermes_cli import goals
+        from hermes_cli.goals import GoalManager
+
+        mgr = GoalManager(session_id="pn-once")
+        mgr.set("g", max_turns=5)
+        mgr.wait_for_seconds(120, reason="backoff")
+
+        judge = MagicMock()
+        with patch.object(goals, "judge_goal", judge):
+            first = mgr.evaluate_after_turn("waiting", user_initiated=False)
+            second = mgr.evaluate_after_turn("waiting", user_initiated=False)
+
+        assert "Goal parked" in first["message"]
+        assert second["message"] == ""
+        assert mgr.state.parked_notice_sent is True
+
+    def test_parked_notice_latch_resets_on_new_barrier(self, hermes_home):
+        from hermes_cli import goals
+        from hermes_cli.goals import GoalManager
+
+        mgr = GoalManager(session_id="pn-reset")
+        mgr.set("g", max_turns=5)
+        mgr.wait_for_seconds(120, reason="backoff")
+
+        judge = MagicMock()
+        with patch.object(goals, "judge_goal", judge):
+            mgr.evaluate_after_turn("waiting", user_initiated=False)
+        assert mgr.state.parked_notice_sent is True
+
+        # A fresh barrier (re-park) resets the latch → announces again.
+        mgr.wait_for_seconds(120, reason="backoff again")
+        assert mgr.state.parked_notice_sent is False
+
+        with patch.object(goals, "judge_goal", judge):
+            again = mgr.evaluate_after_turn("waiting", user_initiated=False)
+        assert "Goal parked" in again["message"]
+
+    def test_parked_notice_latch_persists_across_reload(self, hermes_home):
+        from hermes_cli import goals
+        from hermes_cli.goals import GoalManager
+
+        mgr = GoalManager(session_id="pn-persist")
+        mgr.set("g", max_turns=5)
+        mgr.wait_for_seconds(120, reason="backoff")
+
+        judge = MagicMock()
+        with patch.object(goals, "judge_goal", judge):
+            mgr.evaluate_after_turn("waiting", user_initiated=False)
+        assert mgr.state.parked_notice_sent is True
+
+        # Fresh manager loads the persisted latch → stays silent.
+        mgr2 = GoalManager(session_id="pn-persist")
+        assert mgr2.state.parked_notice_sent is True
+        with patch.object(goals, "judge_goal", judge):
+            d2 = mgr2.evaluate_after_turn("waiting", user_initiated=False)
+        assert d2["message"] == ""
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -1156,10 +1374,11 @@ class TestSessionTriggerBarrier:
         assert mgr.state.waiting_on_session == "proc_t4"
         assert mgr.is_waiting() is True
 
-        # Judge must NOT be called again while parked.
+        # Judge must NOT be called again while parked. A self-fed
+        # continuation (user_initiated=False) stays parked.
         judge = MagicMock()
         with patch.object(goals, "judge_goal", judge):
-            d2 = mgr.evaluate_after_turn("still building")
+            d2 = mgr.evaluate_after_turn("still building", user_initiated=False)
         judge.assert_not_called()
         assert d2["should_continue"] is False
 

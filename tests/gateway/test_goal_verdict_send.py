@@ -152,6 +152,44 @@ async def test_goal_verdict_continue_enqueues_continuation(hermes_home):
 
 
 @pytest.mark.asyncio
+async def test_goal_hook_passes_user_message_and_initiated(hermes_home):
+    """The gateway hook must hand the triggering user message and the
+    mechanical user_initiated flag to the judge — a rejection/denial in the
+    user's words is decisive evidence the goal is NOT done."""
+    runner, adapter, session_entry, src = _make_runner_with_adapter()
+
+    from hermes_cli.goals import GoalManager
+
+    mgr = GoalManager(session_entry.session_id)
+    mgr.set("answer the question")
+
+    captured = {}
+
+    def _fake_evaluate(self, last_response, **kwargs):
+        captured["kwargs"] = kwargs
+        return {
+            "status": "active",
+            "should_continue": False,
+            "continuation_prompt": None,
+            "verdict": "continue",
+            "reason": "noop",
+            "message": "",
+        }
+
+    with patch.object(GoalManager, "evaluate_after_turn", _fake_evaluate):
+        await runner._post_turn_goal_continuation(
+            session_entry=session_entry,
+            source=src,
+            final_response="Here is the answer.",
+            user_message="Wrong again.",
+            user_initiated=True,
+        )
+
+    assert captured["kwargs"]["user_message"] == "Wrong again."
+    assert captured["kwargs"]["user_initiated"] is True
+
+
+@pytest.mark.asyncio
 async def test_goal_verdict_budget_exhausted_sends_pause(hermes_home):
     """When the budget is exhausted, a '⏸ Goal paused' message must be sent
     and no further continuation enqueued."""
