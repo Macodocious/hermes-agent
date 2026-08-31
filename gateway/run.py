@@ -2488,6 +2488,30 @@ def _is_control_interrupt_message(message: Optional[str]) -> bool:
     return normalized in _CONTROL_INTERRUPT_MESSAGES
 
 
+# Dead-channel send markers: error strings that mean the delivery target
+# (channel/thread) no longer exists.  ``classify_send_error`` only matches
+# ``"chat not found"`` against chat-level failures, so Discord's 404 with
+# error code 10003 ("Unknown Channel" — also raised as "Unknown Thread" for
+# deleted threads) is classified ``unknown`` and the orphaned session engine
+# (heartbeat, typing, goal continuations, armed goal) keeps hammering a
+# channel that is gone (#orphaned-engine).  The eviction hooks below use this
+# marker set directly, independent of the shared classifier.
+_DEAD_CHANNEL_ERROR_MARKERS = (
+    "unknown channel",
+    "unknown thread",
+    "channel not found",
+    "chat not found",
+)
+
+
+def _is_dead_channel_send_failure(result: Any) -> bool:
+    """Return True when a send result failed because the channel no longer exists."""
+    if result is None or getattr(result, "success", True):
+        return False
+    error_text = str(getattr(result, "error", "") or "").lower()
+    return any(marker in error_text for marker in _DEAD_CHANNEL_ERROR_MARKERS)
+
+
 def _skill_slug_from_frontmatter(skill_md: Path) -> tuple[str | None, str | None]:
     """Derive the /command slug and declared frontmatter name from a SKILL.md.
 
@@ -4980,6 +5004,113 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 else:
                     queued_events.pop(session_key, None)
         return removed
+
+    async def _handle_dead_channel_eviction(
+        self,
+        session_key: str,
+        source: Any,
+        *,
+        error_text: str = "",
+    ) -> bool:
+        """Tear down the orphaned session engine for a dead delivery channel.
+
+        Called when a send for ``session_key`` fails with a channel-gone
+        error (Discord 10003 "Unknown Channel"/"Unknown Thread", Telegram
+        "chat not found", etc.).  The delivery target no longer exists, so
+        the engine that exists to serve it must stop: interrupt the running
+        agent, drop FIFO goal continuations and the armed goal, release the
+        running slot, and mark the session dead so heartbeat/typing/status
+        sends short-circuit instead of hammering the missing channel
+        (#orphaned-engine).
+
+        The transcript/session row is intentionally preserved — SessionStore
+        has no delete API and the user may legitimately recreate the thread.
+        Only the *engine* is torn down.
+
+        Returns True when the session was evicted (False on a repeated call
+        for an already-dead session, or when the channel error was not a
+        terminal dead-channel failure).
+        """
+        if not session_key:
+            return False
+        dead = getattr(self, "_dead_sessions", None)
+        if dead is None:
+            dead = set()
+            self._dead_sessions = dead
+        if session_key in dead:
+            return False
+
+        # Resolve the session_id without creating a session row, using the
+        # established thread-safe lookup (store lock + JSON load offloaded to
+        # a worker thread).  When the entry is absent the goal clear is
+        # skipped (nothing armed).
+        session_id = ""
+        store = getattr(self, "session_store", None)
+        if store is not None:
+            try:
+                session_id = await asyncio.to_thread(
+                    self._lookup_session_id_under_store_lock, store, session_key
+                )
+            except Exception:
+                session_id = ""
+            session_id = session_id or ""
+
+        # Drop FIFO goal continuations before tearing down so nothing
+        # dequeues a continuation for a channel that cannot receive it.
+        adapter = self._adapter_for_source(source)
+        if adapter is not None:
+            try:
+                self._clear_goal_pending_continuations(session_key, adapter)
+            except Exception:
+                pass
+
+        if session_id:
+            try:
+                from hermes_cli.goals import GoalManager
+
+                GoalManager(session_id=session_id).clear()
+            except Exception:
+                pass
+
+        # Teardown reuses the /stop primitive so the eviction path behaves
+        # identically to a manual stop: interrupt the running agent, drop
+        # adapter activity for the session, invalidate the run generation,
+        # release the running slot, and evict the cached agent (so a stale
+        # ``_interrupt_requested`` flag cannot kill the session's next
+        # message).  Wrapped so a degraded runner state never blocks eviction.
+        try:
+            await self._interrupt_and_clear_session(
+                session_key,
+                source,
+                interrupt_reason=_INTERRUPT_REASON_STOP,
+                invalidation_reason="dead_channel_eviction",
+                release_running_state=True,
+            )
+        except Exception as exc:
+            logger.debug("dead-channel eviction: running-state teardown failed: %s", exc)
+            try:
+                self._release_running_agent_state(session_key)
+            except Exception:
+                pass
+        try:
+            self._evict_cached_agent(session_key)
+        except Exception:
+            pass
+
+        dead.add(session_key)
+        logger.warning(
+            "Evicted orphaned session engine for %s (dead channel: %s) — "
+            "running state, FIFO continuations and armed goal cleared; transcript preserved",
+            session_key,
+            error_text or "unknown error",
+        )
+        return True
+
+    def _session_is_dead(self, session_key: str) -> bool:
+        """Return True when a session was evicted for a dead delivery channel."""
+        if not session_key:
+            return False
+        return session_key in (getattr(self, "_dead_sessions", None) or ())
 
     def _goal_still_active_for_session(self, session_id: str) -> bool:
         """Best-effort fresh DB check before running a queued continuation."""
@@ -14354,6 +14485,16 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 "goal continuation: status send failed: %s",
                 getattr(result, "error", "unknown error"),
             )
+            if _is_dead_channel_send_failure(result):
+                try:
+                    session_key = self._session_key_for_source(source)
+                except Exception:
+                    session_key = ""
+                await self._handle_dead_channel_eviction(
+                    session_key,
+                    source,
+                    error_text=getattr(result, "error", "") or "",
+                )
 
     async def _defer_goal_status_notice_after_delivery(self, source: Any, message: str) -> None:
         """Send a /goal status line after the main response is delivered.
@@ -21901,6 +22042,17 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                             _heartbeat_msg_id = str(_notify_res.message_id)
                             if _cleanup_progress:
                                 _cleanup_msg_ids.append(_heartbeat_msg_id)
+                    if _is_dead_channel_send_failure(_notify_res):
+                        # The delivery channel is gone (Discord 10003,
+                        # Telegram "chat not found", ...).  Tear down the
+                        # orphaned engine so the heartbeat stops hammering
+                        # it; the next loop iteration's ownership check then
+                        # exits cleanly.
+                        await self._handle_dead_channel_eviction(
+                            session_key,
+                            source,
+                            error_text=getattr(_notify_res, "error", "") or "",
+                        )
                 except Exception as _ne:
                     logger.debug("Long-running notification error: %s", _ne)
 
