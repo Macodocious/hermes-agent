@@ -133,6 +133,81 @@ def test_on_todo_write_stays_armed_while_close_in_flight(monkeypatch) -> None:
     assert calls.count("set") == 2
 
 
+def test_on_todo_write_does_not_rearm_identical_active_goal(monkeypatch) -> None:
+    """A routine todo read-back must not reset the judge's turn budget.
+
+    set() builds a fresh goal state with turns_used=0, so re-arming an
+    identical active goal on every todo write keeps the loop stuck at
+    (1/max_turns) forever — the budget can never fire. When the goal is
+    already active with the same text, on_todo_write must leave it alone
+    (regression: PR #51 'Continuing toward goal (1/100)' loop)."""
+    store = TodoStore()
+    _seed(store, "1", "Build the thing")
+    agent = _make_agent(store)
+    calls: list[str] = []
+
+    class FakeMgr:
+        def __init__(self, **kwargs):
+            calls.append("init")
+            self._state = None
+
+        @property
+        def state(self):
+            return self._state
+
+        def set(self, text: str) -> None:
+            calls.append(f"set:{text}")
+            # set() mirrors GoalManager: a fresh active goal with the text.
+            self._state = SimpleNamespace(status="active", goal=text)
+
+        def clear(self) -> None:
+            calls.append("clear")
+
+    manager = FakeMgr()
+    monkeypatch.setattr(task_manager, "_load_goal_manager", lambda a: manager)
+    monkeypatch.setattr(task_manager, "_persist", lambda a: calls.append("persist"))
+
+    store.transition("begin", "1")
+    # First write arms the loop (manager starts with no state).
+    task_manager.on_todo_write(agent, {"action": "begin", "item_id": "1"})
+    # Subsequent read-back writes must not re-arm.
+    task_manager.on_todo_write(agent, {})
+
+    assert len([c for c in calls if c.startswith("set:")]) == 1
+    assert "persist" in calls
+
+
+def test_on_todo_write_rearms_when_active_goal_text_changes(monkeypatch) -> None:
+    """Editing an in_progress task's content must sync the goal text."""
+    store = TodoStore()
+    _seed(store, "1", "Build the thing")
+    agent = _make_agent(store)
+    calls: list[str] = []
+
+    class FakeMgr:
+        def __init__(self, **kwargs):
+            calls.append("init")
+
+        @property
+        def state(self):
+            return SimpleNamespace(status="active", goal="Complete the task: Old content")
+
+        def set(self, text: str) -> None:
+            calls.append(f"set:{text}")
+
+        def clear(self) -> None:
+            calls.append("clear")
+
+    monkeypatch.setattr(task_manager, "_load_goal_manager", lambda a: FakeMgr())
+    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
+
+    # Change the item content so the goal text differs from the manager's.
+    store.write([{"id": "1", "content": "Build the thing now", "status": "in_progress"}])
+    task_manager.on_todo_write(agent, {})
+
+    assert "set:Complete the task: Build the thing now" in calls
+
+
 # ── config toggle: tasks.lifecycle.enabled=false disables the lifecycle ─
 
 
