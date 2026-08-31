@@ -1135,6 +1135,96 @@ from agent.replay_cleanup import (  # noqa: E402
 _AUTO_CONTINUE_NOTE_PREFIX = "[System note: Your previous turn"
 _AUTO_CONTINUE_FALLBACK_PREFIX = "[System note: A new message"
 
+# Task-lifecycle goals (PR #51) are armed by agent/task_manager.py with the
+# verbatim text "Complete the task: <content>" (see _goal_text_for_item).
+# The gateway uses this prefix to scope lifecycle-only behavior so the
+# native /goal GoalEngine is never touched. Byte-identical to the constant
+# in the lifecycle-status-messages branch so git dedupes the addition on
+# merge.
+_LIFECYCLE_GOAL_PREFIX = "Complete the task: "
+
+# Rejection gate (Issue 2 re-scope): when the goal judge says DONE but the
+# triggering user message reads as a rejection/denial of the agent's answer,
+# the gateway refuses finalization and forces a continue. The determination
+# is made by the auxiliary model — no regex, no token scan (natural-language
+# parsing rule: pattern matching may rank candidates, but the final call
+# belongs to the model). Fail-closed: any error or unparseable reply counts
+# as a rejection so a done verdict is never shipped over a disputed answer.
+_LIFECYCLE_REJECTION_SYSTEM_PROMPT = (
+    "You are a strict gatekeeper for a task-completion loop. Your only job "
+    "is to decide whether the user's latest message rejects, disputes, or "
+    "denies the agent's answer or work."
+)
+
+_LIFECYCLE_REJECTION_PROMPT_TEMPLATE = (
+    "The agent just claimed the task is complete. The user's latest message "
+    "is:\n"
+    "<user_message>\n{user_message}\n</user_message>\n\n"
+    "Is this message a rejection, denial, or dispute of the agent's answer "
+    "or work? Reply with JSON only:\n"
+    '{"rejected": true/false, "reason": "short reason"}'
+)
+
+_LIFECYCLE_REJECTION_MAX_TOKENS = 256
+_LIFECYCLE_REJECTION_MESSAGE_CHARS = 2048
+
+
+def _is_lifecycle_goal(goal_text: Optional[str]) -> bool:
+    """Return True when the active goal is a PR #51 task-lifecycle goal.
+
+    Lifecycle goals are armed with the verbatim text
+    ``"Complete the task: <content>"`` (agent/task_manager.py
+    ``_goal_text_for_item``). Native /goal text never carries the prefix,
+    so this mechanical check scopes lifecycle-only behavior without ever
+    touching the native GoalEngine.
+    """
+    return bool(goal_text) and str(goal_text).startswith(_LIFECYCLE_GOAL_PREFIX)
+
+
+def _is_lifecycle_rejection_message(user_message: Optional[str]) -> bool:
+    """Ask the auxiliary model whether the user's message rejects the answer.
+
+    Used by the lifecycle acknowledgment gate: a ``done`` verdict is refused
+    when the triggering user message disputes the agent's answer. The
+    determination is the model's — no regex, no token scan. Fail-closed: any
+    error, timeout, or unparseable reply counts as a rejection so a done
+    verdict is never shipped over a disputed answer.
+    """
+    if not user_message or not str(user_message).strip():
+        return False
+    try:
+        from agent.auxiliary_client import call_llm
+    except Exception as exc:
+        logger.debug("lifecycle rejection gate: auxiliary client import failed: %s", exc)
+        return True
+    try:
+        resp = call_llm(
+            task="goal_judge",
+            messages=[
+                {"role": "system", "content": _LIFECYCLE_REJECTION_SYSTEM_PROMPT},
+                {
+                    "role": "user",
+                    "content": _LIFECYCLE_REJECTION_PROMPT_TEMPLATE.format(
+                        user_message=str(user_message)[:_LIFECYCLE_REJECTION_MESSAGE_CHARS]
+                    ),
+                },
+            ],
+            temperature=0,
+            max_tokens=_LIFECYCLE_REJECTION_MAX_TOKENS,
+        )
+        raw = resp.choices[0].message.content or ""
+    except Exception as exc:
+        logger.info("lifecycle rejection gate: judge call failed (%s) — treating as rejection", exc)
+        return True
+    try:
+        data = json.loads(raw.strip().strip("`"))
+        if isinstance(data, dict):
+            return bool(data.get("rejected"))
+    except Exception:
+        pass
+    # Unparseable reply — fail closed.
+    return True
+
 
 def _is_auto_continue_noise(content: Any) -> bool:
     """Return True if this user-message content is a gateway-injected
@@ -14333,9 +14423,13 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         the agent is pulled back to the task lifecycle first.
 
         ``user_message`` is the raw user message that triggered this turn
-        (empty for a self-fed continuation). It is handed to the judge so a
-        rejection/denial of the agent's answer is weighed as evidence the
-        goal is NOT done.
+        (empty for a self-fed continuation). For task-lifecycle goals only,
+        a real user message bypasses the wait barrier (so the loop judges
+        the fresh exchange instead of staying parked) and, when the judge
+        says DONE, the lifecycle rejection gate asks the auxiliary model
+        whether the user's message disputes the answer — a rejection
+        refuses finalization and forces a continue. Native /goal behavior
+        is untouched.
 
         ``user_initiated`` is computed mechanically by the caller: True for
         a real user message, False for a synthetic goal-continuation event.
@@ -14362,6 +14456,15 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 await self._enqueue_lifecycle_nudge(source, task_lifecycle_nudge)
             return
 
+        _goal_text = getattr(mgr.state, "goal", None) or ""
+        _is_lifecycle = _is_lifecycle_goal(_goal_text)
+
+        # Wait-bypass (lifecycle only): a real user message releases a
+        # parked lifecycle goal so the judge evaluates the fresh exchange
+        # instead of staying parked. Native /goal keeps the base behavior.
+        if _is_lifecycle and user_initiated and mgr.is_waiting():
+            mgr.stop_waiting()
+
         try:
             from hermes_cli.goals import gather_background_processes as _gather_bg
             _bg_procs = _gather_bg()
@@ -14372,8 +14475,32 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             final_response or "",
             user_initiated=user_initiated,
             background_processes=_bg_procs,
-            user_message=user_message or None,
         )
+
+        # Lifecycle rejection gate (Issue 2): the judge said DONE, but the
+        # triggering user message disputes the agent's answer. Refuse
+        # finalization — undo the done flip (resume keeps the turn budget)
+        # and force a continue so the agent addresses the rejection. The
+        # determination is the auxiliary model's; fail-closed on any error.
+        if (
+            _is_lifecycle
+            and user_initiated
+            and decision.get("verdict") == "done"
+            and _is_lifecycle_rejection_message(user_message)
+        ):
+            logger.info(
+                "lifecycle rejection gate: refusing done verdict for session %s",
+                sid,
+            )
+            mgr.resume(reset_budget=False)
+            decision = {
+                "status": "active",
+                "should_continue": True,
+                "continuation_prompt": mgr.next_continuation_prompt(),
+                "verdict": "continue",
+                "reason": "user rejected the answer",
+                "message": "",
+            }
         msg = decision.get("message") or ""
 
         # Task-lifecycle two-key close (P1/P2): observe the judge's verdict

@@ -152,31 +152,33 @@ async def test_goal_verdict_continue_enqueues_continuation(hermes_home):
 
 
 @pytest.mark.asyncio
-async def test_goal_hook_passes_user_message_and_initiated(hermes_home):
-    """The gateway hook must hand the triggering user message and the
-    mechanical user_initiated flag to the judge — a rejection/denial in the
-    user's words is decisive evidence the goal is NOT done."""
+async def test_lifecycle_rejection_gate_refuses_done(hermes_home):
+    """A task-lifecycle goal whose judge says DONE must be refused when the
+    triggering user message rejects the answer: the done flip is undone
+    (resume keeps the turn budget), the decision is forced to continue, and
+    no 'Goal achieved' status line is delivered."""
     runner, adapter, session_entry, src = _make_runner_with_adapter()
 
     from hermes_cli.goals import GoalManager
 
     mgr = GoalManager(session_entry.session_id)
-    mgr.set("answer the question")
+    mgr.set("Complete the task: answer the question")
 
-    captured = {}
-
-    def _fake_evaluate(self, last_response, **kwargs):
-        captured["kwargs"] = kwargs
-        return {
-            "status": "active",
-            "should_continue": False,
-            "continuation_prompt": None,
-            "verdict": "continue",
-            "reason": "noop",
-            "message": "",
-        }
-
-    with patch.object(GoalManager, "evaluate_after_turn", _fake_evaluate):
+    with (
+        patch.object(
+            GoalManager,
+            "evaluate_after_turn",
+            return_value={
+                "status": "done",
+                "should_continue": False,
+                "continuation_prompt": None,
+                "verdict": "done",
+                "reason": "the question was answered",
+                "message": "✓ Goal achieved: the question was answered",
+            },
+        ),
+        patch("gateway.run._is_lifecycle_rejection_message", return_value=True),
+    ):
         await runner._post_turn_goal_continuation(
             session_entry=session_entry,
             source=src,
@@ -184,9 +186,83 @@ async def test_goal_hook_passes_user_message_and_initiated(hermes_home):
             user_message="Wrong again.",
             user_initiated=True,
         )
+        await asyncio.sleep(0.05)
 
-    assert captured["kwargs"]["user_message"] == "Wrong again."
-    assert captured["kwargs"]["user_initiated"] is True
+    # Done flip undone — the goal is active again, not done.
+    assert mgr.state is not None
+    assert mgr.state.status == "active"
+    # No "Goal achieved" status line delivered.
+    assert adapter.sends == [], f"expected no sends, got {adapter.sends}"
+    # The loop continues — a continuation prompt is enqueued.
+    assert adapter._pending_messages, "continuation prompt must be enqueued"
+
+
+@pytest.mark.asyncio
+async def test_lifecycle_wait_bypass_on_user_message(hermes_home):
+    """A real user message must release a parked task-lifecycle goal so the
+    judge evaluates the fresh exchange instead of staying parked."""
+    runner, adapter, session_entry, src = _make_runner_with_adapter()
+
+    from hermes_cli.goals import GoalManager
+
+    mgr = GoalManager(session_entry.session_id)
+    mgr.set("Complete the task: polish the docs")
+    mgr.wait_for_seconds(seconds=60, reason="backoff")
+
+    with patch.object(
+        GoalManager,
+        "evaluate_after_turn",
+        return_value={
+            "status": "active",
+            "should_continue": True,
+            "continuation_prompt": "keep going",
+            "verdict": "continue",
+            "reason": "noop",
+            "message": "",
+        },
+    ):
+        await runner._post_turn_goal_continuation(
+            session_entry=session_entry,
+            source=src,
+            final_response="docs updated",
+            user_message="keep going",
+            user_initiated=True,
+        )
+        await asyncio.sleep(0.05)
+
+    # The wait barrier was cleared by the bypass.
+    assert mgr.state is not None
+    assert mgr.state.waiting_on_pid is None
+
+
+@pytest.mark.asyncio
+async def test_native_goal_untouched_by_rejection(hermes_home):
+    """A native /goal (no lifecycle prefix) must keep base behavior: a done
+    verdict stands even when the user message reads as a rejection — the
+    lifecycle rejection gate is scoped to task-lifecycle goals only."""
+    runner, adapter, session_entry, src = _make_runner_with_adapter()
+
+    from hermes_cli.goals import GoalManager
+
+    mgr = GoalManager(session_entry.session_id)
+    mgr.set("answer the question")
+
+    with (
+        patch("hermes_cli.goals.judge_goal", return_value=("done", "answered", False, None, False)),
+        patch("gateway.run._is_lifecycle_rejection_message", return_value=True),
+    ):
+        await runner._post_turn_goal_continuation(
+            session_entry=session_entry,
+            source=src,
+            final_response="Here is the answer.",
+            user_message="Wrong again.",
+            user_initiated=True,
+        )
+        await asyncio.sleep(0.05)
+
+    # Done verdict stands — "Goal achieved" delivered.
+    assert len(adapter.sends) == 1
+    assert "Goal achieved" in adapter.sends[0]["content"]
 
 
 @pytest.mark.asyncio

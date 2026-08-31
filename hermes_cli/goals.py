@@ -121,11 +121,9 @@ JUDGE_SYSTEM_PROMPT = (
     "processes the agent has running. Decide one of three verdicts.\n\n"
     "DONE — the goal is fully satisfied:\n"
     "- The response explicitly confirms the goal was completed, OR\n"
-    "- The response clearly shows the final deliverable was produced.\n"
-    "The response saying the agent is blocked / is waiting for user input "
-    "is NOT done — the agent must get the missing input and resume. A turn "
-    "that ends asking the user a question is a paused-for-input turn, not "
-    "a completed goal.\n\n"
+    "- The response clearly shows the final deliverable was produced, OR\n"
+    "- The response explains the goal is unachievable / blocked / needs "
+    "user input (treat this as DONE with reason describing the block).\n\n"
     "WAIT — the goal is NOT done, but the next step is to wait for async "
     "work to finish rather than act again. Choose this ONLY when the agent's "
     "progress is genuinely gated on something running on its own:\n"
@@ -165,24 +163,9 @@ JUDGE_BACKGROUND_BLOCK_TEMPLATE = (
 )
 
 
-# Rendered into the judge prompt when the turn was triggered by a real user
-# message (as opposed to a self-fed continuation). The judge must weigh the
-# user's actual words — a rejection/denial of the agent's answer is decisive
-# evidence the goal is NOT done, even when the agent's own response reads as
-# complete. Empty when the turn was a continuation (no user message), so the
-# prompt is byte-identical to the pre-fix continuation path.
-JUDGE_USER_MESSAGE_BLOCK_TEMPLATE = (
-    "The user's message that triggered this turn:\n{user_message}\n\n"
-    "If the user is rejecting, denying, or correcting the agent's answer, "
-    "the goal is NOT done — return CONTINUE so the agent re-engages the "
-    "user and addresses the objection.\n\n"
-)
-
-
 JUDGE_USER_PROMPT_TEMPLATE = (
     "Goal:\n{goal}\n\n"
     "Agent's most recent response:\n{response}\n\n"
-    "{user_message_block}"
     "{background_block}"
     "Current time: {current_time}\n\n"
     "Is the goal satisfied — done, continue, or wait?"
@@ -195,7 +178,6 @@ JUDGE_USER_PROMPT_WITH_SUBGOALS_TEMPLATE = (
     "Additional criteria the user added mid-loop (all must also be "
     "satisfied for the goal to be DONE):\n{subgoals_block}\n\n"
     "Agent's most recent response:\n{response}\n\n"
-    "{user_message_block}"
     "{background_block}"
     "Current time: {current_time}\n\n"
     "Decision: For each numbered criterion above, find concrete "
@@ -218,7 +200,6 @@ JUDGE_USER_PROMPT_WITH_CONTRACT_TEMPLATE = (
     "Completion contract (the authoritative definition of done):\n"
     "{contract_block}\n\n"
     "Agent's most recent response:\n{response}\n\n"
-    "{user_message_block}"
     "{background_block}"
     "Current time: {current_time}\n\n"
     "Decision rules:\n"
@@ -231,10 +212,9 @@ JUDGE_USER_PROMPT_WITH_CONTRACT_TEMPLATE = (
     "process to satisfy the Verification criterion (e.g. CI is the "
     "verification and it's still running), return WAIT on that process "
     "instead of re-poking — re-poking now would be pure busy-work.\n"
-    "- If the response shows the agent is waiting for user input or is "
-    "blocked on a decision the user must make, the goal is NOT done — "
-    "return CONTINUE so the agent re-engages the user and resumes once "
-    "the input arrives.\n"
+    "- If the response explains the work is blocked / unachievable / needs "
+    "user input (e.g. the stated Stop condition was hit), treat it as DONE "
+    "with the reason describing the block.\n"
     "- Otherwise the goal is NOT done — CONTINUE.\n\n"
     "Is the goal satisfied per its completion contract — done, continue, or wait?"
 )
@@ -458,13 +438,6 @@ class GoalState:
     waiting_until: float = 0.0
     waiting_reason: Optional[str] = None
     waiting_since: float = 0.0
-    # Announce-once latch for the "⏳ Goal parked" status line. The barrier
-    # can persist across many turns (a long CI run, a rate-limit cooldown);
-    # without this, every parked turn re-emits the same notice and spams the
-    # channel. Set True the first time the parked notice is emitted, reset
-    # False whenever the barrier is (re)set or cleared so the next parking
-    # announces exactly once. Backwards-compatible: old rows load False.
-    parked_notice_sent: bool = False
     # Optional structured completion contract (outcome / verification /
     # constraints / boundaries / stop_when). Empty by default; a goal with
     # no contract behaves exactly like the original free-form goal.
@@ -500,7 +473,6 @@ class GoalState:
             waiting_until=float(data.get("waiting_until", 0.0) or 0.0),
             waiting_reason=data.get("waiting_reason"),
             waiting_since=float(data.get("waiting_since", 0.0) or 0.0),
-            parked_notice_sent=bool(data.get("parked_notice_sent", False)),
             contract=GoalContract.from_dict(data.get("contract")),
         )
 
@@ -871,61 +843,6 @@ def _render_background_block(background_processes: Optional[List[Dict[str, Any]]
     return JUDGE_BACKGROUND_BLOCK_TEMPLATE.format(background_lines="\n".join(lines))
 
 
-def _render_user_message_block(user_message: Optional[str]) -> str:
-    """Render the triggering user message for the judge prompt.
-
-    Empty when there is no user message (a self-fed continuation turn), so
-    the prompt is byte-identical to the pre-fix continuation path. The block
-    is truncated to keep the judge prompt bounded.
-    """
-    if not user_message or not str(user_message).strip():
-        return ""
-    return JUDGE_USER_MESSAGE_BLOCK_TEMPLATE.format(
-        user_message=_truncate(str(user_message).strip(), 2000),
-    )
-
-
-# Tokens that mark a user message as a rejection/denial of the agent's
-# answer. The acknowledgment gate uses this to refuse a ``done`` verdict when
-# the user is actively disputing the result. Deliberately broad — a false
-# positive only costs one extra judge pass, while a false negative re-ships
-# the exact "answered despite rejection" bug.
-_REJECTION_TOKENS = (
-    "no",
-    "wrong",
-    "reject",
-    "denied",
-    "deny",
-    "incorrect",
-    "not",
-    "stop",
-    "undo",
-    "revert",
-    "fuck",
-    "fucking",
-    "never",
-    "refuse",
-    "disagree",
-    "false",
-    "invalid",
-    "unacceptable",
-)
-
-
-def _is_rejection_message(user_message: Optional[str]) -> bool:
-    """Return True when the user's message reads as a rejection/denial.
-
-    Used by the acknowledgment gate: a ``done`` verdict is refused when the
-    triggering user message disputes the agent's answer. Case-insensitive
-    token scan over the raw text — no regex, no NLP; the judge still makes
-    the final call on the next pass.
-    """
-    if not user_message or not str(user_message).strip():
-        return False
-    lowered = str(user_message).lower()
-    return any(token in lowered for token in _REJECTION_TOKENS)
-
-
 def judge_goal(
     goal: str,
     last_response: str,
@@ -934,7 +851,6 @@ def judge_goal(
     subgoals: Optional[List[str]] = None,
     background_processes: Optional[List[Dict[str, Any]]] = None,
     contract: Optional[GoalContract] = None,
-    user_message: Optional[str] = None,
 ) -> Tuple[str, str, bool, Optional[Dict[str, Any]], bool]:
     """Ask the auxiliary model whether the goal is satisfied.
 
@@ -991,7 +907,6 @@ def judge_goal(
     # truth.
     clean_subgoals = [s.strip() for s in (subgoals or []) if s and s.strip()]
     background_block = _render_background_block(background_processes)
-    user_message_block = _render_user_message_block(user_message)
     current_time = datetime.now(tz=timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
 
     if contract is not None and not contract.is_empty():
@@ -1006,7 +921,6 @@ def judge_goal(
             goal=_truncate(goal, 2000),
             contract_block=_truncate(contract_block, 2500),
             response=_truncate(last_response, _JUDGE_RESPONSE_SNIPPET_CHARS),
-            user_message_block=user_message_block,
             background_block=background_block,
             current_time=current_time,
         )
@@ -1018,7 +932,6 @@ def judge_goal(
             goal=_truncate(goal, 2000),
             subgoals_block=_truncate(subgoals_block, 2000),
             response=_truncate(last_response, _JUDGE_RESPONSE_SNIPPET_CHARS),
-            user_message_block=user_message_block,
             background_block=background_block,
             current_time=current_time,
         )
@@ -1026,7 +939,6 @@ def judge_goal(
         prompt = JUDGE_USER_PROMPT_TEMPLATE.format(
             goal=_truncate(goal, 2000),
             response=_truncate(last_response, _JUDGE_RESPONSE_SNIPPET_CHARS),
-            user_message_block=user_message_block,
             background_block=background_block,
             current_time=current_time,
         )
@@ -1269,7 +1181,6 @@ class GoalManager:
         self._state.waiting_until = 0.0
         self._state.waiting_reason = None
         self._state.waiting_since = 0.0
-        self._state.parked_notice_sent = False
         save_goal(self.session_id, self._state)
         return self._state
 
@@ -1284,7 +1195,6 @@ class GoalManager:
         self._state.waiting_until = 0.0
         self._state.waiting_reason = None
         self._state.waiting_since = 0.0
-        self._state.parked_notice_sent = False
         if reset_budget:
             self._state.turns_used = 0
         save_goal(self.session_id, self._state)
@@ -1375,7 +1285,6 @@ class GoalManager:
         self._state.waiting_until = 0.0
         self._state.waiting_reason = (reason or "").strip() or None
         self._state.waiting_since = time.time()
-        self._state.parked_notice_sent = False
         save_goal(self.session_id, self._state)
         return self._state
 
@@ -1398,7 +1307,6 @@ class GoalManager:
         self._state.waiting_until = 0.0
         self._state.waiting_reason = (reason or "").strip() or None
         self._state.waiting_since = time.time()
-        self._state.parked_notice_sent = False
         save_goal(self.session_id, self._state)
         return self._state
 
@@ -1420,7 +1328,6 @@ class GoalManager:
         self._state.waiting_until = time.time() + seconds
         self._state.waiting_reason = (reason or "").strip() or None
         self._state.waiting_since = time.time()
-        self._state.parked_notice_sent = False
         save_goal(self.session_id, self._state)
         return self._state
 
@@ -1440,7 +1347,6 @@ class GoalManager:
         self._state.waiting_until = 0.0
         self._state.waiting_reason = None
         self._state.waiting_since = 0.0
-        self._state.parked_notice_sent = False
         save_goal(self.session_id, self._state)
         return True
 
@@ -1481,19 +1387,12 @@ class GoalManager:
         *,
         user_initiated: bool = True,
         background_processes: Optional[List[Dict[str, Any]]] = None,
-        user_message: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Run the judge and update state. Return a decision dict.
 
         ``user_initiated`` distinguishes a real user prompt (True) from a
         continuation prompt we fed ourselves (False). Both increment
         ``turns_used`` because both consume model budget.
-
-        ``user_message`` is the raw user message that triggered this turn
-        (None for a self-fed continuation). It is shown to the judge so a
-        rejection/denial of the agent's answer is weighed as evidence the
-        goal is NOT done, and a real user message bypasses the wait barrier
-        (the user is actively engaging — the loop must not stay parked).
 
         ``background_processes`` is the live ``process_registry.list_sessions()``
         snapshot for this session. It's handed to the judge so it can decide
@@ -1521,11 +1420,8 @@ class GoalManager:
 
         # Wait barrier: if the loop is parked (on a live process OR a time
         # deadline that hasn't passed), quiesce — do NOT burn a turn or call
-        # the judge. Resumes automatically once the barrier clears. A real
-        # user message bypasses the barrier: the user is actively engaging,
-        # so the loop must judge the fresh exchange instead of staying parked
-        # (the parked-loop spam symptom of the original bug).
-        if self.is_waiting() and not user_initiated:
+        # the judge. Resumes automatically once the barrier clears.
+        if self.is_waiting():
             if state.waiting_on_session is not None:
                 tgt = f"session {state.waiting_on_session}"
             elif state.waiting_on_pid is not None:
@@ -1534,20 +1430,6 @@ class GoalManager:
                 remaining = max(0, int(state.waiting_until - time.time()))
                 tgt = f"{remaining}s remaining"
             reason = state.waiting_reason or tgt
-            # Announce-once: the barrier can persist across many turns; only
-            # the first parked turn emits the notice, later ones stay silent
-            # (the parked-notice spam symptom of the original bug).
-            if state.parked_notice_sent:
-                return {
-                    "status": "active",
-                    "should_continue": False,
-                    "continuation_prompt": None,
-                    "verdict": "waiting",
-                    "reason": reason,
-                    "message": "",
-                }
-            state.parked_notice_sent = True
-            save_goal(self.session_id, state)
             return {
                 "status": "active",
                 "should_continue": False,
@@ -1567,7 +1449,6 @@ class GoalManager:
             subgoals=state.subgoals or None,
             background_processes=background_processes,
             contract=state.contract if state.has_contract() else None,
-            user_message=user_message,
         )
         state.last_verdict = verdict
         state.last_reason = reason
@@ -1616,27 +1497,6 @@ class GoalManager:
             }
 
         if verdict == "done":
-            # Acknowledgment gate: a user message that rejects/denies the
-            # agent's answer must never finalize the goal, even if the judge
-            # (which saw the message) still said done. Fail closed — refuse
-            # the done verdict and re-engage the user instead.
-            if _is_rejection_message(user_message):
-                state.last_verdict = "continue"
-                state.last_reason = (
-                    f"user rejected the answer: {_truncate(str(user_message).strip(), 200)}"
-                )
-                save_goal(self.session_id, state)
-                return {
-                    "status": "active",
-                    "should_continue": True,
-                    "continuation_prompt": self.next_continuation_prompt(),
-                    "verdict": "continue",
-                    "reason": state.last_reason,
-                    "message": (
-                        f"↻ User rejected the answer — re-engaging "
-                        f"({state.turns_used}/{state.max_turns}): {state.last_reason}"
-                    ),
-                }
             state.status = "done"
             save_goal(self.session_id, state)
             return {

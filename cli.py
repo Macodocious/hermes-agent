@@ -9506,18 +9506,10 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         except Exception:
             pass  # Non-fatal — never break the main loop
 
-    def _maybe_continue_goal_after_turn(self, user_input: str = "") -> None:
+    def _maybe_continue_goal_after_turn(self) -> None:
         """Hook run after every CLI turn. Judges + maybe re-queues.
 
         Safe to call when no goal is set — returns quickly.
-
-        ``user_input`` is the raw text that triggered the turn just
-        finished (empty when unavailable). A self-fed continuation prompt
-        (starts with the ``[Continuing toward your standing goal]``
-        prefix) is judged as a continuation; anything else is a real user
-        message — its text is handed to the judge so a rejection/denial
-        of the agent's answer is weighed as evidence the goal is NOT
-        done, and it bypasses the wait barrier.
 
         Preemption is automatic: if a real user message is already in
         ``_pending_input`` we skip judging (the user's new input takes
@@ -9643,15 +9635,8 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
 
         decision = mgr.evaluate_after_turn(
             last_response,
-            user_initiated=not str(user_input or "").startswith(
-                "[Continuing toward your standing goal]"
-            ),
+            user_initiated=True,
             background_processes=_bg_procs,
-            user_message=(
-                ""
-                if str(user_input or "").startswith("[Continuing toward your standing goal]")
-                else str(user_input or "")
-            ),
         )
         msg = decision.get("message") or ""
         if msg:
@@ -15230,7 +15215,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                         # next loop iteration picks it up naturally (and any
                         # user input that arrives in between still preempts).
                         try:
-                            self._maybe_continue_goal_after_turn(user_input)
+                            self._maybe_continue_goal_after_turn()
                         except Exception as _goal_exc:
                             logging.debug("goal continuation hook failed: %s", _goal_exc)
 
