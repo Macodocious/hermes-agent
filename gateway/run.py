@@ -70,6 +70,11 @@ _PLATFORM_CONNECT_TIMEOUT_SECS_DEFAULT = 30.0
 _ADAPTER_DISCONNECT_TIMEOUT_SECS_DEFAULT = 5.0
 _GATEWAY_PROXY_SSE_BUFFER_MAX_CHARS = 16 * 1024 * 1024
 _TELEGRAM_COMMAND_MENTION_RE = re.compile(r"(?<![\w:/])/([A-Za-z0-9][A-Za-z0-9_-]*)")
+# Task-lifecycle goals (PR #51) are armed by the todo tool with the exact
+# "Complete the task: <content>" text (agent/task_manager.py
+# _goal_text_for_item). The gateway suppresses the per-turn judge progress
+# lines for these goals only — native /goal verdicts are untouched.
+_LIFECYCLE_GOAL_PREFIX = "Complete the task: "
 # Ceiling for the planned-restart helper's wait on the old PID.  A hung
 # interpreter finalization must not block the restart indefinitely: once
 # the deadline passes the helper proceeds and systemd stops the old unit
@@ -14357,6 +14362,29 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         )
         msg = decision.get("message") or ""
 
+        # Task-lifecycle goals (PR #51) arm the GoalEngine with
+        # "Complete the task: <content>". For those goals only, the
+        # per-turn judge progress lines are suppressed — the todo tool
+        # already surfaces Started/Completed/Stopped bubbles, so the
+        # "↻ Continuing" / "⏳ Goal parked" lines are pure noise. The
+        # judge still runs, the two-key close still observes the verdict,
+        # and the continuation prompt still enqueues. Native /goal
+        # verdicts are untouched.
+        _goal_text = ""
+        try:
+            _goal_state = mgr.state
+            if _goal_state is not None:
+                _goal_text = str(_goal_state.goal or "")
+        except Exception:
+            _goal_text = ""
+        if _goal_text.startswith(_LIFECYCLE_GOAL_PREFIX):
+            _verdict = str(decision.get("verdict") or "")
+            if _verdict == "done":
+                _task_name = _goal_text[len(_LIFECYCLE_GOAL_PREFIX):].strip() or "(no description)"
+                msg = f"✅ Task completed: {_task_name}"
+            elif _verdict in ("continue", "wait") and str(decision.get("status") or "") == "active":
+                msg = ""  # per-turn progress noise — suppress
+
         # Task-lifecycle two-key close (P1/P2): observe the judge's verdict
         # against the persisted todo store — a closing task finalizes on
         # done, a premature close returns to in_progress, and a done
@@ -19633,34 +19661,53 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                         _started_content = _started_content[:_cap - 3] + "..."
                     msg = f"{emoji} Working on {_started_content}"
                 else:
-                    # todo's preview is a complete capitalized phrase
-                    # ("Reading the task list") — render it standalone
-                    # instead of the quoted "todo: …" legacy form.
-                    if tool_name == "todo":
-                        msg = f"{emoji} {preview}"
-                    else:
-                        # Action-driven tools (cronjob/skill_manage/memory)
-                        # render their complete standalone phrase ("⏰ Reading
-                        # scheduled jobs") — a fixed verb + raw action noun
-                        # ("Scheduling list") would misstate what the call
-                        # does.
-                        _action_phrase = get_tool_action_phrase(tool_name, args)
-                        if _action_phrase:
-                            msg = f"{emoji} {_action_phrase}"
+                    # Task-stop notification: a todo call that moved an item
+                    # out of in_progress/closing into cancelled/escalated
+                    # renders "Task cancelled/escalated" instead of the
+                    # generic todo bubble. The stopped item arrives via the
+                    # stopped_task kwarg (see _detect_todo_task_stop).
+                    _stopped_task = kwargs.get("stopped_task")
+                    if (
+                        tool_name == "todo"
+                        and isinstance(_stopped_task, dict)
+                        and str(_stopped_task.get("content", "")).strip()
+                    ):
+                        _stopped_content = str(_stopped_task["content"]).strip()
+                        if len(_stopped_content) > _cap:
+                            _stopped_content = _stopped_content[:_cap - 3] + "..."
+                        if str(_stopped_task.get("status", "")).strip() == "cancelled":
+                            msg = f"{emoji} Task cancelled: {_stopped_content}"
                         else:
-                            # Friendly labels: render a human-phrased line for built-in
-                            # tools ("🔍 Searching the web for ...") by prefixing the verb
-                            # onto the preview the callback already computed (so the
-                            # command/url/query is preserved).  Custom/plugin/MCP tools
-                            # have no verb and fall back to the raw "tool_name: ..." form.
-                            _verb = get_tool_verb(tool_name)
-                            if _verb:
-                                if verb_drops_preview(tool_name):
-                                    msg = f"{emoji} {_verb}"
-                                else:
-                                    msg = f"{emoji} {_verb}{tool_verb_connector(tool_name)}{preview}"
+                            msg = f"{emoji} Task escalated: {_stopped_content}"
+                    else:
+                        # todo's preview is a complete capitalized phrase
+                        # ("Reading the task list") — render it standalone
+                        # instead of the quoted "todo: …" legacy form.
+                        if tool_name == "todo":
+                            msg = f"{emoji} {preview}"
+                        else:
+                            # Action-driven tools (cronjob/skill_manage/memory)
+                            # render their complete standalone phrase ("⏰ Reading
+                            # scheduled jobs") — a fixed verb + raw action noun
+                            # ("Scheduling list") would misstate what the call
+                            # does.
+                            _action_phrase = get_tool_action_phrase(tool_name, args)
+                            if _action_phrase:
+                                msg = f"{emoji} {_action_phrase}"
                             else:
-                                msg = f"{emoji} {tool_name}: \"{preview}\""
+                                # Friendly labels: render a human-phrased line for built-in
+                                # tools ("🔍 Searching the web for ...") by prefixing the verb
+                                # onto the preview the callback already computed (so the
+                                # command/url/query is preserved).  Custom/plugin/MCP tools
+                                # have no verb and fall back to the raw "tool_name: ..." form.
+                                _verb = get_tool_verb(tool_name)
+                                if _verb:
+                                    if verb_drops_preview(tool_name):
+                                        msg = f"{emoji} {_verb}"
+                                    else:
+                                        msg = f"{emoji} {_verb}{tool_verb_connector(tool_name)}{preview}"
+                                else:
+                                    msg = f"{emoji} {tool_name}: \"{preview}\""
                 last_was_terminal_block[0] = False
             else:
                 msg = f"{emoji} {tool_name}..."

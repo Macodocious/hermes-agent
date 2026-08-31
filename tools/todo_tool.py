@@ -394,6 +394,56 @@ class TodoStore:
             }
         return None
 
+    def detect_task_stop(
+        self, todos: Optional[List[Dict[str, Any]]], merge: bool = False
+    ) -> Optional[Dict[str, str]]:
+        """Detect which task (if any) a pending write moves to a stop status.
+
+        A task "stops" when an item that was ``in_progress`` or ``closing``
+        before the call becomes ``cancelled`` or ``escalated``. Re-asserting
+        the same terminal status is not a stop. Returns the first stopped
+        item (list order is priority), or None when no item stops. Mirrors
+        the write pipeline's normalization (string payloads, list shape,
+        content fallback) so the detection matches what ``write`` will
+        actually store.
+        """
+        if todos is None:
+            return None
+        if isinstance(todos, str):
+            try:
+                todos = json.loads(todos)
+            except (json.JSONDecodeError, TypeError):
+                return None
+        if not isinstance(todos, list):
+            return None
+
+        previous = {item["id"]: item for item in self._items}
+        for t in todos:
+            if not isinstance(t, dict):
+                continue
+            item_id = str(t.get("id", "")).strip()
+            if not item_id:
+                continue
+            status = str(t.get("status", "")).strip().lower()
+            if status not in ("cancelled", "escalated"):
+                continue
+            prev_item = previous.get(item_id)
+            if prev_item is None:
+                continue  # a net-new terminal item is not a stop
+            if prev_item["status"] not in ("in_progress", "closing"):
+                continue  # only an active task can stop
+            content = str(t.get("content", "")).strip()
+            if not content:
+                content = prev_item["content"]
+            if not content:
+                content = "(no description)"
+            return {
+                "id": item_id,
+                "content": self._cap_content(content),
+                "status": status,
+            }
+        return None
+
     def transition(self, action: str, item_id: Any) -> Dict[str, Any]:
         """Apply a lifecycle action to one task (P1).
 
