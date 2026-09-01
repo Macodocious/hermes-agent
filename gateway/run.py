@@ -11831,7 +11831,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                             _lifecycle_nudge = str(
                                 _agent_result.get("task_lifecycle_nudge") or ""
                             )
-                        await self._post_turn_goal_continuation(
+                        _suppress_final_response = await self._post_turn_goal_continuation(
                             session_entry=session_entry,
                             source=source,
                             final_response=_final_text,
@@ -11843,6 +11843,14 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                             ),
                             user_initiated=not self._is_goal_continuation_event(event),
                         )
+                        if _suppress_final_response:
+                            # A task-lifecycle goal completed this turn: the
+                            # deterministic "✅ Task completed" line (deferred
+                            # to post-delivery) replaces the agent's wrap-up
+                            # prose. Blank the response so the adapter sends
+                            # nothing — the user already saw the real content
+                            # on the working turns.
+                            _agent_result = None
             except Exception as _goal_exc:
                 logger.debug("goal continuation hook failed: %s", _goal_exc)
             return _agent_result
@@ -14553,7 +14561,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         task_lifecycle_nudge: str = "",
         user_message: str = "",
         user_initiated: bool = True,
-    ) -> None:
+    ) -> bool:
         """Run the goal judge after a gateway turn and, if still active,
         enqueue a continuation prompt for the same session.
 
@@ -14581,16 +14589,21 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         a real user message, False for a synthetic goal-continuation event.
         A real user message bypasses the wait barrier so the loop judges the
         fresh exchange instead of staying parked.
+
+        Returns True when the turn's final response must be suppressed: a
+        task-lifecycle goal completed this turn, so the deterministic
+        "✅ Task completed" line replaces the agent's wrap-up prose. The
+        caller blanks the response so the adapter sends nothing.
         """
         try:
             from hermes_cli.goals import GoalManager
         except Exception as exc:
             logger.debug("goal continuation: goals module unavailable: %s", exc)
-            return
+            return False
 
         sid = getattr(session_entry, "session_id", None) or ""
         if not sid:
-            return
+            return False
 
         max_turns = self._goal_max_turns_from_config()
 
@@ -14600,7 +14613,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             # the audit fired because work happened with no open task.
             if task_lifecycle_nudge and source is not None:
                 await self._enqueue_lifecycle_nudge(source, task_lifecycle_nudge)
-            return
+            return False
 
         _goal_text = getattr(mgr.state, "goal", None) or ""
         _is_lifecycle = _is_lifecycle_goal(_goal_text)
@@ -14648,6 +14661,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 "message": "",
             }
         msg = decision.get("message") or ""
+        # Set True only when a task-lifecycle goal completes this turn —
+        # the deterministic "✅ Task completed" line then replaces the
+        # agent's wrap-up prose (see the lifecycle branch below).
+        _suppress_final_response = False
 
         # Task-lifecycle goals (PR #51) arm the GoalEngine with
         # "Complete the task: <content>". For those goals only, the
@@ -14669,6 +14686,11 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             if _verdict == "done":
                 _task_name = _goal_text[len(_LIFECYCLE_GOAL_PREFIX):].strip() or "(no description)"
                 msg = f"✅ Task completed: {_task_name}"
+                # The deterministic completion line replaces the agent's
+                # wrap-up prose for this turn — the real content was
+                # already delivered on the working turns. The caller
+                # blanks the final response so the adapter sends nothing.
+                _suppress_final_response = True
             elif _verdict in ("continue", "wait") and str(decision.get("status") or "") == "active":
                 msg = ""  # per-turn progress noise — suppress
 
@@ -14699,13 +14721,13 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             # of the goal loop.
             if task_lifecycle_nudge and source is not None:
                 await self._enqueue_lifecycle_nudge(source, task_lifecycle_nudge)
-            return
+            return _suppress_final_response
 
         prompt = decision.get("continuation_prompt") or ""
         if not prompt and not task_lifecycle_nudge and not _verdict_nudge:
-            return
+            return _suppress_final_response
         if source is None:
-            return
+            return _suppress_final_response
 
         # Enqueue via the adapter's FIFO so a user message already in
         # flight preempts the continuation naturally. The lifecycle
@@ -14749,6 +14771,8 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     self._enqueue_fifo(_quick_key, cont_event, adapter)
         except Exception as exc:
             logger.debug("goal continuation: enqueue failed: %s", exc)
+
+        return _suppress_final_response
 
     async def _enqueue_lifecycle_nudge(self, source: Any, nudge: str) -> None:
         """Enqueue a task-lifecycle pull-back nudge through the adapter FIFO."""
