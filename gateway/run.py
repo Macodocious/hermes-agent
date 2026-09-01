@@ -1140,6 +1140,96 @@ from agent.replay_cleanup import (  # noqa: E402
 _AUTO_CONTINUE_NOTE_PREFIX = "[System note: Your previous turn"
 _AUTO_CONTINUE_FALLBACK_PREFIX = "[System note: A new message"
 
+# Task-lifecycle goals (PR #51) are armed by agent/task_manager.py with the
+# verbatim text "Complete the task: <content>" (see _goal_text_for_item).
+# The gateway uses this prefix to scope lifecycle-only behavior so the
+# native /goal GoalEngine is never touched. Byte-identical to the constant
+# in the lifecycle-status-messages branch so git dedupes the addition on
+# merge.
+_LIFECYCLE_GOAL_PREFIX = "Complete the task: "
+
+# Rejection gate (Issue 2 re-scope): when the goal judge says DONE but the
+# triggering user message reads as a rejection/denial of the agent's answer,
+# the gateway refuses finalization and forces a continue. The determination
+# is made by the auxiliary model — no regex, no token scan (natural-language
+# parsing rule: pattern matching may rank candidates, but the final call
+# belongs to the model). Fail-closed: any error or unparseable reply counts
+# as a rejection so a done verdict is never shipped over a disputed answer.
+_LIFECYCLE_REJECTION_SYSTEM_PROMPT = (
+    "You are a strict gatekeeper for a task-completion loop. Your only job "
+    "is to decide whether the user's latest message rejects, disputes, or "
+    "denies the agent's answer or work."
+)
+
+_LIFECYCLE_REJECTION_PROMPT_TEMPLATE = (
+    "The agent just claimed the task is complete. The user's latest message "
+    "is:\n"
+    "<user_message>\n{user_message}\n</user_message>\n\n"
+    "Is this message a rejection, denial, or dispute of the agent's answer "
+    "or work? Reply with JSON only:\n"
+    '{"rejected": true/false, "reason": "short reason"}'
+)
+
+_LIFECYCLE_REJECTION_MAX_TOKENS = 256
+_LIFECYCLE_REJECTION_MESSAGE_CHARS = 2048
+
+
+def _is_lifecycle_goal(goal_text: Optional[str]) -> bool:
+    """Return True when the active goal is a PR #51 task-lifecycle goal.
+
+    Lifecycle goals are armed with the verbatim text
+    ``"Complete the task: <content>"`` (agent/task_manager.py
+    ``_goal_text_for_item``). Native /goal text never carries the prefix,
+    so this mechanical check scopes lifecycle-only behavior without ever
+    touching the native GoalEngine.
+    """
+    return bool(goal_text) and str(goal_text).startswith(_LIFECYCLE_GOAL_PREFIX)
+
+
+def _is_lifecycle_rejection_message(user_message: Optional[str]) -> bool:
+    """Ask the auxiliary model whether the user's message rejects the answer.
+
+    Used by the lifecycle acknowledgment gate: a ``done`` verdict is refused
+    when the triggering user message disputes the agent's answer. The
+    determination is the model's — no regex, no token scan. Fail-closed: any
+    error, timeout, or unparseable reply counts as a rejection so a done
+    verdict is never shipped over a disputed answer.
+    """
+    if not user_message or not str(user_message).strip():
+        return False
+    try:
+        from agent.auxiliary_client import call_llm
+    except Exception as exc:
+        logger.debug("lifecycle rejection gate: auxiliary client import failed: %s", exc)
+        return True
+    try:
+        resp = call_llm(
+            task="goal_judge",
+            messages=[
+                {"role": "system", "content": _LIFECYCLE_REJECTION_SYSTEM_PROMPT},
+                {
+                    "role": "user",
+                    "content": _LIFECYCLE_REJECTION_PROMPT_TEMPLATE.format(
+                        user_message=str(user_message)[:_LIFECYCLE_REJECTION_MESSAGE_CHARS]
+                    ),
+                },
+            ],
+            temperature=0,
+            max_tokens=_LIFECYCLE_REJECTION_MAX_TOKENS,
+        )
+        raw = resp.choices[0].message.content or ""
+    except Exception as exc:
+        logger.info("lifecycle rejection gate: judge call failed (%s) — treating as rejection", exc)
+        return True
+    try:
+        data = json.loads(raw.strip().strip("`"))
+        if isinstance(data, dict):
+            return bool(data.get("rejected"))
+    except Exception:
+        pass
+    # Unparseable reply — fail closed.
+    return True
+
 
 def _is_auto_continue_noise(content: Any) -> bool:
     """Return True if this user-message content is a gateway-injected
@@ -2401,6 +2491,30 @@ def _is_control_interrupt_message(message: Optional[str]) -> bool:
         return False
     normalized = " ".join(str(message).strip().split()).lower()
     return normalized in _CONTROL_INTERRUPT_MESSAGES
+
+
+# Dead-channel send markers: error strings that mean the delivery target
+# (channel/thread) no longer exists.  ``classify_send_error`` only matches
+# ``"chat not found"`` against chat-level failures, so Discord's 404 with
+# error code 10003 ("Unknown Channel" — also raised as "Unknown Thread" for
+# deleted threads) is classified ``unknown`` and the orphaned session engine
+# (heartbeat, typing, goal continuations, armed goal) keeps hammering a
+# channel that is gone (#orphaned-engine).  The eviction hooks below use this
+# marker set directly, independent of the shared classifier.
+_DEAD_CHANNEL_ERROR_MARKERS = (
+    "unknown channel",
+    "unknown thread",
+    "channel not found",
+    "chat not found",
+)
+
+
+def _is_dead_channel_send_failure(result: Any) -> bool:
+    """Return True when a send result failed because the channel no longer exists."""
+    if result is None or getattr(result, "success", True):
+        return False
+    error_text = str(getattr(result, "error", "") or "").lower()
+    return any(marker in error_text for marker in _DEAD_CHANNEL_ERROR_MARKERS)
 
 
 def _skill_slug_from_frontmatter(skill_md: Path) -> tuple[str | None, str | None]:
@@ -4895,6 +5009,113 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 else:
                     queued_events.pop(session_key, None)
         return removed
+
+    async def _handle_dead_channel_eviction(
+        self,
+        session_key: str,
+        source: Any,
+        *,
+        error_text: str = "",
+    ) -> bool:
+        """Tear down the orphaned session engine for a dead delivery channel.
+
+        Called when a send for ``session_key`` fails with a channel-gone
+        error (Discord 10003 "Unknown Channel"/"Unknown Thread", Telegram
+        "chat not found", etc.).  The delivery target no longer exists, so
+        the engine that exists to serve it must stop: interrupt the running
+        agent, drop FIFO goal continuations and the armed goal, release the
+        running slot, and mark the session dead so heartbeat/typing/status
+        sends short-circuit instead of hammering the missing channel
+        (#orphaned-engine).
+
+        The transcript/session row is intentionally preserved — SessionStore
+        has no delete API and the user may legitimately recreate the thread.
+        Only the *engine* is torn down.
+
+        Returns True when the session was evicted (False on a repeated call
+        for an already-dead session, or when the channel error was not a
+        terminal dead-channel failure).
+        """
+        if not session_key:
+            return False
+        dead = getattr(self, "_dead_sessions", None)
+        if dead is None:
+            dead = set()
+            self._dead_sessions = dead
+        if session_key in dead:
+            return False
+
+        # Resolve the session_id without creating a session row, using the
+        # established thread-safe lookup (store lock + JSON load offloaded to
+        # a worker thread).  When the entry is absent the goal clear is
+        # skipped (nothing armed).
+        session_id = ""
+        store = getattr(self, "session_store", None)
+        if store is not None:
+            try:
+                session_id = await asyncio.to_thread(
+                    self._lookup_session_id_under_store_lock, store, session_key
+                )
+            except Exception:
+                session_id = ""
+            session_id = session_id or ""
+
+        # Drop FIFO goal continuations before tearing down so nothing
+        # dequeues a continuation for a channel that cannot receive it.
+        adapter = self._adapter_for_source(source)
+        if adapter is not None:
+            try:
+                self._clear_goal_pending_continuations(session_key, adapter)
+            except Exception:
+                pass
+
+        if session_id:
+            try:
+                from hermes_cli.goals import GoalManager
+
+                GoalManager(session_id=session_id).clear()
+            except Exception:
+                pass
+
+        # Teardown reuses the /stop primitive so the eviction path behaves
+        # identically to a manual stop: interrupt the running agent, drop
+        # adapter activity for the session, invalidate the run generation,
+        # release the running slot, and evict the cached agent (so a stale
+        # ``_interrupt_requested`` flag cannot kill the session's next
+        # message).  Wrapped so a degraded runner state never blocks eviction.
+        try:
+            await self._interrupt_and_clear_session(
+                session_key,
+                source,
+                interrupt_reason=_INTERRUPT_REASON_STOP,
+                invalidation_reason="dead_channel_eviction",
+                release_running_state=True,
+            )
+        except Exception as exc:
+            logger.debug("dead-channel eviction: running-state teardown failed: %s", exc)
+            try:
+                self._release_running_agent_state(session_key)
+            except Exception:
+                pass
+        try:
+            self._evict_cached_agent(session_key)
+        except Exception:
+            pass
+
+        dead.add(session_key)
+        logger.warning(
+            "Evicted orphaned session engine for %s (dead channel: %s) — "
+            "running state, FIFO continuations and armed goal cleared; transcript preserved",
+            session_key,
+            error_text or "unknown error",
+        )
+        return True
+
+    def _session_is_dead(self, session_key: str) -> bool:
+        """Return True when a session was evicted for a dead delivery channel."""
+        if not session_key:
+            return False
+        return session_key in (getattr(self, "_dead_sessions", None) or ())
 
     def _goal_still_active_for_session(self, session_id: str) -> bool:
         """Best-effort fresh DB check before running a queued continuation."""
@@ -11615,6 +11836,12 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                             source=source,
                             final_response=_final_text,
                             task_lifecycle_nudge=_lifecycle_nudge,
+                            user_message=(
+                                ""
+                                if self._is_goal_continuation_event(event)
+                                else str(getattr(event, "text", "") or "")
+                            ),
+                            user_initiated=not self._is_goal_continuation_event(event),
                         )
                         if _suppress_final_response:
                             # A task-lifecycle goal completed this turn: the
@@ -14271,6 +14498,16 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 "goal continuation: status send failed: %s",
                 getattr(result, "error", "unknown error"),
             )
+            if _is_dead_channel_send_failure(result):
+                try:
+                    session_key = self._session_key_for_source(source)
+                except Exception:
+                    session_key = ""
+                await self._handle_dead_channel_eviction(
+                    session_key,
+                    source,
+                    error_text=getattr(result, "error", "") or "",
+                )
 
     async def _defer_goal_status_notice_after_delivery(self, source: Any, message: str) -> None:
         """Send a /goal status line after the main response is delivered.
@@ -14322,11 +14559,13 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         source: Any,
         final_response: str,
         task_lifecycle_nudge: str = "",
+        user_message: str = "",
+        user_initiated: bool = True,
     ) -> bool:
         """Run the goal judge after a gateway turn and, if still active,
         enqueue a continuation prompt for the same session.
 
-        Called from ``_handle_message_with_agent`` at turn boundary, AFTER
+        Called from ``_handle_message`` at turn boundary, AFTER
         the response has been delivered. Safe when no goal is set.
 
         We use the adapter's pending-message / FIFO machinery so any real
@@ -14336,6 +14575,20 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         ``task_lifecycle_nudge`` (P1/P2): a pull-back nudge produced by the
         turn-end audit. It is enqueued ahead of any goal continuation so
         the agent is pulled back to the task lifecycle first.
+
+        ``user_message`` is the raw user message that triggered this turn
+        (empty for a self-fed continuation). For task-lifecycle goals only,
+        a real user message bypasses the wait barrier (so the loop judges
+        the fresh exchange instead of staying parked) and, when the judge
+        says DONE, the lifecycle rejection gate asks the auxiliary model
+        whether the user's message disputes the answer — a rejection
+        refuses finalization and forces a continue. Native /goal behavior
+        is untouched.
+
+        ``user_initiated`` is computed mechanically by the caller: True for
+        a real user message, False for a synthetic goal-continuation event.
+        A real user message bypasses the wait barrier so the loop judges the
+        fresh exchange instead of staying parked.
 
         Returns True when the turn's final response must be suppressed: a
         task-lifecycle goal completed this turn, so the deterministic
@@ -14362,6 +14615,15 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 await self._enqueue_lifecycle_nudge(source, task_lifecycle_nudge)
             return False
 
+        _goal_text = getattr(mgr.state, "goal", None) or ""
+        _is_lifecycle = _is_lifecycle_goal(_goal_text)
+
+        # Wait-bypass (lifecycle only): a real user message releases a
+        # parked lifecycle goal so the judge evaluates the fresh exchange
+        # instead of staying parked. Native /goal keeps the base behavior.
+        if _is_lifecycle and user_initiated and mgr.is_waiting():
+            mgr.stop_waiting()
+
         try:
             from hermes_cli.goals import gather_background_processes as _gather_bg
             _bg_procs = _gather_bg()
@@ -14370,9 +14632,34 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
         decision = mgr.evaluate_after_turn(
             final_response or "",
-            user_initiated=True,
+            user_initiated=user_initiated,
             background_processes=_bg_procs,
         )
+
+        # Lifecycle rejection gate (Issue 2): the judge said DONE, but the
+        # triggering user message disputes the agent's answer. Refuse
+        # finalization — undo the done flip (resume keeps the turn budget)
+        # and force a continue so the agent addresses the rejection. The
+        # determination is the auxiliary model's; fail-closed on any error.
+        if (
+            _is_lifecycle
+            and user_initiated
+            and decision.get("verdict") == "done"
+            and _is_lifecycle_rejection_message(user_message)
+        ):
+            logger.info(
+                "lifecycle rejection gate: refusing done verdict for session %s",
+                sid,
+            )
+            mgr.resume(reset_budget=False)
+            decision = {
+                "status": "active",
+                "should_continue": True,
+                "continuation_prompt": mgr.next_continuation_prompt(),
+                "verdict": "continue",
+                "reason": "user rejected the answer",
+                "message": "",
+            }
         msg = decision.get("message") or ""
         # Set True only when a task-lifecycle goal completes this turn —
         # the deterministic "✅ Task completed" line then replaces the
@@ -21826,6 +22113,17 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                             _heartbeat_msg_id = str(_notify_res.message_id)
                             if _cleanup_progress:
                                 _cleanup_msg_ids.append(_heartbeat_msg_id)
+                    if _is_dead_channel_send_failure(_notify_res):
+                        # The delivery channel is gone (Discord 10003,
+                        # Telegram "chat not found", ...).  Tear down the
+                        # orphaned engine so the heartbeat stops hammering
+                        # it; the next loop iteration's ownership check then
+                        # exits cleanly.
+                        await self._handle_dead_channel_eviction(
+                            session_key,
+                            source,
+                            error_text=getattr(_notify_res, "error", "") or "",
+                        )
                 except Exception as _ne:
                     logger.debug("Long-running notification error: %s", _ne)
 

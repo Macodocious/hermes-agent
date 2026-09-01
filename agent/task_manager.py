@@ -175,9 +175,27 @@ def on_todo_write(agent: Any, args: Dict[str, Any]) -> None:
         # task in closing forever. set() also covers close-from-paused,
         # where pause already cleared the goal; re-arming keeps the goal
         # text in sync with the item content.
+        #
+        # Guard the re-arm: set() builds a fresh state with turns_used=0
+        # and created_at=now, so calling it on every todo write (including
+        # the routine read-back the agent issues each turn) resets the
+        # judge's turn budget and the loop can never hit max_turns — it
+        # spins forever on "(1/max_turns)" messages. Only set() when there
+        # is no active goal or the goal text changed; otherwise leave the
+        # armed state untouched so the turn counter accumulates and the
+        # budget fires. A goal the judge parked (paused/waiting/done) is
+        # not active, so it re-arms on the next work turn as before.
         try:
             if mgr is not None:
-                mgr.set(_goal_text_for_item(target))
+                goal_text = _goal_text_for_item(target)
+                state = getattr(mgr, "state", None)
+                already_armed = (
+                    state is not None
+                    and getattr(state, "status", None) == "active"
+                    and getattr(state, "goal", "") == goal_text
+                )
+                if not already_armed:
+                    mgr.set(goal_text)
         except Exception as exc:  # pragma: no cover - defensive
             logger.debug("task_manager: goal arm failed: %s", exc)
     else:
