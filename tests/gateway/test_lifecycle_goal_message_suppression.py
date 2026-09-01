@@ -13,11 +13,12 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from gateway.config import GatewayConfig, Platform, PlatformConfig
+from gateway.platforms.base import MessageEvent, MessageType
 from gateway.session import SessionEntry, SessionSource, build_session_key
 
 
@@ -167,3 +168,138 @@ async def test_native_goal_continue_keeps_progress_line(hermes_home):
     assert len(adapter.sends) == 1
     assert "Continuing toward goal" in adapter.sends[0]["content"]
     assert adapter._pending_messages, "continuation prompt must be enqueued"
+
+
+@pytest.mark.asyncio
+async def test_lifecycle_goal_done_returns_suppress_flag(hermes_home):
+    """A lifecycle goal's done verdict must return the suppress flag True.
+
+    The caller blanks the turn's final response so the deterministic
+    '✅ Task completed' line (deferred to post-delivery) replaces the
+    agent's wrap-up prose.
+    """
+    runner, adapter, session_entry, src = _make_runner_with_adapter()
+
+    from hermes_cli.goals import GoalManager
+
+    mgr = GoalManager(session_entry.session_id)
+    mgr.set("Complete the task: ship the feature")
+
+    with patch("hermes_cli.goals.judge_goal", return_value=("done", "the feature shipped", False, None, False)):
+        suppress = await runner._post_turn_goal_continuation(
+            session_entry=session_entry,
+            source=src,
+            final_response="I shipped the feature.",
+        )
+        await asyncio.sleep(0.05)
+
+    assert suppress is True
+    assert len(adapter.sends) == 1, f"expected 1 send, got {len(adapter.sends)}: {adapter.sends}"
+    assert "✅ Task completed: ship the feature" in adapter.sends[0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_native_goal_done_returns_no_suppress_flag(hermes_home):
+    """Native /goal verdicts are untouched: a done verdict must NOT
+    suppress the turn's final response."""
+    runner, adapter, session_entry, src = _make_runner_with_adapter()
+
+    from hermes_cli.goals import GoalManager
+
+    mgr = GoalManager(session_entry.session_id)
+    mgr.set("polish the docs")
+
+    with patch("hermes_cli.goals.judge_goal", return_value=("done", "docs polished", False, None, False)):
+        suppress = await runner._post_turn_goal_continuation(
+            session_entry=session_entry,
+            source=src,
+            final_response="I polished the docs.",
+        )
+        await asyncio.sleep(0.05)
+
+    assert suppress is False
+    assert len(adapter.sends) == 1
+    assert "Goal achieved" in adapter.sends[0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_lifecycle_goal_continue_returns_no_suppress_flag(hermes_home):
+    """A lifecycle goal still in progress must NOT suppress the turn's
+    final response — only the done verdict does."""
+    runner, adapter, session_entry, src = _make_runner_with_adapter()
+
+    from hermes_cli.goals import GoalManager
+
+    mgr = GoalManager(session_entry.session_id)
+    mgr.set("Complete the task: ship the feature")
+
+    with patch("hermes_cli.goals.judge_goal", return_value=("continue", "still working", False, None, False)):
+        suppress = await runner._post_turn_goal_continuation(
+            session_entry=session_entry,
+            source=src,
+            final_response="here's a partial edit",
+        )
+        await asyncio.sleep(0.05)
+
+    assert suppress is False
+    assert adapter.sends == [], f"expected no progress line, got {adapter.sends}"
+    assert adapter._pending_messages, "continuation prompt must still be enqueued"
+
+
+@pytest.mark.asyncio
+async def test_call_site_blanks_final_response_when_suppressed(hermes_home):
+    """Full-path: when _post_turn_goal_continuation returns True, the
+    call site in _handle_message must blank the final response so the
+    adapter sends nothing — the deferred '✅ Task completed' line is the
+    only user-visible completion message."""
+    from gateway.run import GatewayRunner
+
+    runner, adapter, session_entry, src = _make_runner_with_adapter()
+
+    # Wire the REAL _handle_message pipeline.
+    runner._handle_message = GatewayRunner._handle_message.__get__(runner, GatewayRunner)
+    runner._is_user_authorized = lambda source: True
+    runner._check_slash_access = lambda *a, **k: None
+    runner._post_turn_goal_continuation = AsyncMock(return_value=True)
+    runner._handle_message_with_agent = AsyncMock(return_value="The goal is complete. Here is the wrap-up prose.")
+    runner.session_store.get_or_create_session.return_value = session_entry
+
+    event = MessageEvent(
+        text="finish the task",
+        message_type=MessageType.TEXT,
+        source=src,
+        message_id="m-call-site",
+    )
+
+    result = await runner._handle_message(event)
+
+    assert result is None, f"expected blanked response, got {result!r}"
+    # The agent's wrap-up prose must never reach the adapter.
+    assert adapter.sends == [], f"expected no sends, got {adapter.sends}"
+
+
+@pytest.mark.asyncio
+async def test_call_site_keeps_final_response_when_not_suppressed(hermes_home):
+    """Full-path: when _post_turn_goal_continuation returns False, the
+    call site must return the agent's final response unchanged."""
+    from gateway.run import GatewayRunner
+
+    runner, adapter, session_entry, src = _make_runner_with_adapter()
+
+    runner._handle_message = GatewayRunner._handle_message.__get__(runner, GatewayRunner)
+    runner._is_user_authorized = lambda source: True
+    runner._check_slash_access = lambda *a, **k: None
+    runner._post_turn_goal_continuation = AsyncMock(return_value=False)
+    runner._handle_message_with_agent = AsyncMock(return_value="normal response text")
+    runner.session_store.get_or_create_session.return_value = session_entry
+
+    event = MessageEvent(
+        text="hello",
+        message_type=MessageType.TEXT,
+        source=src,
+        message_id="m-call-site-2",
+    )
+
+    result = await runner._handle_message(event)
+
+    assert result == "normal response text"
