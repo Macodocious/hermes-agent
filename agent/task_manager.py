@@ -320,6 +320,11 @@ def _apply_verdict(store: Any, decision: Dict[str, Any]) -> Optional[str]:
 
     Returns a continuation nudge when one is needed, else None.
     """
+    # A blocked-awaiting-input done verdict is a parked stop, not a
+    # completion: the task stays in_progress and the user's next message
+    # re-arms the loop. Never finalize, never nudge, never review.
+    if decision.get("blocked"):
+        return None
     verdict = str(decision.get("verdict") or "").strip()
     closing = next((i for i in store.read() if i["status"] == "closing"), None)
     if closing is not None:

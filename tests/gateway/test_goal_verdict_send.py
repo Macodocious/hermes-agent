@@ -107,7 +107,7 @@ async def test_goal_verdict_done_sent_via_adapter_send(hermes_home):
     mgr = GoalManager(session_entry.session_id)
     mgr.set("ship the feature")
 
-    with patch("hermes_cli.goals.judge_goal", return_value=("done", "the feature shipped", False, None, False)):
+    with patch("hermes_cli.goals.judge_goal", return_value=("done", "the feature shipped", False, None, False, False)):
         await runner._post_turn_goal_continuation(
             session_entry=session_entry,
             source=src,
@@ -136,7 +136,7 @@ async def test_goal_verdict_continue_enqueues_continuation(hermes_home):
     mgr = GoalManager(session_entry.session_id)
     mgr.set("polish the docs")
 
-    with patch("hermes_cli.goals.judge_goal", return_value=("continue", "still needs work", False, None, False)):
+    with patch("hermes_cli.goals.judge_goal", return_value=("continue", "still needs work", False, None, False, False)):
         await runner._post_turn_goal_continuation(
             session_entry=session_entry,
             source=src,
@@ -248,7 +248,7 @@ async def test_native_goal_untouched_by_rejection(hermes_home):
     mgr.set("answer the question")
 
     with (
-        patch("hermes_cli.goals.judge_goal", return_value=("done", "answered", False, None, False)),
+        patch("hermes_cli.goals.judge_goal", return_value=("done", "answered", False, None, False, False)),
         patch("gateway.run._is_lifecycle_rejection_message", return_value=True),
     ):
         await runner._post_turn_goal_continuation(
@@ -278,7 +278,7 @@ async def test_goal_verdict_budget_exhausted_sends_pause(hermes_home):
     state.turns_used = 2
     save_goal(session_entry.session_id, state)
 
-    with patch("hermes_cli.goals.judge_goal", return_value=("continue", "keep going", False, None, False)):
+    with patch("hermes_cli.goals.judge_goal", return_value=("continue", "keep going", False, None, False, False)):
         await runner._post_turn_goal_continuation(
             session_entry=session_entry,
             source=src,
@@ -325,7 +325,7 @@ async def test_goal_verdict_survives_adapter_without_send(hermes_home):
 
     runner.adapters[Platform.TELEGRAM] = _NoSendAdapter()
 
-    with patch("hermes_cli.goals.judge_goal", return_value=("done", "ok", False, None, False)):
+    with patch("hermes_cli.goals.judge_goal", return_value=("done", "ok", False, None, False, False)):
         # must not raise
         await runner._post_turn_goal_continuation(
             session_entry=session_entry,
@@ -333,3 +333,125 @@ async def test_goal_verdict_survives_adapter_without_send(hermes_home):
             final_response="whatever",
         )
         await asyncio.sleep(0.05)
+
+
+@pytest.mark.asyncio
+async def test_blocked_done_skips_rejection_gate(hermes_home):
+    """A blocked-awaiting-input done verdict must skip the lifecycle
+    rejection gate entirely: no auxiliary call, no forced continue, no
+    'Goal achieved' status line — the agent's question ships as the final
+    response and the loop stops for the user."""
+    runner, adapter, session_entry, src = _make_runner_with_adapter()
+
+    from hermes_cli.goals import GoalManager
+
+    mgr = GoalManager(session_entry.session_id)
+    mgr.set("Complete the task: resolve the merge")
+
+    with (
+        patch(
+            "hermes_cli.goals.judge_goal",
+            return_value=("done", "Agent is blocked awaiting user direction", False, None, False, True),
+        ),
+        patch("gateway.run._is_lifecycle_rejection_message", return_value=True) as rejection_gate,
+    ):
+        suppress = await runner._post_turn_goal_continuation(
+            session_entry=session_entry,
+            source=src,
+            final_response="Blocked on your direction: option 1 or option 2?",
+            user_message="Which option do you want?",
+            user_initiated=True,
+        )
+        await asyncio.sleep(0.05)
+
+    # The rejection gate must never have been consulted.
+    rejection_gate.assert_not_called()
+    # No continuation enqueued — the loop stops for the user.
+    assert not adapter._pending_messages
+    # No "Goal achieved" status line for a blocked stop.
+    assert adapter.sends == []
+    # The agent's question is NOT suppressed (it ships as the final response).
+    assert suppress is False
+
+
+@pytest.mark.asyncio
+async def test_blocked_done_does_not_finalize_task(hermes_home):
+    """A blocked-awaiting-input done verdict must not finalize a closing
+    task or emit the completion line — the task stays in_progress."""
+    runner, adapter, session_entry, src = _make_runner_with_adapter()
+
+    from hermes_cli.goals import GoalManager
+    from tools.todo_tool import TodoStore
+
+    mgr = GoalManager(session_entry.session_id)
+    mgr.set("Complete the task: resolve the merge")
+
+    # In-memory store: SessionDB's DEFAULT_DB_PATH is frozen at import time,
+    # so the real load_todo/save_todo would touch the host state.db. Patch
+    # them to the in-memory store to keep the test hermetic.
+    store = TodoStore()
+    # A fresh store assigns sequential ids on write (merge keeps ids stable
+    # only for items already present) — capture the assigned id for the
+    # transitions below.
+    store.write([{"id": "t-1", "content": "resolve the merge", "status": "pending"}])
+    item_id = store.read()[0]["id"]
+    store.transition("begin", item_id)
+    store.transition("close", item_id)  # closing — awaiting the judge's second key
+    saved: list[TodoStore] = []
+
+    with (
+        patch(
+            "hermes_cli.goals.judge_goal",
+            return_value=("done", "blocked awaiting user direction", False, None, False, True),
+        ),
+        patch("hermes_cli.tasks.load_todo", return_value=store),
+        patch("hermes_cli.tasks.save_todo", side_effect=lambda _sid, s: saved.append(s)),
+    ):
+        await runner._post_turn_goal_continuation(
+            session_entry=session_entry,
+            source=src,
+            final_response="Blocked on your direction.",
+            user_message="Which option?",
+            user_initiated=True,
+        )
+        await asyncio.sleep(0.05)
+
+    # The closing task was NOT finalized by the blocked verdict.
+    items = saved[0].read()
+    assert any(i["id"] == item_id and i["status"] == "closing" for i in items)
+    assert not any(i["id"] == item_id and i["status"] == "completed" for i in items)
+    # No completion line delivered.
+    assert adapter.sends == []
+
+
+@pytest.mark.asyncio
+async def test_rejection_gate_fails_open_on_auxiliary_error(hermes_home):
+    """When the auxiliary rejection check errors, the judge's done verdict
+    must stand (fail-open) — no forced continue, no synthetic continuation."""
+    runner, adapter, session_entry, src = _make_runner_with_adapter()
+
+    from hermes_cli.goals import GoalManager
+
+    mgr = GoalManager(session_entry.session_id)
+    mgr.set("Complete the task: ship the feature")
+
+    with (
+        patch("hermes_cli.goals.judge_goal", return_value=("done", "the feature shipped", False, None, False, False)),
+        # The real _is_lifecycle_rejection_message catches provider errors
+        # and returns False — the gate only refuses on positive evidence.
+        patch("agent.auxiliary_client.call_llm", side_effect=RuntimeError('"rejected"')),
+    ):
+        await runner._post_turn_goal_continuation(
+            session_entry=session_entry,
+            source=src,
+            final_response="Shipped.",
+            user_message="That's wrong.",
+            user_initiated=True,
+        )
+        await asyncio.sleep(0.05)
+
+    # Done verdict stands — the lifecycle completion line is delivered,
+    # no continuation.
+    assert len(adapter.sends) == 1
+    assert "Task completed" in adapter.sends[0]["content"]
+    assert not adapter._pending_messages

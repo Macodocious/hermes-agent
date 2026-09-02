@@ -603,11 +603,11 @@ def _handle_complete(args: dict, **kw) -> str:
                 reason = ""
                 try:
                     # judge_goal returns (verdict, reason, parse_failed,
-                    # wait_directive, transport_failed) — see
+                    # wait_directive, transport_failed, blocked) — see
                     # hermes_cli/goals.py. Unpacking fewer raises ValueError,
                     # which the defensive handler below swallows, leaving
                     # verdict="done" and silently disabling the gate.
-                    verdict, reason, _, _, _ = judge_goal(
+                    verdict, reason, _, _, _, _ = judge_goal(
                         goal=f"{task.title}\n\n{task.body or ''}".strip(),
                         last_response=(summary or result or "").strip(),
                     )

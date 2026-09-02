@@ -123,7 +123,7 @@ JUDGE_SYSTEM_PROMPT = (
     "- The response explicitly confirms the goal was completed, OR\n"
     "- The response clearly shows the final deliverable was produced, OR\n"
     "- The response explains the goal is unachievable / blocked / needs "
-    "user input (treat this as DONE with reason describing the block).\n\n"
+    "user input (treat this as DONE with reason describing the block, and set \"blocked\": true — the loop must stop and wait for the user, not force a continuation).\n\n"
     "WAIT — the goal is NOT done, but the next step is to wait for async "
     "work to finish rather than act again. Choose this ONLY when the agent's "
     "progress is genuinely gated on something running on its own:\n"
@@ -145,6 +145,7 @@ JUDGE_SYSTEM_PROMPT = (
     "take right now. This is the default when in doubt.\n\n"
     "Reply ONLY with a single JSON object on one line. Shapes:\n"
     '{"verdict": "done", "reason": "<one sentence>"}\n'
+    '{"verdict": "done", "blocked": true, "reason": "<one sentence>"}\n'
     '{"verdict": "continue", "reason": "<one sentence>"}\n'
     '{"verdict": "wait", "wait_on_session": "<id>", "reason": "<one sentence>"}\n'
     '{"verdict": "wait", "wait_on_pid": <int>, "reason": "<one sentence>"}\n'
@@ -700,10 +701,10 @@ def _goal_judge_max_tokens() -> int:
     return DEFAULT_JUDGE_MAX_TOKENS
 
 
-def _parse_judge_response(raw: str) -> Tuple[str, str, bool, Optional[Dict[str, Any]]]:
+def _parse_judge_response(raw: str) -> Tuple[str, str, bool, Optional[Dict[str, Any]], bool]:
     """Parse the judge's reply. Fail-open on unusable output.
 
-    Returns ``(verdict, reason, parse_failed, wait_directive)`` where:
+    Returns ``(verdict, reason, parse_failed, wait_directive, blocked)`` where:
       - ``verdict`` is ``"done"``, ``"continue"``, or ``"wait"``.
       - ``parse_failed`` is True when the judge returned output that couldn't
         be interpreted as the expected JSON verdict (empty body, prose,
@@ -713,12 +714,17 @@ def _parse_judge_response(raw: str) -> Tuple[str, str, bool, Optional[Dict[str, 
         ``{"pid": int}`` or ``{"seconds": int}`` (whichever the judge supplied).
         ``None`` otherwise. If a wait verdict carries neither a usable pid nor
         seconds, it is downgraded to ``continue`` (can't park on nothing).
+      - ``blocked`` is True only for ``verdict == "done"`` when the judge
+        decided DONE because the agent is blocked awaiting user input — the
+        goal is parked on a human decision, not actually complete. Callers
+        use it to skip the lifecycle rejection gate: a blocked stop must
+        never be force-continued.
 
     Accepts both the new ``{"verdict": ...}`` shape and the legacy
     ``{"done": <bool>}`` shape.
     """
     if not raw:
-        return "continue", "judge returned empty response", True, None
+        return "continue", "judge returned empty response", True, None, False
 
     text = raw.strip()
 
@@ -744,7 +750,7 @@ def _parse_judge_response(raw: str) -> Tuple[str, str, bool, Optional[Dict[str, 
                 data = None
 
     if not isinstance(data, dict):
-        return "continue", f"judge reply was not JSON: {_truncate(raw, 200)!r}", True, None
+        return "continue", f"judge reply was not JSON: {_truncate(raw, 200)!r}", True, None, False
 
     reason = str(data.get("reason") or "").strip() or "no reason provided"
 
@@ -765,7 +771,14 @@ def _parse_judge_response(raw: str) -> Tuple[str, str, bool, Optional[Dict[str, 
         verdict = "continue"
 
     if verdict != "wait":
-        return verdict, reason, False, None
+        # The blocked flag is meaningful only for a done verdict: the judge
+        # decided DONE because the agent is blocked awaiting user input.
+        blocked_val = data.get("blocked")
+        if isinstance(blocked_val, str):
+            blocked = blocked_val.strip().lower() in {"true", "yes", "1"}
+        else:
+            blocked = bool(blocked_val)
+        return verdict, reason, False, None, (verdict == "done" and blocked)
 
     # Wait verdict: extract a concrete directive (pid or seconds). Accept a
     # few key spellings the model might emit.
@@ -786,15 +799,15 @@ def _parse_judge_response(raw: str) -> Tuple[str, str, bool, Optional[Dict[str, 
     # exit OR watch-pattern match), then pid (exit only), then seconds.
     sess = data.get("wait_on_session") or data.get("session_id") or data.get("wait_session")
     if isinstance(sess, str) and sess.strip():
-        return "wait", reason, False, {"session_id": sess.strip()}
+        return "wait", reason, False, {"session_id": sess.strip()}, False
     pid = _first_int("wait_on_pid", "pid", "wait_pid")
     if pid is not None:
-        return "wait", reason, False, {"pid": pid}
+        return "wait", reason, False, {"pid": pid}, False
     seconds = _first_int("wait_for_seconds", "seconds", "wait_seconds")
     if seconds is not None:
-        return "wait", reason, False, {"seconds": seconds}
+        return "wait", reason, False, {"seconds": seconds}, False
     # Wait with no usable target — can't park on nothing; treat as continue.
-    return "continue", f"{reason} (wait verdict had no target — continuing)", False, None
+    return "continue", f"{reason} (wait verdict had no target — continuing)", False, None, False
 
 
 def _render_background_block(background_processes: Optional[List[Dict[str, Any]]]) -> str:
@@ -851,13 +864,13 @@ def judge_goal(
     subgoals: Optional[List[str]] = None,
     background_processes: Optional[List[Dict[str, Any]]] = None,
     contract: Optional[GoalContract] = None,
-) -> Tuple[str, str, bool, Optional[Dict[str, Any]], bool]:
+) -> Tuple[str, str, bool, Optional[Dict[str, Any]], bool, bool]:
     """Ask the auxiliary model whether the goal is satisfied.
 
-    Returns ``(verdict, reason, parse_failed, wait_directive, transport_failed)`` where verdict
-    is ``"done"``, ``"continue"``, ``"wait"``, or ``"skipped"`` (when the
-    judge couldn't be reached). ``wait_directive`` is set only for ``"wait"``
-    (``{"pid": int}`` or ``{"seconds": int}``); ``None`` otherwise.
+    Returns ``(verdict, reason, parse_failed, wait_directive, transport_failed, blocked)``
+    where verdict is ``"done"``, ``"continue"``, ``"wait"``, or ``"skipped"``
+    (when the judge couldn't be reached). ``wait_directive`` is set only for
+    ``"wait"`` (``{"pid": int}`` or ``{"seconds": int}``); ``None`` otherwise.
 
     ``parse_failed`` is True only when the judge call succeeded but its output
     was unusable (empty or non-JSON). API/transport errors return False — they
@@ -871,6 +884,12 @@ def judge_goal(
     auto-pause after N consecutive parse failures (see
     ``DEFAULT_MAX_CONSECUTIVE_PARSE_FAILURES``).
 
+    ``blocked`` is True only for a ``"done"`` verdict when the judge decided
+    DONE because the agent is blocked awaiting user input — the goal is
+    parked on a human decision, not actually complete. Callers use it to skip
+    the lifecycle rejection gate: a blocked stop must never be
+    force-continued.
+
     ``subgoals`` is an optional list of user-added criteria (from
     ``/subgoal``) factored into the verdict. ``background_processes`` is the
     live ``process_registry.list_sessions()`` snapshot; when the agent is
@@ -883,23 +902,23 @@ def judge_goal(
     judge prompt; when none are set, behavior is identical to the original
     free-form judge.
 
-    This is deliberately fail-open: transport errors return ``("continue", ..., ..., None, True)``
+    This is deliberately fail-open: transport errors return ``("continue", ..., ..., None, True, False)``
     — the ``transport_failed=True`` flag lets callers track and auto-pause after
     N consecutive transport failures (see
     ``DEFAULT_MAX_CONSECUTIVE_TRANSPORT_FAILURES``) so a permanently broken
     judge doesn't burn the entire turn budget.
     """
     if not goal.strip():
-        return "skipped", "empty goal", False, None, False
+        return "skipped", "empty goal", False, None, False, False
     if not last_response.strip():
         # No substantive reply this turn — almost certainly not done yet.
-        return "continue", "empty response (nothing to evaluate)", False, None, False
+        return "continue", "empty response (nothing to evaluate)", False, None, False, False
 
     try:
         from agent.auxiliary_client import call_llm
     except Exception as exc:
         logger.debug("goal judge: auxiliary client import failed: %s", exc)
-        return "continue", "auxiliary client unavailable", False, None, False
+        return "continue", "auxiliary client unavailable", False, None, False, False
 
     # Build the prompt. Priority: contract > subgoals > plain. When both a
     # contract and subgoals exist, the subgoals are appended into the
@@ -959,20 +978,21 @@ def judge_goal(
         )
     except Exception as exc:
         logger.info("goal judge: API call failed (%s) — falling through to continue", exc)
-        return "continue", f"judge error: {type(exc).__name__}", False, None, True
+        return "continue", f"judge error: {type(exc).__name__}", False, None, True, False
 
     try:
         raw = resp.choices[0].message.content or ""
     except Exception:
         raw = ""
 
-    verdict, reason, parse_failed, wait_directive = _parse_judge_response(raw)
+    verdict, reason, parse_failed, wait_directive, blocked = _parse_judge_response(raw)
     logger.info(
-        "goal judge: verdict=%s reason=%s%s",
+        "goal judge: verdict=%s reason=%s%s%s",
         verdict, _truncate(reason, 120),
         f" wait={wait_directive}" if wait_directive else "",
+        " blocked" if blocked else "",
     )
-    return verdict, reason, parse_failed, wait_directive, False
+    return verdict, reason, parse_failed, wait_directive, False, blocked
 
 
 def gather_background_processes(task_id: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -1443,7 +1463,7 @@ class GoalManager:
         state.turns_used += 1
         state.last_turn_at = time.time()
 
-        verdict, reason, parse_failed, wait_directive, transport_failed = judge_goal(
+        verdict, reason, parse_failed, wait_directive, transport_failed, blocked = judge_goal(
             state.goal,
             last_response,
             subgoals=state.subgoals or None,
@@ -1505,6 +1525,7 @@ class GoalManager:
                 "continuation_prompt": None,
                 "verdict": "done",
                 "reason": reason,
+                "blocked": blocked,
                 "message": f"✓ Goal achieved: {reason}",
             }
 
@@ -1737,7 +1758,7 @@ def run_kanban_goal_loop(
         # The kanban worker loop has no wait-barrier concept (workers finish
         # via kanban_complete / kanban_block, not by parking), so a WAIT
         # verdict is treated as CONTINUE here.
-        verdict, reason, _parse_failed, _wait, _transport_failed = judge_goal(goal_text, last_response)
+        verdict, reason, _parse_failed, _wait, _transport_failed, _blocked = judge_goal(goal_text, last_response)
         if verdict == "wait":
             verdict = "continue"
         _log(f"kanban goal loop: turn {turns_used}/{max_turns} verdict={verdict} reason={_truncate(reason, 120)}")

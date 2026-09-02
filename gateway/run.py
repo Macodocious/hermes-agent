@@ -1191,9 +1191,11 @@ def _is_lifecycle_rejection_message(user_message: Optional[str]) -> bool:
 
     Used by the lifecycle acknowledgment gate: a ``done`` verdict is refused
     when the triggering user message disputes the agent's answer. The
-    determination is the model's — no regex, no token scan. Fail-closed: any
-    error, timeout, or unparseable reply counts as a rejection so a done
-    verdict is never shipped over a disputed answer.
+    determination is the model's — no regex, no token scan. Fail-open: any
+    error, timeout, or unparseable reply counts as NOT a rejection, so the
+    judge's verdict stands — the gate only refuses a done verdict on
+    positive evidence of dispute. (A blocked-awaiting-input done verdict
+    skips this gate entirely; see the caller.)
     """
     if not user_message or not str(user_message).strip():
         return False
@@ -1201,7 +1203,7 @@ def _is_lifecycle_rejection_message(user_message: Optional[str]) -> bool:
         from agent.auxiliary_client import call_llm
     except Exception as exc:
         logger.debug("lifecycle rejection gate: auxiliary client import failed: %s", exc)
-        return True
+        return False
     try:
         resp = call_llm(
             task="goal_judge",
@@ -1219,16 +1221,16 @@ def _is_lifecycle_rejection_message(user_message: Optional[str]) -> bool:
         )
         raw = resp.choices[0].message.content or ""
     except Exception as exc:
-        logger.info("lifecycle rejection gate: judge call failed (%s) — treating as rejection", exc)
-        return True
+        logger.info("lifecycle rejection gate: judge call failed (%s) — treating as not rejected", exc)
+        return False
     try:
         data = json.loads(raw.strip().strip("`"))
         if isinstance(data, dict):
             return bool(data.get("rejected"))
     except Exception:
         pass
-    # Unparseable reply — fail closed.
-    return True
+    # Unparseable reply — fail open: the judge's verdict stands.
+    return False
 
 
 def _is_auto_continue_noise(content: Any) -> bool:
@@ -14640,11 +14642,16 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         # triggering user message disputes the agent's answer. Refuse
         # finalization — undo the done flip (resume keeps the turn budget)
         # and force a continue so the agent addresses the rejection. The
-        # determination is the auxiliary model's; fail-closed on any error.
+        # determination is the auxiliary model's; fail-open on any error
+        # (the judge's verdict stands). A blocked-awaiting-input done
+        # verdict skips the gate entirely — the agent is parked on a human
+        # decision, and force-continuing it is exactly the bug this guard
+        # exists to prevent.
         if (
             _is_lifecycle
             and user_initiated
             and decision.get("verdict") == "done"
+            and not decision.get("blocked")
             and _is_lifecycle_rejection_message(user_message)
         ):
             logger.info(
@@ -14661,6 +14668,12 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 "message": "",
             }
         msg = decision.get("message") or ""
+        # A blocked-awaiting-input done verdict is a parked stop, not an
+        # achievement: no "✓ Goal achieved" status line, and the agent's
+        # question must ship as the final response (the lifecycle branch
+        # below must not suppress or replace it either).
+        if decision.get("blocked"):
+            msg = ""
         # Set True only when a task-lifecycle goal completes this turn —
         # the deterministic "✅ Task completed" line then replaces the
         # agent's wrap-up prose (see the lifecycle branch below).
@@ -14683,7 +14696,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             _goal_text = ""
         if _goal_text.startswith(_LIFECYCLE_GOAL_PREFIX):
             _verdict = str(decision.get("verdict") or "")
-            if _verdict == "done":
+            if _verdict == "done" and not decision.get("blocked"):
                 _task_name = _goal_text[len(_LIFECYCLE_GOAL_PREFIX):].strip() or "(no description)"
                 msg = f"✅ Task completed: {_task_name}"
                 # The deterministic completion line replaces the agent's
