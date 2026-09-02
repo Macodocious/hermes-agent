@@ -11846,12 +11846,14 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                             user_initiated=not self._is_goal_continuation_event(event),
                         )
                         if _suppress_final_response:
-                            # A task-lifecycle goal completed this turn: the
-                            # deterministic "✅ Task completed" line (deferred
-                            # to post-delivery) replaces the agent's wrap-up
-                            # prose. Blank the response so the adapter sends
-                            # nothing — the user already saw the real content
-                            # on the working turns.
+                            # The judge said DONE on a synthetic goal-
+                            # continuation turn: the wrap-up prose on this
+                            # turn is redundant — the conversation prose
+                            # already shipped on the real user turn — so
+                            # blank the final response and let the deferred
+                            # "✅ Task completed" line be the only
+                            # user-visible completion message. Real user
+                            # turns are never suppressed.
                             _agent_result = None
             except Exception as _goal_exc:
                 logger.debug("goal continuation hook failed: %s", _goal_exc)
@@ -14592,11 +14594,17 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         A real user message bypasses the wait barrier so the loop judges the
         fresh exchange instead of staying parked.
 
-        Returns True when the turn's final response must be suppressed: a
-        task-lifecycle goal completed this turn, so the deterministic
-        "✅ Task completed" line replaces the agent's wrap-up prose. The
-        caller blanks the response so the adapter sends nothing.
+        Returns a bool suppress flag: True ONLY when a task-lifecycle goal
+        (``Complete the task: ...`` prefix) returns a ``done`` verdict on a
+        synthetic goal-continuation turn (``user_initiated=False``). The
+        call site blanks the final response when the flag is set, so the
+        redundant wrap-up prose on the continuation turn never ships — the
+        conversation prose on the real user turn already delivered the
+        conclusion, and the deferred "✅ Task completed" line is the only
+        user-visible completion message. Real user turns are never
+        suppressed.
         """
+        _suppress_final_response = False
         try:
             from hermes_cli.goals import GoalManager
         except Exception as exc:
@@ -14674,10 +14682,6 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         # below must not suppress or replace it either).
         if decision.get("blocked"):
             msg = ""
-        # Set True only when a task-lifecycle goal completes this turn —
-        # the deterministic "✅ Task completed" line then replaces the
-        # agent's wrap-up prose (see the lifecycle branch below).
-        _suppress_final_response = False
 
         # Task-lifecycle goals (PR #51) arm the GoalEngine with
         # "Complete the task: <content>". For those goals only, the
@@ -14699,11 +14703,13 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             if _verdict == "done" and not decision.get("blocked"):
                 _task_name = _goal_text[len(_LIFECYCLE_GOAL_PREFIX):].strip() or "(no description)"
                 msg = f"✅ Task completed: {_task_name}"
-                # The deterministic completion line replaces the agent's
-                # wrap-up prose for this turn — the real content was
-                # already delivered on the working turns. The caller
-                # blanks the final response so the adapter sends nothing.
-                _suppress_final_response = True
+                # Suppress the final response ONLY on a synthetic goal-
+                # continuation turn: the wrap-up prose there is redundant
+                # (the conversation prose already shipped on the real user
+                # turn), so the deferred ✅ line is the only completion
+                # message. A real user turn's prose always ships.
+                if not user_initiated:
+                    _suppress_final_response = True
             elif _verdict in ("continue", "wait") and str(decision.get("status") or "") == "active":
                 msg = ""  # per-turn progress noise — suppress
 
@@ -14784,7 +14790,6 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     self._enqueue_fifo(_quick_key, cont_event, adapter)
         except Exception as exc:
             logger.debug("goal continuation: enqueue failed: %s", exc)
-
         return _suppress_final_response
 
     async def _enqueue_lifecycle_nudge(self, source: Any, nudge: str) -> None:
