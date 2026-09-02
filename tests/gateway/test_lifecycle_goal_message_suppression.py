@@ -109,7 +109,7 @@ async def test_lifecycle_goal_continue_suppresses_progress_line(hermes_home):
     mgr = GoalManager(session_entry.session_id)
     mgr.set("Complete the task: ship the feature")
 
-    with patch("hermes_cli.goals.judge_goal", return_value=("continue", "still working", False, None, False)):
+    with patch("hermes_cli.goals.judge_goal", return_value=("continue", "still working", False, None, False, False)):
         await runner._post_turn_goal_continuation(
             session_entry=session_entry,
             source=src,
@@ -132,7 +132,7 @@ async def test_lifecycle_goal_done_rewrites_completed_message(hermes_home):
     mgr = GoalManager(session_entry.session_id)
     mgr.set("Complete the task: ship the feature")
 
-    with patch("hermes_cli.goals.judge_goal", return_value=("done", "the feature shipped", False, None, False)):
+    with patch("hermes_cli.goals.judge_goal", return_value=("done", "the feature shipped", False, None, False, False)):
         await runner._post_turn_goal_continuation(
             session_entry=session_entry,
             source=src,
@@ -157,7 +157,7 @@ async def test_native_goal_continue_keeps_progress_line(hermes_home):
     mgr = GoalManager(session_entry.session_id)
     mgr.set("polish the docs")
 
-    with patch("hermes_cli.goals.judge_goal", return_value=("continue", "still needs work", False, None, False)):
+    with patch("hermes_cli.goals.judge_goal", return_value=("continue", "still needs work", False, None, False, False)):
         await runner._post_turn_goal_continuation(
             session_entry=session_entry,
             source=src,
@@ -185,7 +185,7 @@ async def test_lifecycle_goal_done_returns_suppress_flag(hermes_home):
     mgr = GoalManager(session_entry.session_id)
     mgr.set("Complete the task: ship the feature")
 
-    with patch("hermes_cli.goals.judge_goal", return_value=("done", "the feature shipped", False, None, False)):
+    with patch("hermes_cli.goals.judge_goal", return_value=("done", "the feature shipped", False, None, False, False)):
         suppress = await runner._post_turn_goal_continuation(
             session_entry=session_entry,
             source=src,
@@ -209,7 +209,7 @@ async def test_native_goal_done_returns_no_suppress_flag(hermes_home):
     mgr = GoalManager(session_entry.session_id)
     mgr.set("polish the docs")
 
-    with patch("hermes_cli.goals.judge_goal", return_value=("done", "docs polished", False, None, False)):
+    with patch("hermes_cli.goals.judge_goal", return_value=("done", "docs polished", False, None, False, False)):
         suppress = await runner._post_turn_goal_continuation(
             session_entry=session_entry,
             source=src,
@@ -233,7 +233,7 @@ async def test_lifecycle_goal_continue_returns_no_suppress_flag(hermes_home):
     mgr = GoalManager(session_entry.session_id)
     mgr.set("Complete the task: ship the feature")
 
-    with patch("hermes_cli.goals.judge_goal", return_value=("continue", "still working", False, None, False)):
+    with patch("hermes_cli.goals.judge_goal", return_value=("continue", "still working", False, None, False, False)):
         suppress = await runner._post_turn_goal_continuation(
             session_entry=session_entry,
             source=src,
