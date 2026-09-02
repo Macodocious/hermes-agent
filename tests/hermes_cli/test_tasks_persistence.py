@@ -211,3 +211,62 @@ class TestPersistTodoStoreHelper:
         agent = _StubAgent(session_id="sess-x")
         agent._todo_store = None
         persist_todo_store(agent)  # must not raise
+
+
+class TestMergeTodoStores:
+    def test_advanced_status_wins(self, hermes_home):
+        """Fix 3: a judge-finalized DB row (completed) must not be regressed
+        by a stale in-memory store (closing)."""
+        from hermes_cli.tasks import _merge_todo_stores, load_todo, save_todo
+        from tools.todo_tool import TodoStore
+
+        memory = TodoStore()
+        memory.write([{"id": "1", "content": "task", "status": "closing"}])
+        persisted = TodoStore()
+        persisted.write([{"id": "1", "content": "task", "status": "completed"}])
+        save_todo("sess-merge-1", persisted)
+
+        merged = _merge_todo_stores(memory, persisted)
+        assert merged.read()[0]["status"] == "completed"
+
+    def test_memory_only_items_kept(self, hermes_home):
+        from hermes_cli.tasks import _merge_todo_stores
+        from tools.todo_tool import TodoStore
+
+        memory = TodoStore()
+        memory.write([{"id": "1", "content": "mem-new", "status": "in_progress"}])
+        persisted = TodoStore()
+        persisted.write(
+            [
+                {"id": "1", "content": "db-old", "status": "completed"},
+                {"id": "2", "content": "db-only", "status": "completed"},
+            ]
+        )
+
+        merged = _merge_todo_stores(memory, persisted)
+        by_content = {i["content"]: i["status"] for i in merged.read()}
+        # Advanced status wins for the shared id (db-old completed beats
+        # mem-new in_progress); db-only items are restored.
+        assert by_content == {"db-old": "completed", "db-only": "completed"}
+
+    def test_persist_does_not_regress_db_finalization(self, hermes_home):
+        """Fix 3 end-to-end: write-through with a stale in-memory store
+        must preserve the DB's completed status and update the agent's
+        store to the merged truth."""
+        from hermes_cli.tasks import load_todo, persist_todo_store, save_todo
+        from tools.todo_tool import TodoStore
+
+        persisted = TodoStore()
+        persisted.write([{"id": "1", "content": "task", "status": "completed"}])
+        save_todo("sess-merge-2", persisted)
+
+        agent = _StubAgent(session_id="sess-merge-2")
+        assert agent._todo_store is not None
+        agent._todo_store.write([{"id": "1", "content": "task", "status": "closing"}])
+
+        persist_todo_store(agent)
+        loaded = load_todo("sess-merge-2")
+        assert loaded is not None
+        assert loaded.read()[0]["status"] == "completed"
+        # The agent's store now reflects the DB truth.
+        assert agent._todo_store.read()[0]["status"] == "completed"

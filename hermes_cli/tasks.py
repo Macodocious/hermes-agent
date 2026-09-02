@@ -99,6 +99,57 @@ def save_todo(session_id: str, store: Any) -> None:
         logger.debug("TaskState: set_meta failed: %s", exc)
 
 
+# Lifecycle advancement rank for the write-through merge (fix 3). A higher
+# rank means the task is further along its lifecycle; when the persisted
+# row and the in-memory store disagree, the more advanced status wins so a
+# stale in-memory store can never regress a judge finalization.
+_LIFECYCLE_RANK = {
+    "pending": 0,
+    "in_progress": 1,
+    "paused": 1,
+    "closing": 2,
+    "completed": 3,
+    "escalated": 3,
+    "cancelled": 3,
+}
+
+
+def _merge_todo_stores(memory: Any, persisted: Any) -> Any:
+    """Merge a persisted store into an in-memory store, advanced status wins.
+
+    The task-lifecycle judge finalizes the persisted row (closing →
+    completed) without touching the agent's in-memory store, so a naive
+    write-through clobbers the finalization. For every item present in both
+    stores the more advanced lifecycle status wins; items only in the DB
+    are restored; items only in memory (fresh writes) are kept. Returns a
+    new TodoStore; never mutates either input.
+    """
+    from tools.todo_tool import TodoStore
+
+    memory_items = {item["id"]: item for item in memory.read()}
+    persisted_items = {item["id"]: item for item in persisted.read()}
+    merged_items = []
+    seen = set()
+    for item_id in list(memory_items) + list(persisted_items):
+        if item_id in seen:
+            continue
+        seen.add(item_id)
+        mem = memory_items.get(item_id)
+        per = persisted_items.get(item_id)
+        if mem is not None and per is not None:
+            if _LIFECYCLE_RANK.get(per["status"], 0) > _LIFECYCLE_RANK.get(mem["status"], 0):
+                merged_items.append(per)
+            else:
+                merged_items.append(mem)
+        elif per is not None:
+            merged_items.append(per)
+        else:
+            merged_items.append(mem)
+    merged = TodoStore()
+    merged.write(merged_items, merge=False)
+    return merged
+
+
 def persist_todo_store(agent: Any) -> None:
     """Write-through helper: persist an agent's in-memory todo store.
 
@@ -106,6 +157,12 @@ def persist_todo_store(agent: Any) -> None:
     ``_persist_disabled`` so background forks that share a session_id can
     never clobber the owner's row (the curator-takeover guard), and skips
     agents without a session id or store. Best-effort, never raises.
+
+    Fix 3 (store divergence): before saving, the persisted row is merged
+    into the in-memory store (advanced lifecycle status wins per item) so
+    judge finalizations in the DB are never regressed by a stale in-memory
+    store. The agent's store is replaced with the merged result so it acts
+    on the DB truth.
     """
     if getattr(agent, "_persist_disabled", False):
         return
@@ -114,7 +171,16 @@ def persist_todo_store(agent: Any) -> None:
     if not session_id or store is None:
         return
     try:
-        save_todo(session_id, store)
+        persisted = load_todo(session_id)
+        if persisted is not None:
+            merged = _merge_todo_stores(store, persisted)
+            save_todo(session_id, merged)
+            try:
+                agent._todo_store = merged
+            except Exception:
+                pass
+        else:
+            save_todo(session_id, store)
     except Exception as exc:  # pragma: no cover - defensive
         logger.debug("TaskState: write-through failed: %s", exc)
 

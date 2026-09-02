@@ -3689,6 +3689,24 @@ class AIAgent:
         """
         from tools.todo_tool import MAX_TODO_RESULT_CHARS
 
+        # Fix 2 (store divergence): the persisted state_meta row is the
+        # single source of truth — the judge's finalizations land there and
+        # never appear in replayed history. Prefer the DB row; fall back to
+        # history replay only when no row exists. Best-effort: a missing
+        # row or DB failure falls through to the history scan below.
+        try:
+            from hermes_cli.tasks import load_todo
+
+            persisted = load_todo(self.session_id or "")
+            if persisted is not None:
+                self._todo_store = persisted
+                if not self.quiet_mode:
+                    self._vprint(f"{self.log_prefix}📋 Restored todo state from persistence")
+                _set_interrupt(False)
+                return
+        except Exception:
+            pass
+
         # Walk history backwards to find the most recent todo tool response
         last_todo_response = None
         for idx in range(len(history) - 1, -1, -1):
