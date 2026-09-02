@@ -1674,6 +1674,40 @@ class TestCachedAgentInactivityReset:
             "_flush_messages_to_session_db starts from index 0"
         )
 
+    def test_fresh_turn_reloads_todo_store_from_db(self):
+        """Fix 1: the cached agent's in-memory todo store is reloaded from
+        the persisted DB row at the start of every turn, so judge
+        finalizations (which land in the DB, never in the cached agent's
+        memory) are not clobbered by stale state."""
+        from gateway.run import GatewayRunner
+        from tools.todo_tool import TodoStore
+
+        agent = self._fake_agent()
+        agent.session_id = "sess-cache-1"
+        agent._todo_store = TodoStore()
+        agent._todo_store.write([{"id": "1", "content": "stale", "status": "closing"}])
+
+        persisted = TodoStore()
+        persisted.write([{"id": "1", "content": "stale", "status": "completed"}])
+
+        with patch("hermes_cli.tasks.load_todo", return_value=persisted):
+            GatewayRunner._init_cached_agent_for_turn(agent, interrupt_depth=0)
+
+        assert agent._todo_store.read()[0]["status"] == "completed"
+
+    def test_fresh_turn_keeps_store_when_no_db_row(self):
+        """Fix 1: with no persisted row, the in-memory store is untouched."""
+        from gateway.run import GatewayRunner
+
+        agent = self._fake_agent()
+        agent.session_id = "sess-cache-2"
+        agent._todo_store = None
+
+        with patch("hermes_cli.tasks.load_todo", return_value=None):
+            GatewayRunner._init_cached_agent_for_turn(agent, interrupt_depth=0)
+
+        assert agent._todo_store is None
+
     def test_interrupt_turn_preserves_flush_cursor(self):
         """interrupt_depth=1: _last_flushed_db_idx preserved so an
         in-progress flush is not disrupted by interrupt re-entry."""

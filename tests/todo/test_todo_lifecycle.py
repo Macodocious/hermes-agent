@@ -115,3 +115,49 @@ def test_begin_on_completed_item_is_refused(store: TodoStore) -> None:
     store.finalize("1")
     result = store.transition("begin", "1")
     assert result["ok"] is False
+
+
+def test_close_refused_while_another_task_is_closing(store: TodoStore) -> None:
+    """Revised fix 4: only one task may be closing at a time.
+
+    The judge finalizes exactly one closing task per done verdict, so a
+    second closing task would strand forever. The refusal names the task
+    already closing so the model can recover.
+    """
+    store.transition("begin", "1")
+    store.transition("close", "1")
+    store.transition("begin", "2")
+    result = store.transition("close", "2")
+    assert result["ok"] is False
+    assert "already closing" in result["error"]
+    assert "1" in result["error"]
+    # Task 2 stays in_progress; task 1 stays closing.
+    statuses = {i["id"]: i["status"] for i in store.read()}
+    assert statuses == {"1": "closing", "2": "in_progress"}
+
+
+def test_close_after_finalize_opens_the_slot(store: TodoStore) -> None:
+    """Revised fix 4: once the judge finalizes the closing task, the next
+    task can close — the invariant is per-closing-task, not permanent."""
+    store.transition("begin", "1")
+    store.transition("close", "1")
+    store.finalize("1")
+    store.transition("begin", "2")
+    result = store.transition("close", "2")
+    assert result["ok"] is True
+    assert result["item"]["status"] == "closing"
+
+
+def test_reclose_from_closing_is_idempotent(store: TodoStore) -> None:
+    """Fix 5: close from closing is allowed (idempotent re-close).
+
+    A stale in-memory store can show a task as closing while the DB has
+    already finalized it; re-close must not deadlock the agent. The task
+    stays closing awaiting the judge.
+    """
+    store.transition("begin", "1")
+    store.transition("close", "1")
+    result = store.transition("close", "1")
+    assert result["ok"] is True
+    assert result["item"]["status"] == "closing"
+    assert store.read()[0]["status"] == "closing"
