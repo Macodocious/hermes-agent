@@ -50,7 +50,7 @@ _LIFECYCLE_TRANSITIONS = {
     "begin": {"pending", "paused"},
     "pause": {"in_progress"},
     "resume": {"paused", "closing"},
-    "close": {"in_progress", "paused"},
+    "close": {"in_progress", "paused", "closing"},
     "escalate": {"pending", "in_progress", "paused", "closing"},
     "finalize": {"closing"},
 }
@@ -476,6 +476,21 @@ class TodoStore:
                     f"'{item['status']}' (allowed from: {sorted(allowed) or 'none'})"
                 ),
             }
+        if action == "close":
+            # Cross-item invariant (revised fix 4): only one task may be
+            # closing at a time. The judge finalizes exactly one closing
+            # task per done verdict, so a second closing task would strand
+            # forever. Refuse, naming the task already closing.
+            for other in self._items:
+                if other is not item and other["status"] == "closing":
+                    return {
+                        "ok": False,
+                        "error": (
+                            f"cannot close task {item_id}: task {other['id']} "
+                            "is already closing — wait for the judge to "
+                            "finalize it before closing another"
+                        ),
+                    }
         if action == "begin":
             # Pivot rule: a new task cannot start while another is
             # current. The agent must pause, close, or escalate the

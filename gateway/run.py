@@ -18762,6 +18762,22 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             if hasattr(agent, "_last_flushed_db_idx"):
                 agent._last_flushed_db_idx = 0
         agent._api_call_count = 0
+        # Fix 1 (store divergence): the task-lifecycle judge finalizes the
+        # persisted DB row, never the cached agent's in-memory store, and
+        # write-through persistence would clobber those finalizations with
+        # stale state. Reload the store from the DB at the start of every
+        # turn so the DB is the single source of truth. Best-effort: a
+        # missing row or DB failure keeps the in-memory store untouched.
+        try:
+            from hermes_cli.tasks import load_todo
+
+            session_id = getattr(agent, "session_id", None)
+            if session_id:
+                persisted = load_todo(session_id)
+                if persisted is not None:
+                    agent._todo_store = persisted
+        except Exception:
+            pass
 
     def _commit_memory_before_soft_evict(self, agent: Any, key: str) -> None:
         """Fire on_session_end extraction before soft-evicting a live agent.

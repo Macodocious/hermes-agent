@@ -1256,6 +1256,52 @@ class TestHydrateTodoStore:
             agent._hydrate_todo_store(history)
         assert agent._todo_store.has_items()
 
+    def test_prefers_persisted_row_over_history(self, agent):
+        """Fix 2: the persisted state_meta row is the single source of
+        truth — judge finalizations land there and never appear in replayed
+        history. Hydration must prefer the DB row over history replay."""
+        from tools.todo_tool import TodoStore
+
+        agent.session_id = "sess-hydrate-1"
+        persisted = TodoStore()
+        persisted.write([{"id": "1", "content": "judge finalized", "status": "completed"}])
+        stale_history = [
+            {"role": "user", "content": "plan"},
+            self._assistant_todo_call("c1"),
+            {
+                "role": "tool",
+                "content": json.dumps({"todos": [{"id": "1", "content": "judge finalized", "status": "closing"}]}),
+                "tool_call_id": "c1",
+            },
+        ]
+        with (
+            patch("run_agent._set_interrupt"),
+            patch("hermes_cli.tasks.load_todo", return_value=persisted),
+        ):
+            agent._hydrate_todo_store(stale_history)
+        assert agent._todo_store.read()[0]["status"] == "completed"
+
+    def test_falls_back_to_history_without_persisted_row(self, agent):
+        """Fix 2: with no persisted row, hydration falls back to history
+        replay (existing behavior preserved)."""
+        todos = [{"id": "1", "content": "do thing", "status": "pending"}]
+        history = [
+            {"role": "user", "content": "plan"},
+            self._assistant_todo_call("c1"),
+            {
+                "role": "tool",
+                "content": json.dumps({"todos": todos}),
+                "tool_call_id": "c1",
+            },
+        ]
+        with (
+            patch("run_agent._set_interrupt"),
+            patch("hermes_cli.tasks.load_todo", return_value=None),
+        ):
+            agent._hydrate_todo_store(history)
+        assert agent._todo_store.has_items()
+        assert agent._todo_store.read()[0]["status"] == "pending"
+
     def test_skips_non_todo_tools(self, agent):
         history = [
             self._assistant_todo_call("c1"),
