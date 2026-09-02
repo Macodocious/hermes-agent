@@ -27,11 +27,11 @@ def _seed(store: TodoStore, item_id: str, content: str) -> None:
 
 
 @pytest.fixture(autouse=True)
-def _lifecycle_on(monkeypatch) -> None:
+def _lifecycle_on(monkeypatch, tmp_path) -> None:
     """Pin the lifecycle config so tests are independent of the host config."""
     monkeypatch.setattr(task_manager, "_lifecycle_config", lambda: {"enabled": True})
-    # The post-close review must not fire real LLM calls in unit tests.
-    monkeypatch.setattr(task_manager, "_review_config", lambda: {"enabled": False})
+    # The post-close probe must never touch the host probes dir in tests.
+    monkeypatch.setattr("hermes_constants.get_hermes_home", lambda: tmp_path)
 
 
 # ── on_todo_write: GoalEngine arming ──────────────────────────────────

@@ -1,18 +1,19 @@
-"""Tests for the post-close review step (P6) in task_manager.
+"""Tests for the post-close verification probe (P6) in task_manager.
 
-Covers the mechanical side of the mandatory second set of eyes: plan
-resolution (explicit ref → item content → inline origin window, fail-closed
-when none resolves), verdict parsing (fail-open on unusable output), the
-fix-task spawn (source=review, lineage review_of), the lineage depth cap
-(mechanical escalation past tasks.review.max_rounds), and the config gate.
+Covers the mechanical side of the mandatory second set of eyes: the
+unconditional probe write on finalization (intent check always present,
+import checks derived from the session's changed files, capped), the
+module derivation from the git diff (tests/ files excluded), the
+fail-open write path, and the no-finalization no-op.
 
-The review runner itself (``_run_review``) is exercised with a faked
-``call_llm`` — no real LLM calls ever fire in these tests.
+The probe write itself (``_write_probe``) is exercised against a
+temporary probes/active/ directory — no real gateway, no LLM calls.
 """
 
 from types import SimpleNamespace
 
 import pytest
+import yaml
 
 from agent import task_manager
 from tools.todo_tool import TodoStore
@@ -21,7 +22,7 @@ from tools.todo_tool import TodoStore
 def _make_agent(store: TodoStore) -> SimpleNamespace:
     return SimpleNamespace(
         _todo_store=store,
-        session_id="review-session",
+        session_id="probe-session",
         _task_lifecycle_action_issued=False,
         _task_lifecycle_nudge="",
     )
@@ -34,358 +35,174 @@ def _seed(store: TodoStore, item_id: str, content: str, **extra) -> None:
 
 
 @pytest.fixture(autouse=True)
-def _review_on(monkeypatch) -> None:
-    """Pin lifecycle + review config so tests are independent of the host."""
-    monkeypatch.setattr(task_manager, "_lifecycle_config", lambda: {"enabled": True})
-    monkeypatch.setattr(task_manager, "_review_config", lambda: {"enabled": True, "max_rounds": 2})
-
-
-def _PLAN() -> str:
-    """A substantial task content that resolves as a self-contained plan."""
-    return (
-        "Build the thing per the spec. The spec requires a deterministic "
-        "task lifecycle with a code-enforced state machine, a two-key close "
-        "with a judge verdict, a turn-end audit that refuses clean ends for "
-        "work without an open task, and a post-close review that spawns fix "
-        "tasks mechanically. The implementation must be modular, testable, "
-        "and delivered as a pull request per the house procedure. "
+def _probe_home(monkeypatch, tmp_path) -> None:
+    """Pin the probes home to a temp dir so tests never touch the host."""
+    monkeypatch.setattr(
+        "hermes_constants.get_hermes_home", lambda: tmp_path
     )
 
 
 def _close_in_flight(store: TodoStore, item_id: str) -> None:
     """Drive a task through begin + close, leaving it in closing.
 
-    The review fires on the verdict observation that finalizes the task
+    The probe fires on the verdict observation that finalizes the task
     (the E2E pattern): begin → close → observe_verdict(done).
     """
     store.transition("begin", item_id)
     store.transition("close", item_id)
 
 
-# ── plan resolution ───────────────────────────────────────────────────
+def _active_probes(tmp_path) -> list:
+    return sorted((tmp_path / "probes" / "active").glob("*.yaml"))
 
 
-def test_plan_resolution_explicit_ref_wins(monkeypatch, tmp_path) -> None:
-    plan_file = tmp_path / "plan.md"
-    plan_file.write_text("# The Plan\nBuild the thing.", encoding="utf-8")
+# ── the probe hook (close → probe write) ───────────────────────────────
+
+
+def test_close_writes_probe_with_intent(monkeypatch, tmp_path) -> None:
     store = TodoStore()
-    _seed(store, "1", "Build the thing", plan=str(plan_file))
-    item = store.read()[0]
-
-    plan = task_manager._resolve_plan("review-session", item)
-
-    assert plan is not None
-    assert plan["source"] == "ref"
-    assert "Build the thing" in plan["content"]
-
-
-def test_plan_resolution_falls_through_to_item_content(monkeypatch) -> None:
-    long_plan = (
-        "Build the thing per the spec. The spec requires a deterministic "
-        "task lifecycle with a code-enforced state machine, a two-key close "
-        "with a judge verdict, a turn-end audit that refuses clean ends for "
-        "work without an open task, and a post-close review that spawns fix "
-        "tasks mechanically. The implementation must be modular, testable, "
-        "and delivered as a pull request per the house procedure. " * 2
-    )
-    store = TodoStore()
-    _seed(store, "1", long_plan)
-    item = store.read()[0]
-
-    plan = task_manager._resolve_plan("review-session", item)
-
-    assert plan is not None
-    assert plan["source"] == "item"
-    assert plan["content"] == long_plan.strip()
-
-
-def test_plan_resolution_inline_origin_window(monkeypatch) -> None:
-    store = TodoStore()
-    _seed(store, "1", "Build the thing", origin="msg-42")
-    item = store.read()[0]
-
-    class FakeDB:
-        def get_messages(self, session_id, limit=None):
-            return [
-                {"role": "user", "content": "here is the plan", "platform_message_id": "msg-42"},
-                {"role": "assistant", "content": "on it", "platform_message_id": "msg-43"},
-            ]
-
-    monkeypatch.setattr(
-        "hermes_cli.tasks._get_session_db", lambda: FakeDB()
-    )
-
-    plan = task_manager._resolve_plan("review-session", item)
-
-    assert plan is not None
-    assert plan["source"] == "inline"
-    assert "here is the plan" in plan["content"]
-
-
-def test_plan_resolution_fail_closed_when_none_resolves(monkeypatch) -> None:
-    store = TodoStore()
-    _seed(store, "1", "Build the thing", origin="msg-42")
-    item = store.read()[0]
-
-    class FakeDB:
-        def get_messages(self, session_id, limit=None):
-            return []  # origin id never appears
-
-    monkeypatch.setattr(
-        "hermes_cli.tasks._get_session_db", lambda: FakeDB()
-    )
-
-    plan = task_manager._resolve_plan("review-session", item)
-
-    assert plan is None
-
-
-# ── verdict parsing ───────────────────────────────────────────────────
-
-
-def test_parse_review_response_pass() -> None:
-    verdict, findings = task_manager._parse_review_response(
-        '{"verdict": "pass", "findings": []}'
-    )
-    assert verdict == "pass"
-    assert findings == []
-
-
-def test_parse_review_response_needs_work() -> None:
-    verdict, findings = task_manager._parse_review_response(
-        '{"verdict": "needs_work", "findings": ["missing tests", "no docs"]}'
-    )
-    assert verdict == "needs_work"
-    assert findings == ["missing tests", "no docs"]
-
-
-def test_parse_review_response_fenced_json() -> None:
-    verdict, findings = task_manager._parse_review_response(
-        '```json\n{"verdict": "needs_work", "findings": ["gap"]}\n```'
-    )
-    assert verdict == "needs_work"
-    assert findings == ["gap"]
-
-
-def test_parse_review_response_fail_open_on_garbage() -> None:
-    verdict, findings = task_manager._parse_review_response("sorry, no json here")
-    assert verdict == "pass"
-    assert findings == []
-
-
-def test_parse_review_response_empty_findings_downgrades_to_pass() -> None:
-    verdict, findings = task_manager._parse_review_response(
-        '{"verdict": "needs_work", "findings": []}'
-    )
-    assert verdict == "pass"
-    assert findings == []
-
-
-# ── the review hook (close → review → fix task) ───────────────────────
-
-
-def test_close_triggers_review_and_spawns_fix_task(monkeypatch) -> None:
-    store = TodoStore()
-    _seed(store, "1", _PLAN())
+    _seed(store, "1", "Build the thing")
     agent = _make_agent(store)
     monkeypatch.setattr(task_manager, "_persist", lambda a: None)
-
-    def fake_review(packet):
-        return "needs_work", ["the spec says X but the code does Y"]
-
-    monkeypatch.setattr(task_manager, "_run_review", fake_review)
 
     _close_in_flight(store, "1")
     nudge = task_manager.observe_verdict(agent, {"verdict": "done"})
 
-    assert nudge is not None
-    assert "begin the fix task" in nudge.lower()
-    items = store.read()
-    fix = next(i for i in items if i.get("review_of") == "1")
-    assert fix["status"] == "pending"
-    assert fix["source"] == "review"
-    assert "the spec says X" in fix["content"]
+    assert nudge is None  # deferred verification — no continuation nudge
+    probes = _active_probes(tmp_path)
+    assert len(probes) == 1
+    probe = yaml.safe_load(probes[0].read_text(encoding="utf-8"))
+    assert probe["target"] == "task:1"
+    assert probe["activation"] == "gateway_restart"
+    assert probe["status"] == "pending"
+    assert probe["created_at"]
+    types = [check["type"] for check in probe["checks"]]
+    assert "intent" in types  # intent is the mandatory default check
+    intent = next(c for c in probe["checks"] if c["type"] == "intent")
+    assert "Build the thing" in intent["prompt"]
 
 
-def test_review_pass_spawns_nothing(monkeypatch) -> None:
+def test_close_writes_probe_with_import_checks(monkeypatch, tmp_path) -> None:
     store = TodoStore()
-    _seed(store, "1", _PLAN())
-    agent = _make_agent(store)
-    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
-    monkeypatch.setattr(task_manager, "_run_review", lambda packet: ("pass", []))
-
-    _close_in_flight(store, "1")
-    nudge = task_manager.observe_verdict(agent, {"verdict": "done"})
-
-    assert nudge is None
-    assert not any(i.get("review_of") == "1" for i in store.read())
-
-
-def test_review_fail_closed_without_plan(monkeypatch) -> None:
-    """No plan resolves → the review does not run; the close is held."""
-    store = TodoStore()
-    _seed(store, "1", "Build the thing", origin="msg-42")
+    _seed(store, "1", "Build the thing")
     agent = _make_agent(store)
     monkeypatch.setattr(task_manager, "_persist", lambda a: None)
     monkeypatch.setattr(
-        "hermes_cli.tasks._get_session_db", lambda: FakeEmptyDB()
+        task_manager,
+        "_git_diff",
+        lambda session_id: (
+            "diff --git a/agent/task_manager.py b/agent/task_manager.py\n"
+            "diff --git a/tests/agent/test_task_review.py b/tests/agent/test_task_review.py\n"
+        ),
     )
-    called = []
-
-    def fake_review(packet):
-        called.append(packet)
-        return "needs_work", ["should never fire"]
-
-    monkeypatch.setattr(task_manager, "_run_review", fake_review)
 
     _close_in_flight(store, "1")
-    nudge = task_manager.observe_verdict(agent, {"verdict": "done"})
+    task_manager.observe_verdict(agent, {"verdict": "done"})
 
-    assert nudge is None
-    assert called == []  # the review never ran
-    assert store.read()[0]["status"] == "completed"  # close held
-
-
-class FakeEmptyDB:
-    def get_messages(self, session_id, limit=None):
-        return []
-
-
-def test_review_transport_failure_fails_open(monkeypatch) -> None:
-    store = TodoStore()
-    _seed(store, "1", _PLAN())
-    agent = _make_agent(store)
-    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
-
-    def boom(**kwargs):
-        raise RuntimeError("transport down")
-
-    # The fail-open lives INSIDE _run_review: a transport failure on the
-    # review call must never block the close. Patch call_llm (the real
-    # layer), not _run_review.
-    monkeypatch.setattr("agent.auxiliary_client.call_llm", boom)
-
-    _close_in_flight(store, "1")
-    nudge = task_manager.observe_verdict(agent, {"verdict": "done"})
-
-    assert nudge is None
-    assert store.read()[0]["status"] == "completed"
-    assert not any(i.get("review_of") == "1" for i in store.read())
-
-
-def test_review_disabled_by_config(monkeypatch) -> None:
-    store = TodoStore()
-    _seed(store, "1", _PLAN())
-    agent = _make_agent(store)
-    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
-    monkeypatch.setattr(task_manager, "_review_config", lambda: {"enabled": False})
-    called = []
-
-    def fake_review(packet):
-        called.append(packet)
-        return "needs_work", ["x"]
-
-    monkeypatch.setattr(task_manager, "_run_review", fake_review)
-
-    _close_in_flight(store, "1")
-    nudge = task_manager.observe_verdict(agent, {"verdict": "done"})
-
-    assert nudge is None
-    assert called == []
-
-
-# ── lineage depth cap ─────────────────────────────────────────────────
-
-
-def test_review_lineage_cap_escalates(monkeypatch) -> None:
-    store = TodoStore()
-    _seed(store, "1", _PLAN())
-    agent = _make_agent(store)
-    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
-    monkeypatch.setattr(task_manager, "_run_review", lambda packet: ("needs_work", ["gap"]))
-
-    def _close_and_observe(item_id: str) -> None:
-        store.transition("begin", item_id)
-        store.transition("close", item_id)
-        task_manager.observe_verdict(agent, {"verdict": "done"})
-
-    def _pending_fix() -> str:
-        return next(
-            i["id"]
-            for i in store.read()
-            if i.get("review_of") == "1" and i["status"] == "pending"
-        )
-
-    # Round 1: the original task closes; the review spawns a pending fix
-    # task (lineage review_of -> 1). Depth 0 < cap 2.
-    _close_and_observe("1")
-    assert _pending_fix() is not None
-
-    # Round 2: the first fix closes and fails review. Depth 1 < cap 2 —
-    # another fix task is spawned.
-    _close_and_observe(_pending_fix())
-    assert _pending_fix() is not None
-
-    # Round 3: the second fix closes and fails review. Depth 2 >= cap 2 —
-    # the next fix task is mechanically escalated (no nudge, no new
-    # pending fix).
-    nudge = None
-    fix2 = _pending_fix()
-    store.transition("begin", fix2)
-    store.transition("close", fix2)
-    nudge = task_manager.observe_verdict(agent, {"verdict": "done"})
-
-    assert nudge is None
-    escalated = [
-        i for i in store.read()
-        if i.get("review_of") == "1" and i["status"] == "escalated"
+    probe = yaml.safe_load(_active_probes(tmp_path)[0].read_text(encoding="utf-8"))
+    modules = [
+        check["module"]
+        for check in probe["checks"]
+        if check["type"] == "import"
     ]
-    assert len(escalated) == 1
-    assert "REVIEW ESCALATED" in escalated[0]["content"]
-    assert "cap 2" in escalated[0]["content"]
+    assert modules == ["agent.task_manager"]  # tests/ files never probed
 
 
-def test_review_lineage_depth_counts_existing_rounds() -> None:
+def test_import_checks_capped(monkeypatch, tmp_path) -> None:
     store = TodoStore()
-    store.write(
-        [
-            {"id": "1", "content": "task", "status": "completed"},
-            {"id": "review-1-1", "content": "fix", "status": "pending", "source": "review", "review_of": "1"},
-        ]
+    _seed(store, "1", "Build the thing")
+    agent = _make_agent(store)
+    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
+    diff_lines = "\n".join(
+        f"diff --git a/mod{i}.py b/mod{i}.py" for i in range(10)
     )
-    assert task_manager._review_lineage_depth(store, "1") == 1
+    monkeypatch.setattr(task_manager, "_git_diff", lambda session_id: diff_lines)
+
+    _close_in_flight(store, "1")
+    task_manager.observe_verdict(agent, {"verdict": "done"})
+
+    probe = yaml.safe_load(_active_probes(tmp_path)[0].read_text(encoding="utf-8"))
+    imports = [c for c in probe["checks"] if c["type"] == "import"]
+    assert len(imports) == task_manager.PROBE_MAX_IMPORT_CHECKS
 
 
-# ── the review runner (faked call_llm) ────────────────────────────────
+def test_no_finalization_writes_nothing(monkeypatch, tmp_path) -> None:
+    store = TodoStore()
+    _seed(store, "1", "Build the thing")
+    agent = _make_agent(store)
+    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
+
+    # A continue verdict leaves the task in_progress — no finalization.
+    store.transition("begin", "1")
+    nudge = task_manager.observe_verdict(agent, {"verdict": "continue"})
+
+    assert nudge is None
+    assert _active_probes(tmp_path) == []
 
 
-def test_run_review_parses_verdict(monkeypatch) -> None:
-    class FakeResp:
-        class FakeChoice:
-            class FakeMessage:
-                content = '{"verdict": "needs_work", "findings": ["gap"]}'
+def test_probe_write_failure_is_logged_not_raised(monkeypatch, tmp_path) -> None:
+    store = TodoStore()
+    _seed(store, "1", "Build the thing")
+    agent = _make_agent(store)
+    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
 
-            message = FakeMessage()
+    def boom(session_id, item):
+        raise OSError("disk full")
 
-        choices = [FakeChoice()]
+    monkeypatch.setattr(task_manager, "_write_probe", boom)
 
+    _close_in_flight(store, "1")
+    nudge = task_manager.observe_verdict(agent, {"verdict": "done"})
+
+    assert nudge is None  # a failed write never blocks the close
+    assert store.read()[0]["status"] == "completed"
+
+
+def test_probe_skipped_without_session(monkeypatch, tmp_path) -> None:
+    store = TodoStore()
+    _seed(store, "1", "Build the thing")
+    agent = _make_agent(store)
+    agent.session_id = ""
+    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
+
+    _close_in_flight(store, "1")
+    nudge = task_manager.observe_verdict(agent, {"verdict": "done"})
+
+    assert nudge is None
+    assert _active_probes(tmp_path) == []
+
+
+# ── module derivation from the session diff ──────────────────────────
+
+
+def test_changed_modules_derives_dotted_names(monkeypatch) -> None:
     monkeypatch.setattr(
-        "agent.auxiliary_client.call_llm", lambda **kwargs: FakeResp()
+        task_manager,
+        "_git_diff",
+        lambda session_id: (
+            "diff --git a/agent/task_manager.py b/agent/task_manager.py\n"
+            "diff --git a/hermes_cli/tasks.py b/hermes_cli/tasks.py\n"
+        ),
     )
+    assert task_manager._changed_modules("s") == [
+        "agent.task_manager",
+        "hermes_cli.tasks",
+    ]
 
-    verdict, findings = task_manager._run_review({"impl": "code", "plan": "spec"})
 
-    assert verdict == "needs_work"
-    assert findings == ["gap"]
+def test_changed_modules_excludes_tests_and_non_python(monkeypatch) -> None:
+    monkeypatch.setattr(
+        task_manager,
+        "_git_diff",
+        lambda session_id: (
+            "diff --git a/tests/agent/test_task_review.py b/tests/agent/test_task_review.py\n"
+            "diff --git a/README.md b/README.md\n"
+            "diff --git a/agent/task_manager.py b/agent/task_manager.py\n"
+        ),
+    )
+    assert task_manager._changed_modules("s") == ["agent.task_manager"]
 
 
-def test_run_review_fails_open_on_transport(monkeypatch) -> None:
-    def boom(**kwargs):
-        raise RuntimeError("down")
-
-    monkeypatch.setattr("agent.auxiliary_client.call_llm", boom)
-
-    verdict, findings = task_manager._run_review({"impl": "code", "plan": "spec"})
-
-    assert verdict == "pass"
-    assert findings == []
+def test_changed_modules_empty_without_diff(monkeypatch) -> None:
+    monkeypatch.setattr(task_manager, "_git_diff", lambda session_id: None)
+    assert task_manager._changed_modules("s") == []

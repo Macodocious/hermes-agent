@@ -51,7 +51,7 @@ class FakeGoalManager:
 
 
 @pytest.fixture
-def dispatched(monkeypatch):
+def dispatched(monkeypatch, tmp_path):
     """Pin persistence + GoalManager, return (agent, calls).
 
     The patches resolve ``agent.task_manager`` by *string* at fixture
@@ -76,10 +76,8 @@ def dispatched(monkeypatch):
     monkeypatch.setattr(
         "agent.task_manager._lifecycle_config", lambda: {"enabled": True}
     )
-    # The post-close review must not fire real LLM calls in E2E tests.
-    monkeypatch.setattr(
-        "agent.task_manager._review_config", lambda: {"enabled": False}
-    )
+    # The post-close probe must never touch the host probes dir in tests.
+    monkeypatch.setattr("hermes_constants.get_hermes_home", lambda: tmp_path)
     store = TodoStore()
     _seed(store, "1", "Build the thing")
     return _make_agent(store), calls

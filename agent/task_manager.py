@@ -17,7 +17,8 @@ contract:
   tui_gateway/server.py) so the judge's ``done`` verdict is the second key
   of the two-key close: a ``closing`` task finalizes to ``completed``; a
   task still ``in_progress`` when the judge says done gets one explicit
-  nudge to close it, then finalizes.
+  nudge to close it, then finalizes. Every finalized task also writes its
+  post-close verification probe (the mandatory second set of eyes).
 
 Everything here is deterministic code — no LLM calls, no model discretion.
 The agent is the only worker; the GoalEngine only checks and pulls back.
@@ -25,18 +26,15 @@ The agent is the only worker; the GoalEngine only checks and pulls back.
 
 from __future__ import annotations
 
-import json
 import logging
-import re
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-logger = logging.getLogger(__name__)
+import yaml
 
-# JSON-object extraction for the review verdict parser (mirrors the goal
-# judge's tolerant parse: the model may wrap JSON in prose or fences).
-_JSON_OBJECT_RE = re.compile(r"\{.*\}", re.DOTALL)
+logger = logging.getLogger(__name__)
 
 # Continuation nudges injected by the lifecycle (mirrors the goal-loop
 # continuation pattern). The finalize nudge is the one-shot "judge says
@@ -271,7 +269,7 @@ def observe_verdict(agent: Any, decision: Dict[str, Any]) -> Optional[str]:
         return None
     before = _open_item_ids(store)
     nudge = _apply_verdict(store, decision)
-    review_nudge = _maybe_review(
+    review_nudge = _maybe_probe(
         getattr(agent, "session_id", "") or "", store, before, decision
     )
     _persist(agent)
@@ -298,7 +296,7 @@ def observe_verdict_for_session(session_id: str, decision: Dict[str, Any]) -> Op
             return None
         before = _open_item_ids(store)
         nudge = _apply_verdict(store, decision)
-        review_nudge = _maybe_review(session_id, store, before, decision)
+        review_nudge = _maybe_probe(session_id, store, before, decision)
         save_todo(session_id, store)
         return review_nudge or nudge
     except Exception as exc:  # pragma: no cover - defensive
@@ -350,104 +348,31 @@ def _apply_verdict(store: Any, decision: Dict[str, Any]) -> Optional[str]:
 
 
 # =============================================================================
-# Post-close review (P6) — the mandatory second set of eyes
+# Post-close verification probe (P6) — the mandatory second set of eyes
 # =============================================================================
 # The judge's ``done`` verdict is self-certification: the same model that
-# did the work decides it is done. The review step makes the loop
-# self-correcting — a parallel completion call over a frozen packet
-# (implementation + the plan it was judged against) whose verdict is
-# mechanically enforced:
+# did the work decides it is done. The probe step makes the loop
+# self-correcting — every finalized task writes a probe entry into
+# ~/.hermes/probes/active/ (the probe-runner plugin's queue) that fires
+# at the next gateway restart and verifies the implementation:
 #
-#   - ``pass``        → nothing; the task stays completed.
-#   - ``needs_work``  → task_manager mechanically spawns a fix task
-#                       (source=review, lineage review_of:<id>) and nudges
-#                       it; it queues behind whatever is current.
-#   - no plan         → the review does not run and the close is
-#                       mechanically held (fail-closed: never a silent
-#                       review-without-a-plan).
-#   - lineage depth   → past tasks.review.max_rounds the fix task is
-#                       mechanically escalated (non-negotiable; prevents a
-#                       runaway review → fix → review machine).
+#   - intent (mandatory)  → the auxiliary provider judges whether the
+#                           change works as intended, from the change
+#                           description and the mechanical evidence.
+#   - import (code tasks) → the changed modules import cleanly.
 #
-# The plan half of the packet resolves in order: (1) an explicit ``plan``
-# ref on the item (file path or URL — snapshotted, hash recorded);
-# (2) the plan is the task itself (item content self-contained); (3) the
-# plan is inline in the conversation (the seed captured the origin message
-# id; the packet builder pulls that session window verbatim). First that
-# resolves wins; all three can coexist. Verdict/lineage/caps are
-# code-owned; only findings *content* comes from the model.
+# The probe verifies the implementation, never the tests. Only failed
+# probes report to #probe-reports — the remediation signal. The write is
+# unconditional: every finalized task gets a probe (mandatory for ALL
+# tasks); a failed write is logged, never silent.
 
-REVIEW_SYSTEM_PROMPT = (
-    "You are the independent reviewer in a task lifecycle. A task was just "
-    "closed as done. You receive two halves: REVIEW_IMPL (the implementation "
-    "evidence) and REVIEW_PLAN (the plan or proposal the implementation was "
-    "supposed to follow). Judge whether the implementation actually satisfies "
-    "the plan. Be strict and specific: name concrete gaps, missing pieces, or "
-    "deviations with evidence. Do not rubber-stamp. Respond with JSON only:\n"
-    '{"verdict": "pass" | "needs_work", "findings": [string, ...]}\n'
-    "findings must be concrete, actionable statements; empty array when pass."
-)
+# Activation for task-close probes: the change is in the tree, so the
+# next gateway restart loads it and the sweep fires the probe.
+PROBE_ACTIVATION = "gateway_restart"
 
-REVIEW_USER_PROMPT_TEMPLATE = (
-    "REVIEW_IMPL\n"
-    "===========\n"
-    "{impl}\n\n"
-    "REVIEW_PLAN\n"
-    "===========\n"
-    "{plan}\n\n"
-    "Verdict: does the implementation satisfy the plan? Respond with the JSON "
-    "shape only."
-)
-
-# Defaults for the review completion call (mirror the goal judge's house
-# values; configurable under auxiliary.task_review).
-REVIEW_MAX_TOKENS = 1024
-REVIEW_TIMEOUT = 30.0
-
-# Cap on the review lineage depth (tasks.review.max_rounds). Past the cap
-# a needs_work verdict mechanically escalates the fix task instead of
-# spawning another review round.
-REVIEW_MAX_ROUNDS_DEFAULT = 2
-
-# A task item's content counts as a self-contained plan (rule 2) only when
-# it is substantial. A short content is a task title, not a plan — the plan
-# then lives inline in the conversation (rule 3, anchored on the
-# seed-captured origin message id). Mechanical discriminator: no model
-# discretion, no natural-language parsing.
-REVIEW_PLAN_MIN_CHARS = 200
-
-
-def _review_config() -> Dict[str, Any]:
-    """The tasks.review config block (best-effort, never raises)."""
-    try:
-        from hermes_cli.config import load_config as _load_config
-
-        cfg = _load_config() or {}
-        tasks_cfg = cfg.get("tasks") if isinstance(cfg, dict) else None
-        if isinstance(tasks_cfg, dict):
-            block = tasks_cfg.get("review")
-            if isinstance(block, dict):
-                return block
-    except Exception:  # pragma: no cover - defensive
-        pass
-    return {}
-
-
-def _review_enabled() -> bool:
-    """Whether the post-close review is active (tasks.review.enabled)."""
-    return bool(_review_config().get("enabled", True))
-
-
-def _review_max_rounds() -> int:
-    """The review lineage depth cap (tasks.review.max_rounds)."""
-    try:
-        raw = _review_config().get("max_rounds", REVIEW_MAX_ROUNDS_DEFAULT)
-        value = int(raw)
-        if value > 0:
-            return value
-    except (TypeError, ValueError):
-        pass
-    return REVIEW_MAX_ROUNDS_DEFAULT
+# Cap on import checks derived from the session's changed files — the
+# probe stays small; the intent check is the behavioral core.
+PROBE_MAX_IMPORT_CHECKS = 4
 
 
 def _open_item_ids(store: Any) -> set:
@@ -459,22 +384,19 @@ def _open_item_ids(store: Any) -> set:
     }
 
 
-def _maybe_review(
+def _maybe_probe(
     session_id: str, store: Any, before: set, decision: Dict[str, Any]
 ) -> Optional[str]:
-    """Run the post-close review when a task just finalized (done path).
+    """Write the post-close verification probe when a task just finalized.
 
     Called from the verdict observation paths after ``_apply_verdict``.
     ``before`` is the set of open item ids captured before the verdict was
-    applied; a review fires only when a task that was open is now
+    applied; a probe fires only when a task that was open is now
     ``completed`` — the single choke point where a task actually
-    finalizes. Returns a continuation nudge when a fix task was spawned
-    (the loop pulls the agent back to it), else None. Deterministic and
-    fail-closed: no plan → no review; transport failure → no review; the
-    close is never undone by a review failure.
+    finalizes. The write is unconditional (mandatory for ALL tasks): a
+    failed write is logged, never silent. Returns None — the probe is
+    deferred verification, so there is no continuation nudge.
     """
-    if not _review_enabled():
-        return None
     if not session_id:
         return None
     finalized = [
@@ -485,199 +407,91 @@ def _maybe_review(
     if not finalized:
         return None
     item = finalized[0]
-    packet = _plan_payload(session_id, store, item)
-    if packet is None:
-        # Fail-closed: no plan resolves — the review does not run and the
-        # close is mechanically held (the task stays completed; the
-        # absence of a review is logged, never silent).
-        logger.info(
-            "task_manager: review skipped for task %s — no plan resolves",
-            item["id"],
+    try:
+        _write_probe(session_id, item)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.error(
+            "task_manager: probe write failed for task %s: %s",
+            item["id"], exc,
         )
-        return None
-    verdict, findings = _run_review(packet)
-    if verdict != "needs_work" or not findings:
-        return None
-    return _spawn_fix_task(session_id, store, item, findings)
+    return None
 
 
-def _plan_payload(
-    session_id: str, store: Any, item: Dict[str, Any]
-) -> Optional[Dict[str, Any]]:
-    """Assemble the review packet for a finalized task, or None.
+def _write_probe(session_id: str, item: Dict[str, Any]) -> None:
+    """Write the probe entry for a finalized task into probes/active/.
 
-    The packet carries the implementation half (the in-progress session
-    window — the conversation from the plan exchange through the close —
-    plus the git diff when the session's repo is in scope) and the plan
-    half, resolved in order: explicit ``plan`` ref (file path or URL,
-    snapshotted with a content hash) → the item content itself
-    (self-contained plan) → the inline conversation window anchored on the
-    seed-captured origin message id. First that resolves wins; all three
-    can coexist. Returns None when no plan resolves (fail-closed).
-
-    A review fix task (``review_of`` set) inherits the plan of its root
-    ancestor: the fix is judged against the same spec its parent was.
+    The probe is the verification contract for the change: an ``intent``
+    check (mandatory — the auxiliary provider judges whether the change
+    works as intended) plus ``import`` checks for code tasks (derived
+    from the session's changed files, capped). The probe verifies the
+    implementation, never the tests. It fires at the next gateway
+    restart and reports only on failure.
     """
-    root = _review_root_item(store, item)
-    plan = _resolve_plan(session_id, root)
-    if plan is None:
-        return None
-    impl = _impl_payload(session_id, item)
-    return {
-        "task_id": item["id"],
-        "plan": plan,
-        "impl": impl,
+    from hermes_constants import get_hermes_home
+
+    active_dir = get_hermes_home() / "probes" / "active"
+    active_dir.mkdir(parents=True, exist_ok=True)
+    now = datetime.now(timezone.utc)
+    probe = {
+        "target": f"task:{item['id']}",
+        "change": (
+            f"Task {item['id']} finalized as done: "
+            f"{str(item.get('content') or '(no description)')[:200]}"
+        ),
+        "activation": PROBE_ACTIVATION,
+        "created_at": now.isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "checks": [
+            {
+                "type": "intent",
+                "prompt": (
+                    "Verify the completed task's implementation works as "
+                    "intended. Inspect the implementation directly — test "
+                    "results are never evidence, and never delegate to test "
+                    "runs. Task: "
+                    f"{str(item.get('content') or '(no description)')[:500]}"
+                ),
+            }
+        ],
+        "status": "pending",
     }
+    modules = _changed_modules(session_id)
+    for module in modules[:PROBE_MAX_IMPORT_CHECKS]:
+        probe["checks"].append({"type": "import", "module": module})
+    path = active_dir / f"{now.strftime('%Y%m%d_%H%M%S')}_task-{item['id']}.yaml"
+    with open(path, "w", encoding="utf-8") as handle:
+        yaml.safe_dump(probe, handle, sort_keys=False, default_flow_style=False)
+    logger.info(
+        "task_manager: post-close probe written for task %s (%s)",
+        item["id"], path.name,
+    )
 
 
-def _review_root_item(store: Any, item: Dict[str, Any]) -> Dict[str, Any]:
-    """Walk the review_of lineage to the root ancestor (or the item itself)."""
-    by_id = {i["id"]: i for i in store.read()}
-    current = item
-    seen = set()
-    while True:
-        parent_id = str(current.get("review_of") or "").strip()
-        if not parent_id or parent_id in seen:
-            return current
-        seen.add(parent_id)
-        parent = by_id.get(parent_id)
-        if parent is None:
-            return current
-        current = parent
+def _changed_modules(session_id: str) -> list:
+    """Derive importable module names from the session's changed files.
 
-
-def _resolve_plan(session_id: str, item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """Resolve the plan half of the review packet (rule 1 → 2 → 3)."""
-    ref = str(item.get("plan") or "").strip()
-    if ref:
-        snapshot = _snapshot_plan_ref(ref)
-        if snapshot is not None:
-            return {"source": "ref", "ref": ref, "content": snapshot}
-    content = str(item.get("content") or "").strip()
-    if len(content) >= REVIEW_PLAN_MIN_CHARS:
-        return {"source": "item", "content": content}
-    origin = str(item.get("origin") or "").strip()
-    if origin:
-        window = _inline_plan_window(session_id, origin)
-        if window:
-            return {"source": "inline", "origin": origin, "content": window}
-    return None
-
-
-def _snapshot_plan_ref(ref: str) -> Optional[str]:
-    """Snapshot an explicit plan ref: local file → content; URL → fetched text.
-
-    Best-effort and bounded: a missing file, failed fetch, or oversized
-    content yields None (the resolution falls through to the next rule).
+    The session's git diff (when a repo is in scope) names the changed
+    files; Python files under the repo map to dotted module names. The
+    probe's import checks verify those modules import cleanly — the
+    mechanical half of the verification contract. Best-effort: no repo
+    or no diff yields an empty list (intent alone remains).
     """
-    try:
-        if ref.startswith(("http://", "https://")):
-            import urllib.request
-
-            with urllib.request.urlopen(ref, timeout=10) as response:
-                raw = response.read(200_000).decode("utf-8", errors="replace")
-            return raw[:200_000]
-        path = Path(ref).expanduser()
-        if path.is_file():
-            raw = path.read_text(encoding="utf-8", errors="replace")
-            return raw[:200_000]
-    except Exception as exc:  # pragma: no cover - defensive
-        logger.debug("task_manager: plan ref snapshot failed: %s", exc)
-    return None
-
-
-def _inline_plan_window(session_id: str, origin: str) -> Optional[str]:
-    """Pull the conversation window from the origin message to the close.
-
-    The seed captured the triggering message id (the plan exchange); the
-    packet builder fetches that session window verbatim from SessionDB so
-    the reviewer sees the proposal the implementation was judged against.
-    Best-effort: a missing DB or unknown origin id yields None.
-    """
-    try:
-        from hermes_cli.tasks import _get_session_db
-
-        db = _get_session_db()
-        if db is None:
-            return None
-        messages = db.get_messages(session_id, limit=512) or []
-        start = None
-        for i, message in enumerate(messages):
-            if str(message.get("platform_message_id") or "") == origin:
-                start = i
-                break
-        if start is None:
-            return None
-        window = messages[start:]
-        lines = []
-        for message in window:
-            role = str(message.get("role") or "?")
-            content = str(message.get("content") or "").strip()
-            if not content:
-                continue
-            lines.append(f"[{role}] {content[:2000]}")
-        if not lines:
-            return None
-        return "\n".join(lines)[:200_000]
-    except Exception as exc:  # pragma: no cover - defensive
-        logger.debug("task_manager: inline plan window failed: %s", exc)
-        return None
-
-
-def _impl_payload(session_id: str, item: Dict[str, Any]) -> str:
-    """The implementation half: the in-progress session window + git diff.
-
-    The window is the conversation from the origin message (or the start
-    of the session when no origin was captured) through the close — the
-    tool calls and results that constitute the implementation. When the
-    session's repo is in scope (git_repo_root recorded), the uncommitted
-    diff is appended so the reviewer sees the actual code changes.
-    Best-effort: any failure degrades to the task content alone.
-    """
-    parts = []
-    window = _session_window(session_id, item)
-    if window:
-        parts.append("SESSION WINDOW (implementation evidence):\n" + window)
     diff = _git_diff(session_id)
-    if diff:
-        parts.append("GIT DIFF (uncommitted changes):\n" + diff)
-    if not parts:
-        parts.append(
-            "No session window or git diff available; the task content is: "
-            + str(item.get("content") or "(no description)")
-        )
-    return "\n\n".join(parts)
-
-
-def _session_window(session_id: str, item: Dict[str, Any]) -> Optional[str]:
-    """The conversation window from the origin (or session start) to now."""
-    try:
-        from hermes_cli.tasks import _get_session_db
-
-        db = _get_session_db()
-        if db is None:
-            return None
-        messages = db.get_messages(session_id, limit=512) or []
-        origin = str(item.get("origin") or "").strip()
-        start = 0
-        if origin:
-            for i, message in enumerate(messages):
-                if str(message.get("platform_message_id") or "") == origin:
-                    start = i
-                    break
-        lines = []
-        for message in messages[start:]:
-            role = str(message.get("role") or "?")
-            content = str(message.get("content") or "").strip()
-            if not content:
-                continue
-            lines.append(f"[{role}] {content[:2000]}")
-        if not lines:
-            return None
-        return "\n".join(lines)[:200_000]
-    except Exception as exc:  # pragma: no cover - defensive
-        logger.debug("task_manager: session window failed: %s", exc)
-        return None
+    if not diff:
+        return []
+    modules = []
+    for line in diff.splitlines():
+        if not line.startswith("diff --git"):
+            continue
+        parts = line.split(" b/", 1)
+        if len(parts) != 2:
+            continue
+        path = parts[1].strip()
+        if not path.endswith(".py") or path.startswith("tests/") or "/tests/" in path:
+            continue
+        module = path[:-3].replace("/", ".")
+        if module not in modules:
+            modules.append(module)
+    return modules
 
 
 def _git_diff(session_id: str) -> Optional[str]:
@@ -720,164 +534,3 @@ def _git_diff(session_id: str) -> Optional[str]:
     except Exception as exc:  # pragma: no cover - defensive
         logger.debug("task_manager: git diff failed: %s", exc)
         return None
-
-
-def _run_review(packet: Dict[str, Any]) -> tuple:
-    """Run the parallel review completion call over the frozen packet.
-
-    Mirrors the house judge pattern (goals.judge_goal): route through
-    ``call_llm(task=\"task_review\", temperature=0, ...)``, parse the JSON
-    verdict from ``resp.choices[0].message.content``, and fail open on
-    transport — a review failure never blocks the close. Returns
-    ``(verdict, findings)`` with verdict ``\"pass\"`` or ``\"needs_work\"``.
-    """
-    try:
-        from agent.auxiliary_client import call_llm
-    except Exception as exc:
-        logger.debug("task_manager: review client import failed: %s", exc)
-        return "pass", []
-    prompt = REVIEW_USER_PROMPT_TEMPLATE.format(
-        impl=str(packet.get("impl") or "")[:200_000],
-        plan=str(packet.get("plan") or "")[:200_000],
-    )
-    try:
-        resp = call_llm(
-            task="task_review",
-            messages=[
-                {"role": "system", "content": REVIEW_SYSTEM_PROMPT},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0,
-            max_tokens=REVIEW_MAX_TOKENS,
-            timeout=REVIEW_TIMEOUT,
-        )
-    except Exception as exc:
-        logger.info("task_manager: review call failed (%s) — failing open", exc)
-        return "pass", []
-    try:
-        raw = resp.choices[0].message.content or ""
-    except Exception:
-        raw = ""
-    return _parse_review_response(raw)
-
-
-def _parse_review_response(raw: str) -> tuple:
-    """Parse the reviewer's JSON reply. Fail-open on unusable output."""
-    if not raw:
-        return "pass", []
-    text = raw.strip()
-    if text.startswith("```"):
-        text = text.strip("`")
-        nl = text.find("\n")
-        if nl != -1:
-            text = text[nl + 1:]
-    try:
-        data = json.loads(text)
-    except Exception:
-        match = _JSON_OBJECT_RE.search(text)
-        if not match:
-            return "pass", []
-        try:
-            data = json.loads(match.group(0))
-        except Exception:
-            return "pass", []
-    if not isinstance(data, dict):
-        return "pass", []
-    verdict = str(data.get("verdict") or "").strip().lower()
-    if verdict != "needs_work":
-        return "pass", []
-    findings = data.get("findings")
-    if not isinstance(findings, list):
-        return "needs_work", []
-    cleaned = [str(f).strip() for f in findings if str(f).strip()]
-    return ("needs_work", cleaned) if cleaned else ("pass", [])
-
-
-def _spawn_fix_task(
-    session_id: str, store: Any, item: Dict[str, Any], findings: list
-) -> Optional[str]:
-    """Mechanically spawn the fix task for a needs_work verdict.
-
-    The fix task is born ``pending`` (source=review, lineage
-    review_of:<id>) and nudged — it queues behind whatever is current per
-    the pivot rule. Past the lineage depth cap (tasks.review.max_rounds)
-    the fix task is mechanically escalated instead (non-negotiable;
-    prevents a runaway review → fix → review machine). Returns the
-    continuation nudge when a fix task was spawned, else None.
-    """
-    root = _review_root_item(store, item)
-    depth = _review_lineage_depth(store, root["id"])
-    if depth >= _review_max_rounds():
-        store.write(
-            [
-                {
-                    "id": f"review-{root['id']}-{depth + 1}",
-                    "content": (
-                        f"[REVIEW ESCALATED] Task {root['id']} failed review "
-                        f"round {depth + 1} (cap {_review_max_rounds()}). "
-                        f"Findings: {'; '.join(findings)}"
-                    ),
-                    "status": "escalated",
-                    "source": "review",
-                    "review_of": root["id"],
-                }
-            ],
-            merge=True,
-        )
-        logger.info(
-            "task_manager: review lineage cap reached for task %s — escalated",
-            root["id"],
-        )
-        return None
-    store.write(
-        [
-            {
-                "id": f"review-{root['id']}-{depth + 1}",
-                "content": (
-                    f"[REVIEW] Task {root['id']} needs work. "
-                    f"Findings: {'; '.join(findings)}"
-                ),
-                "status": "pending",
-                "source": "review",
-                "review_of": root["id"],
-            }
-        ],
-        merge=True,
-    )
-    fix = next(
-        (i for i in store.read() if i.get("review_of") == root["id"]),
-        None,
-    )
-    if fix is None:
-        return None
-    return (
-        "[The completed task was reviewed and needs work]\n"
-        f"Reason: {len(findings)} finding(s) from the post-close review.\n\n"
-        f"Begin the fix task {fix['id']} with todo action=begin and "
-        "item_id={id} now.".format(id=fix["id"])
-    )
-
-
-def _review_lineage_depth(store: Any, task_id: str) -> int:
-    """How many review rounds already exist for this task's lineage.
-
-    Walks the whole chain: a fix task's own review spawns the next fix
-    task, so the depth is the number of review_of links reachable from
-    the original task (direct children plus their children, recursively).
-    """
-    items = store.read()
-    by_parent: Dict[str, list] = {}
-    for item in items:
-        parent = str(item.get("review_of") or "").strip()
-        if parent:
-            by_parent.setdefault(parent, []).append(item["id"])
-    depth = 0
-    frontier = [task_id]
-    while frontier:
-        next_frontier = []
-        for parent in frontier:
-            for child in by_parent.get(parent, []):
-                depth += 1
-                next_frontier.append(child)
-        frontier = next_frontier
-    return depth
