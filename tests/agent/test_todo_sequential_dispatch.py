@@ -100,7 +100,7 @@ class FakeGoalManager:
 
 
 @pytest.fixture
-def dispatched(monkeypatch):
+def dispatched(monkeypatch, tmp_path):
     """Pin the external seams; return (agent, seams).
 
     String-path patches resolve at fixture time and the re-imports inside
@@ -121,10 +121,8 @@ def dispatched(monkeypatch):
     monkeypatch.setattr(
         "agent.task_manager._lifecycle_config", lambda: {"enabled": True}
     )
-    # The post-close review must not fire real LLM calls in tests.
-    monkeypatch.setattr(
-        "agent.task_manager._review_config", lambda: {"enabled": False}
-    )
+    # The post-close probe must never touch the host probes dir in tests.
+    monkeypatch.setattr("hermes_constants.get_hermes_home", lambda: tmp_path)
     monkeypatch.setattr(
         "agent.tool_executor.maybe_persist_tool_result",
         lambda **kwargs: kwargs["content"],
