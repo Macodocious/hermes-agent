@@ -171,13 +171,11 @@ async def test_native_goal_continue_keeps_progress_line(hermes_home):
 
 
 @pytest.mark.asyncio
-async def test_lifecycle_goal_done_returns_suppress_flag(hermes_home):
-    """A lifecycle goal's done verdict must return the suppress flag True.
-
-    The caller blanks the turn's final response so the deterministic
-    '✅ Task completed' line (deferred to post-delivery) replaces the
-    agent's wrap-up prose.
-    """
+async def test_lifecycle_goal_done_keeps_final_response(hermes_home):
+    """A lifecycle goal's done verdict must NOT suppress the turn's final
+    response — the agent's prose ships via the conversation, and the
+    deterministic '✅ Task completed' line lands after it (deferred to
+    post-delivery)."""
     runner, adapter, session_entry, src = _make_runner_with_adapter()
 
     from hermes_cli.goals import GoalManager
@@ -193,7 +191,7 @@ async def test_lifecycle_goal_done_returns_suppress_flag(hermes_home):
         )
         await asyncio.sleep(0.05)
 
-    assert suppress is True
+    assert suppress is None
     assert len(adapter.sends) == 1, f"expected 1 send, got {len(adapter.sends)}: {adapter.sends}"
     assert "✅ Task completed: ship the feature" in adapter.sends[0]["content"]
 
@@ -217,7 +215,7 @@ async def test_native_goal_done_returns_no_suppress_flag(hermes_home):
         )
         await asyncio.sleep(0.05)
 
-    assert suppress is False
+    assert suppress is None
     assert len(adapter.sends) == 1
     assert "Goal achieved" in adapter.sends[0]["content"]
 
@@ -241,17 +239,17 @@ async def test_lifecycle_goal_continue_returns_no_suppress_flag(hermes_home):
         )
         await asyncio.sleep(0.05)
 
-    assert suppress is False
+    assert suppress is None
     assert adapter.sends == [], f"expected no progress line, got {adapter.sends}"
     assert adapter._pending_messages, "continuation prompt must still be enqueued"
 
 
 @pytest.mark.asyncio
-async def test_call_site_blanks_final_response_when_suppressed(hermes_home):
-    """Full-path: when _post_turn_goal_continuation returns True, the
-    call site in _handle_message must blank the final response so the
-    adapter sends nothing — the deferred '✅ Task completed' line is the
-    only user-visible completion message."""
+async def test_call_site_keeps_final_response_on_done(hermes_home):
+    """Full-path: on a lifecycle done turn, the call site must return the
+    agent's final response unchanged — the prose ships via the
+    conversation, and the deferred '✅ Task completed' line lands after
+    it (post-delivery)."""
     from gateway.run import GatewayRunner
 
     runner, adapter, session_entry, src = _make_runner_with_adapter()
@@ -260,7 +258,7 @@ async def test_call_site_blanks_final_response_when_suppressed(hermes_home):
     runner._handle_message = GatewayRunner._handle_message.__get__(runner, GatewayRunner)
     runner._is_user_authorized = lambda source: True
     runner._check_slash_access = lambda *a, **k: None
-    runner._post_turn_goal_continuation = AsyncMock(return_value=True)
+    runner._post_turn_goal_continuation = AsyncMock(return_value=None)
     runner._handle_message_with_agent = AsyncMock(return_value="The goal is complete. Here is the wrap-up prose.")
     runner.session_store.get_or_create_session.return_value = session_entry
 
@@ -273,9 +271,8 @@ async def test_call_site_blanks_final_response_when_suppressed(hermes_home):
 
     result = await runner._handle_message(event)
 
-    assert result is None, f"expected blanked response, got {result!r}"
-    # The agent's wrap-up prose must never reach the adapter.
-    assert adapter.sends == [], f"expected no sends, got {adapter.sends}"
+    # The agent's wrap-up prose must reach the adapter unchanged.
+    assert result == "The goal is complete. Here is the wrap-up prose."
 
 
 @pytest.mark.asyncio

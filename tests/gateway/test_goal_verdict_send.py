@@ -371,7 +371,7 @@ async def test_blocked_done_skips_rejection_gate(hermes_home):
     # No "Goal achieved" status line for a blocked stop.
     assert adapter.sends == []
     # The agent's question is NOT suppressed (it ships as the final response).
-    assert suppress is False
+    assert suppress is None
 
 
 @pytest.mark.asyncio
