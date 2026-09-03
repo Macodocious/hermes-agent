@@ -249,6 +249,68 @@ def test_verdict_done_finalizes_closing_task(monkeypatch) -> None:
     assert store.read()[0]["status"] == "completed"
 
 
+def test_verdict_done_finalizes_closing_and_in_progress_chain(monkeypatch) -> None:
+    """A done verdict must complete the chain: the closing task AND the
+    in_progress task the goal re-armed to (the premature-begin race that
+    stranded task 7 in production)."""
+    store = TodoStore()
+    store.write(
+        [
+            {"id": "1", "content": "Build the thing", "status": "pending"},
+            {"id": "2", "content": "Ship the thing", "status": "pending"},
+        ]
+    )
+    agent = _make_agent(store)
+    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
+
+    store.transition("begin", "1")
+    store.transition("close", "1")
+    store.transition("begin", "2")
+    nudge = task_manager.observe_verdict(agent, {"verdict": "done", "reason": "both done"})
+
+    assert nudge is not None
+    assert "close" in nudge
+    assert [i["status"] for i in store.read()] == ["completed", "completed"]
+
+
+def test_verdict_done_with_only_closing_task_keeps_single_finalize(monkeypatch) -> None:
+    """No in_progress task: the done verdict finalizes only the closing
+    task and returns no nudge (existing behavior preserved)."""
+    store = TodoStore()
+    _seed(store, "1", "Build the thing")
+    agent = _make_agent(store)
+    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
+
+    store.transition("begin", "1")
+    store.transition("close", "1")
+    nudge = task_manager.observe_verdict(agent, {"verdict": "done"})
+
+    assert nudge is None
+    assert store.read()[0]["status"] == "completed"
+
+
+def test_verdict_continue_with_closing_and_in_progress_keeps_both_open(monkeypatch) -> None:
+    """A continue verdict must not finalize anything: the premature close
+    returns to in_progress and the begun task stays in_progress."""
+    store = TodoStore()
+    store.write(
+        [
+            {"id": "1", "content": "Build the thing", "status": "pending"},
+            {"id": "2", "content": "Ship the thing", "status": "pending"},
+        ]
+    )
+    agent = _make_agent(store)
+    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
+
+    store.transition("begin", "1")
+    store.transition("close", "1")
+    store.transition("begin", "2")
+    nudge = task_manager.observe_verdict(agent, {"verdict": "continue"})
+
+    assert nudge is None
+    assert [i["status"] for i in store.read()] == ["in_progress", "in_progress"]
+
+
 def test_verdict_continue_returns_premature_close_to_in_progress(monkeypatch) -> None:
     store = TodoStore()
     _seed(store, "1", "Build the thing")
