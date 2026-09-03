@@ -328,6 +328,21 @@ def _apply_verdict(store: Any, decision: Dict[str, Any]) -> Optional[str]:
     if closing is not None:
         if verdict == "done":
             store.finalize(closing["id"])
+            # The agent may have begun the next task before the judge
+            # cleared this one — the goal re-arms with the newest task's
+            # text, so the verdict evaluated that task, not the closing
+            # one. Complete the chain: finalize the in_progress task too
+            # (the closing task is already finalized, so the one-closing
+            # invariant cannot refuse the transition) and return the
+            # nudge so the agent knows both are recorded done.
+            current = next((i for i in store.read() if i["status"] == "in_progress"), None)
+            if current is not None:
+                store.transition("close", current["id"])
+                store.finalize(current["id"])
+                return LIFECYCLE_FINALIZE_NUDGE.format(
+                    reason=str(decision.get("reason") or "judge says done"),
+                    item_id=current["id"],
+                )
             return None
         # Judge says not done: the close was premature — back to work.
         store.transition("resume", closing["id"])
