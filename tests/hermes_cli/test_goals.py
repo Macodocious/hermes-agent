@@ -311,6 +311,50 @@ class TestGoalManager:
         assert mgr.state.status == "active"
         assert mgr.is_active()
 
+    def test_hold_finalization_round_trip(self, hermes_home):
+        """The finalization hold must arm, persist across managers, and
+        release — the lifecycle rejection gate relies on it surviving a
+        fresh GoalManager on the continuation turn."""
+        from hermes_cli.goals import GoalManager
+
+        mgr = GoalManager(session_id="hold-sid")
+        mgr.set("Complete the task: ship the feature")
+
+        mgr.hold_finalization()
+        assert mgr.state.awaiting_finalization is True
+
+        # A fresh manager on the same session sees the armed hold.
+        mgr2 = GoalManager(session_id="hold-sid")
+        assert mgr2.state.awaiting_finalization is True
+
+        mgr2.release_finalization()
+        assert mgr2.state.awaiting_finalization is False
+
+        # And the release persists too.
+        mgr3 = GoalManager(session_id="hold-sid")
+        assert mgr3.state.awaiting_finalization is False
+
+    def test_hold_finalization_idempotent(self, hermes_home):
+        """Holding an already-held goal must not error or double-arm."""
+        from hermes_cli.goals import GoalManager
+
+        mgr = GoalManager(session_id="hold-sid-2")
+        mgr.set("Complete the task: ship the feature")
+        mgr.hold_finalization()
+        mgr.hold_finalization()
+        assert mgr.state.awaiting_finalization is True
+        mgr.release_finalization()
+        mgr.release_finalization()
+        assert mgr.state.awaiting_finalization is False
+
+    def test_hold_finalization_no_goal_noop(self, hermes_home):
+        """Holding with no goal set must be a safe no-op."""
+        from hermes_cli.goals import GoalManager
+
+        mgr = GoalManager(session_id="hold-sid-3")
+        mgr.hold_finalization()
+        mgr.release_finalization()
+
     def test_clear(self, hermes_home):
         from hermes_cli.goals import GoalManager
 

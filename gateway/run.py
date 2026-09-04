@@ -14625,6 +14625,17 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 await self._enqueue_lifecycle_nudge(source, task_lifecycle_nudge)
             return False
 
+        # Capture the judge's verdict from the PRECEDING turn BEFORE
+        # evaluate_after_turn below overwrites it. An active goal can
+        # only carry last_verdict == "done" through the rejection-gate
+        # refusal path (resume() flips status back to active but never
+        # touches last_verdict), so a done verdict here means the
+        # conclusion prose already shipped on the real user turn — the
+        # continuation turn's wrap-up is a SECOND done and must be
+        # suppressed. A "continue" (or unset) verdict means the
+        # continuation's done is the FIRST done — its prose ships.
+        _prev_verdict = getattr(mgr.state, "last_verdict", None)
+
         _goal_text = getattr(mgr.state, "goal", None) or ""
         _is_lifecycle = _is_lifecycle_goal(_goal_text)
 
@@ -14666,6 +14677,13 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 "lifecycle rejection gate: refusing done verdict for session %s",
                 sid,
             )
+            # The user rejected finalization — the task stays ONGOING.
+            # Arm the finalization hold so a synthetic continuation
+            # turn's done verdict cannot finalize the task without the
+            # user's final finalization (Issue: "ongoing until final
+            # finalization"). The hold is released on the next real user
+            # turn whose done verdict stands.
+            mgr.hold_finalization()
             mgr.resume(reset_budget=False)
             decision = {
                 "status": "active",
@@ -14673,6 +14691,43 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 "continuation_prompt": mgr.next_continuation_prompt(),
                 "verdict": "continue",
                 "reason": "user rejected the answer",
+                "message": "",
+            }
+        # Finalization hold (Part 2): a real user turn whose done verdict
+        # STANDS is the user's final finalization — release the hold so
+        # the task may finalize normally.
+        elif _is_lifecycle and user_initiated and decision.get("verdict") == "done" and not decision.get("blocked"):
+            mgr.release_finalization()
+        # Finalization hold (Part 2): a synthetic continuation turn whose
+        # judge says done while the hold is armed must NOT finalize the
+        # task — the user has not given the final finalization. Hold the
+        # done verdict: treat it as a continue, keep the task active,
+        # and ship no completion line. The next real user message decides.
+        elif (
+            _is_lifecycle
+            and not user_initiated
+            and decision.get("verdict") == "done"
+            and not decision.get("blocked")
+            and getattr(mgr.state, "awaiting_finalization", False)
+        ):
+            logger.info(
+                "lifecycle finalization hold: holding done verdict for session %s pending user finalization",
+                sid,
+            )
+            # The continuation's done is a SECOND conclusion — the judge
+            # already said done on the real user turn (the hold is only
+            # armed through the rejection-gate refusal path) and the
+            # conversation prose already shipped. Suppress the wrap-up
+            # prose so the user sees exactly one conclusion, and keep the
+            # task active (no ✅) until the user's final finalization.
+            _suppress_final_response = True
+            mgr.resume(reset_budget=False)
+            decision = {
+                "status": "active",
+                "should_continue": True,
+                "continuation_prompt": mgr.next_continuation_prompt(),
+                "verdict": "continue",
+                "reason": "awaiting user finalization",
                 "message": "",
             }
         msg = decision.get("message") or ""
@@ -14704,11 +14759,16 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 _task_name = _goal_text[len(_LIFECYCLE_GOAL_PREFIX):].strip() or "(no description)"
                 msg = f"✅ Task completed: {_task_name}"
                 # Suppress the final response ONLY on a synthetic goal-
-                # continuation turn: the wrap-up prose there is redundant
-                # (the conversation prose already shipped on the real user
-                # turn), so the deferred ✅ line is the only completion
-                # message. A real user turn's prose always ships.
-                if not user_initiated:
+                # continuation turn whose judge already said done on the
+                # PRECEDING real user turn (_prev_verdict == "done"): the
+                # wrap-up prose there is a SECOND conclusion — the
+                # conversation prose already shipped on the real user
+                # turn — so the deferred ✅ line is the only completion
+                # message. A continuation whose done is the FIRST done
+                # (judge said continue on the real user turn) ships its
+                # prose — that is the only completion prose. A real user
+                # turn's prose always ships.
+                if not user_initiated and _prev_verdict == "done":
                     _suppress_final_response = True
             elif _verdict in ("continue", "wait") and str(decision.get("status") or "") == "active":
                 msg = ""  # per-turn progress noise — suppress
