@@ -403,6 +403,13 @@ class GoalState:
     last_turn_at: float = 0.0
     last_verdict: Optional[str] = None        # "done" | "continue" | "skipped"
     last_reason: Optional[str] = None
+    # Lifecycle finalization hold: set by the gateway's rejection gate
+    # when a done verdict is refused (the user disputed the answer).
+    # While set, a synthetic continuation turn's done verdict is held —
+    # the task stays active (ongoing) until the user's next real message
+    # is not deemed a rejection. Backwards-compatible: old state_meta
+    # rows load with False.
+    awaiting_finalization: bool = False
     paused_reason: Optional[str] = None       # why we auto-paused (budget, etc.)
     consecutive_parse_failures: int = 0       # judge-output parse failures in a row
     # Transport failures are API/auth/network errors.  Broken API keys return
@@ -465,6 +472,7 @@ class GoalState:
             last_turn_at=float(data.get("last_turn_at", 0.0) or 0.0),
             last_verdict=data.get("last_verdict"),
             last_reason=data.get("last_reason"),
+            awaiting_finalization=bool(data.get("awaiting_finalization", False)),
             paused_reason=data.get("paused_reason"),
             consecutive_parse_failures=int(data.get("consecutive_parse_failures", 0) or 0),
             consecutive_transport_failures=int(data.get("consecutive_transport_failures", 0) or 0),
@@ -1219,6 +1227,31 @@ class GoalManager:
             self._state.turns_used = 0
         save_goal(self.session_id, self._state)
         return self._state
+
+    def hold_finalization(self) -> None:
+        """Mark the goal as awaiting the user's final finalization.
+
+        Set by the gateway's lifecycle rejection gate when a ``done``
+        verdict is refused (the user disputed the answer). While held,
+        a synthetic continuation turn's ``done`` verdict is treated as a
+        continue — the task stays active (ongoing) and no completion
+        line ships — until the user's next real message is not deemed a
+        rejection and ``release_finalization`` is called.
+        """
+        if self._state is not None and not self._state.awaiting_finalization:
+            self._state.awaiting_finalization = True
+            save_goal(self.session_id, self._state)
+
+    def release_finalization(self) -> None:
+        """Clear the lifecycle finalization hold.
+
+        Called when the user's final finalization arrives: a real user
+        turn whose ``done`` verdict stands (not rejected). The task may
+        then finalize normally.
+        """
+        if self._state is not None and self._state.awaiting_finalization:
+            self._state.awaiting_finalization = False
+            save_goal(self.session_id, self._state)
 
     def clear(self) -> None:
         if self._state is None:
