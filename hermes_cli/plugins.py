@@ -44,7 +44,7 @@ import threading
 import types
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set, Union
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple, Union
 
 from hermes_constants import get_hermes_home
 from utils import env_var_enabled, fast_safe_load
@@ -163,6 +163,13 @@ VALID_HOOKS: Set[str] = {
     "on_session_reset",
     "subagent_start",
     "subagent_stop",
+    # Plugin lifecycle hook. Fired by PluginManager.discover_and_load()
+    # after every enabled plugin's register() has run. Plugins use this
+    # to act on a fully-loaded plugin set without depending on their own
+    # position in the load order (e.g. verification sweeps that must see
+    # every plugin's tools/modules). Observers only: return values are
+    # ignored. Kwargs: none.
+    "plugins_loaded",
     # Gateway pre-dispatch hook. Fired once per incoming MessageEvent
     # after the internal-event guard but BEFORE auth/pairing and agent
     # dispatch. Plugins may return a dict to influence flow:
@@ -253,19 +260,22 @@ def _get_disabled_plugins() -> set:
         return set()
 
 
-def _get_enabled_plugins() -> Optional[set]:
-    """Read the enabled-plugins allow-list from config.yaml.
+def _get_enabled_plugins() -> Optional[List[str]]:
+    """Read the enabled-plugins allow-list from config.yaml, in config order.
 
     Plugins are opt-in by default — only plugins whose name appears in
-    this set are loaded. Returns:
+    this list are loaded. The list's ORDER is significant: it is the
+    load order the operator declares (see ``_order_for_load``), so
+    plugins load deterministically regardless of the filesystem scan
+    order. Returns:
 
     * ``None`` — the key is missing or malformed. Callers should treat
       this as "nothing enabled yet" (the opt-in default); the first
       ``migrate_config`` run populates the key with a grandfathered set
       of currently-installed user plugins so existing setups don't
       break on upgrade.
-    * ``set()`` — an empty list was explicitly set; nothing loads.
-    * ``set(...)`` — the concrete allow-list.
+    * ``[]`` — an empty list was explicitly set; nothing loads.
+    * ``[...]`` — the concrete allow-list, in config order.
     """
     try:
         from hermes_cli.config import load_config
@@ -278,9 +288,45 @@ def _get_enabled_plugins() -> Optional[set]:
         enabled = plugins_cfg.get("enabled")
         if not isinstance(enabled, list):
             return None
-        return set(enabled)
+        return list(enabled)
     except Exception:
         return None
+
+
+def _order_for_load(
+    manifests: List[PluginManifest], enabled: Optional[List[str]]
+) -> List[Tuple[PluginManifest, int]]:
+    """Order discovery manifests for loading.
+
+    Plugins declared in ``plugins.enabled`` load in the exact config-list
+    order — deterministic and operator-controlled. Enabled plugins not
+    named in the list, and every plugin when the config key is absent,
+    fall back to discovery (scan) order and load after all listed
+    plugins. Manifest dedup has already happened at the call site, so a
+    manifest appears here at most once.
+
+    Returns ``(manifest, order_key)`` pairs; callers sort by the
+    tuple as-is (the int tiebreaker keeps discovery order stable).
+    """
+    if not enabled:
+        return [(manifest, index) for index, manifest in enumerate(manifests)]
+
+    order_map = {name: index for index, name in enumerate(enabled)}
+    unlisted: List[Tuple[PluginManifest, int]] = []
+    listed: List[Tuple[PluginManifest, int]] = []
+    for index, manifest in enumerate(manifests):
+        lookup_key = manifest.key or manifest.name
+        name = manifest.name
+        if lookup_key in order_map:
+            listed.append((manifest, order_map[lookup_key]))
+        elif name in order_map:
+            listed.append((manifest, order_map[name]))
+        else:
+            unlisted.append((manifest, index))
+
+    # Listed plugins sort by their config position; unlisted plugins
+    # keep discovery order and follow everything listed.
+    return sorted(listed, key=lambda item: item[1]) + unlisted
 
 
 # ---------------------------------------------------------------------------
@@ -1395,7 +1441,13 @@ class PluginManager:
         winners: Dict[str, PluginManifest] = {}
         for manifest in manifests:
             winners[manifest.key or manifest.name] = manifest
-        for manifest in winners.values():
+        # Load in plugins.enabled config order (deterministic, operator
+        # controlled); unlisted plugins follow in scan order. This also
+        # makes register() side effects — tool overrides, hooks, and
+        # plugins that assume their neighbors are already imported —
+        # deterministic instead of filesystem-scan dependent.
+        _load_order = _order_for_load(list(winners.values()), enabled)
+        for manifest, _ in _load_order:
             lookup_key = manifest.key or manifest.name
 
             # Explicit disable always wins (matches on key or on legacy
@@ -1487,6 +1539,12 @@ class PluginManager:
                 len(self._plugins),
                 sum(1 for p in self._plugins.values() if p.enabled),
             )
+
+        # Post-load lifecycle hook: fires after EVERY enabled plugin's
+        # register() has run, so observers (e.g. probe-runner sweeps)
+        # can rely on the full plugin set being imported and registered
+        # without depending on their own position in the load order.
+        self.invoke_hook("plugins_loaded")
 
     # -----------------------------------------------------------------------
     # Directory scanning
