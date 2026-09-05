@@ -349,6 +349,49 @@ class TestPluginDiscovery:
 
         assert "proj_plugin" not in mgr._plugins
 
+    def test_plugins_load_in_config_list_order(self, tmp_path, monkeypatch):
+        """Plugins load in plugins.enabled config order, not scan order.
+
+        Regression for the bug where probe-runner (p) loaded before
+        search-files (s) purely because discovery walks the filesystem
+        alphabetically. With config order honored, register() side
+        effects (tool overrides, hooks, probes) become deterministic.
+        """
+        plugins_dir = tmp_path / "hermes_test" / "plugins"
+        order_log = tmp_path / "hermes_test" / "register_order.log"
+        # Create omega first so config.enabled = [omega, alpha] — the
+        # reverse of alphabetical scan order.
+        for name in ("omega_plugin", "alpha_plugin"):
+            _make_plugin_dir(
+                plugins_dir,
+                name,
+                register_body=(
+                    "with open(%r, 'a') as f:\n"
+                    "            f.write(%r + '\\n')\n"
+                ) % (str(order_log), name),
+            )
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes_test"))
+
+        mgr = PluginManager()
+        mgr.discover_and_load()
+
+        assert order_log.read_text().splitlines() == ["omega_plugin", "alpha_plugin"]
+
+    def test_plugins_loaded_hook_fires_after_discovery(self, tmp_path, monkeypatch):
+        """plugins_loaded fires after every enabled register() has run."""
+        plugins_dir = tmp_path / "hermes_test" / "plugins"
+        _make_plugin_dir(plugins_dir, "hook_plugin")
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes_test"))
+
+        assert "plugins_loaded" in VALID_HOOKS
+
+        mgr = PluginManager()
+        calls = []
+        mgr._hooks.setdefault("plugins_loaded", []).append(lambda **kw: calls.append(kw))
+        mgr.discover_and_load()
+
+        assert calls, "plugins_loaded hook was never fired"
+
     def test_discover_is_idempotent(self, tmp_path, monkeypatch):
         """Calling discover_and_load() twice does not duplicate plugins."""
         plugins_dir = tmp_path / "hermes_test" / "plugins"
