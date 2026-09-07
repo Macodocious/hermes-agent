@@ -1936,27 +1936,30 @@ def try_activate_fallback(agent, reason: "FailoverReason | None" = None) -> bool
         # answering, so "what model are you?" doesn't report the primary.
         rewrite_prompt_model_identity(agent, fb_model, fb_provider)
 
-        # First primary->fallback switch in this session cycle.
-        # Arm the cycle flag so restore_primary_runtime knows we're in a
-        # fallback cycle, and emit the switch notification immediately via
-        # notice_callback (bypasses the gateway noisy-status filter).
-        if not getattr(agent, "_fallback_cycle_armed", False):
-            agent._fallback_cycle_armed = True
-            if getattr(agent, "notice_callback", None):
-                from agent.credits_tracker import AgentNotice
-                agent.notice_callback(
-                    AgentNotice(
-                        text=f"🔄 Primary model failed — switching to fallback: {fb_model} via {fb_provider}",
-                        level="warn",
-                        kind="sticky",
-                        key="fallback.switch",
-                    )
+        # Every fallback switch in this session cycle — including chained
+        # fallback->fallback advances — emits a switch notification via
+        # notice_callback (bypasses the gateway noisy-status filter). The
+        # cycle flag arms restore_primary_runtime; the notice text
+        # distinguishes the first primary->fallback switch from a chain
+        # advance so the user can see the runtime walking the chain.
+        first_switch = not getattr(agent, "_fallback_cycle_armed", False)
+        agent._fallback_cycle_armed = True
+        if first_switch:
+            notice_text = f"🔄 Primary model failed — switching to fallback: {fb_model} via {fb_provider}"
+        else:
+            notice_text = f"🔄 Fallback model failed — switching to next fallback: {fb_model} via {fb_provider}"
+        if getattr(agent, "notice_callback", None):
+            from agent.credits_tracker import AgentNotice
+            agent.notice_callback(
+                AgentNotice(
+                    text=notice_text,
+                    level="warn",
+                    kind="sticky",
+                    key="fallback.switch",
                 )
-            else:
-                agent._emit_status(
-                    f"🔄 Primary model failed — switching to fallback: "
-                    f"{fb_model} via {fb_provider}"
-                )
+            )
+        else:
+            agent._emit_status(notice_text)
 
         logger.info(
             "Fallback activated: %s → %s (%s)",
