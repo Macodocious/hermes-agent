@@ -3522,13 +3522,18 @@ def _recoverable_pool_provider(
     return None
 
 
-def _recover_provider_pool(provider: str, exc: Exception, *, failed_api_key: str = "") -> bool:
+def _recover_provider_pool(provider: str, exc: Exception, *, failed_api_key: str = "", model: Optional[str] = None) -> bool:
     """Try same-provider credential-pool recovery for auxiliary calls.
 
     ``failed_api_key`` is the API key that was actually used for the failing
     request.  Passing it lets mark_exhausted_and_rotate identify the correct
     pool entry even when another process has already rotated the pool (which
     would leave current() as None, causing the wrong entry to be marked).
+
+    ``model`` is the model that failed.  Passing it makes the exhaustion
+    model-aware: only that model is blocked on the credential, so other
+    models sharing the same provider key (e.g. a per-model daily cap on a
+    shared OpenRouter key) keep working.
     """
     normalized = _normalize_aux_provider(provider)
     try:
@@ -3552,6 +3557,7 @@ def _recover_provider_pool(provider: str, exc: Exception, *, failed_api_key: str
             status_code=status_code if status_code is not None else 401,
             error_context=error_context,
             api_key_hint=hint,
+            model=model,
         )
         if next_entry is not None:
             _evict_cached_clients(normalized)
@@ -3564,6 +3570,7 @@ def _recover_provider_pool(provider: str, exc: Exception, *, failed_api_key: str
             status_code=status_code if status_code is not None else fallback_status,
             error_context=error_context,
             api_key_hint=hint,
+            model=model,
         )
         if next_entry is not None:
             _evict_cached_clients(normalized)
@@ -7333,7 +7340,7 @@ def call_llm(
                     if not (_is_auth_error(retry_err) or _is_payment_error(retry_err) or _is_rate_limit_error(retry_err)):
                         raise
                     recovery_err = retry_err
-            if _recover_provider_pool(pool_provider, recovery_err, failed_api_key=_client_api_key):
+            if _recover_provider_pool(pool_provider, recovery_err, failed_api_key=_client_api_key, model=final_model):
                 logger.info(
                     "Auxiliary %s: recovered %s via credential-pool rotation after %s",
                     task or "call", pool_provider, type(recovery_err).__name__,
@@ -7364,7 +7371,7 @@ def call_llm(
                     # alternative providers can still serve the request.
                     if (_is_payment_error(retry2_err) or _is_auth_error(retry2_err)
                             or _is_rate_limit_error(retry2_err)):
-                        _recover_provider_pool(pool_provider, retry2_err)
+                        _recover_provider_pool(pool_provider, retry2_err, model=final_model)
                         first_err = retry2_err
                     else:
                         raise
@@ -7889,7 +7896,7 @@ async def async_call_llm(
                     if not (_is_auth_error(retry_err) or _is_payment_error(retry_err) or _is_rate_limit_error(retry_err)):
                         raise
                     recovery_err = retry_err
-            if _recover_provider_pool(pool_provider, recovery_err, failed_api_key=_client_api_key):
+            if _recover_provider_pool(pool_provider, recovery_err, failed_api_key=_client_api_key, model=final_model):
                 logger.info(
                     "Auxiliary %s (async): recovered %s via credential-pool rotation after %s",
                     task or "call", pool_provider, type(recovery_err).__name__,
@@ -7914,7 +7921,7 @@ async def async_call_llm(
                 except Exception as retry2_err:
                     if (_is_payment_error(retry2_err) or _is_auth_error(retry2_err)
                             or _is_rate_limit_error(retry2_err)):
-                        _recover_provider_pool(pool_provider, retry2_err)
+                        _recover_provider_pool(pool_provider, retry2_err, model=final_model)
                         first_err = retry2_err
                     else:
                         raise

@@ -3426,3 +3426,117 @@ def test_sync_anthropic_entry_clears_all_error_fields(tmp_path, monkeypatch):
     assert synced.last_error_reason is None
     assert synced.last_error_message is None
     assert synced.last_error_reset_at is None
+
+
+def test_model_aware_exhaustion_blocks_only_failed_model(tmp_path, monkeypatch):
+    """A per-model exhaustion must not block other models sharing the key.
+
+    Regression for the free-model fallback cycle: minimax-m3:free hit a
+    per-model daily cap on the shared OpenRouter key; the provider-wide
+    exhaustion then skipped inkling and nemotron too.  With model-aware
+    exhaustion, the entry stays usable for every other model.
+    """
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes"))
+    _write_auth_store(
+        tmp_path,
+        {
+            "version": 1,
+            "credential_pool": {
+                "openrouter": [
+                    {
+                        "id": "cred-1",
+                        "label": "shared-key",
+                        "auth_type": "api_key",
+                        "priority": 0,
+                        "source": "manual",
+                        "access_token": "***",
+                        "last_status": "exhausted",
+                        "last_status_at": time.time(),
+                        "last_error_code": 429,
+                        "last_error_reset_at": time.time() + 3600,
+                        "exhausted_model": "minimax/minimax-m3:free",
+                    },
+                ]
+            },
+        },
+    )
+
+    from agent.credential_pool import load_pool
+
+    pool = load_pool("openrouter")
+
+    # The exhausted model is blocked.
+    assert pool.select(model="minimax/minimax-m3:free") is None
+    assert pool.has_available(model="minimax/minimax-m3:free") is False
+
+    # A different model sharing the key is still served.
+    entry = pool.select(model="nvidia/nemotron-3-ultra-550b-a55b:free")
+    assert entry is not None
+    assert entry.id == "cred-1"
+    assert pool.has_available(model="nvidia/nemotron-3-ultra-550b-a55b:free") is True
+
+    # Legacy exhaustion (no exhausted_model) keeps provider-wide semantics.
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes"))
+    _write_auth_store(
+        tmp_path,
+        {
+            "version": 1,
+            "credential_pool": {
+                "openrouter": [
+                    {
+                        "id": "cred-1",
+                        "label": "shared-key",
+                        "auth_type": "api_key",
+                        "priority": 0,
+                        "source": "manual",
+                        "access_token": "***",
+                        "last_status": "exhausted",
+                        "last_status_at": time.time(),
+                        "last_error_code": 429,
+                        "last_error_reset_at": time.time() + 3600,
+                    },
+                ]
+            },
+        },
+    )
+
+    pool = load_pool("openrouter")
+    assert pool.select(model="nvidia/nemotron-3-ultra-550b-a55b:free") is None
+    assert pool.has_available(model="nvidia/nemotron-3-ultra-550b-a55b:free") is False
+
+
+def test_mark_exhausted_records_model(tmp_path, monkeypatch):
+    """mark_exhausted_and_rotate records the failing model on the entry."""
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes"))
+    _write_auth_store(
+        tmp_path,
+        {
+            "version": 1,
+            "credential_pool": {
+                "openrouter": [
+                    {
+                        "id": "cred-1",
+                        "label": "shared-key",
+                        "auth_type": "api_key",
+                        "priority": 0,
+                        "source": "manual",
+                        "access_token": "***",
+                    },
+                ]
+            },
+        },
+    )
+
+    from agent.credential_pool import load_pool
+
+    pool = load_pool("openrouter")
+    rotated = pool.mark_exhausted_and_rotate(
+        status_code=429,
+        error_context={"message": "Daily limit reached for minimax/minimax-m3:free"},
+        model="minimax/minimax-m3:free",
+    )
+    assert rotated is None  # single-entry pool has nothing to rotate to
+
+    entry = pool.current() or pool.entries()[0]
+    assert entry.last_status == "exhausted"
+    assert entry.exhausted_model == "minimax/minimax-m3:free"
