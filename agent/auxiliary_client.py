@@ -2971,21 +2971,31 @@ def _normalize_chain_label(provider: str) -> str:
     return _AUX_UNHEALTHY_LABEL_ALIASES.get(p, p)
 
 
-def _mark_provider_unhealthy(provider: str, ttl: Optional[float] = None) -> None:
+def _mark_provider_unhealthy(provider: str, ttl: Optional[float] = None,
+                            model: Optional[str] = None,
+                            reason: str = "payment / credit error") -> None:
     """Mark ``provider`` as recently-402'd, hidden from chain iteration
     until the TTL expires. Called from the payment-fallback branches in
     ``call_llm`` and ``acall_llm`` after a confirmed payment error.
+
+    When ``model`` is given, the quarantine is scoped to
+    ``provider::model`` so a single dead model (e.g. a retired free-tier
+    slug) does not hide the whole provider route — other models on the
+    same provider remain eligible fallback candidates.
     """
     label = _normalize_chain_label(provider)
     if not label:
         return
+    if model:
+        label = f"{label}::{model}"
     expires_at = time.time() + (ttl if ttl is not None else _AUX_UNHEALTHY_TTL_SECONDS)
     _aux_unhealthy_until[label] = expires_at
     logger.warning(
-        "Auxiliary: marking %s unhealthy for %ds (payment / credit error). "
+        "Auxiliary: marking %s unhealthy for %ds (%s). "
         "Subsequent auxiliary calls will skip it until %s.",
         label,
         int(ttl if ttl is not None else _AUX_UNHEALTHY_TTL_SECONDS),
+        reason,
         time.strftime("%H:%M:%S", time.localtime(expires_at)),
     )
 
@@ -3058,6 +3068,8 @@ def _is_payment_error(exc: Exception) -> bool:
             "balance_depleted", "no usable credits",
             "model_not_supported_on_free_tier",
             "not available on the free tier",
+            "unavailable for free",
+            "use this slug instead",
             "requires a subscription", "upgrade for access",
             "upgrade for higher limits", "reached your session usage limit",
             # Daily / monthly / weekly quota exhaustion keywords
@@ -3875,8 +3887,19 @@ def _call_fallback_candidate_sync(
         return _validate_llm_response(
             fb_client.chat.completions.create(**fb_kwargs), task)
     except Exception as fb_err:
-        if not _is_auth_error(fb_err):
+        if not (_is_auth_error(fb_err) or _is_payment_error(fb_err) or _is_model_not_found_error(fb_err)):
             raise
+        if _is_payment_error(fb_err) or _is_model_not_found_error(fb_err):
+            # Dead / unavailable model (e.g. retired free-tier slug): the
+            # candidate cannot serve this request at all. Quarantine the
+            # provider::model pair and let the caller walk to the next
+            # fallback instead of aborting the whole auxiliary task.
+            _mark_provider_unhealthy(fb_label, model=fb_model, reason="dead / unavailable model")
+            logger.warning(
+                "Auxiliary %s: fallback candidate %s serves a dead/unavailable model (%s) — skipping to next fallback",
+                task or "call", fb_label, fb_err,
+            )
+            return None
         fb_provider = _auth_refresh_provider_for_route(fb_label, fb_base)
         if fb_provider not in {"auto", "", None} and _refresh_provider_credentials(fb_provider):
             retry_client, retry_model = _get_cached_client(fb_provider, fb_model)
@@ -3941,8 +3964,19 @@ async def _call_fallback_candidate_async(
         return _validate_llm_response(
             await fb_client.chat.completions.create(**fb_kwargs), task)
     except Exception as fb_err:
-        if not _is_auth_error(fb_err):
+        if not (_is_auth_error(fb_err) or _is_payment_error(fb_err) or _is_model_not_found_error(fb_err)):
             raise
+        if _is_payment_error(fb_err) or _is_model_not_found_error(fb_err):
+            # Dead / unavailable model (e.g. retired free-tier slug): the
+            # candidate cannot serve this request at all. Quarantine the
+            # provider::model pair and let the caller walk to the next
+            # fallback instead of aborting the whole auxiliary task.
+            _mark_provider_unhealthy(fb_label, model=fb_model, reason="dead / unavailable model")
+            logger.warning(
+                "Auxiliary %s (async): fallback candidate %s serves a dead/unavailable model (%s) — skipping to next fallback",
+                task or "call", fb_label, fb_err,
+            )
+            return None
         fb_provider = _auth_refresh_provider_for_route(fb_label, fb_base)
         if fb_provider not in {"auto", "", None} and _refresh_provider_credentials(fb_provider):
             retry_client, retry_model = _get_cached_client(
@@ -4188,6 +4222,17 @@ def _try_configured_fallback_chain(
 
         label = f"fallback_chain[{i}]({fb_provider})"
 
+        # Skip quarantined candidates: provider-level (payment/credit) and
+        # model-qualified (dead model on this provider) entries are hidden
+        # from chain iteration until their TTL expires.
+        fb_norm = fb_provider.lower()
+        if _is_provider_unhealthy(fb_norm) or (
+            fb_model and _is_provider_unhealthy(f"{fb_norm}::{fb_model}")
+        ):
+            _log_skip_unhealthy(fb_norm, task)
+            tried.append(f"{label} (unhealthy)")
+            continue
+
         try:
             fb_client, resolved_model = _resolve_fallback_entry(entry)
         except Exception:
@@ -4317,7 +4362,7 @@ def _try_main_fallback_chain(
         if fb_norm in skip:
             tried.append(f"{label} (skipped)")
             continue
-        if _is_provider_unhealthy(fb_norm):
+        if _is_provider_unhealthy(fb_norm) or _is_provider_unhealthy(f"{fb_norm}::{fb_model}"):
             _log_skip_unhealthy(fb_norm, task)
             tried.append(f"{label} (unhealthy)")
             continue
@@ -7471,21 +7516,13 @@ def call_llm(
                         resolved_provider, task, reason=reason)
 
             if fb_client is not None:
-                fb_resp = _call_fallback_candidate_sync(
-                    fb_client, fb_model, fb_label,
-                    task=task, messages=messages,
-                    temperature=temperature, max_tokens=max_tokens,
-                    tools=tools, effective_timeout=effective_timeout,
-                    effective_extra_body=effective_extra_body,
-                    reasoning_config=reasoning_config)
-                if fb_resp is not None:
-                    return fb_resp
-                # The candidate had a stale/unrefreshable credential and was
-                # quarantined — walk the discovery chain once more; unhealthy
-                # entries are skipped so the next viable candidate serves.
-                fb_client, fb_model, fb_label = _try_payment_fallback(
-                    resolved_provider, task, reason="stale fallback credential")
-                if fb_client is not None:
+                # Bounded re-walk: a candidate can be skipped mid-chain
+                # (dead model, quarantined by provider::model) and the
+                # discovery chain may still have viable entries further
+                # on. Re-walk the full fallback order so the next viable
+                # candidate serves instead of aborting the whole task.
+                # Bounded to 4 walks to avoid pathological retry loops.
+                for _ in range(4):
                     fb_resp = _call_fallback_candidate_sync(
                         fb_client, fb_model, fb_label,
                         task=task, messages=messages,
@@ -7495,6 +7532,27 @@ def call_llm(
                         reasoning_config=reasoning_config)
                     if fb_resp is not None:
                         return fb_resp
+                    # The previous candidate was skipped (stale credential,
+                    # dead model, or quarantined by provider::model).
+                    # Re-walk the same fallback order; unhealthy entries
+                    # are now filtered out by the walker itself.
+                    if is_auto:
+                        fb_client, fb_model, fb_label = _try_configured_fallback_chain(
+                            task, resolved_provider or "auto", reason=reason)
+                        if fb_client is None:
+                            fb_client, fb_model, fb_label = _try_main_fallback_chain(
+                                task, resolved_provider or "auto", reason=reason)
+                        if fb_client is None:
+                            fb_client, fb_model, fb_label = _try_payment_fallback(
+                                resolved_provider, task, reason=reason)
+                    else:
+                        fb_client, fb_model, fb_label = _try_configured_fallback_chain(
+                            task, resolved_provider or "auto", reason=reason)
+                        if fb_client is None:
+                            fb_client, fb_model, fb_label = _try_main_agent_model_fallback(
+                                resolved_provider, task, reason=reason)
+                    if fb_client is None:
+                        break
             # All fallback layers exhausted — emit a single user-visible
             # warning so the operator knows aux task is about to fail.
             # (#26882) The error itself is re-raised below.
@@ -7989,24 +8047,13 @@ async def async_call_llm(
                         resolved_provider, task, reason=reason)
 
             if fb_client is not None:
-                # Convert sync fallback client to async
-                async_fb, async_fb_model = _to_async_client(
-                    fb_client, fb_model or "", is_vision=(task == "vision")
-                )
-                fb_resp = await _call_fallback_candidate_async(
-                    async_fb, async_fb_model or fb_model, fb_label,
-                    task=task, messages=messages,
-                    temperature=temperature, max_tokens=max_tokens,
-                    tools=tools, effective_timeout=effective_timeout,
-                    effective_extra_body=effective_extra_body,
-                    reasoning_config=reasoning_config)
-                if fb_resp is not None:
-                    return fb_resp
-                # Stale/unrefreshable candidate credential — quarantined; walk
-                # the discovery chain once more (unhealthy entries skipped).
-                fb_client, fb_model, fb_label = _try_payment_fallback(
-                    resolved_provider, task, reason="stale fallback credential")
-                if fb_client is not None:
+                # Bounded re-walk (async mirror): a candidate can be skipped
+                # mid-chain (dead model, quarantined by provider::model) and
+                # the discovery chain may still have viable entries further
+                # on. Re-walk the full fallback order so the next viable
+                # candidate serves instead of aborting the whole task.
+                # Bounded to 4 walks to avoid pathological retry loops.
+                for _ in range(4):
                     async_fb, async_fb_model = _to_async_client(
                         fb_client, fb_model or "", is_vision=(task == "vision")
                     )
@@ -8019,6 +8066,27 @@ async def async_call_llm(
                         reasoning_config=reasoning_config)
                     if fb_resp is not None:
                         return fb_resp
+                    # The previous candidate was skipped (stale credential,
+                    # dead model, or quarantined by provider::model).
+                    # Re-walk the same fallback order; unhealthy entries
+                    # are now filtered out by the walker itself.
+                    if is_auto:
+                        fb_client, fb_model, fb_label = _try_configured_fallback_chain(
+                            task, resolved_provider or "auto", reason=reason)
+                        if fb_client is None:
+                            fb_client, fb_model, fb_label = _try_main_fallback_chain(
+                                task, resolved_provider or "auto", reason=reason)
+                        if fb_client is None:
+                            fb_client, fb_model, fb_label = _try_payment_fallback(
+                                resolved_provider, task, reason=reason)
+                    else:
+                        fb_client, fb_model, fb_label = _try_configured_fallback_chain(
+                            task, resolved_provider or "auto", reason=reason)
+                        if fb_client is None:
+                            fb_client, fb_model, fb_label = _try_main_agent_model_fallback(
+                                resolved_provider, task, reason=reason)
+                    if fb_client is None:
+                        break
             # All fallback layers exhausted — warn before re-raising. (#26882)
             logger.warning(
                 "Auxiliary %s (async): %s on %s and all fallbacks exhausted "
