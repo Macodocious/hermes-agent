@@ -177,6 +177,12 @@ class PooledCredential:
     last_error_reason: Optional[str] = None
     last_error_message: Optional[str] = None
     last_error_reset_at: Optional[float] = None
+    # Model that triggered the exhaustion.  When set, only that model is
+    # blocked — other models sharing the credential keep using it (model-
+    # aware exhaustion, e.g. a per-model daily cap on a shared provider key).
+    # None means legacy provider-wide exhaustion: the entry blocks every
+    # model until the cooldown elapses.
+    exhausted_model: Optional[str] = None
     base_url: Optional[str] = None
     expires_at: Optional[str] = None
     expires_at_ms: Optional[int] = None
@@ -598,9 +604,13 @@ class CredentialPool:
     def has_credentials(self) -> bool:
         return bool(self._entries)
 
-    def has_available(self) -> bool:
-        """True if at least one entry is not currently in exhaustion cooldown."""
-        return bool(self._available_entries())
+    def has_available(self, *, model: Optional[str] = None) -> bool:
+        """True if at least one entry is not currently in exhaustion cooldown.
+
+        When *model* is given, entries exhausted for a *different* model are
+        considered available (model-aware exhaustion).
+        """
+        return bool(self._available_entries(model=model))
 
     def entries(self) -> List[PooledCredential]:
         return list(self._entries)
@@ -652,6 +662,8 @@ class CredentialPool:
         entry: PooledCredential,
         status_code: Optional[int],
         error_context: Optional[Dict[str, Any]] = None,
+        *,
+        model: Optional[str] = None,
     ) -> PooledCredential:
         normalized_error = _normalize_error_context(error_context)
         # Permanent OAuth failures (token_invalidated, token_revoked, etc.)
@@ -673,6 +685,7 @@ class CredentialPool:
             last_error_reason=normalized_error.get("reason"),
             last_error_message=normalized_error.get("message"),
             last_error_reset_at=normalized_error.get("reset_at"),
+            exhausted_model=model,
         )
         self._replace_entry(entry, updated)
         self._persist()
@@ -722,6 +735,7 @@ class CredentialPool:
                     last_error_reason=None,
                     last_error_message=None,
                     last_error_reset_at=None,
+                    exhausted_model=None,
                 )
                 self._replace_entry(entry, updated)
                 self._persist()
@@ -783,6 +797,7 @@ class CredentialPool:
                     "last_error_reason": None,
                     "last_error_message": None,
                     "last_error_reset_at": None,
+                    "exhausted_model": None,
                 }
                 if state.get("last_refresh"):
                     field_updates["last_refresh"] = state["last_refresh"]
@@ -841,6 +856,7 @@ class CredentialPool:
                     "last_error_reason": None,
                     "last_error_message": None,
                     "last_error_reset_at": None,
+                    "exhausted_model": None,
                 }
                 if state.get("last_refresh"):
                     field_updates["last_refresh"] = state["last_refresh"]
@@ -935,6 +951,7 @@ class CredentialPool:
                     "last_error_reason": None,
                     "last_error_message": None,
                     "last_error_reset_at": None,
+                    "exhausted_model": None,
                 }
                 if store_access:
                     field_updates["access_token"] = store_access
@@ -1508,16 +1525,22 @@ class CredentialPool:
             return False
         return False
 
-    def select(self) -> Optional[PooledCredential]:
+    def select(self, *, model: Optional[str] = None) -> Optional[PooledCredential]:
         with self._lock:
-            return self._select_unlocked()
+            return self._select_unlocked(model=model)
 
-    def _available_entries(self, *, clear_expired: bool = False, refresh: bool = False) -> List[PooledCredential]:
+    def _available_entries(self, *, clear_expired: bool = False, refresh: bool = False, model: Optional[str] = None) -> List[PooledCredential]:
         """Return entries not currently in exhaustion cooldown.
 
         When *clear_expired* is True, entries whose cooldown has elapsed are
         reset to STATUS_OK and persisted.  When *refresh* is True, entries
         that need a token refresh are refreshed (skipped on failure).
+
+        When *model* is given, an exhausted entry whose ``exhausted_model``
+        matches is skipped only for that model — other models sharing the
+        credential keep using it (model-aware exhaustion).  An exhausted
+        entry with no recorded model (legacy provider-wide exhaustion) is
+        skipped for every model.
         """
         now = time.time()
         cleared_any = False
@@ -1603,22 +1626,29 @@ class CredentialPool:
                 # the re-auth case for OAuth singletons.
                 continue
             if entry.last_status == STATUS_EXHAUSTED:
-                exhausted_until = _exhausted_until(entry)
-                if exhausted_until is not None and now < exhausted_until:
-                    continue
-                if clear_expired:
-                    cleared = replace(
-                        entry,
-                        last_status=STATUS_OK,
-                        last_status_at=None,
-                        last_error_code=None,
-                        last_error_reason=None,
-                        last_error_message=None,
-                        last_error_reset_at=None,
-                    )
-                    self._replace_entry(entry, cleared)
-                    entry = cleared
-                    cleared_any = True
+                # Model-aware exhaustion: an entry that recorded which model
+                # hit the cap only blocks that model.  Other models sharing the
+                # credential keep using it (e.g. a per-model daily limit on a
+                # shared provider key).  Legacy entries with no recorded model
+                # keep provider-wide semantics — they block every model.
+                if not (model and entry.exhausted_model and entry.exhausted_model != model):
+                    exhausted_until = _exhausted_until(entry)
+                    if exhausted_until is not None and now < exhausted_until:
+                        continue
+                    if clear_expired:
+                        cleared = replace(
+                            entry,
+                            last_status=STATUS_OK,
+                            last_status_at=None,
+                            last_error_code=None,
+                            last_error_reason=None,
+                            last_error_message=None,
+                            last_error_reset_at=None,
+                            exhausted_model=None,
+                        )
+                        self._replace_entry(entry, cleared)
+                        entry = cleared
+                        cleared_any = True
             if refresh and self._entry_needs_refresh(entry):
                 refreshed = self._refresh_entry(entry, force=False)
                 if refreshed is None:
@@ -1646,8 +1676,8 @@ class CredentialPool:
         self._last_no_entries_log_at = now
         logger.info("credential pool: no available entries (all exhausted or empty)")
 
-    def _select_unlocked(self, *, refresh: bool = True) -> Optional[PooledCredential]:
-        available = self._available_entries(clear_expired=True, refresh=refresh)
+    def _select_unlocked(self, *, refresh: bool = True, model: Optional[str] = None) -> Optional[PooledCredential]:
+        available = self._available_entries(clear_expired=True, refresh=refresh, model=model)
         if not available:
             self._current_id = None
             self._log_no_available_entries()
@@ -1684,11 +1714,11 @@ class CredentialPool:
         self._current_id = entry.id
         return entry
 
-    def peek(self) -> Optional[PooledCredential]:
+    def peek(self, *, model: Optional[str] = None) -> Optional[PooledCredential]:
         current = self.current()
         if current is not None:
             return current
-        available = self._available_entries()
+        available = self._available_entries(model=model)
         return available[0] if available else None
 
     def mark_exhausted_and_rotate(
@@ -1697,6 +1727,7 @@ class CredentialPool:
         status_code: Optional[int],
         error_context: Optional[Dict[str, Any]] = None,
         api_key_hint: Optional[str] = None,
+        model: Optional[str] = None,
     ) -> Optional[PooledCredential]:
         with self._lock:
             entry = None
@@ -1714,7 +1745,7 @@ class CredentialPool:
             if entry is None:
                 return None
             _label = entry.label or entry.id[:8]
-            self._mark_exhausted(entry, status_code, error_context)
+            self._mark_exhausted(entry, status_code, error_context, model=model)
             # Re-read the updated entry to log the correct terminal state.
             updated_entry = next(
                 (e for e in self._entries if e.id == entry.id), entry,
@@ -1833,6 +1864,7 @@ class CredentialPool:
                         last_error_reason=None,
                         last_error_message=None,
                         last_error_reset_at=None,
+                        exhausted_model=None,
                     )
                 )
                 count += 1
