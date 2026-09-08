@@ -18822,6 +18822,12 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             if hasattr(agent, "_last_flushed_db_idx"):
                 agent._last_flushed_db_idx = 0
         agent._api_call_count = 0
+        # The lifecycle action flag is stamped on every todo write with an
+        # action (on_todo_write) and must not leak across turns: a stale
+        # True would suppress the turn-end audit (audit_turn_end) on every
+        # subsequent turn, so work done with no open task would never pull
+        # the agent back. Reset it here with the other per-turn state.
+        agent._task_lifecycle_action_issued = False
         # Fix 1 (store divergence): the task-lifecycle judge finalizes the
         # persisted DB row, never the cached agent's in-memory store, and
         # write-through persistence would clobber those finalizations with
