@@ -1708,6 +1708,36 @@ class TestCachedAgentInactivityReset:
 
         assert agent._todo_store is None
 
+    def test_fresh_turn_resets_lifecycle_action_flag(self):
+        """A stale _task_lifecycle_action_issued must not leak across turns.
+
+        The flag is stamped on every todo write with an action
+        (on_todo_write) and suppresses the turn-end audit (audit_turn_end)
+        for the turn it was issued in. If it survives onto a cached agent,
+        every later turn that does work with no open task skips the audit
+        and the pull-back nudge never fires (regression: tasks left
+        pending with no mechanical enforcement)."""
+        from gateway.run import GatewayRunner
+
+        agent = self._fake_agent()
+        agent._task_lifecycle_action_issued = True  # stale from a prior turn
+
+        GatewayRunner._init_cached_agent_for_turn(agent, interrupt_depth=0)
+
+        assert agent._task_lifecycle_action_issued is False
+
+    def test_interrupt_turn_resets_lifecycle_action_flag(self):
+        """The flag is reset at any depth — an interrupt-recursive re-entry
+        is still a new turn for audit purposes."""
+        from gateway.run import GatewayRunner
+
+        agent = self._fake_agent()
+        agent._task_lifecycle_action_issued = True
+
+        GatewayRunner._init_cached_agent_for_turn(agent, interrupt_depth=1)
+
+        assert agent._task_lifecycle_action_issued is False
+
     def test_interrupt_turn_preserves_flush_cursor(self):
         """interrupt_depth=1: _last_flushed_db_idx preserved so an
         in-progress flush is not disrupted by interrupt re-entry."""
