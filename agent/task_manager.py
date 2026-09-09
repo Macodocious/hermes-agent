@@ -55,11 +55,33 @@ LIFECYCLE_AUDIT_NUDGE = (
     "task you were working on, or explain why no task applies."
 )
 
+# The nudge delivered when the judge rejects a close (verdict continue/wait
+# on a closing task). The task returns to in_progress and a rework task is
+# appended so the failure is never lost: the agent is told exactly why the
+# review failed and where the rework task sits.
+LIFECYCLE_REVIEW_REJECT_NUDGE = (
+    "[Task {item_id} was reviewed incomplete]\n"
+    "Reason: {reason}\n\n"
+    "The task is back in_progress and a rework task (id {rework_id}) was "
+    "added to the list. Address the review failure before closing again."
+)
+
+# Source tag for rework tasks spawned by a rejected review (P6 lineage).
+# Code-owned (task_manager), never model-authorable — _validate preserves
+# the tag and the review_of parent id so the lineage depth cap and the
+# fix-task lookup work.
+REVIEW_SOURCE = "review"
+
 # The goal text stored for an armed task. The todo item is the task; the
 # goal text is its description, so the judge evaluates the same content
-# the agent sees in the task list.
+# the agent sees in the task list. The task content is the specification
+# the review must hold the implementation to — the goal text names it
+# explicitly so the verdict is bound to the task's stated objective.
 def _goal_text_for_item(item: Dict[str, Any]) -> str:
-    return f"Complete the task: {item.get('content', '(no description)')}"
+    return (
+        "Complete the task per its specification: "
+        f"{item.get('content', '(no description)')}"
+    )
 
 
 def _lifecycle_config() -> Dict[str, Any]:
@@ -125,6 +147,18 @@ def _current_item(agent: Any) -> Optional[Dict[str, Any]]:
         if item["status"] == "in_progress":
             return item
     return None
+
+
+def _next_item_id(store: Any) -> str:
+    """Next sequential id for a code-owned append (max existing + 1).
+
+    Mirrors TodoStore._next_item_id so the rework task lands with a
+    stable id the nudge can name. Falls back to "1" on an empty list.
+    """
+    numeric_ids = [
+        int(item["id"]) for item in store.read() if str(item["id"]).isdigit()
+    ]
+    return str(max(numeric_ids, default=0) + 1)
 
 
 def _closing_item(agent: Any) -> Optional[Dict[str, Any]]:
@@ -313,8 +347,12 @@ def _apply_verdict(store: Any, decision: Dict[str, Any]) -> Optional[str]:
     - task ``in_progress`` + verdict ``done`` → finalize and return one
       explicit nudge (the agent never closed it; the nudge tells it the
       task is recorded done).
-    - task ``closing`` + verdict ``continue``/``wait`` → back to
-      ``in_progress``; the loop keeps pulling.
+    - task ``closing`` + verdict ``continue`` → back to
+      ``in_progress``, a rework task is appended (source=review,
+      review_of=<parent id>), and a nudge returns with the judge's
+      reason — the review failure is never silent.
+    - task ``closing`` + verdict ``wait`` → back to ``in_progress``
+      with no rework task (a park, not a rejection).
 
     Returns a continuation nudge when one is needed, else None.
     """
@@ -337,8 +375,52 @@ def _apply_verdict(store: Any, decision: Dict[str, Any]) -> Optional[str]:
             store.finalize(closing["id"])
             return None
         # Judge says not done: the close was premature — back to work.
+        # A continue verdict is a review rejection: the task returns to
+        # in_progress and a rework task is appended (source=review,
+        # review_of=<parent id>) so the agent is pulled back to the
+        # failed task with the judge's reason attached. The nudge is
+        # enqueued ahead of the goal continuation (gateway/run.py), so
+        # the agent sees exactly why the review rejected the close. A
+        # wait verdict is a park, not a rejection — the loop resumes
+        # automatically when the async thing clears, so no rework task
+        # is spawned.
         store.transition("resume", closing["id"])
-        return None
+        if verdict != "continue":
+            return None
+        reason = str(decision.get("reason") or "the review found the task incomplete").strip()
+        rework = {
+            # Merge-mode write drops id-less items, so the rework task
+            # carries the next sequential id (mirrors _next_item_id).
+            "id": _next_item_id(store),
+            "content": (
+                f"Rework: {closing.get('content', '(no description)')} — "
+                f"review failed: {reason}"
+            ),
+            "status": "pending",
+            "source": REVIEW_SOURCE,
+            "review_of": closing["id"],
+        }
+        try:
+            store.write([rework], merge=True)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.error(
+                "task_manager: rework task append failed for task %s: %s",
+                closing["id"], exc,
+            )
+            return LIFECYCLE_REVIEW_REJECT_NUDGE.format(
+                item_id=closing["id"],
+                reason=reason,
+                rework_id="(append failed)",
+            )
+        rework_id = next(
+            (i["id"] for i in store.read() if i.get("review_of") == closing["id"]),
+            "(unknown)",
+        )
+        return LIFECYCLE_REVIEW_REJECT_NUDGE.format(
+            item_id=closing["id"],
+            reason=reason,
+            rework_id=rework_id,
+        )
     current = next((i for i in store.read() if i["status"] == "in_progress"), None)
     if current is not None and verdict == "done":
         # Judge believes the work is done but the agent never closed the

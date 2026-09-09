@@ -59,7 +59,7 @@ def test_on_todo_write_arms_goal_on_begin(monkeypatch) -> None:
     store.transition("begin", "1")
     task_manager.on_todo_write(agent, {"action": "begin", "item_id": "1"})
 
-    assert "set:Complete the task: Build the thing" in calls
+    assert "set:Complete the task per its specification: Build the thing" in calls
     assert "persist" in calls
 
 
@@ -190,7 +190,7 @@ def test_on_todo_write_rearms_when_active_goal_text_changes(monkeypatch) -> None
 
         @property
         def state(self):
-            return SimpleNamespace(status="active", goal="Complete the task: Old content")
+            return SimpleNamespace(status="active", goal="Complete the task per its specification: Old content")
 
         def set(self, text: str) -> None:
             calls.append(f"set:{text}")
@@ -205,7 +205,7 @@ def test_on_todo_write_rearms_when_active_goal_text_changes(monkeypatch) -> None
     store.write([{"id": "1", "content": "Build the thing now", "status": "in_progress"}])
     task_manager.on_todo_write(agent, {})
 
-    assert "set:Complete the task: Build the thing now" in calls
+    assert "set:Complete the task per its specification: Build the thing now" in calls
 
 
 # ── config toggle: tasks.lifecycle.enabled=false disables the lifecycle ─
@@ -304,10 +304,14 @@ def test_verdict_done_with_only_closing_task_keeps_single_finalize(monkeypatch) 
 
 def test_verdict_continue_with_closing_and_in_progress_keeps_both_open(monkeypatch) -> None:
     """A continue verdict must not finalize anything: the premature close
-    returns to in_progress and the begun task stays in_progress.
+    returns to in_progress, the write-path invariant demotes the
+    concurrent in_progress item to pending, and a rework task is
+    appended with the review-failure reason.
 
     The overlap is now constructible only by internal mutation — the
-    begin pivot refuses it — mirroring the verdict-done test.
+    begin pivot refuses it — mirroring the verdict-done test. The
+    rework append rides the write path, so the invariant collapses the
+    mutated overlap to a single current task.
     """
     store = TodoStore()
     store.write(
@@ -324,10 +328,17 @@ def test_verdict_continue_with_closing_and_in_progress_keeps_both_open(monkeypat
     for item in store._items:
         if item["id"] == "2":
             item["status"] = "in_progress"
-    nudge = task_manager.observe_verdict(agent, {"verdict": "continue"})
+    nudge = task_manager.observe_verdict(
+        agent, {"verdict": "continue", "reason": "the fix was reverted"}
+    )
 
-    assert nudge is None
-    assert [i["status"] for i in store.read()] == ["in_progress", "in_progress"]
+    assert nudge is not None
+    assert "the fix was reverted" in nudge
+    assert "rework task" in nudge
+    assert [i["status"] for i in store.read()] == ["in_progress", "pending", "pending"]
+    rework = next(i for i in store.read() if i.get("review_of") == "1")
+    assert rework["source"] == "review"
+    assert "the fix was reverted" in rework["content"]
 
 
 def test_verdict_continue_returns_premature_close_to_in_progress(monkeypatch) -> None:
@@ -338,10 +349,36 @@ def test_verdict_continue_returns_premature_close_to_in_progress(monkeypatch) ->
 
     store.transition("begin", "1")
     store.transition("close", "1")
-    nudge = task_manager.observe_verdict(agent, {"verdict": "continue"})
+    nudge = task_manager.observe_verdict(
+        agent, {"verdict": "continue", "reason": "spec not met"}
+    )
+
+    assert nudge is not None
+    assert "spec not met" in nudge
+    assert store.read()[0]["status"] == "in_progress"
+    rework = next(i for i in store.read() if i.get("review_of") == "1")
+    assert rework["status"] == "pending"
+    assert rework["source"] == "review"
+
+
+def test_verdict_wait_on_closing_task_parks_without_rework(monkeypatch) -> None:
+    """A wait verdict is a park, not a rejection: the task returns to
+    in_progress and no rework task is spawned (the loop resumes
+    automatically when the async thing clears)."""
+    store = TodoStore()
+    _seed(store, "1", "Build the thing")
+    agent = _make_agent(store)
+    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
+
+    store.transition("begin", "1")
+    store.transition("close", "1")
+    nudge = task_manager.observe_verdict(
+        agent, {"verdict": "wait", "reason": "waiting on the build"}
+    )
 
     assert nudge is None
     assert store.read()[0]["status"] == "in_progress"
+    assert not any(i.get("review_of") == "1" for i in store.read())
 
 
 def test_verdict_done_on_open_task_finalizes_with_nudge(monkeypatch) -> None:
