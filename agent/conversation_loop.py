@@ -4624,7 +4624,11 @@ def run_conversation(
                     agent._persist_session(messages, conversation_history)
                     
                     return {
-                        "final_response": "Incomplete REASONING_SCRATCHPAD after 2 retries",
+                        "final_response": (
+                            "I hit a generation error that interrupted my "
+                            "reasoning and couldn't produce a complete answer. "
+                            "Please ask again."
+                        ),
                         "messages": rolled_back_messages,
                         "api_calls": api_call_count,
                         "completed": False,
