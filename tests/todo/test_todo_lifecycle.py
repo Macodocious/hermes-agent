@@ -122,11 +122,15 @@ def test_close_refused_while_another_task_is_closing(store: TodoStore) -> None:
 
     The judge finalizes exactly one closing task per done verdict, so a
     second closing task would strand forever. The refusal names the task
-    already closing so the model can recover.
+    already closing so the model can recover. The overlap is now
+    constructible only by internal mutation — begin refuses it outright
+    — mirroring the verdict tests.
     """
     store.transition("begin", "1")
     store.transition("close", "1")
-    store.transition("begin", "2")
+    for item in store._items:
+        if item["id"] == "2":
+            item["status"] = "in_progress"
     result = store.transition("close", "2")
     assert result["ok"] is False
     assert "already closing" in result["error"]
@@ -161,3 +165,78 @@ def test_reclose_from_closing_is_idempotent(store: TodoStore) -> None:
     assert result["ok"] is True
     assert result["item"]["status"] == "closing"
     assert store.read()[0]["status"] == "closing"
+
+
+def test_begin_refused_while_another_task_is_closing(store: TodoStore) -> None:
+    """Sequential close: begin is refused while a closing task waits on
+    the judge — closing occupies the current-task slot like in_progress.
+
+    This was the root-cause hole: close(1) moved task 1 to closing, then
+    begin(2) succeeded because the pivot rule only guarded in_progress.
+    The overlap stranded the closing task (or forced the PR #66
+    auto-finalize chain). Refusal, naming the closing task.
+    """
+    store.transition("begin", "1")
+    store.transition("close", "1")
+    result = store.transition("begin", "2")
+    assert result["ok"] is False
+    assert "closing" in result["error"]
+    assert "1" in result["error"]
+    # Task 1 stays closing; task 2 stays pending — no in_progress item.
+    statuses = {i["id"]: i["status"] for i in store.read()}
+    assert statuses == {"1": "closing", "2": "pending"}
+
+
+def test_begin_allowed_after_judge_finalizes(store: TodoStore) -> None:
+    """Sequential close: begin is a blocking gate, not a permanent lock.
+
+    Once the judge finalizes the closing task (done verdict second key),
+    the slot frees and the next task can begin. This is the legal flow:
+    begin(1) -> close(1) -> finalize(1) -> begin(2).
+    """
+    store.transition("begin", "1")
+    store.transition("close", "1")
+    store.finalize("1")
+    result = store.transition("begin", "2")
+    assert result["ok"] is True
+    assert result["item"]["status"] == "in_progress"
+    statuses = {i["id"]: i["status"] for i in store.read()}
+    assert statuses == {"1": "completed", "2": "in_progress"}
+
+
+def test_begin_refused_while_closing_named_tasks_sequentially(store: TodoStore) -> None:
+    """Sequential close: the begin refusal names the closing task and
+    holds across repeated attempts until the judge runs.
+
+    Mirrors the production loop: an agent that ignores the refusal and
+    retries begin is refused every time, keeping exactly one current
+    task in the list.
+    """
+    store.transition("begin", "1")
+    store.transition("close", "1")
+    for _ in range(3):
+        result = store.transition("begin", "2")
+        assert result["ok"] is False
+        assert "task 1" in result["error"]
+    statuses = {i["id"]: i["status"] for i in store.read()}
+    assert statuses == {"1": "closing", "2": "pending"}
+
+
+def test_write_demotes_in_progress_when_another_task_is_closing() -> None:
+    """Write-path backstop: the data layer demotes any in_progress item
+    to pending when a closing item occupies the current-task slot.
+
+    begin now refuses the overlap through the transition door, so this
+    constructs the illegal state directly (internal mutation) to prove
+    the invariant also holds on the raw write path — the enforcement is
+    mechanical, not agent compliance.
+    """
+    s = TodoStore()
+    s.write(
+        [
+            {"id": "1", "content": "Closing task", "status": "closing"},
+            {"id": "2", "content": "Sneaky current task", "status": "in_progress"},
+        ]
+    )
+    statuses = {i["id"]: i["status"] for i in s.read()}
+    assert statuses == {"1": "closing", "2": "pending"}
