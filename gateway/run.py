@@ -94,6 +94,7 @@ _TELEGRAM_NOISY_STATUS_RE = re.compile(
     r"|session\s+compressed\s+\d+\s+times"
     r"|rate\s+limited\.\s+waiting\s+\d"
     r"|retrying\s+in\s+\d"
+    r"|model\s+returned\s+empty\s+after\s+tool\s+calls"
     r"|max\s+retries\s+\(\d+\).*(?:trying\s+fallback|exhausted|invalid\s+responses)"
     r"|stream\s+(?:drop|drop\s+mid\s+tool-call).+retry\s+\d"
     r"|stale\s+connections\s+from\s+a\s+previous\s+provider\s+issue"
@@ -21719,6 +21720,48 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             
             # Return final response, or a message if something went wrong
             final_response = result.get("final_response")
+
+            # Deliver captured-but-undelivered content from this run so it is
+            # never lost (mirrors the clarify-path delivery above). With
+            # interim assistant messages disabled (e.g. Discord), assistant
+            # text written in a tool-call turn is captured on
+            # _last_content_with_tools but never transmitted; when the model's
+            # final response is non-empty but different (e.g. "Plan presented
+            # above — awaiting your go-ahead"), that content would otherwise
+            # be silently dropped. Safe against double-delivery: text already
+            # sent through the interim rail is skipped via
+            # _interim_text_was_delivered, and the capture is cleared so the
+            # empty-response fallback cannot re-send it.
+            pending_content = getattr(agent, "_last_content_with_tools", None)
+            if pending_content:
+                agent._last_content_with_tools = None
+                agent._last_content_tools_all_housekeeping = False
+                if _status_adapter:
+                    from agent.redact import redact_sensitive_text
+
+                    visible_pending = agent._strip_think_blocks(pending_content).strip()
+                    visible_pending = redact_sensitive_text(visible_pending, force=True)
+                    # Skip when the final response already carries this text
+                    # (the model echoed it, or it is part of the final answer) —
+                    # delivering both would duplicate the message.
+                    final_visible = agent._strip_think_blocks(final_response or "").strip()
+                    if (
+                        visible_pending
+                        and visible_pending != "(empty)"
+                        and not agent._interim_text_was_delivered(visible_pending)
+                        and visible_pending not in final_visible
+                    ):
+                        safe_schedule_threadsafe(
+                            _status_adapter.send(
+                                _status_chat_id,
+                                visible_pending,
+                                metadata=_status_thread_metadata,
+                            ),
+                            _loop_for_step,
+                            logger=logger,
+                            log_message="Captured-content delivery failed to schedule",
+                        )
+ 
 
             # Extract actual token counts from the agent instance used for this run
             _last_prompt_toks = 0
