@@ -110,7 +110,7 @@ def test_begin_write_arms_goal(dispatched) -> None:
     agent, calls = dispatched
     _invoke(agent, "begin", "1")
 
-    assert "set:Complete the task: Build the thing" in calls
+    assert "set:Complete the task per its specification: Build the thing" in calls
     assert agent._todo_store.read()[0]["status"] == "in_progress"
     assert agent._task_lifecycle_action_issued is True
 
@@ -139,9 +139,17 @@ def test_close_write_with_continue_verdict_returns_to_work(dispatched) -> None:
     _invoke(agent, "begin", "1")
     _invoke(agent, "close", "1")
 
-    nudge = _task_manager().observe_verdict(agent, {"verdict": "continue"})
-    assert nudge is None
+    nudge = _task_manager().observe_verdict(
+        agent, {"verdict": "continue", "reason": "spec not met"}
+    )
+    assert nudge is not None
+    assert "spec not met" in nudge
     assert agent._todo_store.read()[0]["status"] == "in_progress"
+    rework = next(
+        i for i in agent._todo_store.read() if i.get("review_of") == "1"
+    )
+    assert rework["status"] == "pending"
+    assert rework["source"] == "review"
 
 
 def test_pause_write_clears_goal(dispatched) -> None:

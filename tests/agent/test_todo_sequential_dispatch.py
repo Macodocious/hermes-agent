@@ -158,7 +158,7 @@ def test_sequential_begin_transitions_store_and_arms_goal(dispatched) -> None:
     _dispatch_sequential(agent, json.dumps({"action": "begin", "item_id": "1"}))
 
     assert agent._todo_store.read()[0]["status"] == "in_progress"
-    assert "set:Complete the task: Build the thing" in seams["calls"]
+    assert "set:Complete the task per its specification: Build the thing" in seams["calls"]
     assert agent._task_lifecycle_action_issued is True
 
 
