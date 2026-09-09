@@ -25,6 +25,25 @@ memory:
   provider: openviking   # or honcho, mem0, hindsight, holographic, retaindb, byterover, supermemory
 ```
 
+### Disabling provider tools
+
+Every provider tool schema is sent on every API call, so rarely-used provider
+tools still cost tokens each turn. To drop individual tools from the agent's
+tool surface (and from the routing table), list them under `memory.disabled` —
+the same per-item disabled-list pattern as `skills.disabled`:
+
+```yaml
+memory:
+  provider: openviking
+  disabled:
+    - honcho_conclude
+    - honcho_reasoning
+```
+
+A missing or empty `disabled` list disables nothing. Disabled tools no longer
+appear in the model's tool schema and cannot be invoked by the agent; internal
+provider behavior (prefetch, sync, context injection) is unaffected.
+
 ## How It Works
 
 When a memory provider is active, Hermes automatically:

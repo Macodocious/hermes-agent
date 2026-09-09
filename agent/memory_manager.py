@@ -31,7 +31,7 @@ import re
 import inspect
 import threading
 from concurrent.futures import Future, ThreadPoolExecutor, wait
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Set
 
 from agent.memory_provider import MemoryProvider
 from agent.skill_commands import extract_user_instruction_from_skill_message
@@ -45,6 +45,46 @@ logger = logging.getLogger(__name__)
 # running past this window dies with the interpreter.
 _SYNC_DRAIN_TIMEOUT_S = 5.0
 _EXTERNAL_PREFETCH_TIMEOUT_S = 8.0
+
+
+def get_disabled_memory_tool_names() -> Set[str]:
+    """Return names listed under ``memory.disabled`` in config.yaml.
+
+    Mirrors the existing ``skills.disabled`` mechanism
+    (``agent.skill_utils.get_disabled_skill_names``): a missing or empty
+    list disables nothing (fail-open), a bare scalar names a single tool,
+    and any read failure yields an empty set so a config hiccup can never
+    silently strip the whole memory surface.
+    """
+    try:
+        from hermes_constants import get_config_path
+    except Exception:
+        logger.debug("Could not import get_config_path for memory.disabled", exc_info=True)
+        return set()
+    try:
+        import yaml
+
+        config_path = get_config_path()
+        if not config_path.exists():
+            return set()
+        parsed = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    except Exception:
+        logger.debug("Could not read config for memory.disabled", exc_info=True)
+        return set()
+    if not isinstance(parsed, dict):
+        return set()
+    memory_cfg = parsed.get("memory")
+    if not isinstance(memory_cfg, dict):
+        return set()
+    values = memory_cfg.get("disabled")
+    if values is None:
+        return set()
+    if isinstance(values, str):
+        values = [values]
+    try:
+        return {str(v).strip() for v in values if str(v).strip()}
+    except TypeError:
+        return set()
 
 
 def normalize_tool_schema(schema: Any) -> Optional[Dict[str, Any]]:
@@ -429,11 +469,19 @@ class MemoryManager:
         _core_tool_names = set(_HERMES_CORE_TOOLS)
 
         # Index tool names → provider for routing
+        _disabled_memory_tools = get_disabled_memory_tool_names()
         for raw_schema in provider.get_tool_schemas():
             schema = normalize_tool_schema(raw_schema)
             if schema is None:
                 continue
             tool_name = schema["name"]
+            if tool_name in _disabled_memory_tools:
+                logger.info(
+                    "Memory provider '%s' tool '%s' is disabled via "
+                    "memory.disabled; registration skipped.",
+                    provider.name, tool_name,
+                )
+                continue
             if tool_name in _core_tool_names:
                 logger.warning(
                     "Memory provider '%s' tool '%s' shadows a reserved core "
@@ -782,6 +830,7 @@ class MemoryManager:
         from toolsets import _HERMES_CORE_TOOLS
 
         _core_tool_names = set(_HERMES_CORE_TOOLS)
+        _disabled_memory_tools = get_disabled_memory_tool_names()
         schemas = []
         seen = set()
         for provider in self._providers:
@@ -797,6 +846,8 @@ class MemoryManager:
                         continue
                     name = schema["name"]
                     if name in _core_tool_names:
+                        continue
+                    if name in _disabled_memory_tools:
                         continue
                     if name not in seen:
                         schemas.append(schema)

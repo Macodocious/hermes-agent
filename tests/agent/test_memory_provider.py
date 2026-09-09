@@ -353,6 +353,122 @@ class TestMemoryManager:
         r2 = json.loads(mgr.handle_tool_call("ext_tool", {"b": 2}))
         assert r2["handled"] == "ext_tool"
 
+    # -- memory.disabled tool filtering -------------------------------------
+
+    def test_disabled_tools_excluded_from_schema_surface(self, monkeypatch):
+        """Tools listed in memory.disabled never appear in get_all_tool_schemas."""
+        monkeypatch.setattr(
+            "agent.memory_manager.get_disabled_memory_tool_names",
+            lambda: {"ext_tool"},
+        )
+        mgr = MemoryManager()
+        p1 = FakeMemoryProvider("builtin", tools=[
+            {"name": "builtin_tool", "description": "Builtin", "parameters": {}}
+        ])
+        p2 = FakeMemoryProvider("external", tools=[
+            {"name": "ext_tool", "description": "External", "parameters": {}},
+            {"name": "keep_tool", "description": "Kept", "parameters": {}},
+        ])
+        mgr.add_provider(p1)
+        mgr.add_provider(p2)
+
+        names = {s["name"] for s in mgr.get_all_tool_schemas()}
+        assert "ext_tool" not in names
+        assert {"builtin_tool", "keep_tool"} <= names
+
+    def test_disabled_tools_not_routable(self, monkeypatch):
+        """Disabled tools are never registered, so handle_tool_call errors."""
+        monkeypatch.setattr(
+            "agent.memory_manager.get_disabled_memory_tool_names",
+            lambda: {"ext_tool"},
+        )
+        mgr = MemoryManager()
+        p = FakeMemoryProvider("external", tools=[
+            {"name": "ext_tool", "description": "External", "parameters": {}}
+        ])
+        mgr.add_provider(p)
+
+        assert not mgr.has_tool("ext_tool")
+        result = json.loads(mgr.handle_tool_call("ext_tool", {}))
+        assert "error" in result
+
+    def test_disabled_tools_not_injected_into_agent_surface(self, monkeypatch):
+        """inject_memory_provider_tools must not append disabled schemas."""
+        monkeypatch.setattr(
+            "agent.memory_manager.get_disabled_memory_tool_names",
+            lambda: {"ext_tool"},
+        )
+        mgr = MemoryManager()
+        p = FakeMemoryProvider("external", tools=[
+            {"name": "ext_tool", "description": "External", "parameters": {}},
+            {"name": "keep_tool", "description": "Kept", "parameters": {}},
+        ])
+        mgr.add_provider(p)
+        fake_agent = SimpleNamespace(
+            _memory_manager=mgr,
+            enabled_toolsets=None,
+            tools=[],
+            valid_tool_names=set(),
+        )
+
+        added = inject_memory_provider_tools(fake_agent)
+        names = {
+            t.get("function", {}).get("name")
+            for t in fake_agent.tools
+            if isinstance(t, dict)
+        }
+        assert added == 1
+        assert names == {"keep_tool"}
+        assert fake_agent.valid_tool_names == {"keep_tool"}
+
+    def test_no_disabled_config_exposes_all_tools(self, monkeypatch):
+        """An empty disabled list must expose every provider tool."""
+        monkeypatch.setattr(
+            "agent.memory_manager.get_disabled_memory_tool_names",
+            lambda: set(),
+        )
+        mgr = MemoryManager()
+        p = FakeMemoryProvider("external", tools=[
+            {"name": "ext_tool", "description": "External", "parameters": {}}
+        ])
+        mgr.add_provider(p)
+
+        names = {s["name"] for s in mgr.get_all_tool_schemas()}
+        assert names == {"ext_tool"}
+        assert mgr.has_tool("ext_tool")
+
+    def test_disabled_memory_tool_names_reads_real_config(self, tmp_path, monkeypatch):
+        """get_disabled_memory_tool_names parses memory.disabled from config.yaml."""
+        config = tmp_path / "config.yaml"
+        config.write_text(
+            "memory:\n"
+            "  provider: mnemosyne\n"
+            "  disabled:\n"
+            "    - mnemosyne_sleep\n"
+            "    - mnemosyne_triple_add\n"
+        )
+        from hermes_constants import get_config_path
+
+        monkeypatch.setattr("hermes_constants.get_config_path", lambda: config)
+
+        from agent.memory_manager import get_disabled_memory_tool_names
+
+        assert get_disabled_memory_tool_names() == {"mnemosyne_sleep", "mnemosyne_triple_add"}
+
+    def test_disabled_memory_tool_names_scalar_and_empty(self, tmp_path, monkeypatch):
+        """A bare scalar names one tool; a missing key disables nothing."""
+        from agent.memory_manager import get_disabled_memory_tool_names
+
+        scalar = tmp_path / "scalar.yaml"
+        scalar.write_text("memory:\n  disabled: mnemosyne_sleep\n")
+        monkeypatch.setattr("hermes_constants.get_config_path", lambda: scalar)
+        assert get_disabled_memory_tool_names() == {"mnemosyne_sleep"}
+
+        empty = tmp_path / "empty.yaml"
+        empty.write_text("memory:\n  provider: mnemosyne\n")
+        monkeypatch.setattr("hermes_constants.get_config_path", lambda: empty)
+        assert get_disabled_memory_tool_names() == set()
+
     # -- Lifecycle hooks -----------------------------------------------------
 
     def test_on_turn_start(self):
