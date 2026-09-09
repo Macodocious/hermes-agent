@@ -303,19 +303,36 @@ class TodoStore:
     def _enforce_invariants(self, started_id: Optional[str] = None) -> None:
         """Enforce the single-current-task invariant.
 
-        At most one item may be ``in_progress``. The kept item is the task
-        this write started (``started_id``, the same transition
-        ``detect_task_start`` detects) when it is present and
-        ``in_progress``; otherwise the first ``in_progress`` in list order
-        (list order is priority). Any others demote to ``pending``. This
-        makes two ``[>]`` rows impossible at the data layer regardless of
-        what the model writes, and makes a task switch via merge keep the
-        newly started task current.
+        At most one item may be current, where ``closing`` occupies the
+        current-task slot exactly like ``in_progress``: when any item is
+        ``closing``, every ``in_progress`` item demotes to ``pending``.
+        The judge finalizes exactly one closing task per done verdict, so
+        an in_progress task coexisting with a closing one would either
+        strand the closing task or get finalized behind the model's back
+        — the batch-close bug class this lifecycle exists to prevent.
+
+        With no closing item, at most one item may be ``in_progress``.
+        The kept item is the task this write started (``started_id``,
+        the same transition ``detect_task_start`` detects) when it is
+        present and ``in_progress``; otherwise the first ``in_progress``
+        in list order (list order is priority). Any others demote to
+        ``pending``. This makes two ``[>]`` rows impossible at the data
+        layer regardless of what the model writes, and makes a task
+        switch via merge keep the newly started task current.
 
         Renumbering is NOT part of this method: replace-mode writes and
         the load path renumber (see _renumber_items); merge-mode writes
         keep existing ids stable so merge-by-id stays safe.
         """
+        if any(item["status"] == "closing" for item in self._items):
+            # A closing task fills the current-task slot; demote any
+            # in_progress item so the write path can never re-create the
+            # closing + in_progress overlap (defense-in-depth behind the
+            # begin refusal in transition).
+            for item in self._items:
+                if item["status"] == "in_progress":
+                    item["status"] = "pending"
+            return
         current_id = started_id
         if current_id is not None:
             current = next(
@@ -451,8 +468,9 @@ class TodoStore:
         ``close`` / ``escalate`` move a single item between lifecycle
         statuses per ``_LIFECYCLE_TRANSITIONS``; anything else is refused
         with an error dict. ``begin`` is refused while another task is
-        ``in_progress`` (the pivot rule: the agent must pause, close, or
-        escalate the current task before starting a new one). ``close``
+        ``in_progress`` or ``closing`` (the pivot rule: the agent must
+        pause, close, or escalate the current task — and let the judge
+        finalize a closing one — before starting a new one). ``close``
         moves the task to ``closing`` — the judge's ``done`` verdict is the
         second key that finalizes it via ``finalize`` (internal, not
         model-facing).
@@ -493,10 +511,22 @@ class TodoStore:
                     }
         if action == "begin":
             # Pivot rule: a new task cannot start while another is
-            # current. The agent must pause, close, or escalate the
-            # current task first — refusal, not silent demotion.
+            # current. A closing task occupies the current-task slot
+            # just like in_progress — the judge's done verdict is its
+            # second key — so begin is refused against either, keeping
+            # the lifecycle strictly sequential. Refusal, not silent
+            # demotion.
             for other in self._items:
-                if other is not item and other["status"] == "in_progress":
+                if other is not item and other["status"] in ("in_progress", "closing"):
+                    if other["status"] == "closing":
+                        return {
+                            "ok": False,
+                            "error": (
+                                f"cannot begin task {item_id}: task {other['id']} "
+                                "is closing — wait for the judge to finalize it "
+                                "before starting the next task"
+                            ),
+                        }
                     return {
                         "ok": False,
                         "error": (

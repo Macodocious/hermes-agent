@@ -249,10 +249,15 @@ def test_verdict_done_finalizes_closing_task(monkeypatch) -> None:
     assert store.read()[0]["status"] == "completed"
 
 
-def test_verdict_done_finalizes_closing_and_in_progress_chain(monkeypatch) -> None:
-    """A done verdict must complete the chain: the closing task AND the
-    in_progress task the goal re-armed to (the premature-begin race that
-    stranded task 7 in production)."""
+def test_verdict_done_finalizes_closing_task_only(monkeypatch) -> None:
+    """A done verdict finalizes exactly the closing task — no chain.
+
+    The begin pivot and the write-path invariant make a concurrent
+    in_progress task impossible through the tool, so the judge's done
+    verdict is the second key for the closing task alone (the PR #66
+    overlap chain is removed). This constructs the old overlap directly
+    (internal mutation) to prove finalization touches nothing else.
+    """
     store = TodoStore()
     store.write(
         [
@@ -265,12 +270,20 @@ def test_verdict_done_finalizes_closing_and_in_progress_chain(monkeypatch) -> No
 
     store.transition("begin", "1")
     store.transition("close", "1")
-    store.transition("begin", "2")
+    # Old overlap: an in_progress task coexisting with the closing one
+    # (constructible only by internal mutation now; both public doors
+    # refuse it).
+    for item in store._items:
+        if item["id"] == "2":
+            item["status"] = "in_progress"
     nudge = task_manager.observe_verdict(agent, {"verdict": "done", "reason": "both done"})
 
-    assert nudge is not None
-    assert "close" in nudge
-    assert [i["status"] for i in store.read()] == ["completed", "completed"]
+    assert nudge is None
+    # The closing task finalized; the overlapped in_progress task was NOT
+    # auto-finalized — nothing happens behind the model's back. The
+    # write-path backstop demotes it on the next write, and the model
+    # begins it explicitly after the judge clears.
+    assert [i["status"] for i in store.read()] == ["completed", "in_progress"]
 
 
 def test_verdict_done_with_only_closing_task_keeps_single_finalize(monkeypatch) -> None:
@@ -291,7 +304,11 @@ def test_verdict_done_with_only_closing_task_keeps_single_finalize(monkeypatch) 
 
 def test_verdict_continue_with_closing_and_in_progress_keeps_both_open(monkeypatch) -> None:
     """A continue verdict must not finalize anything: the premature close
-    returns to in_progress and the begun task stays in_progress."""
+    returns to in_progress and the begun task stays in_progress.
+
+    The overlap is now constructible only by internal mutation — the
+    begin pivot refuses it — mirroring the verdict-done test.
+    """
     store = TodoStore()
     store.write(
         [
@@ -304,7 +321,9 @@ def test_verdict_continue_with_closing_and_in_progress_keeps_both_open(monkeypat
 
     store.transition("begin", "1")
     store.transition("close", "1")
-    store.transition("begin", "2")
+    for item in store._items:
+        if item["id"] == "2":
+            item["status"] = "in_progress"
     nudge = task_manager.observe_verdict(agent, {"verdict": "continue"})
 
     assert nudge is None
