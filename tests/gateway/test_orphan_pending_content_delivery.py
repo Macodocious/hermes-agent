@@ -85,6 +85,7 @@ class OrphanPendingContentAgent:
     session_key = "agent:main:telegram:group:-1001:17585"
     pending_content = None
     pre_delivered = None
+    interrupted = False
     final_response = "Plan presented above \u2014 awaiting your go-ahead"
     instances = []
 
@@ -115,6 +116,7 @@ class OrphanPendingContentAgent:
             "final_response": type(self).final_response,
             "messages": [],
             "api_calls": 1,
+            "interrupted": type(self).interrupted,
         }
 
 
@@ -157,6 +159,7 @@ def _reset_agent_knobs():
     OrphanPendingContentAgent.instances = []
     OrphanPendingContentAgent.pending_content = None
     OrphanPendingContentAgent.pre_delivered = None
+    OrphanPendingContentAgent.interrupted = False
     OrphanPendingContentAgent.final_response = (
         "Plan presented above \u2014 awaiting your go-ahead"
     )
@@ -328,4 +331,35 @@ async def test_no_captured_content_sends_nothing(monkeypatch, tmp_path):
     assert result["final_response"] == (
         "Plan presented above \u2014 awaiting your go-ahead"
     )
+    assert adapter.sent == []
+
+
+@pytest.mark.asyncio
+async def test_captured_content_not_delivered_when_run_interrupted(
+    monkeypatch, tmp_path
+):
+    """A run killed mid-stream (gate denial, /stop) must not flush its
+    partial narration as a standalone message."""
+    OrphanPendingContentAgent.pending_content = (
+        "**4. Rewrite the procedures in rules/01** \u2014 per the writing skill's pattern:"
+    )
+    OrphanPendingContentAgent.interrupted = True
+    OrphanPendingContentAgent.final_response = (
+        "Operation interrupted."
+    )
+
+    _install_fakes(monkeypatch, tmp_path)
+    adapter = OrphanCaptureAdapter()
+    runner = _make_runner(adapter)
+
+    result = await runner._run_agent(
+        message="build it",
+        context_prompt="",
+        history=[],
+        source=_source(),
+        session_id="sess-1",
+        session_key=OrphanPendingContentAgent.session_key,
+    )
+
+    assert result["final_response"] == "Operation interrupted."
     assert adapter.sent == []
