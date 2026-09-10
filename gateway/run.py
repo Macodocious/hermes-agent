@@ -21731,9 +21731,12 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             # be silently dropped. Safe against double-delivery: text already
             # sent through the interim rail is skipped via
             # _interim_text_was_delivered, and the capture is cleared so the
-            # empty-response fallback cannot re-send it.
+            # empty-response fallback cannot re-send it. Interrupted runs are
+            # excluded: a turn killed mid-stream (gate denial, /stop) leaves
+            # partial narration on the capture, and flushing it would surface
+            # text the model never finished.
             pending_content = getattr(agent, "_last_content_with_tools", None)
-            if pending_content:
+            if pending_content and not result.get("interrupted"):
                 agent._last_content_with_tools = None
                 agent._last_content_tools_all_housekeeping = False
                 if _status_adapter:
