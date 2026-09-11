@@ -468,12 +468,11 @@ class TodoStore:
         ``close`` / ``escalate`` move a single item between lifecycle
         statuses per ``_LIFECYCLE_TRANSITIONS``; anything else is refused
         with an error dict. ``begin`` is refused while another task is
-        ``in_progress`` or ``closing`` (the pivot rule: the agent must
-        pause, close, or escalate the current task — and let the judge
-        finalize a closing one — before starting a new one). ``close``
-        moves the task to ``closing`` — the judge's ``done`` verdict is the
-        second key that finalizes it via ``finalize`` (internal, not
-        model-facing).
+        ``in_progress`` (one task executing); a ``closing`` task no longer
+        blocks begin — the R4 pivot relaxation, safe because execution is
+        gated on the user's verdict. ``close`` moves the task to
+        ``closing`` — the judge's ``done`` verdict is the second key that
+        finalizes it via ``finalize`` (internal, not model-facing).
 
         Returns ``{"ok": True, "item": {...}}`` on success or
         ``{"ok": False, "error": "..."}`` on refusal. Never raises.
@@ -510,23 +509,15 @@ class TodoStore:
                         ),
                     }
         if action == "begin":
-            # Pivot rule: a new task cannot start while another is
-            # current. A closing task occupies the current-task slot
-            # just like in_progress — the judge's done verdict is its
-            # second key — so begin is refused against either, keeping
-            # the lifecycle strictly sequential. Refusal, not silent
-            # demotion.
+            # Pivot rule (R4): the sequential lock is "one task executing",
+            # not "one task in flight". Execution is gated on the user's
+            # verdict, so beginning the next item while the previous is
+            # closing is safe — the closing task occupies only the judge
+            # slot and the verdict flow finalizes it independently.
+            # Another task still in_progress is still refused: it is the
+            # one executing.
             for other in self._items:
-                if other is not item and other["status"] in ("in_progress", "closing"):
-                    if other["status"] == "closing":
-                        return {
-                            "ok": False,
-                            "error": (
-                                f"cannot begin task {item_id}: task {other['id']} "
-                                "is closing — wait for the judge to finalize it "
-                                "before starting the next task"
-                            ),
-                        }
+                if other is not item and other["status"] == "in_progress":
                     return {
                         "ok": False,
                         "error": (
@@ -1048,7 +1039,7 @@ TODO_SCHEMA = {
         "directly.\n\n"
         "Each item: {id: string, content: string, "
         "status: pending|in_progress|completed|cancelled, "
-        "source?: user}\n"
+        "source?: user, plan?: string}\n"
         "Ids are store-assigned: replace-mode writes renumber the list to "
         "1..N in list order; merge-mode writes keep existing ids stable and "
         "assign new items the next integer. Pass any unique placeholder "
@@ -1094,6 +1085,18 @@ TODO_SCHEMA = {
                             "description": (
                                 "Provenance tag. Only 'user' is recognized; "
                                 "omit for agent-authored items."
+                            )
+                        },
+                        "plan": {
+                            "type": "string",
+                            "description": (
+                                "Optional plan file path produced by "
+                                "writing_plan for this task. When set, the "
+                                "plan is the approved work contract: the "
+                                "judge evaluates the task against the plan, "
+                                "the audit checks work advances it, and the "
+                                "post-close probe verifies against its "
+                                "attached spec."
                             )
                         }
                     },

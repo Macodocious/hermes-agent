@@ -47,7 +47,7 @@ def test_on_todo_write_arms_goal_on_begin(monkeypatch) -> None:
         def __init__(self, **kwargs):
             calls.append("init")
 
-        def set(self, text: str) -> None:
+        def set(self, text: str, **kwargs) -> None:
             calls.append(f"set:{text}")
 
         def clear(self) -> None:
@@ -63,6 +63,75 @@ def test_on_todo_write_arms_goal_on_begin(monkeypatch) -> None:
     assert "persist" in calls
 
 
+def test_on_todo_write_holds_authorization_on_plan_begin(monkeypatch) -> None:
+    """A plan-carrying task stamps the execution-authorization hold on begin."""
+    store = TodoStore()
+    store.write(
+        [
+            {
+                "id": "1",
+                "content": "Build the thing",
+                "status": "pending",
+                "plan": "/tmp/some/plan.md",
+            }
+        ]
+    )
+    agent = _make_agent(store)
+    calls: list[str] = []
+
+    class FakeMgr:
+        def __init__(self, **kwargs):
+            calls.append("init")
+
+        def set(self, text: str, **kwargs) -> None:
+            calls.append(f"set:{text}")
+
+        def hold_authorization(self) -> None:
+            calls.append("hold_authorization")
+
+        def clear(self) -> None:
+            calls.append("clear")
+
+    monkeypatch.setattr(task_manager, "_load_goal_manager", lambda a: FakeMgr())
+    monkeypatch.setattr(task_manager, "_persist", lambda a: calls.append("persist"))
+
+    store.transition("begin", "1")
+    task_manager.on_todo_write(agent, {"action": "begin", "item_id": "1"})
+
+    assert "set:Complete the task per its specification: Build the thing" in calls
+    assert "hold_authorization" in calls
+
+
+def test_on_todo_write_does_not_hold_without_plan(monkeypatch) -> None:
+    """A plain begin (no plan ref) must not stamp the authorization hold."""
+    store = TodoStore()
+    _seed(store, "1", "Build the thing")
+    agent = _make_agent(store)
+    calls: list[str] = []
+
+    class FakeMgr:
+        def __init__(self, **kwargs):
+            calls.append("init")
+
+        def set(self, text: str, **kwargs) -> None:
+            calls.append(f"set:{text}")
+
+        def hold_authorization(self) -> None:
+            calls.append("hold_authorization")
+
+        def clear(self) -> None:
+            calls.append("clear")
+
+    monkeypatch.setattr(task_manager, "_load_goal_manager", lambda a: FakeMgr())
+    monkeypatch.setattr(task_manager, "_persist", lambda a: calls.append("persist"))
+
+    store.transition("begin", "1")
+    task_manager.on_todo_write(agent, {"action": "begin", "item_id": "1"})
+
+    assert "set:Complete the task per its specification: Build the thing" in calls
+    assert "hold_authorization" not in calls
+
+
 def test_on_todo_write_clears_goal_when_no_task_open(monkeypatch) -> None:
     store = TodoStore()
     _seed(store, "1", "Build the thing")
@@ -73,7 +142,7 @@ def test_on_todo_write_clears_goal_when_no_task_open(monkeypatch) -> None:
         def __init__(self, **kwargs):
             calls.append("init")
 
-        def set(self, text: str) -> None:
+        def set(self, text: str, **kwargs) -> None:
             calls.append("set")
 
         def clear(self) -> None:
@@ -115,7 +184,7 @@ def test_on_todo_write_stays_armed_while_close_in_flight(monkeypatch) -> None:
         def __init__(self, **kwargs):
             calls.append("init")
 
-        def set(self, text: str) -> None:
+        def set(self, text: str, **kwargs) -> None:
             calls.append("set")
 
         def clear(self) -> None:
@@ -155,7 +224,7 @@ def test_on_todo_write_does_not_rearm_identical_active_goal(monkeypatch) -> None
         def state(self):
             return self._state
 
-        def set(self, text: str) -> None:
+        def set(self, text: str, **kwargs) -> None:
             calls.append(f"set:{text}")
             # set() mirrors GoalManager: a fresh active goal with the text.
             self._state = SimpleNamespace(status="active", goal=text)
@@ -192,7 +261,7 @@ def test_on_todo_write_rearms_when_active_goal_text_changes(monkeypatch) -> None
         def state(self):
             return SimpleNamespace(status="active", goal="Complete the task per its specification: Old content")
 
-        def set(self, text: str) -> None:
+        def set(self, text: str, **kwargs) -> None:
             calls.append(f"set:{text}")
 
         def clear(self) -> None:
@@ -238,6 +307,79 @@ def test_disabled_lifecycle_short_circuits_hooks(monkeypatch) -> None:
 def test_verdict_done_finalizes_closing_task(monkeypatch) -> None:
     store = TodoStore()
     _seed(store, "1", "Build the thing")
+    agent = _make_agent(store)
+    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
+
+    store.transition("begin", "1")
+    store.transition("close", "1")
+    nudge = task_manager.observe_verdict(agent, {"verdict": "done"})
+
+    assert nudge is None
+    assert store.read()[0]["status"] == "completed"
+
+
+def test_verdict_done_plan_sibling_pulls_next(monkeypatch) -> None:
+    """R3 plan-level completion: finalizing a plan-carrying item while a
+    sibling of the same plan remains must return a plan-continuation
+    nudge naming the next sibling — the plan, not the todo list, is the
+    unit of approved work (kills the 'items 4-7 still pending' gap)."""
+    store = TodoStore()
+    plan_ref = "/tmp/some/plan.md"
+    store.write(
+        [
+            {"id": "1", "content": "Build the thing", "status": "pending", "plan": plan_ref},
+            {"id": "2", "content": "Ship the thing", "status": "pending", "plan": plan_ref},
+        ]
+    )
+    agent = _make_agent(store)
+    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
+
+    store.transition("begin", "1")
+    store.transition("close", "1")
+    nudge = task_manager.observe_verdict(agent, {"verdict": "done"})
+
+    assert store.read()[0]["status"] == "completed"
+    # The sibling is NOT silently begun — the nudge pulls the agent back.
+    assert store.read()[1]["status"] == "pending"
+    assert nudge is not None
+    assert "action=begin" in nudge
+    assert "item_id=2" in nudge
+    assert "Ship the thing" in nudge
+
+
+def test_verdict_done_plan_sibling_pulls_next_auto_finalize(monkeypatch) -> None:
+    """R3 on the auto-finalize path: a done verdict on an OPEN plan-carrying
+    item finalizes it and returns the plan-continuation nudge instead of
+    the plain finalize nudge."""
+    store = TodoStore()
+    plan_ref = "/tmp/some/plan.md"
+    store.write(
+        [
+            {"id": "1", "content": "Build the thing", "status": "pending", "plan": plan_ref},
+            {"id": "2", "content": "Ship the thing", "status": "pending", "plan": plan_ref},
+        ]
+    )
+    agent = _make_agent(store)
+    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
+
+    store.transition("begin", "1")
+    nudge = task_manager.observe_verdict(agent, {"verdict": "done", "reason": "judge says done"})
+
+    assert store.read()[0]["status"] == "completed"
+    assert store.read()[1]["status"] == "pending"
+    assert nudge is not None
+    assert "action=begin" in nudge
+    assert "item_id=2" in nudge
+
+
+def test_verdict_done_last_plan_item_no_nudge(monkeypatch) -> None:
+    """R3 edge: finalizing the LAST plan-carrying item (no siblings left)
+    returns no plan nudge — the plan is complete."""
+    store = TodoStore()
+    plan_ref = "/tmp/some/plan.md"
+    store.write(
+        [{"id": "1", "content": "Build the thing", "status": "pending", "plan": plan_ref}]
+    )
     agent = _make_agent(store)
     monkeypatch.setattr(task_manager, "_persist", lambda a: None)
 
