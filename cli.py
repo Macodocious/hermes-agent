@@ -9633,6 +9633,47 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         except Exception:
             _bg_procs = None
 
+        # Wait-bypass (lifecycle only): a real user message releases a parked
+        # lifecycle goal so the judge evaluates the fresh exchange instead of
+        # staying parked forever (mirrors gateway/run.py). A synthetic
+        # goal-continuation turn must NOT release the park — its head is the
+        # single shared GOAL_CONTINUATION_MARKER — or the park could never
+        # hold across the nudge the loop enqueues when it stops.
+        try:
+            _is_lifecycle = bool(getattr(mgr.state, "lifecycle", False))
+        except Exception:
+            _is_lifecycle = False
+        _turn_was_continuation = False
+        try:
+            from hermes_cli.goals import GOAL_CONTINUATION_MARKER as _cont_marker
+        except Exception:  # pragma: no cover - defensive
+            _cont_marker = "[Continuing toward your standing goal]\nGoal:"
+        try:
+            # Continuation prompts are dispatched through the same queue and
+            # chat() path as real messages, so the marker on the head of the
+            # last user-role message is the only discriminator (same constant
+            # the gateway consumes — never a drifted private copy).
+            for _prev_msg in reversed(self.conversation_history or []):
+                if _prev_msg.get("role") != "user":
+                    continue
+                _prev_content = _prev_msg.get("content", "")
+                if isinstance(_prev_content, list):
+                    _prev_content = " ".join(
+                        p.get("text", "")
+                        for p in _prev_content
+                        if isinstance(p, dict)
+                    )
+                _turn_was_continuation = str(_prev_content or "").startswith(_cont_marker)
+                break
+        except Exception:
+            _turn_was_continuation = False
+        if _is_lifecycle and not _turn_was_continuation:
+            try:
+                if mgr.is_waiting():
+                    mgr.stop_waiting()
+            except Exception as _wait_exc:
+                logging.debug("goal wait-bypass failed: %s", _wait_exc)
+
         decision = mgr.evaluate_after_turn(
             last_response,
             user_initiated=True,

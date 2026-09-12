@@ -73,9 +73,15 @@ DEFAULT_MAX_CONSECUTIVE_PARSE_FAILURES = 3
 DEFAULT_MAX_CONSECUTIVE_TRANSPORT_FAILURES = 5
 
 
+# Single source of truth for the head of every synthetic goal-continuation
+# prompt. Consumers that need to distinguish continuation turns from real
+# user messages (gateway/run.py ``_is_goal_continuation_event``) check
+# against THIS constant so the producer and the discriminator cannot drift
+# apart again (see the partial-string audit).
+GOAL_CONTINUATION_MARKER = "[Continuing toward your standing goal]\nGoal:"
+
 CONTINUATION_PROMPT_TEMPLATE = (
-    "[Continuing toward your standing goal]\n"
-    "Goal: {goal}\n\n"
+    GOAL_CONTINUATION_MARKER + " {goal}\n\n"
     "Continue working toward this goal. Take the next concrete step. "
     "If you believe the goal is complete, state so explicitly and stop. "
     "If you are blocked and need input from the user, say so clearly and stop."
@@ -86,8 +92,7 @@ CONTINUATION_PROMPT_TEMPLATE = (
 # to break, what's in scope, and when to stop and ask — so it targets the
 # verification surface instead of declaring victory loosely.
 CONTINUATION_PROMPT_WITH_CONTRACT_TEMPLATE = (
-    "[Continuing toward your standing goal]\n"
-    "Goal: {goal}\n\n"
+    GOAL_CONTINUATION_MARKER + " {goal}\n\n"
     "Completion contract:\n"
     "{contract_block}\n\n"
     "Continue working toward the outcome above. Take the next concrete step. "
@@ -102,8 +107,7 @@ CONTINUATION_PROMPT_WITH_CONTRACT_TEMPLATE = (
 # to the agent verbatim so it sees what to target on the next turn,
 # and surfaced to the judge so the verdict considers them too.
 CONTINUATION_PROMPT_WITH_SUBGOALS_TEMPLATE = (
-    "[Continuing toward your standing goal]\n"
-    "Goal: {goal}\n\n"
+    GOAL_CONTINUATION_MARKER + " {goal}\n\n"
     "Additional criteria the user added mid-loop:\n"
     "{subgoals_block}\n\n"
     "Continue working toward the goal AND all additional criteria. Take "
@@ -428,6 +432,15 @@ class GoalState:
     # state itself; goal text is never parsed for this. Backwards-
     # compatible: old state_meta rows load with False (native /goal).
     lifecycle: bool = False
+    # Awaiting-user-input park (Bug 2): set when the goal judge returns a
+    # ``blocked`` done verdict — the agent has parked on a human decision
+    # and its final message is a question. Handled like a wait barrier:
+    # ``evaluate_after_turn`` short-circuits to should_continue=False so no
+    # synthetic continuation is enqueued (and therefore no "⚡ Stopped"
+    # busy-ack can fire on the user's answer). Distinct from the
+    # pid/session/time barriers in that ONLY a real user turn satisfies it.
+    # Backwards-compatible: old state_meta rows load with False.
+    awaiting_user_input: bool = False
     paused_reason: Optional[str] = None       # why we auto-paused (budget, etc.)
     consecutive_parse_failures: int = 0       # judge-output parse failures in a row
     # Transport failures are API/auth/network errors.  Broken API keys return
@@ -494,6 +507,7 @@ class GoalState:
             awaiting_authorization=bool(data.get("awaiting_authorization", False)),
             awaiting_authorization_armed_at=float(data.get("awaiting_authorization_armed_at", 0.0) or 0.0),
             lifecycle=bool(data.get("lifecycle", False)),
+            awaiting_user_input=bool(data.get("awaiting_user_input", False)),
             paused_reason=data.get("paused_reason"),
             consecutive_parse_failures=int(data.get("consecutive_parse_failures", 0) or 0),
             consecutive_transport_failures=int(data.get("consecutive_transport_failures", 0) or 0),
@@ -1231,6 +1245,7 @@ class GoalManager:
         self._state.waiting_until = 0.0
         self._state.waiting_reason = None
         self._state.waiting_since = 0.0
+        self._state.awaiting_user_input = False
         save_goal(self.session_id, self._state)
         return self._state
 
@@ -1245,6 +1260,7 @@ class GoalManager:
         self._state.waiting_until = 0.0
         self._state.waiting_reason = None
         self._state.waiting_since = 0.0
+        self._state.awaiting_user_input = False
         if reset_budget:
             self._state.turns_used = 0
         save_goal(self.session_id, self._state)
@@ -1437,14 +1453,15 @@ class GoalManager:
         return self._state
 
     def stop_waiting(self) -> bool:
-        """Clear any active wait barrier (pid / session / time). Returns True
-        if one was cleared."""
+        """Clear any active wait barrier (pid / session / time / awaiting
+        user input). Returns True if one was cleared."""
         if self._state is None:
             return False
         if (
             self._state.waiting_on_pid is None
             and self._state.waiting_on_session is None
             and not self._state.waiting_until
+            and not self._state.awaiting_user_input
         ):
             return False
         self._state.waiting_on_pid = None
@@ -1452,6 +1469,7 @@ class GoalManager:
         self._state.waiting_until = 0.0
         self._state.waiting_reason = None
         self._state.waiting_since = 0.0
+        self._state.awaiting_user_input = False
         save_goal(self.session_id, self._state)
         return True
 
@@ -1460,13 +1478,17 @@ class GoalManager:
 
         Session barrier: active until the process exits or its watch-pattern
         trigger fires. Pid barrier: active while the process is alive. Time
-        barrier: active until the deadline passes. Side effect: a satisfied
-        barrier is cleared here (lazy auto-clear) so the next evaluation
-        resumes normal judging.
+        barrier: active until the deadline passes. Awaiting-user-input park
+        (Bug 2): active until a real user turn clears it via
+        ``stop_waiting`` — there is no process or deadline to watch.
+        Side effect: a satisfied pid/session/time barrier is cleared here
+        (lazy auto-clear) so the next evaluation resumes normal judging.
         """
         s = self._state
         if s is None:
             return False
+        if s.awaiting_user_input:
+            return True
         if s.waiting_on_session is not None:
             if _session_waiting(s.waiting_on_session):
                 return True
@@ -1527,6 +1549,18 @@ class GoalManager:
         # deadline that hasn't passed), quiesce — do NOT burn a turn or call
         # the judge. Resumes automatically once the barrier clears.
         if self.is_waiting():
+            if state.awaiting_user_input:
+                # Bug 2 park: no process or deadline to name — the loop is
+                # quiesced until a real user turn releases the barrier.
+                reason = state.waiting_reason or "awaiting user input"
+                return {
+                    "status": "active",
+                    "should_continue": False,
+                    "continuation_prompt": None,
+                    "verdict": "waiting",
+                    "reason": reason,
+                    "message": f"⏳ Goal parked — awaiting user input: {reason}",
+                }
             if state.waiting_on_session is not None:
                 tgt = f"session {state.waiting_on_session}"
             elif state.waiting_on_pid is not None:
@@ -1646,6 +1680,36 @@ class GoalManager:
             }
 
         if verdict == "done":
+            # Blocked-awaiting-input (Bug 2, task-lifecycle goals ONLY): the
+            # judge says the goal is done ONLY because the agent parked on a
+            # human decision (its final message is a question). That is a PARK,
+            # not an achievement: set the awaiting_user_input barrier instead of
+            # flipping the goal to done, so the loop quiesces
+            # (should_continue=False, nothing enqueued) and the user's next real
+            # turn releases the barrier via the lifecycle wait-bypass and
+            # re-judges. No completion line ships — the agent's own question is
+            # the final response. ``verdict``/``blocked`` are preserved so the
+            # gateway's forced-clarify path and the todo two-key close can see
+            # exactly what happened.
+            #
+            # Scoped to ``lifecycle``: the park's release path
+            # (gateway wait-bypass) is lifecycle-gated, so parking a native
+            # ``/goal`` blocked verdict would strand it forever. Native goals
+            # keep the base behavior below (done + "Goal achieved").
+            if blocked and getattr(state, "lifecycle", False):
+                state.awaiting_user_input = True
+                state.waiting_reason = (reason or "").strip() or None
+                state.waiting_since = time.time()
+                save_goal(self.session_id, state)
+                return {
+                    "status": "active",
+                    "should_continue": False,
+                    "continuation_prompt": None,
+                    "verdict": "done",
+                    "reason": reason,
+                    "blocked": True,
+                    "message": "",
+                }
             state.status = "done"
             save_goal(self.session_id, state)
             return {
@@ -1941,6 +2005,7 @@ __all__ = [
     "CONTINUATION_PROMPT_TEMPLATE",
     "CONTINUATION_PROMPT_WITH_SUBGOALS_TEMPLATE",
     "CONTINUATION_PROMPT_WITH_CONTRACT_TEMPLATE",
+    "GOAL_CONTINUATION_MARKER",
     "JUDGE_USER_PROMPT_TEMPLATE",
     "JUDGE_USER_PROMPT_WITH_SUBGOALS_TEMPLATE",
     "JUDGE_USER_PROMPT_WITH_CONTRACT_TEMPLATE",

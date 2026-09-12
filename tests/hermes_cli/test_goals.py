@@ -1195,6 +1195,117 @@ class TestWaitBarrier:
 
 
 # ──────────────────────────────────────────────────────────────────────
+# Blocked-awaiting-input park (Bug 2) — a blocked done verdict parks the
+# lifecycle goal instead of finalizing it
+# ──────────────────────────────────────────────────────────────────────
+
+
+class TestBlockedAwaitingInputPark:
+    """A judge ``done`` verdict carrying ``blocked=True`` on a task-lifecycle
+    goal must PARK the loop on the ``awaiting_user_input`` barrier — not mark
+    the goal done and not enqueue anything — so the agent's question ships as
+    the final response and the user's next real turn releases the park and
+    re-judges. Native ``/goal`` blocked verdicts keep the base behavior."""
+
+    def test_blocked_done_parks_lifecycle_goal(self, hermes_home):
+        from hermes_cli import goals
+        from hermes_cli.goals import GoalManager
+
+        mgr = GoalManager(session_id="blocked-park", default_max_turns=10)
+        mgr.set(
+            "Complete the task per its specification: resolve the merge",
+            lifecycle=True,
+        )
+        with patch.object(
+            goals, "judge_goal",
+            return_value=("done", "blocked awaiting user direction", False, None, False, True),
+        ):
+            decision = mgr.evaluate_after_turn(
+                "Blocked: option 1 or option 2?",
+                user_initiated=True,
+            )
+
+        # Parked, not finalized.
+        assert decision["verdict"] == "done"
+        assert decision["blocked"] is True
+        assert decision["should_continue"] is False
+        assert decision["continuation_prompt"] is None
+        assert decision["message"] == ""  # no "✓ Goal achieved"
+        assert mgr.state.status == "active"  # NOT "done"
+        assert mgr.state.awaiting_user_input is True
+        assert mgr.is_waiting() is True
+
+        # Next turn while parked: judge must NOT be called (no turn burned).
+        judge = MagicMock()
+        with patch.object(goals, "judge_goal", judge):
+            d2 = mgr.evaluate_after_turn("still parked", user_initiated=True)
+        judge.assert_not_called()
+        assert d2["verdict"] == "waiting"
+        assert d2["should_continue"] is False
+
+    def test_real_user_turn_releases_park(self, hermes_home):
+        """The lifecycle wait-bypass clears the park so the next evaluate
+        re-judges — mirrors gateway/run.py ``mgr.stop_waiting()``."""
+        from hermes_cli import goals
+        from hermes_cli.goals import GoalManager
+
+        mgr = GoalManager(session_id="blocked-release", default_max_turns=10)
+        mgr.set("Complete the task per its specification: ship it", lifecycle=True)
+        with patch.object(
+            goals, "judge_goal",
+            return_value=("done", "blocked", False, None, False, True),
+        ):
+            mgr.evaluate_after_turn("Which env?", user_initiated=True)
+        assert mgr.is_waiting() is True
+
+        # A real user turn releases the barrier (what run.py/cli.py do).
+        assert mgr.stop_waiting() is True
+        assert mgr.state.awaiting_user_input is False
+        assert mgr.is_waiting() is False
+
+        # Now the judge runs again.
+        with patch.object(
+            goals, "judge_goal",
+            return_value=("continue", "keep going", False, None, False, False),
+        ) as judge:
+            d = mgr.evaluate_after_turn("Use prod.", user_initiated=True)
+        judge.assert_called_once()
+        assert d["should_continue"] is True
+
+    def test_native_goal_blocked_verdict_keeps_base_behavior(self, hermes_home):
+        """A blocked done verdict on a NON-lifecycle goal must keep the base
+        behavior (done + message) — the park's release path is lifecycle-gated,
+        so parking a native goal would strand it forever."""
+        from hermes_cli import goals
+        from hermes_cli.goals import GoalManager
+
+        mgr = GoalManager(session_id="native-blocked", default_max_turns=10)
+        mgr.set("Complete the task per its specification: native goal")  # lifecycle defaults False
+        assert getattr(mgr.state, "lifecycle", False) is False
+        with patch.object(
+            goals, "judge_goal",
+            return_value=("done", "blocked awaiting input", False, None, False, True),
+        ):
+            decision = mgr.evaluate_after_turn("Question?", user_initiated=True)
+
+        assert decision["status"] == "done"
+        assert mgr.state.status == "done"
+        assert mgr.state.awaiting_user_input is False
+        assert mgr.is_waiting() is False
+        assert decision["message"]  # the "✓ Goal achieved" line ships
+
+    def test_park_flag_round_trips_through_json(self, hermes_home):
+        from hermes_cli.goals import GoalState
+
+        st = GoalState(goal="g", status="active", awaiting_user_input=True)
+        restored = GoalState.from_json(st.to_json())
+        assert restored.awaiting_user_input is True
+        # Backwards-compat: an old row with no flag loads as False.
+        legacy = json.dumps({"goal": "old", "status": "active"})
+        assert GoalState.from_json(legacy).awaiting_user_input is False
+
+
+# ──────────────────────────────────────────────────────────────────────
 # Judge-driven auto-wait — the judge parks the loop on its own
 # ──────────────────────────────────────────────────────────────────────
 

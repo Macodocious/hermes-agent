@@ -166,8 +166,15 @@ def append_notes_to_multimodal_content(content: Any, notes: str) -> bool:
 # Goal-loop continuation prompts (hermes_cli/goals.py) are synthetic
 # user-role scaffolding fed back into run_conversation while a standing goal
 # is active. They are not new user requests and must never enter the P3
-# capture buffer. All three templates share this prefix.
-_GOAL_CONTINUATION_PREFIX = "[Continuing toward your standing goal]"
+# capture buffer. All three templates share the head of the single shared
+# continuation marker — derive from it so the exclusion can never drift from
+# the producer (partial-string audit).
+try:
+    from hermes_cli.goals import GOAL_CONTINUATION_MARKER as _GOAL_CONTINUATION_MARKER
+
+    _GOAL_CONTINUATION_PREFIX = _GOAL_CONTINUATION_MARKER.split("\n", 1)[0]
+except Exception:  # pragma: no cover - defensive
+    _GOAL_CONTINUATION_PREFIX = "[Continuing toward your standing goal]"
 
 # Synthetic scaffolding that must be excluded from P3 request capture:
 # system-injected notes (gateway resume/interrupt recovery) and goal-loop

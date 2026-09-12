@@ -5010,9 +5010,20 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         Goal continuations are normal queued user-role events, so pause/clear
         must distinguish them from real user /queue messages before removing or
         suppressing them.
+
+        The head of every synthetic continuation prompt is the single shared
+        constant ``GOAL_CONTINUATION_MARKER`` (hermes_cli.goals) — the
+        producer and this discriminator consume the SAME constant so they
+        cannot drift apart (partial-string audit). No private byte copies.
         """
         text = getattr(event_or_text, "text", event_or_text) or ""
-        return str(text).startswith("[Continuing toward your standing goal]\nGoal:")
+        try:
+            from hermes_cli.goals import GOAL_CONTINUATION_MARKER
+
+            marker = GOAL_CONTINUATION_MARKER
+        except Exception:  # pragma: no cover - defensive
+            marker = "[Continuing toward your standing goal]\nGoal:"
+        return str(text).startswith(marker)
 
     def _clear_goal_pending_continuations(self, session_key: str, adapter: Any) -> int:
         """Remove queued synthetic /goal continuations for one session.
@@ -10593,6 +10604,59 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                         "Gateway intercepted clarify text response (session=%s, id=%s)",
                         _quick_key, _pending_clarify.clarify_id,
                     )
+                    # A blocked-awaiting-input clarify parked by the goal loop
+                    # (_park_goal_blocked_clarify) has NO agent thread waiting
+                    # on it. Forward the answer through normal dispatch as a
+                    # real user turn so the judgment is actually answered by a
+                    # fresh agent run. A plain blocking clarify (agent thread
+                    # waiting on wait_for_response) is untouched — the waiting
+                    # thread produces the next user-facing message itself.
+                    _parked_redirects = getattr(self, "_parked_clarify_redirects", None) or {}
+                    _parked_meta = _parked_redirects.get(_quick_key)
+                    if (
+                        _parked_meta
+                        and _parked_meta.get("clarify_id") == _pending_clarify.clarify_id
+                    ):
+                        _parked_source = _parked_meta.get("source")
+                        _parked_adapter = (
+                            self._adapter_for_source(_parked_source)
+                            if _parked_source is not None
+                            else None
+                        )
+                        if _parked_adapter is not None:
+                            try:
+                                _parked_fwd = MessageEvent(
+                                    text=_raw_clarify_reply,
+                                    message_type=MessageType.TEXT,
+                                    source=_parked_source,
+                                    message_id=None,
+                                    channel_prompt=None,
+                                )
+                                self._enqueue_fifo(_quick_key, _parked_fwd, _parked_adapter)
+                                _parked_redirects.pop(_quick_key, None)
+                                # A parked entry has NO agent thread waiting,
+                                # so wait_for_response() (the normal index
+                                # cleanup) never runs. Drop the resolved
+                                # entry from the pending index now — otherwise
+                                # the NEXT user message is re-intercepted as
+                                # a stale answer and swallowed.
+                                try:
+                                    _clarify_mod.clear_session(_quick_key)
+                                except Exception:
+                                    logger.debug(
+                                        "blocked-clarify clear failed for %s",
+                                        _quick_key,
+                                        exc_info=True,
+                                    )
+                                logger.info(
+                                    "blocked-clarify answer forwarded to dispatch "
+                                    "(session=%s, id=%s)",
+                                    _quick_key, _pending_clarify.clarify_id,
+                                )
+                            except Exception as _parked_exc:
+                                logger.warning(
+                                    "blocked-clarify forward failed: %s", _parked_exc,
+                                )
                     # The clarify callback pauses the platform typing/status
                     # indicator while waiting so Slack users can type their
                     # answer. The active agent resumes as soon as this reply
@@ -14589,6 +14653,128 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
         await _deliver()
 
+    def _clear_parked_clarify(self, session_key: str) -> None:
+        """Drop a parked blocked-clarify entry and its redirect record.
+
+        Called on delivery failure so a prompt that could not be shown does
+        not linger as a pending clarify that would swallow the user's next
+        message in the session.
+        """
+        from tools import clarify_gateway as _clarify_mod
+
+        _clarify_mod.clear_session(session_key or "")
+        parked = getattr(self, "_parked_clarify_redirects", None)
+        if parked:
+            parked.pop(session_key, None)
+
+    def _park_goal_blocked_clarify(
+        self,
+        source: Any,
+        session_key: str,
+        question: str,
+    ) -> str:
+        """Mechanically force a clarify call for a blocked-awaiting-input verdict.
+
+        The goal judge returned a ``blocked`` done verdict: the agent parked on
+        a human decision and its final message is a question. No agent thread
+        is waiting for a response (the goal loop stopped), so instead of the
+        blocking ``wait_for_response`` path we register an OPEN-ENDED clarify
+        entry and let the gateway's text-intercept capture the answer, then
+        forward it back through normal dispatch as a real user turn. The entry
+        records the redirect (source + clarify id) so the intercept can tell
+        parked clarifies apart from ordinary blocking ones and never
+        double-forwards.
+
+        Returns the clarify id, or "" if registration failed.
+        """
+        from tools import clarify_gateway as _clarify_mod
+        import uuid as _uuid
+
+        clarify_id = _uuid.uuid4().hex[:10]
+        try:
+            _clarify_mod.register(
+                clarify_id=clarify_id,
+                session_key=session_key or "",
+                question=question,
+                choices=None,  # open-ended → text-intercept is the only path
+            )
+        except Exception as exc:
+            logger.warning(
+                "blocked-clarify park failed for session %s: %s", session_key, exc,
+            )
+            return ""
+        parked = getattr(self, "_parked_clarify_redirects", None)
+        if parked is None:
+            parked = {}
+            self._parked_clarify_redirects = parked
+        parked[session_key] = {"source": source, "clarify_id": clarify_id}
+        return clarify_id
+
+    async def _defer_goal_blocked_clarify_after_delivery(
+        self,
+        source: Any,
+        session_key: str,
+        question: str,
+        clarify_id: str,
+    ) -> None:
+        """Deliver a parked blocked-clarify prompt after the agent's final
+        response ships, mirroring ``_defer_goal_status_notice_after_delivery``
+        so the natural reading order is preserved: agent answer first, then
+        the request for the human decision.
+        """
+        adapter = self._adapter_for_source(source)
+        if not adapter:
+            self._clear_parked_clarify(session_key)
+            logger.debug(
+                "blocked-clarify: no adapter for %s; cleared parked entry",
+                getattr(source, "platform", None),
+            )
+            return
+
+        try:
+            metadata = self._thread_metadata_for_source(source)
+        except Exception:
+            metadata = None
+
+        async def _deliver() -> None:
+            try:
+                result = await adapter.send_clarify(
+                    chat_id=source.chat_id,
+                    question=question,
+                    choices=None,
+                    clarify_id=clarify_id,
+                    session_key=session_key or "",
+                    metadata=metadata,
+                )
+                if result is not None and not getattr(result, "success", True):
+                    logger.warning(
+                        "blocked-clarify send failed: %s",
+                        getattr(result, "error", "unknown error"),
+                    )
+                    self._clear_parked_clarify(session_key)
+            except Exception as exc:
+                logger.warning("blocked-clarify send failed: %s", exc, exc_info=True)
+                self._clear_parked_clarify(session_key)
+
+        if session_key and hasattr(adapter, "register_post_delivery_callback"):
+            try:
+                generation = None
+                active = getattr(adapter, "_active_sessions", {}).get(session_key)
+                if active is not None:
+                    generation = getattr(active, "_hermes_run_generation", None)
+                adapter.register_post_delivery_callback(
+                    session_key,
+                    _deliver,
+                    generation=generation,
+                )
+                return
+            except Exception as exc:
+                logger.debug(
+                    "blocked-clarify: post-delivery callback registration failed: %s", exc,
+                )
+
+        await _deliver()
+
     async def _post_turn_goal_continuation(
         self,
         *,
@@ -14769,9 +14955,50 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         # A blocked-awaiting-input done verdict is a parked stop, not an
         # achievement: no "✓ Goal achieved" status line, and the agent's
         # question must ship as the final response (the lifecycle branch
-        # below must not suppress or replace it either).
+        # below must not suppress or replace it either). The question is
+        # ALSO mechanically forced through the gateway's clarify machinery
+        # (Bug 2): the entry renders a Clarify prompt on the platform after
+        # the response is delivered, the user's answer is captured by the
+        # text-intercept, and that answer is re-dispatched as a real user
+        # turn — so a judge-parked decision is answered without a synthetic
+        # continuation and without the "⚡ Stopped" interrupt re-dispatch.
         if decision.get("blocked"):
             msg = ""
+            _parked_clarify_id = ""
+            _parked_goal_text = ""
+            try:
+                _parked_goal_state = mgr.state
+                if _parked_goal_state is not None:
+                    _parked_goal_text = str(_parked_goal_state.goal or "")
+            except Exception:
+                _parked_goal_text = ""
+            try:
+                _parked_session_key = self._session_key_for_source(source)
+            except Exception:
+                _parked_session_key = None
+            if _parked_session_key:
+                # The prompt is the agent's own question — the final_response
+                # of the parked turn (the judge's reason is a verdict
+                # summary, not the ask). Fall back through goal text only if
+                # the turn produced no question at all.
+                _parked_question = (
+                    (final_response or "").strip()
+                    or decision.get("reason")
+                    or _parked_goal_text
+                    or "I need your input."
+                )
+                _parked_clarify_id = self._park_goal_blocked_clarify(
+                    source,
+                    _parked_session_key,
+                    _parked_question,
+                )
+                if _parked_clarify_id:
+                    await self._defer_goal_blocked_clarify_after_delivery(
+                        source,
+                        _parked_session_key,
+                        _parked_question,
+                        _parked_clarify_id,
+                    )
 
         # Task-lifecycle goals carry the ``lifecycle`` marker on the goal
         # state (set at arming time by agent/task_manager.py). For those
