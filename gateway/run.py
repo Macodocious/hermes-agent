@@ -70,11 +70,12 @@ _PLATFORM_CONNECT_TIMEOUT_SECS_DEFAULT = 30.0
 _ADAPTER_DISCONNECT_TIMEOUT_SECS_DEFAULT = 5.0
 _GATEWAY_PROXY_SSE_BUFFER_MAX_CHARS = 16 * 1024 * 1024
 _TELEGRAM_COMMAND_MENTION_RE = re.compile(r"(?<![\w:/])/([A-Za-z0-9][A-Za-z0-9_-]*)")
-# Task-lifecycle goals (PR #51) are armed by the todo tool with the exact
-# "Complete the task: <content>" text (agent/task_manager.py
-# _goal_text_for_item). The gateway suppresses the per-turn judge progress
-# lines for these goals only — native /goal verdicts are untouched.
-_LIFECYCLE_GOAL_PREFIX = "Complete the task: "
+# Task-lifecycle goals (PR #51) are stamped with the ``lifecycle`` marker
+# on the goal state itself (agent/task_manager.py on_todo_write arms via
+# GoalManager.set(..., lifecycle=True)). The gateway suppresses the
+# per-turn judge progress lines for these goals only — native /goal
+# verdicts are untouched. The marker on the target is the trigger; goal
+# text is never parsed for scoping.
 # Ceiling for the planned-restart helper's wait on the old PID.  A hung
 # interpreter finalization must not block the restart indefinitely: once
 # the deadline passes the helper proceeds and systemd stops the old unit
@@ -1141,14 +1142,10 @@ from agent.replay_cleanup import (  # noqa: E402
 _AUTO_CONTINUE_NOTE_PREFIX = "[System note: Your previous turn"
 _AUTO_CONTINUE_FALLBACK_PREFIX = "[System note: A new message"
 
-# Task-lifecycle goals (PR #51) are armed by agent/task_manager.py with the
-# verbatim text "Complete the task: <content>" (see _goal_text_for_item).
-# The gateway uses this prefix to scope lifecycle-only behavior so the
-# native /goal GoalEngine is never touched. Byte-identical to the constant
-# in the lifecycle-status-messages branch so git dedupes the addition on
-# merge.
-_LIFECYCLE_GOAL_PREFIX = "Complete the task: "
-
+# Task-lifecycle goals (PR #51) are stamped with the ``lifecycle`` marker
+# on the goal state itself (see GoalManager.set(..., lifecycle=True) in
+# hermes_cli/goals.py). The gateway suppresses the per-turn judge progress
+# lines for these goals only — native /goal verdicts are untouched.
 # Rejection gate (Issue 2 re-scope): when the goal judge says DONE but the
 # triggering user message reads as a rejection/denial of the agent's answer,
 # the gateway refuses finalization and forces a continue. The determination
@@ -1175,16 +1172,51 @@ _LIFECYCLE_REJECTION_MAX_TOKENS = 256
 _LIFECYCLE_REJECTION_MESSAGE_CHARS = 2048
 
 
-def _is_lifecycle_goal(goal_text: Optional[str]) -> bool:
+def _is_lifecycle_goal(goal_state: Optional[Any]) -> bool:
     """Return True when the active goal is a PR #51 task-lifecycle goal.
 
-    Lifecycle goals are armed with the verbatim text
-    ``"Complete the task: <content>"`` (agent/task_manager.py
-    ``_goal_text_for_item``). Native /goal text never carries the prefix,
-    so this mechanical check scopes lifecycle-only behavior without ever
-    touching the native GoalEngine.
+    Lifecycle goals are stamped with the ``lifecycle`` marker on the goal
+    state itself (``GoalManager.set(..., lifecycle=True)``, armed by
+    agent/task_manager.py ``on_todo_write``). Scope decisions read the
+    marker on the target — the goal's text is never parsed. Native /goal
+    states load with ``lifecycle=False``.
     """
-    return bool(goal_text) and str(goal_text).startswith(_LIFECYCLE_GOAL_PREFIX)
+    try:
+        return bool(getattr(goal_state, "lifecycle", False))
+    except Exception:
+        return False
+
+
+def _lifecycle_task_name(session_id: str, goal_state: Optional[Any]) -> Optional[str]:
+    """Best-effort display name for a lifecycle goal's completion line.
+
+    The authoritative name is the task's own ``content`` from the
+    persisted todo store — the target — never derived by stripping text
+    off the goal. Falls back to the goal state's own text only when no
+    store or open task exists (degraded setup) so a completion line still
+    ships.
+    """
+    try:
+        if session_id:
+            from hermes_cli.tasks import load_todo
+
+            store = load_todo(session_id)
+            if store is not None:
+                for item in store.read():
+                    if str(item.get("status") or "") in (
+                        "closing",
+                        "in_progress",
+                        "completed",
+                    ):
+                        name = str(item.get("content") or "").strip()
+                        if name:
+                            return name
+    except Exception:
+        pass
+    try:
+        return str(getattr(goal_state, "goal", "") or "").strip() or None
+    except Exception:
+        return None
 
 
 def _is_lifecycle_rejection_message(user_message: Optional[str]) -> bool:
@@ -14596,8 +14628,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         fresh exchange instead of staying parked.
 
         Returns a bool suppress flag: True ONLY when a task-lifecycle goal
-        (``Complete the task: ...`` prefix) returns a ``done`` verdict on a
-        synthetic goal-continuation turn (``user_initiated=False``). The
+        (carrying the ``lifecycle`` state marker) returns a ``done``
+        verdict on a synthetic goal-continuation turn
+        (``user_initiated=False``). The
         call site blanks the final response when the flag is set, so the
         redundant wrap-up prose on the continuation turn never ships — the
         conversation prose on the real user turn already delivered the
@@ -14637,12 +14670,13 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         # continuation's done is the FIRST done — its prose ships.
         _prev_verdict = getattr(mgr.state, "last_verdict", None)
 
-        _goal_text = getattr(mgr.state, "goal", None) or ""
-        _is_lifecycle = _is_lifecycle_goal(_goal_text)
-
-        # Wait-bypass (lifecycle only): a real user message releases a
-        # parked lifecycle goal so the judge evaluates the fresh exchange
-        # instead of staying parked. Native /goal keeps the base behavior.
+        # Task-lifecycle goals carry the ``lifecycle`` marker on the goal
+        # state (set at arming time by agent/task_manager.py); decisions
+        # are scoped by the marker, never by goal text. Wait-bypass
+        # (lifecycle only): a real user message releases a parked lifecycle
+        # goal so the judge evaluates the fresh exchange instead of
+        # staying parked. Native /goal keeps the base behavior.
+        _is_lifecycle = _is_lifecycle_goal(mgr.state)
         if _is_lifecycle and user_initiated and mgr.is_waiting():
             mgr.stop_waiting()
 
@@ -14739,25 +14773,18 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         if decision.get("blocked"):
             msg = ""
 
-        # Task-lifecycle goals (PR #51) arm the GoalEngine with
-        # "Complete the task: <content>". For those goals only, the
-        # per-turn judge progress lines are suppressed — the todo tool
-        # already surfaces Started/Completed/Stopped bubbles, so the
-        # "↻ Continuing" / "⏳ Goal parked" lines are pure noise. The
-        # judge still runs, the two-key close still observes the verdict,
-        # and the continuation prompt still enqueues. Native /goal
-        # verdicts are untouched.
-        _goal_text = ""
-        try:
-            _goal_state = mgr.state
-            if _goal_state is not None:
-                _goal_text = str(_goal_state.goal or "")
-        except Exception:
-            _goal_text = ""
-        if _goal_text.startswith(_LIFECYCLE_GOAL_PREFIX):
+        # Task-lifecycle goals carry the ``lifecycle`` marker on the goal
+        # state (set at arming time by agent/task_manager.py). For those
+        # goals only, the per-turn judge progress lines are suppressed —
+        # the todo tool already surfaces Started/Completed/Stopped bubbles,
+        # so the "↻ Continuing" / "⏳ Goal parked" lines are pure noise.
+        # The judge still runs, the two-key close still observes the
+        # verdict, and the continuation prompt still enqueues. Native
+        # /goal verdicts are untouched.
+        if _is_lifecycle_goal(mgr.state):
             _verdict = str(decision.get("verdict") or "")
             if _verdict == "done" and not decision.get("blocked"):
-                _task_name = _goal_text[len(_LIFECYCLE_GOAL_PREFIX):].strip() or "(no description)"
+                _task_name = _lifecycle_task_name(sid, mgr.state) or "(no description)"
                 msg = f"✅ Task completed: {_task_name}"
                 # Suppress the final response ONLY on a synthetic goal-
                 # continuation turn whose judge already said done on the
@@ -14796,11 +14823,16 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             await self._defer_goal_status_notice_after_delivery(source, msg)
 
         if not decision.get("should_continue"):
-            # The loop is stopping (done/paused/cleared). A lifecycle
-            # nudge still needs delivery — the audit fired independently
-            # of the goal loop.
+            # The loop is stopping (done/paused/cleared). Lifecycle
+            # nudges still need delivery — the audit fired independently
+            # of the goal loop, and a finalized plan item may leave more
+            # plan siblings behind (R3 plan-level completion) whose
+            # pull-back nudge must ship even though no continuation is
+            # enqueued.
             if task_lifecycle_nudge and source is not None:
                 await self._enqueue_lifecycle_nudge(source, task_lifecycle_nudge)
+            if _verdict_nudge and source is not None:
+                await self._enqueue_lifecycle_nudge(source, _verdict_nudge)
             return _suppress_final_response
 
         prompt = decision.get("continuation_prompt") or ""

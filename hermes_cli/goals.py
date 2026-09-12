@@ -410,6 +410,24 @@ class GoalState:
     # is not deemed a rejection. Backwards-compatible: old state_meta
     # rows load with False.
     awaiting_finalization: bool = False
+    # Per-task execution authorization (writing_plan integration): set True
+    # when a lifecycle task with a plan is begun — execution parks in
+    # evaluate_after_turn until the user's verdict arrives. The hold is
+    # released by the next real user turn (the reply is the gate — never a
+    # token/detector); adjustments in that same message become the revised
+    # direction, deny stops the task via the existing escalate path.
+    # Backwards-compatible: old state_meta rows load with False.
+    awaiting_authorization: bool = False
+    # When the authorization hold was armed (epoch seconds; 0.0 when not
+    # holding). Never read by the loop — kept for diagnostics only.
+    awaiting_authorization_armed_at: float = 0.0
+    # Task-lifecycle arming marker (PR #51 + writing_plan integration): set
+    # True when the todo lifecycle arms this goal (agent/task_manager.py
+    # on_todo_write). Scope decisions — gateway progress-line suppression,
+    # the wait bypass, the completion line — read the marker on the goal
+    # state itself; goal text is never parsed for this. Backwards-
+    # compatible: old state_meta rows load with False (native /goal).
+    lifecycle: bool = False
     paused_reason: Optional[str] = None       # why we auto-paused (budget, etc.)
     consecutive_parse_failures: int = 0       # judge-output parse failures in a row
     # Transport failures are API/auth/network errors.  Broken API keys return
@@ -473,6 +491,9 @@ class GoalState:
             last_verdict=data.get("last_verdict"),
             last_reason=data.get("last_reason"),
             awaiting_finalization=bool(data.get("awaiting_finalization", False)),
+            awaiting_authorization=bool(data.get("awaiting_authorization", False)),
+            awaiting_authorization_armed_at=float(data.get("awaiting_authorization_armed_at", 0.0) or 0.0),
+            lifecycle=bool(data.get("lifecycle", False)),
             paused_reason=data.get("paused_reason"),
             consecutive_parse_failures=int(data.get("consecutive_parse_failures", 0) or 0),
             consecutive_transport_failures=int(data.get("consecutive_transport_failures", 0) or 0),
@@ -1170,7 +1191,7 @@ class GoalManager:
 
     # --- mutation -----------------------------------------------------
 
-    def set(self, goal: str, *, max_turns: Optional[int] = None, contract: Optional[GoalContract] = None) -> GoalState:
+    def set(self, goal: str, *, max_turns: Optional[int] = None, contract: Optional[GoalContract] = None, lifecycle: bool = False) -> GoalState:
         goal = (goal or "").strip()
         if not goal:
             raise ValueError("goal text is empty")
@@ -1182,6 +1203,7 @@ class GoalManager:
             created_at=time.time(),
             last_turn_at=0.0,
             contract=contract if contract is not None else GoalContract(),
+            lifecycle=bool(lifecycle),
         )
         self._state = state
         save_goal(self.session_id, state)
@@ -1251,6 +1273,36 @@ class GoalManager:
         """
         if self._state is not None and self._state.awaiting_finalization:
             self._state.awaiting_finalization = False
+            save_goal(self.session_id, self._state)
+
+    def hold_authorization(self) -> None:
+        """Mark the goal as awaiting the user's execution authorization.
+
+        Stamped by the todo lifecycle when a plan-carrying task is
+        begun. While held, the goal loop parks in evaluate_after_turn —
+        no judge, no continuation, no turn burned — until the user's
+        verdict arrives. The hold is released by the next real user
+        turn; the user's reply is the gate (no token state, no
+        deterministic approval detector, no rejection-gate coupling).
+        """
+        if self._state is not None and not self._state.awaiting_authorization:
+            self._state.awaiting_authorization = True
+            self._state.awaiting_authorization_armed_at = time.time()
+            save_goal(self.session_id, self._state)
+
+    def release_authorization(self) -> None:
+        """Clear the execution-authorization hold.
+
+        Called from the goal-loop path when a real user turn arrives
+        (user_initiated=True); the user's reply approves, adjusts, or
+        denies the plan. If it adjusts, the revised direction is applied
+        by the agent and the plan re-presented (no separate waiting
+        step). If it denies, the task stops via the existing escalate
+        path.
+        """
+        if self._state is not None and self._state.awaiting_authorization:
+            self._state.awaiting_authorization = False
+            self._state.awaiting_authorization_armed_at = 0.0
             save_goal(self.session_id, self._state)
 
     def clear(self) -> None:
@@ -1491,6 +1543,50 @@ class GoalManager:
                 "reason": reason,
                 "message": f"⏳ Goal parked — waiting on {tgt}: {reason}",
             }
+
+        # Execution-authorization barrier (writing_plan integration): a
+        # plan-carrying lifecycle goal parks here until the user's
+        # verdict arrives. The user's reply is the gate (no token state,
+        # no deterministic approval detector, no rejection-gate
+        # coupling). While parked: no judge, no continuation, no turn
+        # burned.
+        #
+        # A real user turn releases the hold — EXCEPT when the hold was
+        # armed during this very turn (begin + plan just ran mid-turn):
+        # the user has not yet seen the presented plan, so park now and
+        # advance last_turn_at so the NEXT real turn (the verdict)
+        # releases. Adjustments in the verdict message become the
+        # revised direction; deny stops the task via escalate.
+        if state.awaiting_authorization:
+            if not user_initiated:
+                return {
+                    "status": "active",
+                    "should_continue": False,
+                    "continuation_prompt": None,
+                    "verdict": "waiting",
+                    "reason": "awaiting execution authorization",
+                    "message": (
+                        "⏳ Task awaiting execution authorization — approve "
+                        "the plan, send adjustments (applied as the revised "
+                        "direction), or deny it."
+                    ),
+                }
+            if state.awaiting_authorization_armed_at > state.last_turn_at:
+                state.last_turn_at = state.awaiting_authorization_armed_at
+                save_goal(self.session_id, state)
+                return {
+                    "status": "active",
+                    "should_continue": False,
+                    "continuation_prompt": None,
+                    "verdict": "waiting",
+                    "reason": "awaiting execution authorization",
+                    "message": (
+                        "⏳ Task awaiting execution authorization — approve "
+                        "the plan, send adjustments (applied as the revised "
+                        "direction), or deny it."
+                    ),
+                }
+            self.release_authorization()
 
         # Count the turn that just finished.
         state.turns_used += 1

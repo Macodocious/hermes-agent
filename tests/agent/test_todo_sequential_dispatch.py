@@ -92,7 +92,7 @@ class FakeGoalManager:
     def __init__(self, calls: list):
         self.calls = calls
 
-    def set(self, text: str) -> None:
+    def set(self, text: str, **kwargs) -> None:
         self.calls.append(f"set:{text}")
 
     def clear(self) -> None:

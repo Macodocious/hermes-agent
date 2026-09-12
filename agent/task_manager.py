@@ -66,6 +66,22 @@ LIFECYCLE_REVIEW_REJECT_NUDGE = (
     "added to the list. Address the review failure before closing again."
 )
 
+# The nudge delivered when a plan-carrying task finalizes while siblings of
+# the same plan remain (R3 plan-level completion). The plan, not the todo
+# list, is the unit of approved work — finishing one item must not strand
+# the rest of a multi-item plan ("items 4-7 still pending" failure). The
+# agent is pulled back to begin the next sibling; the per-task
+# authorization hold re-arms on that begin, so the user's verdict gates
+# each item of the plan.
+LIFECYCLE_PLAN_NEXT_NUDGE = (
+    "[Plan item {item_id} is done — more plan items remain]\n"
+    "Plan: {plan}\n"
+    "Next pending item: {next_id}: {next_content}\n\n"
+    "Continue the approved plan: call todo with action=begin and "
+    "item_id={next_id} now. If the remaining plan items are no longer "
+    "wanted, mark them cancelled instead."
+)
+
 # Source tag for rework tasks spawned by a rejected review (P6 lineage).
 # Code-owned (task_manager), never model-authorable — _validate preserves
 # the tag and the review_of parent id so the lineage depth cap and the
@@ -77,11 +93,47 @@ REVIEW_SOURCE = "review"
 # the agent sees in the task list. The task content is the specification
 # the review must hold the implementation to — the goal text names it
 # explicitly so the verdict is bound to the task's stated objective.
+#
+# R2: when the item carries a plan ref (the writing_plan plan.md path,
+# resolved by the post-close review), the goal binds the judge to the
+# plan file instead of one item line — the verdict evaluates the whole
+# plan's criteria, not item 1's content. The plan text is read inline
+# (capped) because the judge prompt cannot rely on file access.
 def _goal_text_for_item(item: Dict[str, Any]) -> str:
+    plan_ref = str(item.get("plan") or "").strip()
+    if plan_ref:
+        plan_text = _read_plan_text(plan_ref)
+        if plan_text:
+            return (
+                "Complete the task per its plan: "
+                f"{plan_ref}\n\n"
+                f"{plan_text}\n\n"
+                f"(Task spec: {str(item.get('content') or '(no description)')[:200]})"
+            )
     return (
         "Complete the task per its specification: "
         f"{item.get('content', '(no description)')}"
     )
+
+
+# Cap on plan content bound into the goal text so an oversized plan file
+# cannot balloon the judge/continuation prompt.
+_GOAL_PLAN_TEXT_CAP: int = 4000
+
+
+def _read_plan_text(plan_ref: str) -> str:
+    """Read a plan file's text for goal binding (best-effort, capped)."""
+    try:
+        path = Path(plan_ref)
+        if not path.is_absolute():
+            path = Path.cwd() / path
+        if not path.is_file():
+            return ""
+        text = path.read_text(encoding="utf-8")[:_GOAL_PLAN_TEXT_CAP]
+        return text
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.debug("task_manager: plan file read failed: %s", exc)
+        return ""
 
 
 def _lifecycle_config() -> Dict[str, Any]:
@@ -227,7 +279,27 @@ def on_todo_write(agent: Any, args: Dict[str, Any]) -> None:
                     and getattr(state, "goal", "") == goal_text
                 )
                 if not already_armed:
-                    mgr.set(goal_text)
+                    # The goal is stamped as a task-lifecycle goal at
+                    # arming time. Scope decisions (gateway suppression,
+                    # wait bypass, completion line) read this marker on
+                    # the goal state itself — goal text is never parsed
+                    # for lifecycle identification.
+                    mgr.set(goal_text, lifecycle=True)
+                    # Per-task execution authorization (writing_plan
+                    # integration): a task begun with a plan ref holds
+                    # execution until the user's verdict. Stamped only on
+                    # an explicit begin of a plan-carrying item — routine
+                    # re-arms (the guard above) and close-in-flight never
+                    # re-hold, so an already-authorized task keeps running
+                    # and a closing task keeps its two-key flow.
+                    if (
+                        str(args.get("action") or "") == "begin"
+                        and str(target.get("plan") or "").strip()
+                    ):
+                        try:
+                            mgr.hold_authorization()
+                        except Exception as exc:  # pragma: no cover - defensive
+                            logger.debug("task_manager: authorization hold failed: %s", exc)
         except Exception as exc:  # pragma: no cover - defensive
             logger.debug("task_manager: goal arm failed: %s", exc)
     else:
@@ -247,6 +319,7 @@ def audit_turn_end(
     final_response: Optional[str],
     interrupted: bool,
     tool_call_count: int = 0,
+    tool_names: Optional[list] = None,
 ) -> Optional[str]:
     """Turn-end audit: work without an open task must not end cleanly.
 
@@ -268,10 +341,21 @@ def audit_turn_end(
         # The turn ended with a legitimate transition (pause/close/
         # escalate) — the lifecycle is in control, not a silent stop.
         return None
-    if _current_item(agent) is not None:
-        return None
     if _closing_item(agent) is not None:
         # A close is in flight; the judge's verdict decides the outcome.
+        return None
+    # R1: an open task is no longer a blanket exemption. The plan is the
+    # work contract — when the open task carries a plan, a substantive
+    # turn whose tool calls do not advance that plan is drift and becomes
+    # nudgeable (kills the D1 hole: audit silent while any task is open).
+    # Without a plan ref there is no contract yet to drift from, so the
+    # single-item exemption stands (simple tasks run unchanged).
+    current = _current_item(agent)
+    if current is not None:
+        if str(current.get("plan") or "").strip() and not _advances_open_plan(
+            tool_names or []
+        ):
+            return LIFECYCLE_AUDIT_NUDGE
         return None
     store = getattr(agent, "_todo_store", None)
     if store is None or not store.has_items():
@@ -285,6 +369,22 @@ def audit_turn_end(
         # task work — leave it alone.
         return None
     return LIFECYCLE_AUDIT_NUDGE
+
+
+# Tool names that count as advancing the open task's plan: the lifecycle
+# lever (todo transitions) and plan authoring (the write-plan tools). A
+# substantive turn whose tool calls contain none of these — while an open
+# task carries a plan — is work outside the plan and gets nudged.
+_ADVANCE_TOOL_NAMES = frozenset({"todo", "writing_plan", "write_plan"})
+_ADVANCE_TOOL_PREFIX = "plan_"
+
+
+def _advances_open_plan(tool_names: list) -> bool:
+    """True when the turn's tool calls show work on the open task's plan."""
+    return any(
+        name in _ADVANCE_TOOL_NAMES or name.startswith(_ADVANCE_TOOL_PREFIX)
+        for name in tool_names
+    )
 
 
 def observe_verdict(agent: Any, decision: Dict[str, Any]) -> Optional[str]:
@@ -362,6 +462,33 @@ def _apply_verdict(store: Any, decision: Dict[str, Any]) -> Optional[str]:
     if decision.get("blocked"):
         return None
     verdict = str(decision.get("verdict") or "").strip()
+
+    def _plan_next_nudge(item: Dict[str, Any]) -> Optional[str]:
+        """R3 plan-level completion: after a plan-carrying item finalizes,
+        return a continuation nudge naming the next pending sibling of the
+        same plan. The plan is the unit of approved work — finalizing one
+        item must not strand the rest of a multi-item plan. None when the
+        plan is complete or the item has no plan ref."""
+        plan_ref = str(item.get("plan") or "").strip()
+        if not plan_ref:
+            return None
+        siblings = [
+            i
+            for i in store.read()
+            if str(i.get("plan") or "").strip() == plan_ref
+            and i["status"] in ("pending", "paused")
+            and i["id"] != item["id"]
+        ]
+        if not siblings:
+            return None
+        nxt = siblings[0]
+        return LIFECYCLE_PLAN_NEXT_NUDGE.format(
+            item_id=item["id"],
+            plan=plan_ref,
+            next_id=nxt["id"],
+            next_content=str(nxt.get("content") or "(no description)"),
+        )
+
     closing = next((i for i in store.read() if i["status"] == "closing"), None)
     if closing is not None:
         if verdict == "done":
@@ -373,7 +500,7 @@ def _apply_verdict(store: Any, decision: Dict[str, Any]) -> Optional[str]:
             # task the model had begun before the judge cleared the
             # closing one).
             store.finalize(closing["id"])
-            return None
+            return _plan_next_nudge(closing)
         # Judge says not done: the close was premature — back to work.
         # A continue verdict is a review rejection: the task returns to
         # in_progress and a rework task is appended (source=review,
@@ -429,6 +556,9 @@ def _apply_verdict(store: Any, decision: Dict[str, Any]) -> Optional[str]:
         # close transition first.
         store.transition("close", current["id"])
         store.finalize(current["id"])
+        plan_nudge = _plan_next_nudge(current)
+        if plan_nudge:
+            return plan_nudge
         return LIFECYCLE_FINALIZE_NUDGE.format(
             reason=str(decision.get("reason") or "judge says done"),
             item_id=current["id"],
@@ -521,11 +651,22 @@ def _write_probe(session_id: str, item: Dict[str, Any]) -> None:
     active_dir = get_hermes_home() / "probes" / "active"
     active_dir.mkdir(parents=True, exist_ok=True)
     now = datetime.now(timezone.utc)
+    # R5: the probe verifies against the attached spec — "did it do what
+    # the user approved" instead of "did it do what it said". The spec is
+    # the sibling spec.md of the item's approved plan; its text is bound
+    # into the intent prompt (capped), and the plan path is named in the
+    # change description so the probe-runner has the contract location.
+    plan_ref = str(item.get("plan") or "").strip()
+    spec_text = ""
+    if plan_ref:
+        spec_ref = str(Path(plan_ref).parent / "spec.md")
+        spec_text = _read_plan_text(spec_ref)
     probe = {
         "target": f"task:{item['id']}",
         "change": (
             f"Task {item['id']} finalized as done: "
             f"{str(item.get('content') or '(no description)')[:200]}"
+            + (f" Approved plan: {plan_ref}" if plan_ref else "")
         ),
         "activation": PROBE_ACTIVATION,
         "created_at": now.isoformat(timespec="seconds").replace("+00:00", "Z"),
@@ -533,11 +674,16 @@ def _write_probe(session_id: str, item: Dict[str, Any]) -> None:
             {
                 "type": "intent",
                 "prompt": (
-                    "Verify the completed task's implementation works as "
-                    "intended. Inspect the implementation directly — test "
-                    "results are never evidence, and never delegate to test "
-                    "runs. Task: "
+                    "Verify the completed task's implementation against the "
+                    "approved spec — did it do what the user approved, not "
+                    "just what the task's own description said. Inspect the "
+                    "implementation directly — test results are never "
+                    "evidence, and never delegate to test runs. Task: "
                     f"{str(item.get('content') or '(no description)')[:500]}"
+                    + (
+                        "\nApproved spec:\n" + spec_text
+                        if spec_text else ""
+                    )
                 ),
             }
         ],

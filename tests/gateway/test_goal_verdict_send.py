@@ -162,7 +162,7 @@ async def test_lifecycle_rejection_gate_refuses_done(hermes_home):
     from hermes_cli.goals import GoalManager
 
     mgr = GoalManager(session_entry.session_id)
-    mgr.set("Complete the task: answer the question")
+    mgr.set("Complete the task: answer the question", lifecycle=True)
 
     with (
         patch.object(
@@ -206,7 +206,7 @@ async def test_lifecycle_wait_bypass_on_user_message(hermes_home):
     from hermes_cli.goals import GoalManager
 
     mgr = GoalManager(session_entry.session_id)
-    mgr.set("Complete the task: polish the docs")
+    mgr.set("Complete the task: polish the docs", lifecycle=True)
     mgr.wait_for_seconds(seconds=60, reason="backoff")
 
     with patch.object(
@@ -346,7 +346,7 @@ async def test_blocked_done_skips_rejection_gate(hermes_home):
     from hermes_cli.goals import GoalManager
 
     mgr = GoalManager(session_entry.session_id)
-    mgr.set("Complete the task: resolve the merge")
+    mgr.set("Complete the task: resolve the merge", lifecycle=True)
 
     with (
         patch(
@@ -384,7 +384,7 @@ async def test_blocked_done_does_not_finalize_task(hermes_home):
     from tools.todo_tool import TodoStore
 
     mgr = GoalManager(session_entry.session_id)
-    mgr.set("Complete the task: resolve the merge")
+    mgr.set("Complete the task: resolve the merge", lifecycle=True)
 
     # In-memory store: SessionDB's DEFAULT_DB_PATH is frozen at import time,
     # so the real load_todo/save_todo would touch the host state.db. Patch
@@ -433,7 +433,7 @@ async def test_rejection_gate_fails_open_on_auxiliary_error(hermes_home):
     from hermes_cli.goals import GoalManager
 
     mgr = GoalManager(session_entry.session_id)
-    mgr.set("Complete the task: ship the feature")
+    mgr.set("Complete the task: ship the feature", lifecycle=True)
 
     with (
         patch("hermes_cli.goals.judge_goal", return_value=("done", "the feature shipped", False, None, False, False)),

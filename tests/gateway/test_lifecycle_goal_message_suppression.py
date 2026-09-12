@@ -1,11 +1,12 @@
 """Tests for task-lifecycle goal message suppression (PR #51 instances).
-
-Task-lifecycle goals are armed by the todo tool with the exact
-"Complete the task: <content>" text. For those goals only, the per-turn
-judge progress lines ("↻ Continuing", "⏳ Goal parked") are suppressed —
-the todo tool already surfaces Started/Completed/Stopped bubbles — and the
-done verdict renders as "✅ Task completed: <name>". Native /goal verdicts
-are untouched.
+Task-lifecycle goals are stamped with the ``lifecycle`` marker on the
+goal state at arming time (GoalManager.set(..., lifecycle=True)). For
+those goals only, the per-turn judge progress lines ("↻ Continuing",
+"⏳ Goal parked") are suppressed — the todo tool already surfaces
+Started/Completed/Stopped bubbles — and the done verdict renders as
+"✅ Task completed: <name>", with the name read from the todo store (the
+target), never stripped from the goal text. Native /goal verdicts are
+untouched.
 """
 
 from __future__ import annotations
@@ -107,7 +108,7 @@ async def test_lifecycle_goal_continue_suppresses_progress_line(hermes_home):
     from hermes_cli.goals import GoalManager
 
     mgr = GoalManager(session_entry.session_id)
-    mgr.set("Complete the task: ship the feature")
+    mgr.set("Complete the task: ship the feature", lifecycle=True)
 
     with patch("hermes_cli.goals.judge_goal", return_value=("continue", "still working", False, None, False, False)):
         await runner._post_turn_goal_continuation(
@@ -130,9 +131,19 @@ async def test_lifecycle_goal_done_rewrites_completed_message(hermes_home):
     from hermes_cli.goals import GoalManager
 
     mgr = GoalManager(session_entry.session_id)
-    mgr.set("Complete the task: ship the feature")
+    mgr.set("Complete the task: ship the feature", lifecycle=True)
 
-    with patch("hermes_cli.goals.judge_goal", return_value=("done", "the feature shipped", False, None, False, False)):
+    # The completion name is read from the todo store (the target), never
+    # stripped from the goal text — seed the store so the name resolves.
+    from tools.todo_tool import TodoStore
+
+    store = TodoStore()
+    store.write([{"id": "lftask-1", "content": "ship the feature", "status": "in_progress"}])
+
+    with (
+        patch("hermes_cli.goals.judge_goal", return_value=("done", "the feature shipped", False, None, False, False)),
+        patch("hermes_cli.tasks.load_todo", return_value=store),
+    ):
         await runner._post_turn_goal_continuation(
             session_entry=session_entry,
             source=src,
@@ -181,9 +192,19 @@ async def test_lifecycle_goal_done_keeps_final_response(hermes_home):
     from hermes_cli.goals import GoalManager
 
     mgr = GoalManager(session_entry.session_id)
-    mgr.set("Complete the task: ship the feature")
+    mgr.set("Complete the task: ship the feature", lifecycle=True)
 
-    with patch("hermes_cli.goals.judge_goal", return_value=("done", "the feature shipped", False, None, False, False)):
+    # The completion name is read from the todo store (the target), never
+    # stripped from the goal text — seed the store so the name resolves.
+    from tools.todo_tool import TodoStore
+
+    store = TodoStore()
+    store.write([{"id": "lftask-2", "content": "ship the feature", "status": "in_progress"}])
+
+    with (
+        patch("hermes_cli.goals.judge_goal", return_value=("done", "the feature shipped", False, None, False, False)),
+        patch("hermes_cli.tasks.load_todo", return_value=store),
+    ):
         suppress = await runner._post_turn_goal_continuation(
             session_entry=session_entry,
             source=src,
@@ -212,7 +233,7 @@ async def test_lifecycle_goal_done_on_continuation_turn_suppresses(hermes_home):
     from hermes_cli.goals import GoalManager
 
     mgr = GoalManager(session_entry.session_id)
-    mgr.set("Complete the task: ship the feature")
+    mgr.set("Complete the task: ship the feature", lifecycle=True)
     # The judge said done on the preceding real user turn (rejection
     # gate refused finalization — resume() never touches last_verdict).
     # Persist so the hook's fresh GoalManager sees it.
@@ -221,7 +242,17 @@ async def test_lifecycle_goal_done_on_continuation_turn_suppresses(hermes_home):
 
     save_goal(session_entry.session_id, mgr.state)
 
-    with patch("hermes_cli.goals.judge_goal", return_value=("done", "the feature shipped", False, None, False, False)):
+    # The completion name is read from the todo store (the target), never
+    # stripped from the goal text — seed the store so the name resolves.
+    from tools.todo_tool import TodoStore
+
+    store = TodoStore()
+    store.write([{"id": "lftask-3", "content": "ship the feature", "status": "in_progress"}])
+
+    with (
+        patch("hermes_cli.goals.judge_goal", return_value=("done", "the feature shipped", False, None, False, False)),
+        patch("hermes_cli.tasks.load_todo", return_value=store),
+    ):
         suppress = await runner._post_turn_goal_continuation(
             session_entry=session_entry,
             source=src,
@@ -269,7 +300,7 @@ async def test_lifecycle_goal_continue_returns_no_suppress_flag(hermes_home):
     from hermes_cli.goals import GoalManager
 
     mgr = GoalManager(session_entry.session_id)
-    mgr.set("Complete the task: ship the feature")
+    mgr.set("Complete the task: ship the feature", lifecycle=True)
 
     with patch("hermes_cli.goals.judge_goal", return_value=("continue", "still working", False, None, False, False)):
         suppress = await runner._post_turn_goal_continuation(
@@ -393,7 +424,7 @@ async def test_rejection_gate_path_continuation_done_suppresses(hermes_home):
     from hermes_cli.goals import GoalManager
 
     mgr = GoalManager(session_entry.session_id)
-    mgr.set("Complete the task: ship the feature")
+    mgr.set("Complete the task: ship the feature", lifecycle=True)
 
     # Turn 1 — real user turn: judge says done, user rejects finalization.
     with (
@@ -454,7 +485,7 @@ async def test_working_continuation_path_first_done_ships(hermes_home):
     from hermes_cli.goals import GoalManager
 
     mgr = GoalManager(session_entry.session_id)
-    mgr.set("Complete the task: verify the refactor")
+    mgr.set("Complete the task: verify the refactor", lifecycle=True)
     # The preceding real user turn's judge said continue. Persist so the
     # hook's fresh GoalManager sees it.
     mgr.state.last_verdict = "continue"
@@ -462,7 +493,17 @@ async def test_working_continuation_path_first_done_ships(hermes_home):
 
     save_goal(session_entry.session_id, mgr.state)
 
-    with patch("hermes_cli.goals.judge_goal", return_value=("done", "the refactor is verified", False, None, False, False)):
+    # The completion name is read from the todo store (the target), never
+    # stripped from the goal text — seed the store so the name resolves.
+    from tools.todo_tool import TodoStore
+
+    store = TodoStore()
+    store.write([{"id": "lftask-4", "content": "verify the refactor", "status": "in_progress"}])
+
+    with (
+        patch("hermes_cli.goals.judge_goal", return_value=("done", "the refactor is verified", False, None, False, False)),
+        patch("hermes_cli.tasks.load_todo", return_value=store),
+    ):
         suppress = await runner._post_turn_goal_continuation(
             session_entry=session_entry,
             source=src,
@@ -488,7 +529,7 @@ async def test_finalization_hold_keeps_task_ongoing(hermes_home):
     from hermes_cli.goals import GoalManager
 
     mgr = GoalManager(session_entry.session_id)
-    mgr.set("Complete the task: ship the feature")
+    mgr.set("Complete the task: ship the feature", lifecycle=True)
     # Simulate a prior rejected finalization. Persist so the hook's fresh
     # GoalManager sees it.
     mgr.hold_finalization()
@@ -529,7 +570,7 @@ async def test_final_finalization_releases_hold_and_finalizes(hermes_home):
     from hermes_cli.goals import GoalManager
 
     mgr = GoalManager(session_entry.session_id)
-    mgr.set("Complete the task: ship the feature")
+    mgr.set("Complete the task: ship the feature", lifecycle=True)
     # Simulate a prior rejected finalization. Persist so the hook's fresh
     # GoalManager sees it.
     mgr.hold_finalization()
@@ -538,8 +579,16 @@ async def test_final_finalization_releases_hold_and_finalizes(hermes_home):
 
     save_goal(session_entry.session_id, mgr.state)
 
+    # The completion name is read from the todo store (the target), never
+    # stripped from the goal text — seed the store so the name resolves.
+    from tools.todo_tool import TodoStore
+
+    store = TodoStore()
+    store.write([{"id": "lftask-5", "content": "ship the feature", "status": "in_progress"}])
+
     with (
         patch("hermes_cli.goals.judge_goal", return_value=("done", "the feature shipped", False, None, False, False)),
+        patch("hermes_cli.tasks.load_todo", return_value=store),
         patch("gateway.run._is_lifecycle_rejection_message", return_value=False),
     ):
         suppress = await runner._post_turn_goal_continuation(

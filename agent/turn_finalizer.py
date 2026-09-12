@@ -343,6 +343,16 @@ def finalize_turn(
         1 for m in messages
         if isinstance(m, dict) and m.get("role") == "assistant" and m.get("tool_calls")
     )
+    # Tool names called this turn, in order, for the plan-aware lifecycle
+    # audit (R1): the audit needs to see whether the turn's work advanced
+    # the open task's plan, not just how many calls happened.
+    _turn_tool_names = [
+        _tc.get("function", {}).get("name", "")
+        for m in messages
+        if isinstance(m, dict) and m.get("role") == "assistant" and m.get("tool_calls")
+        for _tc in m["tool_calls"]
+        if isinstance(_tc, dict)
+    ]
     _resp_len = len(final_response) if final_response else 0
     _budget_used = agent.iteration_budget.used if agent.iteration_budget else 0
     _budget_max = agent.iteration_budget.max_total if agent.iteration_budget else 0
@@ -558,6 +568,7 @@ def finalize_turn(
             final_response=final_response,
             interrupted=interrupted,
             tool_call_count=_turn_tool_count,
+            tool_names=_turn_tool_names,
         )
         if _lifecycle_nudge:
             result["task_lifecycle_nudge"] = _lifecycle_nudge
