@@ -197,7 +197,23 @@ TOOLSETS = {
         "tools": ["read_file", "write_file", "patch", "search_files"],
         "includes": []
     },
-    
+
+    # Read-only inspection surface — file reads and content search with no
+    # mutating or execution tool. Exists to scope an agent to verification
+    # only (e.g. a `hermes -z -t read` subprocess); resolution is exclusive
+    # when it is the whole ``-t`` argument, so a mis-set flag cannot silently
+    # grant write access. `posture: True` because it re-lists core tools it
+    # does not own — the same rationale as ``coding`` — which keeps it out of
+    # per-platform recovery and out of the blank-slate disable list, where
+    # subtracting it would strip read_file/search_files from the minimal
+    # surface it is meant to preserve.
+    "read": {
+        "description": "Read-only inspection: read files, search contents, view skills — no writes, no terminal",
+        "tools": ["read_file", "search_files", "skill_view"],
+        "includes": [],
+        "posture": True,
+    },
+
     "tts": {
         "description": "Text-to-speech: convert text to audio with Edge TTS (free), ElevenLabs, OpenAI, or xAI",
         "tools": ["text_to_speech"],
