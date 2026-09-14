@@ -230,6 +230,38 @@ class TestToolsetConsistency:
         assert len(core) > 20, f"Suspiciously small shared core: {len(core)} tools"
 
 
+class TestReadOnlyToolset:
+    """Contract for the ``read`` toolset: it exists to scope an agent to
+    verification, so it must expose code reads and nothing that mutates or
+    executes. Assert the invariant (no write/execution tool resolves from it),
+    not a frozen tool list — a new read-only tool is welcome."""
+
+    # Mutating, executing, or otherwise escaping tools that must never resolve
+    # from the read toolset.
+    _FORBIDDEN = {
+        "write_file", "patch", "terminal", "process", "read_terminal",
+        "close_terminal", "execute_code", "computer_use", "skill_manage",
+    }
+
+    def test_exposes_code_reads(self):
+        tools = set(resolve_toolset("read"))
+        assert {"read_file", "search_files"} <= tools
+
+    def test_never_exposes_mutation_or_execution(self):
+        leaked = set(resolve_toolset("read")) & self._FORBIDDEN
+        assert not leaked, f"read toolset exposes mutating tools: {sorted(leaked)}"
+
+    def test_is_valid_toolset(self):
+        assert validate_toolset("read") is True
+
+    def test_posture_marks_shared_core_tools(self):
+        # `read` re-lists core tools it does not own. Without `posture: True`
+        # the blank-slate disable list would subtract read_file/search_files
+        # from the minimal surface; with it, recovery and disabling both skip
+        # the toolset. See hermes_cli/setup.py and hermes_cli/tools_config.py.
+        assert TOOLSETS["read"].get("posture") is True
+
+
 class TestPluginToolsets:
     def test_get_all_toolsets_includes_plugin_toolset(self, monkeypatch):
         reg = ToolRegistry()
