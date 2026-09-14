@@ -1689,8 +1689,7 @@ class GoalManager:
             # turn releases the barrier via the lifecycle wait-bypass and
             # re-judges. No completion line ships — the agent's own question is
             # the final response. ``verdict``/``blocked`` are preserved so the
-            # gateway's forced-clarify path and the todo two-key close can see
-            # exactly what happened.
+            # todo two-key close can see exactly what happened.
             #
             # Scoped to ``lifecycle``: the park's release path
             # (gateway wait-bypass) is lifecycle-gated, so parking a native
