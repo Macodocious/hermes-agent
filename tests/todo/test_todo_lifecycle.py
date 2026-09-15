@@ -240,3 +240,21 @@ def test_write_demotes_in_progress_when_another_task_is_closing() -> None:
     )
     statuses = {i["id"]: i["status"] for i in s.read()}
     assert statuses == {"1": "closing", "2": "pending"}
+
+
+def test_begin_refusal_names_the_recovery(store: TodoStore) -> None:
+    """The begin refusal is actionable: it says how to free the slot.
+
+    A refusal that only names the closing task leaves the caller stuck —
+    the same silent-rollback confusion this lifecycle exists to remove.
+    The escape hatches are the judge's done verdict or escalate, so the
+    error must name at least one of them and must not mutate the list.
+    """
+    store.transition("begin", "1")
+    store.transition("close", "1")
+    before = store.read()
+    result = store.transition("begin", "2")
+    assert result["ok"] is False
+    assert "task 1" in result["error"]
+    assert "finalize" in result["error"] or "escalate" in result["error"]
+    assert store.read() == before

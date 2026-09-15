@@ -468,11 +468,12 @@ class TodoStore:
         ``close`` / ``escalate`` move a single item between lifecycle
         statuses per ``_LIFECYCLE_TRANSITIONS``; anything else is refused
         with an error dict. ``begin`` is refused while another task is
-        ``in_progress`` (one task executing); a ``closing`` task no longer
-        blocks begin — the R4 pivot relaxation, safe because execution is
-        gated on the user's verdict. ``close`` moves the task to
-        ``closing`` — the judge's ``done`` verdict is the second key that
-        finalizes it via ``finalize`` (internal, not model-facing).
+        ``in_progress`` (one task executing) or while another task is
+        ``closing`` — sequential close: the closing task occupies the
+        current-task slot until the judge's done verdict finalizes it.
+        ``close`` moves the task to ``closing`` — the judge's ``done``
+        verdict is the second key that finalizes it via ``finalize``
+        (internal, not model-facing).
 
         Returns ``{"ok": True, "item": {...}}`` on success or
         ``{"ok": False, "error": "..."}`` on refusal. Never raises.
@@ -509,13 +510,25 @@ class TodoStore:
                         ),
                     }
         if action == "begin":
-            # Pivot rule (R4): the sequential lock is "one task executing",
-            # not "one task in flight". Execution is gated on the user's
-            # verdict, so beginning the next item while the previous is
-            # closing is safe — the closing task occupies only the judge
-            # slot and the verdict flow finalizes it independently.
-            # Another task still in_progress is still refused: it is the
-            # one executing.
+            # Sequential close: the closing task occupies the current-task
+            # slot until the judge's done verdict finalizes it, so beginning
+            # the next item while one is closing would re-create the
+            # closing + in_progress overlap _enforce_invariants() rejects —
+            # the persist write would demote the newly begun task straight
+            # back to pending and the following close would be refused.
+            # Refuse here, naming the closing task, before mutating.
+            for other in self._items:
+                if other is not item and other["status"] == "closing":
+                    return {
+                        "ok": False,
+                        "error": (
+                            f"cannot begin task {item_id}: task {other['id']} "
+                            "is closing — wait for the judge to finalize it "
+                            "(or escalate it) before beginning another"
+                        ),
+                    }
+            # Another task still in_progress is also refused: it is the one
+            # executing.
             for other in self._items:
                 if other is not item and other["status"] == "in_progress":
                     return {
