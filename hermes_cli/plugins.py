@@ -2421,6 +2421,38 @@ def is_plugin_handoff_result(result: Any) -> bool:
     return isinstance(result, dict) and bool(result.get("agent_continue"))
 
 
+PLUGIN_PICKER_KEY: str = "picker"
+PLUGIN_PICKER_TITLE_KEY: str = "title"
+PLUGIN_PICKER_CHOICES_KEY: str = "choices"
+PLUGIN_PICKER_ON_SELECTED_KEY: str = "on_selected"
+PLUGIN_PICKER_RESPONSE_KEY: str = "response"
+
+
+def is_plugin_picker_result(result: Any) -> bool:
+    """Return True if a plugin command result requests an interactive picker.
+
+    A picker result is a dict carrying ``picker`` — a nested dict with
+    ``title``, ``choices``, and ``on_selected``. ``choices`` is the adapter's
+    own choice list (``{"value", "label", "is_current"}``); ``on_selected`` is
+    called as ``on_selected(chat_id, value)`` and returns the text injected as
+    the next turn, so the agent resumes the flow in the same session.
+
+    This mirrors the gateway's own ``/model`` and ``/reasoning`` pickers: the
+    capability is detected on the adapter type, and a platform without
+    ``send_choice_picker`` falls back to the command's text result.
+    """
+    if not isinstance(result, dict):
+        return False
+    picker = result.get(PLUGIN_PICKER_KEY)
+    if not isinstance(picker, dict):
+        return False
+    if not picker.get(PLUGIN_PICKER_TITLE_KEY):
+        return False
+    if not isinstance(picker.get(PLUGIN_PICKER_CHOICES_KEY), list):
+        return False
+    return callable(picker.get(PLUGIN_PICKER_ON_SELECTED_KEY))
+
+
 def get_plugin_commands() -> Dict[str, dict]:
     """Return the full plugin commands dict (name → {handler, description, plugin}).
 
