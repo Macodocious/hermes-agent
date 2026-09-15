@@ -11603,8 +11603,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         if command:
             try:
                 from hermes_cli.plugins import (
+                    PLUGIN_PICKER_RESPONSE_KEY,
                     get_plugin_command_handler,
                     is_plugin_handoff_result,
+                    is_plugin_picker_result,
                 )
                 # Normalize underscores to hyphens so Telegram's underscored
                 # autocomplete form matches plugin commands registered with
@@ -11615,6 +11617,73 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     result = plugin_handler(user_args)
                     if asyncio.iscoroutine(result):
                         result = await result
+                    if is_plugin_picker_result(result):
+                        # Plugin picker: render the platform's native select
+                        # menu, then resume the session with the selection.
+                        # Platforms without the capability fall through to the
+                        # command's own text result, so a command that offers a
+                        # picker still works everywhere (mirrors /model).
+                        _picker = result["picker"]
+                        _picker_adapter = self._adapter_for_source(source)
+                        if (
+                            _picker_adapter is not None
+                            and getattr(type(_picker_adapter), "send_choice_picker", None)
+                            is not None
+                        ):
+                            _chat_id = str(source.chat_id)
+                            _session_key = _quick_key or self._session_key_for_source(source)
+
+                            async def _on_plugin_picker_selected(
+                                _selected_chat_id: str, _value: str
+                            ) -> str:
+                                """Resume the flow with the selection as the next turn.
+
+                                The user-facing text is returned to the picker
+                                (it replaces the menu in place); the same text
+                                becomes the next turn so the agent continues in
+                                this session. A callback that raises surfaces as
+                                the picker's error line rather than a dead menu.
+                                """
+                                _selection = _picker["on_selected"](
+                                    _selected_chat_id, _value
+                                )
+                                if inspect.isawaitable(_selection):
+                                    _selection = await _selection
+                                _selection_text = (
+                                    str(_selection) if _selection else ""
+                                )
+                                if _selection_text:
+                                    self._spawn_plugin_picker_turn(
+                                        source, _selection_text
+                                    )
+                                return _selection_text or "Selected."
+
+                            _picker_meta = self._thread_metadata_for_source(source)
+                            _picker_result = await _picker_adapter.send_choice_picker(
+                                chat_id=_chat_id,
+                                title=_picker.get("title") or "Choose an option",
+                                choices=_picker.get("choices") or [],
+                                session_key=_session_key,
+                                on_choice_selected=_on_plugin_picker_selected,
+                                metadata=_picker_meta,
+                            )
+                            if getattr(_picker_result, "success", False):
+                                _picker_ack = result.get("response") or ""
+                                return _picker_ack or None
+                            logger.warning(
+                                "Plugin command /%s picker send failed (%s); "
+                                "falling back to text result",
+                                command,
+                                getattr(_picker_result, "error", "?"),
+                            )
+                        # The picker could not be rendered (platform lacks the
+                        # capability, or the send failed). Fall back to the
+                        # command's own text response so a raw result dict is
+                        # never posted to the user. A picker result that also
+                        # carries agent_continue still falls through to the
+                        # handoff branch below, which is the richer flow.
+                        if not is_plugin_handoff_result(result):
+                            return result.get(PLUGIN_PICKER_RESPONSE_KEY) or None
                     if is_plugin_handoff_result(result):
                         # Plugin handoff: show the ack immediately, then
                         # rewrite the turn to the seed message and fall
@@ -17564,6 +17633,41 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             user_id=str(evt.get("user_id") or "").strip() or None,
             user_name=str(evt.get("user_name") or "").strip() or None,
         )
+
+    def _spawn_plugin_picker_turn(self, source: SessionSource, text: str) -> None:
+        """Inject a plugin picker selection as the next conversational turn.
+
+        The picker callback runs from the adapter's interaction handler, not
+        from the message pipeline, so the turn is dispatched as a synthetic
+        internal event built from the original source. Internal events skip
+        user authorization (the user already authorized the originating
+        command) while still routing through the normal agent pipeline, which
+        keeps role alternation and session state consistent.
+
+        The task is tracked in ``_background_tasks`` so shutdown drains it and
+        the reference is not dropped mid-flight.
+        """
+        try:
+            event = MessageEvent(
+                text=text,
+                message_type=MessageType.TEXT,
+                source=source,
+                internal=True,
+            )
+            task = asyncio.create_task(self._handle_message(event))
+            background_tasks = getattr(self, "_background_tasks", None)
+            if background_tasks is None:
+                self._background_tasks = set()
+                background_tasks = self._background_tasks
+            background_tasks.add(task)
+            task.add_done_callback(background_tasks.discard)
+        except Exception:
+            logger.error(
+                "Plugin picker turn injection failed for %s chat=%s",
+                getattr(getattr(source, "platform", None), "value", "?"),
+                getattr(source, "chat_id", "?"),
+                exc_info=True,
+            )
 
     async def _inject_watch_notification(
         self, synth_text: str, evt: dict,
