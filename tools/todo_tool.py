@@ -468,9 +468,10 @@ class TodoStore:
         ``close`` / ``escalate`` move a single item between lifecycle
         statuses per ``_LIFECYCLE_TRANSITIONS``; anything else is refused
         with an error dict. ``begin`` is refused while another task is
-        ``in_progress`` (one task executing) or while another task is
-        ``closing`` — sequential close: the closing task occupies the
-        current-task slot until the judge's done verdict finalizes it.
+        ``in_progress`` (one task executing) or ``closing``; ``resume``
+        is refused while another task is ``closing`` — sequential close:
+        the closing task occupies the current-task slot until the judge's
+        done verdict finalizes it.
         ``close`` moves the task to ``closing`` — the judge's ``done``
         verdict is the second key that finalizes it via ``finalize``
         (internal, not model-facing).
@@ -543,6 +544,26 @@ class TodoStore:
         elif action == "pause":
             item["status"] = "paused"
         elif action == "resume":
+            # Sequential close: a paused task cannot resume while a sibling
+            # is closing. Closing occupies the current-task slot until the
+            # judge's done verdict finalizes it, so resuming a paused
+            # sibling would construct the same closing + in_progress
+            # overlap the begin guard refuses — the persist write would
+            # demote it straight back to pending and the following close
+            # would be refused. The task's own closing -> in_progress
+            # transition stays allowed: that is the judge's premature-close
+            # reversal (task_manager.observe_verdict), not a second
+            # concurrent task.
+            for other in self._items:
+                if other is not item and other["status"] == "closing":
+                    return {
+                        "ok": False,
+                        "error": (
+                            f"cannot resume task {item_id}: task {other['id']} "
+                            "is closing — wait for the judge to finalize it "
+                            "(or escalate it) before resuming another"
+                        ),
+                    }
             item["status"] = "in_progress"
         elif action == "close":
             item["status"] = "closing"

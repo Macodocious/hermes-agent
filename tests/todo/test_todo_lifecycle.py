@@ -258,3 +258,44 @@ def test_begin_refusal_names_the_recovery(store: TodoStore) -> None:
     assert "task 1" in result["error"]
     assert "finalize" in result["error"] or "escalate" in result["error"]
     assert store.read() == before
+
+
+def test_resume_refused_while_another_task_is_closing(store: TodoStore) -> None:
+    """Sequential close: a paused task cannot resume while a sibling is
+    closing.
+
+    Same bug class as the begin refusal: resuming a paused sibling while
+    another task is closing constructs the closing + in_progress overlap
+    the write path demotes, so the resume would be silently rolled back
+    and the following close refused. Refusal names the closing task and
+    the recovery, and leaves the list untouched.
+    """
+    store.transition("begin", "2")
+    store.transition("pause", "2")
+    store.transition("begin", "1")
+    store.transition("close", "1")
+    before = store.read()
+    result = store.transition("resume", "2")
+    assert result["ok"] is False
+    assert "task 1" in result["error"]
+    assert "finalize" in result["error"] or "escalate" in result["error"]
+    statuses = {i["id"]: i["status"] for i in store.read()}
+    assert statuses == {"1": "closing", "2": "paused"}
+    assert store.read() == before
+
+
+def test_resume_still_reverses_a_premature_close(store: TodoStore) -> None:
+    """The judge's premature-close reversal must keep working.
+
+    ``observe_verdict`` reverses a continue/wait verdict by resuming the
+    closing task itself (closing -> in_progress). That is not a second
+    concurrent task, so the sequential-close guard — which excludes the
+    item itself — must not block it.
+    """
+    store.transition("begin", "1")
+    store.transition("close", "1")
+    result = store.transition("resume", "1")
+    assert result["ok"] is True
+    assert result["item"]["status"] == "in_progress"
+    statuses = {i["id"]: i["status"] for i in store.read()}
+    assert statuses == {"1": "in_progress", "2": "pending"}
