@@ -2257,7 +2257,10 @@ class TestStaleFallbackCandidateSkip:
 
         assert result.choices[0].message.content == "openrouter-serves"
         assert mock_fb.call_count == 2
-        assert mock_fb.call_args_list[1].kwargs.get("reason") == "stale fallback credential"
+        # The bounded re-walk re-uses the original failure reason when it
+        # re-walks the fallback chain; the stale-credential skip itself is
+        # signalled by _mark_provider_unhealthy, not a distinct reason.
+        assert mock_fb.call_args_list[1].kwargs.get("reason") == "connection error"
         mock_mark.assert_called_once_with("anthropic")
         assert stale_fb.chat.completions.create.call_count == 1
         assert healthy_fb.chat.completions.create.call_count == 1
