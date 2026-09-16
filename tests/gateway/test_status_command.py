@@ -321,7 +321,14 @@ async def test_agents_command_reports_active_agents_and_processes(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_tasks_alias_routes_to_agents_command(monkeypatch):
+async def test_tasks_routes_to_task_command(monkeypatch):
+    """``/tasks`` is the todo/task handler, not the agents handler.
+
+    The ``/task`` → ``/tasks`` rename repurposed the name to the session's
+    todo list, so a session with no task list gets the task handler's
+    empty-state reply rather than the "Active Agents & Tasks" header that
+    ``/agents`` emits.
+    """
     session_entry = SessionEntry(
         session_key=build_session_key(_make_source()),
         session_id="sess-1",
@@ -332,17 +339,10 @@ async def test_tasks_alias_routes_to_agents_command(monkeypatch):
         total_tokens=0,
     )
     runner = _make_runner(session_entry)
-    runner._background_tasks = set()
-
-    class _FakeRegistry:
-        def list_sessions(self):
-            return []
-
-    monkeypatch.setattr("tools.process_registry.process_registry", _FakeRegistry())
 
     result = await runner._handle_message(_make_event("/tasks"))
 
-    assert "Active Agents & Tasks" in result
+    assert "No task list for this session yet" in result
 
 
 @pytest.mark.asyncio

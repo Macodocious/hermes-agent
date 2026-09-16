@@ -217,108 +217,151 @@ class TestCronTimezone:
         _reset_hermes_time_cache()
         os.environ.pop("HERMES_TIMEZONE", None)
 
-    def test_parse_schedule_duration_uses_tz_aware_now(self):
-        """parse_schedule_duration() should use hermes_time.now()."""
+    def test_parse_schedule_one_shot_duration_anchors_to_configured_tz(self):
+        """A bare duration schedule ('30m') anchors run_at to the configured zone."""
         os.environ["HERMES_TIMEZONE"] = "America/New_York"
-        from cron.jobs import parse_schedule_duration
-        result = parse_schedule_duration("every 5m")
-        assert result is not None
-        assert result.tzinfo is not None
+        _reset_hermes_time_cache()
+        from cron.jobs import parse_schedule
+
+        parsed = parse_schedule("30m")
+        assert parsed["kind"] == "once"
+        run_at = datetime.fromisoformat(parsed["run_at"])
+        assert run_at.tzinfo is not None
+        # parse_schedule() anchors naive wall-clock intent to the CONFIGURED
+        # Hermes zone (hermes_time.now()), not the server-local zone (#51021).
+        # The ISO round-trip yields a fixed-offset tzinfo (no ZoneInfo .key),
+        # so compare the UTC offset against the configured zone's offset.
+        from zoneinfo import ZoneInfo
+
+        expected_offset = datetime.now(ZoneInfo("America/New_York")).utcoffset()
+        assert run_at.utcoffset() == expected_offset
+
+    def test_parse_schedule_every_is_recurring_interval(self):
+        """A bare duration is a one-shot; 'every X' is a recurring interval."""
+        os.environ["HERMES_TIMEZONE"] = "America/New_York"
+        _reset_hermes_time_cache()
+        from cron.jobs import parse_schedule
+
+        assert parse_schedule("every 5m") == {
+            "kind": "interval",
+            "minutes": 5,
+            "display": "every 5m",
+        }
 
     def test_compute_next_run_tz_aware(self):
-        """compute_next_run() should produce tz-aware datetimes."""
+        """compute_next_run() returns a tz-aware ISO timestamp for a parsed schedule."""
         os.environ["HERMES_TIMEZONE"] = "UTC"
-        from cron.jobs import compute_next_run
-        now = datetime.now(timezone.utc)
-        result = compute_next_run("every 1h", now=now)
-        assert result is not None
-        assert result.tzinfo is not None
+        _reset_hermes_time_cache()
+        from cron.jobs import compute_next_run, parse_schedule
+
+        next_run = compute_next_run(parse_schedule("every 1h"))
+        assert next_run is not None
+        parsed_next = datetime.fromisoformat(next_run)
+        assert parsed_next.tzinfo is not None
+        # HERMES_TIMEZONE=UTC → the computed run lands in UTC.
+        assert parsed_next.utcoffset() == timedelta(0)
 
     def test_get_due_jobs_handles_naive_timestamps(self, tmp_path):
-        """Jobs stored with naive timestamps should be handled correctly."""
+        """A job stored with naive timestamps is evaluated without raising."""
         import json
-        from cron.jobs import get_due_jobs
-        # Create a job with a naive timestamp in the past
-        past_naive = (datetime.now() - timedelta(hours=1)).replace(tzinfo=None).isoformat()
-        jobs_file = tmp_path / "jobs.json"
-        jobs_file.write_text(json.dumps([{
-            "id": "test-job",
-            "prompt": "test",
-            "schedule": "every 5m",
-            "created_at": past_naive,
-            "next_run_at": past_naive,
-            "enabled": True,
-        }]))
-        # Should not raise
-        result = get_due_jobs(jobs_file)
-        assert isinstance(result, list)
+        from cron.jobs import get_due_jobs, use_cron_store
 
-    def test_ensure_aware_naive_preserves_absolute_time(self):
-        """ensure_aware() on naive datetime preserves absolute time (treats as system local)."""
-        from cron.jobs import ensure_aware
+        past_naive = (datetime.now() - timedelta(hours=1)).replace(tzinfo=None).isoformat()
+        with use_cron_store(tmp_path):
+            jobs_file = tmp_path / "cron" / "jobs.json"
+            jobs_file.parent.mkdir(parents=True, exist_ok=True)
+            jobs_file.write_text(json.dumps({"jobs": [{
+                "id": "test-job",
+                "prompt": "test",
+                "schedule": {"kind": "interval", "minutes": 5},
+                "created_at": past_naive,
+                "next_run_at": past_naive,
+                "enabled": True,
+            }]}))
+            result = get_due_jobs()
+        assert isinstance(result, list)
+        # Naive past timestamp, far beyond grace → still fires once now.
+        assert [j["id"] for j in result] == ["test-job"]
+
+    def test_ensure_aware_naive_treats_wall_clock_as_system_local(self):
+        """_ensure_aware() on a naive datetime attaches the system-local zone."""
+        from cron.jobs import _ensure_aware
+
         naive = datetime(2026, 1, 15, 12, 0, 0)
-        result = ensure_aware(naive)
+        result = _ensure_aware(naive)
         assert result.tzinfo is not None
+        # The naive value is read as system-local wall time, so the absolute
+        # instant equals the same wall clock interpreted in the local zone.
+        local_tz = datetime(2026, 1, 15, 12, 0, 0).astimezone().tzinfo
+        assert result == datetime(2026, 1, 15, 12, 0, 0, tzinfo=local_tz)
 
     def test_ensure_aware_normalizes_aware_to_hermes_tz(self):
-        """ensure_aware() on aware datetime normalizes to hermes_time zone."""
+        """_ensure_aware() on an aware datetime converts it into hermes_time's zone."""
         os.environ["HERMES_TIMEZONE"] = "UTC"
-        from cron.jobs import ensure_aware
-        aware_utc = datetime(2026, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
-        result = ensure_aware(aware_utc)
-        assert result.tzinfo is not None
-        # Should be in UTC since that's the configured zone
-        assert result.utcoffset() == timedelta(0)
+        _reset_hermes_time_cache()
+        from cron.jobs import _ensure_aware
 
-    def test_ensure_aware_due_job_not_skipped_when_system_ahead(self, monkeypatch):
-        """A due job with a past timestamp should not be skipped if system clock is ahead."""
-        from cron import jobs
-        # Patch system time to be ahead of the job's next_run_at
-        future = datetime.now(timezone.utc) + timedelta(hours=2)
-        class FakeDateTime:
-            @classmethod
-            def now(cls, tz=None):
-                return future
-        monkeypatch.setattr(jobs, "datetime", FakeDateTime)
-        # Now create a job with next_run_at in the past relative to fake now
-        from cron.jobs import ensure_aware, get_due_jobs
-        past = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        aware_utc = datetime(2026, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
+        result = _ensure_aware(aware_utc)
+        assert result.tzinfo is not None
+        assert result.utcoffset() == timedelta(0)
+        assert result == aware_utc  # same absolute instant
+
+    def test_due_job_not_skipped_when_clock_is_ahead(self, tmp_path, monkeypatch):
+        """A past-due job must be reported due against the configured clock.
+
+        Regression guard: a stored next_run_at older than the configured
+        Hermes clock must not be skipped when the system clock runs ahead.
+        """
         import json
-        import tempfile
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json.dump([{
+        from cron import jobs
+        from cron.jobs import get_due_jobs, use_cron_store
+
+        fixed_now = hermes_time.now()
+        monkeypatch.setattr(jobs, "_hermes_now", lambda: fixed_now)
+        past = (fixed_now - timedelta(hours=1)).isoformat()
+
+        with use_cron_store(tmp_path):
+            jobs_file = tmp_path / "cron" / "jobs.json"
+            jobs_file.parent.mkdir(parents=True, exist_ok=True)
+            jobs_file.write_text(json.dumps({"jobs": [{
                 "id": "test",
                 "prompt": "test",
-                "schedule": "every 5m",
+                "schedule": {"kind": "interval", "minutes": 5},
                 "created_at": past,
                 "next_run_at": past,
                 "enabled": True,
-            }], f)
-            f.flush()
-            result = get_due_jobs(f.name)
-            assert len(result) == 1, f"Expected 1 due job, got {len(result)}"
+            }]}))
+            result = get_due_jobs()
+        assert [j["id"] for j in result] == ["test"]
 
     def test_get_due_jobs_naive_cross_timezone(self, tmp_path):
-        """Naive job timestamps should be compared correctly across timezone configs."""
+        """Naive stored timestamps are evaluated consistently across TZ configs."""
         import json
-        from cron.jobs import get_due_jobs
-        # Job was created 1 hour ago in some timezone
+        from cron.jobs import get_due_jobs, use_cron_store
+
         past = (datetime.now() - timedelta(hours=1)).replace(tzinfo=None).isoformat()
-        jobs_file = tmp_path / "jobs.json"
-        jobs_file.write_text(json.dumps([{
+        record = {
             "id": "tz-test",
             "prompt": "test",
-            "schedule": "every 5m",
+            "schedule": {"kind": "interval", "minutes": 5},
             "created_at": past,
             "next_run_at": past,
             "enabled": True,
-        }]))
-        # Run with different timezone configs — result should be consistent
-        for tz in ["UTC", "America/New_York", "Asia/Tokyo"]:
-            os.environ["HERMES_TIMEZONE"] = tz
-            _reset_hermes_time_cache()
-            result = get_due_jobs(jobs_file)
-            assert isinstance(result, list)
+        }
+        with use_cron_store(tmp_path):
+            jobs_file = tmp_path / "cron" / "jobs.json"
+            jobs_file.parent.mkdir(parents=True, exist_ok=True)
+            # Run with different timezone configs — the naive instant is
+            # normalized per config, so the job stays due in every zone.
+            # Rewrite the record each pass: get_due_jobs() fast-forwards the
+            # stored next_run_at, which would otherwise hide the job next round.
+            for tz in ["UTC", "America/New_York", "Asia/Tokyo"]:
+                os.environ["HERMES_TIMEZONE"] = tz
+                _reset_hermes_time_cache()
+                jobs_file.write_text(json.dumps({"jobs": [dict(record)]}))
+                result = get_due_jobs()
+                assert [j["id"] for j in result] == ["tz-test"], tz
         os.environ.pop("HERMES_TIMEZONE", None)
 
     def test_create_job_stores_tz_aware_timestamps(self, tmp_path, monkeypatch):

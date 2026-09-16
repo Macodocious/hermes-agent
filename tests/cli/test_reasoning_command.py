@@ -757,6 +757,14 @@ class TestReasoningDeltasFiredFlag(unittest.TestCase):
         agent.stream_delta_callback = None
         agent._stream_callback = None
         agent.verbose_logging = False
+        # _build_assistant_message reaches the provider-detection helpers
+        # (_needs_deepseek_tool_reasoning et al.) which read these three
+        # attributes. __new__ skips __init__, so seed the non-thinking
+        # default here — these tests exercise callback firing, not
+        # provider-gated reasoning replay.
+        agent.provider = ""
+        agent.model = ""
+        agent.base_url = ""
         return agent
 
     def test_fire_reasoning_delta_calls_callback(self):

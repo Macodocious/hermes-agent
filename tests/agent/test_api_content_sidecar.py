@@ -537,7 +537,10 @@ class TestWireInvariant:
         assert len(reqs) == 2
         sent_1 = _user_messages(reqs[0])[0]["content"]
         sent_2 = _user_messages(reqs[1])[0]["content"]
-        assert sent_1 == "hello please\n\nPLUGIN-CTX"
+        # P2 always-on visibility: the seeded-task block prefixes the current
+        # user turn; the original message and plugin context follow intact.
+        assert sent_1.startswith("[Active tasks]")
+        assert sent_1.endswith("hello please\n\nPLUGIN-CTX")
         assert sent_2 == sent_1  # repeated builds: identical bytes
 
         # The sidecar never reaches the provider.
@@ -578,7 +581,8 @@ class TestWireInvariant:
 
         # And the new current-turn message got its own injection + sidecar.
         current = _user_messages(_chat_requests(handler)[0])[-1]
-        assert current["content"] == "second question\n\nPLUGIN-CTX"
+        assert current["content"].startswith("[Active tasks]")
+        assert current["content"].endswith("second question\n\nPLUGIN-CTX")
 
 
 # ---------------------------------------------------------------------------
