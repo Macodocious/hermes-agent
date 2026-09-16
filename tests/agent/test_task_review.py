@@ -206,3 +206,50 @@ def test_changed_modules_excludes_tests_and_non_python(monkeypatch) -> None:
 def test_changed_modules_empty_without_diff(monkeypatch) -> None:
     monkeypatch.setattr(task_manager, "_git_diff", lambda session_id: None)
     assert task_manager._changed_modules("s") == []
+
+
+# ── spec-ref resolution for the renamed spec artifact ──────────────────
+
+
+def test_spec_ref_prefers_explicit_item_spec() -> None:
+    """The item's own spec ref wins — the spec artifact is <plan>-<spec>.md,
+    so it cannot be derived from the plan ref alone."""
+    resolved = task_manager._spec_ref_for_item(
+        {"spec": "/p/plans/auth-oauth.md"}, "/p/plans/20260916_010203-auth.md"
+    )
+    assert resolved == "/p/plans/auth-oauth.md"
+
+
+def test_spec_ref_falls_back_to_writing_plan_sibling() -> None:
+    """Without an explicit spec ref, the sibling spec.md of the plan ref is
+    the fallback — that is the layout writing_plan produces."""
+    resolved = task_manager._spec_ref_for_item({}, "/p/plans/slug/plan.md")
+    assert resolved == "/p/plans/slug/spec.md"
+
+
+def test_spec_ref_empty_without_spec_or_plan() -> None:
+    assert task_manager._spec_ref_for_item({}, "") == ""
+
+
+def test_spec_ref_blank_spec_falls_back() -> None:
+    """A whitespace-only spec ref is not a reference — fall back."""
+    resolved = task_manager._spec_ref_for_item({"spec": "   "}, "/p/plan.md")
+    assert resolved == "/p/spec.md"
+
+
+def test_probe_binds_explicit_spec_text(monkeypatch, tmp_path) -> None:
+    """The probe's intent prompt carries the text of the item's explicit
+    spec ref, so the intent check finds the renamed spec artifact."""
+    store = TodoStore()
+    spec_file = tmp_path / "auth-oauth.md"
+    spec_file.write_text("# Spec\nOAuth must be device-code.", encoding="utf-8")
+    _seed(store, "1", "Build the thing", spec=str(spec_file))
+    agent = _make_agent(store)
+    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
+
+    _close_in_flight(store, "1")
+    task_manager.observe_verdict(agent, {"verdict": "done"})
+
+    probe = yaml.safe_load(_active_probes(tmp_path)[0].read_text(encoding="utf-8"))
+    intent = next(c for c in probe["checks"] if c["type"] == "intent")
+    assert "OAuth must be device-code." in intent["prompt"]

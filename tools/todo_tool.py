@@ -909,6 +909,13 @@ class TodoStore:
         # only an explicit plan ref is model-authorable.
         if isinstance(item.get("plan"), str) and str(item["plan"]).strip():
             validated["plan"] = str(item["plan"]).strip()
+        # The spec reference survives validation alongside the plan ref for
+        # the same reason the plan ref exists: the post-close probe binds the
+        # approved spec into its intent prompt. A single plan path cannot
+        # name which spec — the spec artifact is <plan>-<spec>.md — so the
+        # spec ref is carried explicitly rather than derived.
+        if isinstance(item.get("spec"), str) and str(item["spec"]).strip():
+            validated["spec"] = str(item["spec"]).strip()
         origin = str(item.get("origin", "")).strip()
         if origin:
             validated["origin"] = origin
@@ -1150,6 +1157,17 @@ TODO_SCHEMA = {
                                 "the audit checks work advances it, and the "
                                 "post-close probe verifies against its "
                                 "attached spec."
+                            )
+                        },
+                        "spec": {
+                            "type": "string",
+                            "description": (
+                                "Optional specification file path for this "
+                                "task. The spec artifact is named "
+                                "<plan>-<spec>.md, so it cannot be derived "
+                                "from the plan ref alone; set this when the "
+                                "task was authored from a spec so the "
+                                "post-close probe verifies against it."
                             )
                         }
                     },
