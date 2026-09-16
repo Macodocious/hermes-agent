@@ -467,11 +467,11 @@ class TodoStore:
         Deterministic state machine: ``begin`` / ``pause`` / ``resume`` /
         ``close`` / ``escalate`` move a single item between lifecycle
         statuses per ``_LIFECYCLE_TRANSITIONS``; anything else is refused
-        with an error dict. ``begin`` is refused while another task is
-        ``in_progress`` (one task executing) or ``closing``; ``resume``
-        is refused while another task is ``closing`` — sequential close:
-        the closing task occupies the current-task slot until the judge's
-        done verdict finalizes it.
+        with an error dict. ``begin`` and ``resume`` — the two doors into
+        ``in_progress`` — are each refused while another task is
+        ``in_progress`` (one task executing) or ``closing``; sequential
+        close: the closing task occupies the current-task slot until the
+        judge's done verdict finalizes it.
         ``close`` moves the task to ``closing`` — the judge's ``done``
         verdict is the second key that finalizes it via ``finalize``
         (internal, not model-facing).
@@ -564,6 +564,25 @@ class TodoStore:
                             "(or escalate it) before resuming another"
                         ),
                     }
+            # Another task still in_progress is the one executing: resuming
+            # a paused sibling alongside it would construct two current
+            # tasks, and the write-path invariant would demote the resumed
+            # one straight back to pending — a success that silently
+            # reverts. Resume of a *closing* task is exempt: that is the
+            # judge's premature-close reversal (observe_verdict), which
+            # deliberately passes through the overlap for the write path to
+            # collapse (see test_verdict_continue_with_closing_and_in_progress_keeps_both_open).
+            if item["status"] == "paused":
+                for other in self._items:
+                    if other is not item and other["status"] == "in_progress":
+                        return {
+                            "ok": False,
+                            "error": (
+                                f"cannot resume task {item_id}: task {other['id']} "
+                                "is still in_progress — pause, close, or escalate "
+                                "it first"
+                            ),
+                        }
             item["status"] = "in_progress"
         elif action == "close":
             item["status"] = "closing"

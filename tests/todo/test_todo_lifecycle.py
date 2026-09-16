@@ -299,3 +299,40 @@ def test_resume_still_reverses_a_premature_close(store: TodoStore) -> None:
     assert result["item"]["status"] == "in_progress"
     statuses = {i["id"]: i["status"] for i in store.read()}
     assert statuses == {"1": "in_progress", "2": "pending"}
+
+
+def test_resume_refused_while_another_task_is_in_progress(store: TodoStore) -> None:
+    """Resume is the second door into ``in_progress`` and guards it too.
+
+    ``begin`` refuses while a sibling is ``in_progress``; ``resume`` must
+    match for a paused item. Otherwise resuming a paused task alongside
+    the executing one constructs two current tasks, which the write-path
+    invariant demotes back to ``pending`` — a success that silently
+    reverts, the same bug class as the other doors.
+    """
+    store.transition("begin", "2")
+    store.transition("pause", "2")
+    store.transition("begin", "1")
+    before = store.read()
+    result = store.transition("resume", "2")
+    assert result["ok"] is False
+    assert "task 1" in result["error"]
+    statuses = {i["id"]: i["status"] for i in store.read()}
+    assert statuses == {"1": "in_progress", "2": "paused"}
+    assert store.read() == before
+
+
+def test_resume_allowed_after_the_running_task_is_paused(store: TodoStore) -> None:
+    """The refusal is a gate, not a lock: pausing frees the slot.
+
+    Task switching must still work — pause the running task, then resume
+    the other. Both guards on ``resume`` must let that through.
+    """
+    store.transition("begin", "2")
+    store.transition("pause", "2")
+    store.transition("begin", "1")
+    store.transition("pause", "1")
+    result = store.transition("resume", "2")
+    assert result["ok"] is True
+    statuses = {i["id"]: i["status"] for i in store.read()}
+    assert statuses == {"1": "paused", "2": "in_progress"}
