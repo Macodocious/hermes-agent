@@ -1075,6 +1075,11 @@ class GatewaySlashCommandsMixin:
         store first (it owns the authoritative per-turn state), then the
         persisted SessionDB row as a fallback so the command stays useful
         between turns and after restarts.
+
+        When the platform adapter can render the rich card, this sends the
+        card itself and returns an empty string so the reply contract is
+        untouched (same shape as the /learn acknowledgement).  Otherwise the
+        plain-text list below is returned as the reply.
         """
         from gateway.run import _AGENT_PENDING_SENTINEL
 
@@ -1103,6 +1108,9 @@ class GatewaySlashCommandsMixin:
         if not items:
             return "The task list for this session is empty."
 
+        if await self._try_send_task_card(event, session_entry, items):
+            return ""
+
         from hermes_constants import TASK_LIST_TITLE
 
         lines = [f"── **{TASK_LIST_TITLE}** ───────"]
@@ -1118,6 +1126,76 @@ class GatewaySlashCommandsMixin:
             lines.append(f"- {marker} {item['content']}{source_tag}")
 
         return "\n".join(lines)
+
+    async def _try_send_task_card(
+        self,
+        event: MessageEvent,
+        session_entry: Any,
+        items: list,
+    ) -> bool:
+        """Send the rich /tasks card when the adapter supports it.
+
+        Returns True when the card was sent (the caller then suppresses the
+        text reply).  Any adapter without ``send_task_card`` — the CLI
+        included — falls through to the plain-text renderer.
+        """
+        source = event.source
+        elapsed_label = self._task_card_elapsed_label(session_entry)
+
+        try:
+            from gateway.task_card import build_task_card
+
+            card = build_task_card(items, elapsed_label)
+            if not card:
+                return False
+
+            adapter = getattr(self, "_adapter_for_source", lambda _source: None)(source)
+            send_card = getattr(adapter, "send_task_card", None) if adapter else None
+            # Require a real coroutine function.  A bare MagicMock (as used by
+            # test doubles) auto-creates any attribute, so presence alone is
+            # not evidence the adapter can render the card.
+            if send_card is None or not inspect.iscoroutinefunction(send_card):
+                return False
+
+            metadata = self._thread_metadata_for_source(source)
+            result = await send_card(str(source.chat_id), card, metadata=metadata)
+            if getattr(result, "success", False) is True:
+                return True
+
+            # The card failed to send — fall back to text rather than leaving
+            # the user with no answer at all.
+            logger.warning(
+                "/tasks card send failed, falling back to text: %s",
+                getattr(result, "error", result),
+            )
+            return False
+        except Exception:
+            logger.warning("/tasks card send raised, falling back to text", exc_info=True)
+            return False
+
+    @staticmethod
+    def _task_card_elapsed_label(session_entry: Any) -> str:
+        """Elapsed time since the session began, for the card footer."""
+        from datetime import timezone
+
+        from gateway.task_card import format_elapsed
+
+        started_at = getattr(session_entry, "created_at", None)
+        if not started_at:
+            return format_elapsed(0)
+
+        try:
+            if isinstance(started_at, datetime):
+                start = started_at
+            else:
+                start = datetime.fromisoformat(str(started_at))
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=timezone.utc)
+            return format_elapsed(time.time() - start.timestamp())
+        except Exception:
+            logger.debug("Could not compute /tasks elapsed time", exc_info=True)
+            return format_elapsed(0)
+
 
     async def _handle_stop_command(self, event: MessageEvent) -> Union[str, EphemeralReply]:
         """Handle /stop command - interrupt a running agent.
