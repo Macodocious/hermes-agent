@@ -63,6 +63,10 @@ _DISCORD_MAX_APP_COMMANDS = 100
 _DISCORD_SELECT_FIELD_LIMIT = 100
 _DISCORD_BUTTON_LABEL_LIMIT = 80
 _DISCORD_ELLIPSIS = "\u2026"
+
+# Accent rail for the /tasks card.  Discord's dark-theme blurple, matching the
+# approved card design.
+_TASK_CARD_ACCENT_RGB = (0x58, 0x65, 0xF2)
 _DISCORD_NONCONVERSATIONAL_METADATA_KEYS = frozenset({
     "non_conversational",
     "non_conversational_history",
@@ -6656,6 +6660,81 @@ class DiscordAdapter(BasePlatformAdapter):
             return SendResult(success=True, message_id=str(msg.id))
         except Exception as e:
             return SendResult(success=False, error=str(e))
+
+    async def send_task_card(
+        self,
+        chat_id: str,
+        card: Dict[str, Any],
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> SendResult:
+        """Send the /tasks card as a Components V2 layout message.
+
+        The card's spec comes from ``gateway.task_card.build_task_card`` and
+        carries the approved design's blocks verbatim: a heading text display,
+        one text display per section, and a subtext footer.
+
+        Deliberately Components V2 (``LayoutView`` + ``Container``) rather than
+        a classic embed.  The approved card is a V2 layout message — a single
+        container with an accent rail holding nine children — and the library
+        sets the ``IS_COMPONENTS_V2`` flag itself when the view reports V2
+        components (``discord/http.py:handle_message_parameters``).  A classic
+        embed cannot represent that structure: it offers one body font size,
+        no separators, and no container, so it renders the same text as a
+        visibly different card.
+
+        Row text is written verbatim into the text displays, including the
+        ``> `` prefix on faded completed rows — Discord styles blockquotes in
+        message markup (``.markup blockquote`` is ``--text-subtle`` with no
+        font-size), so completed rows render muted at full body size.
+        """
+        if not self._client or not DISCORD_AVAILABLE:
+            return SendResult(success=False, error="Not connected")
+
+        if not card or not card.get("heading"):
+            return SendResult(success=False, error="Task card has no content")
+
+        try:
+            target_id = chat_id
+            if metadata and metadata.get("thread_id"):
+                target_id = metadata["thread_id"]
+
+            channel = self._client.get_channel(int(target_id))
+            if not channel:
+                channel = await self._client.fetch_channel(int(target_id))
+            if not channel:
+                return SendResult(success=False, error=f"Channel {target_id} not found")
+
+            view = self._build_task_card_view(card)
+            msg = await channel.send(view=view)
+            return SendResult(success=True, message_id=str(msg.id))
+        except Exception as e:
+            logger.error("[%s] Failed to send task card: %s", self.name, e, exc_info=True)
+            return SendResult(success=False, error=str(e))
+
+    def _build_task_card_view(self, card: Dict[str, Any]) -> Any:
+        """Build the Components V2 layout view for a task-card spec.
+
+        Structure mirrors the approved card exactly: one container carrying the
+        accent rail, then heading, per-section text displays, and the footer —
+        with a separator between every block, dividers suppressed between
+        sections and shown only above the footer.
+        """
+        view = discord.ui.LayoutView(timeout=None)
+        container = discord.ui.Container(
+            accent_color=discord.Color.from_rgb(*_TASK_CARD_ACCENT_RGB)
+        )
+        container.add_item(discord.ui.TextDisplay(str(card.get("heading") or "")))
+
+        sections = card.get("sections") or []
+        for section in sections:
+            container.add_item(discord.ui.Separator(visible=False))
+            container.add_item(discord.ui.TextDisplay(str(section.get("text") or "")))
+
+        container.add_item(discord.ui.Separator(visible=True))
+        container.add_item(discord.ui.TextDisplay(str(card.get("footer") or "")))
+
+        view.add_item(container)
+        return view
 
     async def send_clarify(
         self,

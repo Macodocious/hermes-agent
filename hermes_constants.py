@@ -1257,6 +1257,63 @@ def apply_ipv4_preference(force: bool = False) -> None:
 TASK_LIST_TITLE = "Current Tasks"
 TASK_LIST_HEADER = f"── {TASK_LIST_TITLE} ───────"
 
+# Title glyph for the rich (embed) task card.  Chosen deliberately: the 📋
+# prefix is part of the approved design, and the card is a deliberate visual
+# override of the plain header above.
+TASK_CARD_TITLE_GLYPH = "\U0001f4cb"
+
+# Section labels for the rich task card.  These mirror the interactive
+# approval prompt's field-name styling (bold, title case, no icon) — the
+# approved design deliberately drops the drawing's all-caps form and the
+# leading status glyphs from the labels themselves.
+TASK_CARD_SECTION_IN_PROGRESS = "In Progress"
+TASK_CARD_SECTION_UP_NEXT = "Up Next"
+TASK_CARD_SECTION_DONE = "Done"
+
+# Per-row status glyphs.  All three are non-emoji codepoints so Discord
+# renders them as text: U+25B6 (▶) carries the Unicode Emoji property and
+# Discord substitutes a colour play-button for it, so the filled triangle is
+# U+25BA instead.
+TASK_CARD_GLYPH_ACTIVE = "\u25ba"
+TASK_CARD_GLYPH_PENDING = "\u25cb"
+TASK_CARD_GLYPH_DONE = "\u2713"
+
+# Progress bar segments.  One glyph per task so the bar and the ratio cannot
+# disagree; they are rendered from the same counts.
+TASK_CARD_BAR_FILLED = "\u2588"
+TASK_CARD_BAR_EMPTY = "\u2591"
+
+# Fade prefix for completed rows.  A blockquote (`> `) is the only Discord
+# primitive that mutes text (var(--text-subtle)) without also shrinking it —
+# subtext (`-#`) renders .875rem and a code fence is monospace at .75rem.
+# The approved design fades completed rows by colour alone, at body size.
+TASK_CARD_FADE_PREFIX = "> "
+
+# Separator inside the card footer, between the ratio and the elapsed time.
+TASK_CARD_FOOTER_SEPARATOR = "\u00b7"
+
+# The footer is a subtext text display, so the bar keeps the approved card's
+# rendering: `-#` mutes and shrinks the line, and the code span around the bar
+# holds its twelve segments in an even monospace column.
+TASK_CARD_FOOTER_SUBTEXT_PREFIX = "-# "
+
+# Backticks around the bar give it the monospace run the approved card shows.
+TASK_CARD_FOOTER_CODE_FENCE = "`"
+
+# Markdown heading marker for the card title.  The approved card renders its
+# title as a heading text display (`###`), not as an embed title.
+TASK_CARD_TITLE_HEADING = "###"
+
+# Rows beyond this count collapse into a single "+N more" line so a long task
+# list cannot overflow the card's text budget.
+TASK_CARD_MAX_ROWS_PER_SECTION = 12
+
+# Display-text budget for the whole card.  Discord rejects a Components V2
+# message whose text displays total more than 4000 characters, so this is the
+# platform's documented cap rather than a tunable — clipping below it would
+# silently drop task rows the platform could have rendered.
+TASK_CARD_MAX_CHARS = 4000
+
 
 # ─── Streaming Response Constants ────────────────────────────────────────────
 
