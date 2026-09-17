@@ -26,6 +26,7 @@ from gateway.platforms.base import MessageEvent, SendResult
 from gateway.session import SessionEntry, SessionSource, build_session_key
 from gateway.task_card import build_task_card, format_elapsed
 from hermes_constants import (
+    TASK_CARD_BAR_MIN_SEGMENTS,
     TASK_CARD_MAX_CHARS,
     TASK_LIST_TITLE,
     TASK_CARD_TITLE_GLYPH,
@@ -181,20 +182,42 @@ def test_active_and_queued_rows_are_not_faded_or_bolded():
 
 def test_footer_has_bar_ratio_and_elapsed_but_no_percentage():
     card = build_task_card(_make_store().read(), "3h 12m elapsed")
-    assert card["footer"] == "-# `\u2588\u2591\u2591`   1 / 3 \u00b7 3h 12m elapsed"
+    assert card["footer"] == "-# `\u2588\u2588\u2588\u2588\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591`   1 / 3 \u00b7 3h 12m elapsed"
     assert "%" not in card["footer"]
 
 
+def test_bar_keeps_a_minimum_width_at_a_one_task_list():
+    """One task must still draw a full track, not a single stray segment."""
+    card = build_task_card([{"content": "only", "status": "pending"}], "1m elapsed")
+    bar = card["footer"].split("`")[1]
+    assert len(bar) == TASK_CARD_BAR_MIN_SEGMENTS
+    assert bar == "\u2591" * TASK_CARD_BAR_MIN_SEGMENTS
+    assert "0 / 1" in card["footer"]
+
+
+def test_bar_fill_tracks_the_ratio_at_every_count():
+    """Bar width is stable and its fill is the ratio's proportion."""
+    for filled, total in ((0, 1), (1, 3), (5, 8), (7, 12), (12, 12), (1, 40)):
+        items = [
+            {"content": f"task {i}", "status": "completed" if i < filled else "pending"}
+            for i in range(total)
+        ]
+        bar = build_task_card(items, "1m elapsed")["footer"].split("`")[1]
+        width = max(total, TASK_CARD_BAR_MIN_SEGMENTS)
+        expected_fill = round(filled / total * width)
+        assert len(bar) == width, f"{filled}/{total}: width {len(bar)} != {width}"
+        assert bar.count("\u2588") == expected_fill, f"{filled}/{total}: fill mismatch"
+
+
 def test_bar_and_ratio_share_one_source():
+    """The approved twelve-task card is unchanged by the minimum width."""
     items = [
-        {"content": f"task {i}", "status": "completed" if i < 5 else "pending"}
-        for i in range(8)
+        {"content": f"task {i}", "status": "completed" if i < 7 else "pending"}
+        for i in range(12)
     ]
     card = build_task_card(items, "1m elapsed")
-    bar = card["footer"].split("`")[1]
-    assert bar.count("\u2588") == 5
-    assert len(bar) == 8
-    assert "5 / 8" in card["footer"]
+    assert card["footer"].split("`")[1] == "\u2588" * 7 + "\u2591" * 5
+    assert "7 / 12" in card["footer"]
 
 
 def test_cancelled_tasks_leave_the_denominator_and_the_rows():

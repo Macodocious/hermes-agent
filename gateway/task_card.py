@@ -24,8 +24,12 @@ The card renders as three stacked blocks in a single container:
 2. One text display per non-empty section, each opened by a bold title-case
    label.  Section labels borrow the interactive approval prompt's field-name
    styling (bold, title case, glyph-free); row text is regular weight.
-3. A subtext footer carrying the twelve-segment bar and the ``7 / 12`` ratio,
+3. A subtext footer carrying the progress bar and the ``7 / 12`` ratio,
    separated by spacing separators that reproduce the drawn vertical rhythm.
+   The bar draws one segment per task but never narrower than
+   ``TASK_CARD_BAR_MIN_SEGMENTS``, so a one-task list still reads as a track
+   instead of collapsing to a single glyph; below that threshold the fill is
+   scaled to the same proportion.
 
 Completed rows are prefixed with ``> `` because a blockquote is the only
 Discord primitive that mutes text without shrinking it (``-#`` renders
@@ -44,6 +48,7 @@ from typing import Any, Dict, List, Optional, Sequence
 from hermes_constants import (
     TASK_CARD_BAR_EMPTY,
     TASK_CARD_BAR_FILLED,
+    TASK_CARD_BAR_MIN_SEGMENTS,
     TASK_CARD_FADE_PREFIX,
     TASK_CARD_FOOTER_CODE_FENCE,
     TASK_CARD_FOOTER_SEPARATOR,
@@ -171,6 +176,22 @@ def _section_lines(glyph: str, tasks: Sequence[str], faded: bool) -> List[str]:
     return lines
 
 
+def _bar(filled: int, total: int) -> str:
+    """Render the progress bar on a track that never collapses.
+
+    Width tracks the task count — one segment per task — so the bar stays a
+    literal reading of the list.  A short list would otherwise draw a single
+    glyph, which reads as a stray character rather than a progress track, so
+    the track holds ``TASK_CARD_BAR_MIN_SEGMENTS`` as its floor.  Once the
+    track is wider than the task count the fill is scaled to the same
+    proportion, which is what keeps the bar and the ``n / m`` ratio agreeing
+    at every count rather than only when the two widths coincide.
+    """
+    width = max(total, TASK_CARD_BAR_MIN_SEGMENTS)
+    scaled = min(width, max(0, round(filled / total * width))) if total else 0
+    return TASK_CARD_BAR_FILLED * scaled + TASK_CARD_BAR_EMPTY * (width - scaled)
+
+
 def _footer_text(filled: int, total: int, elapsed_label: str) -> str:
     """Bar and ratio in the footer line, elapsed time kept, subtext sized.
 
@@ -178,10 +199,9 @@ def _footer_text(filled: int, total: int, elapsed_label: str) -> str:
     proportion segment-for-segment.  The bar is wrapped in backticks so the
     segments keep their even glyph column, exactly as the approved card shows.
     """
-    bar = TASK_CARD_BAR_FILLED * filled + TASK_CARD_BAR_EMPTY * max(0, total - filled)
     return (
         f"{TASK_CARD_FOOTER_SUBTEXT_PREFIX}"
-        f"{TASK_CARD_FOOTER_CODE_FENCE}{bar}{TASK_CARD_FOOTER_CODE_FENCE}"
+        f"{TASK_CARD_FOOTER_CODE_FENCE}{_bar(filled, total)}{TASK_CARD_FOOTER_CODE_FENCE}"
         f"   {filled} / {total} "
         f"{TASK_CARD_FOOTER_SEPARATOR} {elapsed_label}"
     )

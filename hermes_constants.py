@@ -1279,9 +1279,18 @@ TASK_CARD_GLYPH_PENDING = "\u25cb"
 TASK_CARD_GLYPH_DONE = "\u2713"
 
 # Progress bar segments.  One glyph per task so the bar and the ratio cannot
-# disagree; they are rendered from the same counts.
+# disagree; they are rendered from the same counts.  The track holds
+# TASK_CARD_BAR_MIN_SEGMENTS as a floor so a short list still reads as a bar,
+# and the fill is scaled to that width when the floor applies.
 TASK_CARD_BAR_FILLED = "\u2588"
 TASK_CARD_BAR_EMPTY = "\u2591"
+
+# Minimum width of the progress bar, in segments.  A bar one segment per task
+# collapses to a single glyph at a one-task list ("0 / 1"), which reads as a
+# stray character rather than a progress track.  The floor is the approved
+# card's own bar width (its 12-task list draws 12 segments), so a full-size
+# list is unaffected and a short one keeps the same visual width.
+TASK_CARD_BAR_MIN_SEGMENTS = 12
 
 # Fade prefix for completed rows.  A blockquote (`> `) is the only Discord
 # primitive that mutes text (var(--text-subtle)) without also shrinking it —
