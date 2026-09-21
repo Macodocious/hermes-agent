@@ -16,6 +16,12 @@ temperature override (``agent.temperature.override.enabled: true`` in
 config.yaml) — enforced via ``check_fn``. Without the override, the tool
 never exists in the schema, costs no tokens, and the base temperature
 applies to every request.
+
+The declaration is recorded on the agent and applied by the chokepoint, but
+it only takes effect where a temperature is actually configured for the
+session. The returned payload therefore reports the temperature that will
+be sent, or states plainly that none will be — it never asserts an
+application that did not happen.
 """
 
 from typing import Optional
@@ -72,10 +78,26 @@ def declare_task_context(
 
     agent._declared_task_context = normalized
     agent._declared_explicit_temperature = explicit
+
+    # Report what the request will actually carry rather than asserting the
+    # declaration applied. On a surface that never receives a temperature
+    # from config (an agent built outside the CLI/gateway setup paths), the
+    # chokepoint sees None and sends no temperature at all — claiming
+    # "applied_to: next API request" there would be false.
+    from agent.chat_completion_helpers import _resolve_effective_temperature
+
+    effective = _resolve_effective_temperature(agent)
     payload: dict = {
         "declared": normalized,
-        "applied_to": "next API request",
+        "applied": effective is not None,
     }
+    if effective is not None:
+        payload["temperature"] = effective
+    else:
+        payload["note"] = (
+            "No temperature will be sent for the next request — none is "
+            "configured for this session, so the provider default applies."
+        )
     if explicit is not None:
         payload["explicit_temperature"] = explicit
     return tool_result(payload)

@@ -997,11 +997,13 @@ def _resolve_effective_temperature(agent) -> Optional[float]:
       (``_declared_explicit_temperature``) takes precedence over the
       knob for that request.
 
-    This per-call read lives here because neither the CLI nor the gateway
-    path passes ``temperature`` into ``AIAgent`` (``agent.temperature`` is
-    ``None`` on both), so this chokepoint is the single place the
-    configured value is applied consistently. The transport's own
-    omit/fixed temperature priority still wins over the resolved value.
+    Each surface resolves the configured value at agent construction and
+    passes it into ``AIAgent`` as ``agent.temperature``: the CLI at
+    ``HermesCLI.__init__``, the gateway beside its reasoning config, cron at
+    job construction, and delegated subagents by inheriting their parent's.
+    This chokepoint is the single place that value is interpreted per call,
+    so the override semantics live here. The transport's own omit/fixed
+    temperature priority still wins over the resolved value.
     """
     raw = getattr(agent, "temperature", None)
     if not isinstance(raw, dict):
