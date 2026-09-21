@@ -1205,3 +1205,59 @@ class TestWslPathTranslation:
         assert hermes_constants.translate_cwd_for_wsl_backend(r"\\wsl.localhost\Ubuntu\home\alex") == "/home/alex"
         # Already-POSIX paths pass through untouched.
         assert hermes_constants.translate_cwd_for_wsl_backend("/home/alex") == "/home/alex"
+
+
+class TestResolveTemperatureConfig:
+    """The shared temperature resolver read by every agent-construction surface.
+
+    Regression guard: the gateway builds agents from raw YAML and previously
+    never passed a temperature, so the configured override never reached
+    Discord turns. These tests pin the contract both surfaces share.
+    """
+
+    OVERRIDE_VALUE = {
+        "value": 0.0,
+        "override": {"enabled": True, "general": 1.0, "coding": 0.0},
+    }
+
+    def test_returns_override_dict_verbatim(self):
+        cfg = {"agent": {"temperature": self.OVERRIDE_VALUE}}
+        assert hermes_constants.resolve_temperature_config(cfg) == self.OVERRIDE_VALUE
+
+    def test_returns_scalar_verbatim(self):
+        assert hermes_constants.resolve_temperature_config(
+            {"agent": {"temperature": 0.7}}
+        ) == 0.7
+        # Whole numbers (int) are valid temperatures, not type errors.
+        assert hermes_constants.resolve_temperature_config(
+            {"agent": {"temperature": 1}}
+        ) == 1
+
+    def test_returns_none_for_empty_config(self):
+        assert hermes_constants.resolve_temperature_config({}) is None
+        assert hermes_constants.resolve_temperature_config(None) is None
+
+    def test_returns_none_when_agent_section_missing(self):
+        assert hermes_constants.resolve_temperature_config({"model": {}}) is None
+
+    def test_returns_none_when_temperature_key_absent(self):
+        assert hermes_constants.resolve_temperature_config({"agent": {}}) is None
+
+    def test_returns_none_for_malformed_value(self):
+        for bad in ("hot", ["0.7"], object()):
+            assert hermes_constants.resolve_temperature_config(
+                {"agent": {"temperature": bad}}
+            ) is None
+
+    def test_boolean_is_not_accepted_as_temperature(self):
+        # bool is an int subclass; True must not leak through as 1.0.
+        assert hermes_constants.resolve_temperature_config(
+            {"agent": {"temperature": True}}
+        ) is None
+
+    def test_override_dict_survives_env_expansion(self):
+        """The gateway expands ${VAR} refs before reading; the block must survive."""
+        from hermes_cli.config import _expand_env_vars
+
+        cfg = _expand_env_vars({"agent": {"temperature": self.OVERRIDE_VALUE}})
+        assert hermes_constants.resolve_temperature_config(cfg) == self.OVERRIDE_VALUE

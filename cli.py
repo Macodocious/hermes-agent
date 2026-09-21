@@ -3997,7 +3997,11 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         self.service_tier = _parse_service_tier_config(
             CLI_CONFIG["agent"].get("service_tier", "")
         )
-        self.temperature = CLI_CONFIG["agent"].get("temperature", None)
+        # Temperature — resolved through the shared chokepoint in
+        # hermes_constants so the CLI and the gateway read the same value
+        # from the same place (mirrors resolve_reasoning_config above).
+        from hermes_constants import resolve_temperature_config
+        self.temperature = resolve_temperature_config(CLI_CONFIG)
         
         # OpenRouter provider routing preferences
         pr = CLI_CONFIG.get("provider_routing", {}) or {}

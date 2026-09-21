@@ -1050,6 +1050,55 @@ def resolve_reasoning_config(cfg: dict | None, model: str = "") -> dict | None:
     return result
 
 
+def resolve_temperature_config(cfg: dict | None) -> float | dict | None:
+    """Resolve the effective sampling temperature from a config dict.
+
+    Single chokepoint for temperature resolution, shared by every surface
+    (CLI startup, messaging gateway, cron, subagent construction), mirroring
+    :func:`resolve_reasoning_config`.
+
+    The value is returned **verbatim** — scalar, dict, or None — because the
+    consumer (``_resolve_effective_temperature``) already understands all
+    three shapes and applies the override semantics itself:
+
+    * ``None`` — provider/model default.
+    * a scalar float — used verbatim (legacy config shape).
+    * a dict — ``{"value": <float>, "override": {"enabled": bool,
+      "general": <float>, "coding": <float>}}``. The base ``value`` applies
+      while the override switch is off; when on, the coding/general knob is
+      chosen by the agent's most recent ``declare_task_context`` declaration.
+
+    Normalizing here would strip the override block, so the raw value is
+    passed through untouched. A malformed shape is reported and dropped
+    rather than raised, so a bad config value cannot break agent
+    construction.
+
+    Args:
+        cfg: A loaded config dict. Only the ``agent`` section is read.
+
+    Returns:
+        The raw ``agent.temperature`` value, or None when unset or malformed.
+    """
+    cfg = cfg if isinstance(cfg, dict) else {}
+    agent_cfg = cfg.get("agent")
+    if not isinstance(agent_cfg, dict):
+        return None
+    value = agent_cfg.get("temperature")
+    if value is None:
+        return None
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return value
+    if isinstance(value, dict):
+        return value
+    import logging
+    logging.getLogger(__name__).warning(
+        "Ignoring agent.temperature of unsupported type %s (expected a "
+        "number or a {value, override} mapping)",
+        type(value).__name__,
+    )
+    return None
+
+
 def is_termux() -> bool:
     """Return True when running inside a Termux (Android) environment.
 

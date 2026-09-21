@@ -3287,6 +3287,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         self._prefill_messages = self._load_prefill_messages()
         self._ephemeral_system_prompt = self._load_ephemeral_system_prompt()
         self._reasoning_config = self._load_reasoning_config()
+        self._temperature = self._load_temperature()
         self._service_tier = self._load_service_tier()
         self._show_reasoning = self._load_show_reasoning()
         self._busy_input_mode = self._load_busy_input_mode()
@@ -5496,6 +5497,24 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         from hermes_constants import resolve_reasoning_config
         cfg = _load_gateway_runtime_config()
         return resolve_reasoning_config(cfg, model)
+
+    @staticmethod
+    def _load_temperature() -> float | dict | None:
+        """Load the sampling temperature from config.yaml.
+
+        Thin wrapper over the shared chokepoint
+        :func:`hermes_constants.resolve_temperature_config`, so the gateway
+        reads ``agent.temperature`` exactly as the CLI does.
+
+        The gateway reads raw YAML rather than ``load_config()`` (see
+        ``_load_gateway_config``), which is why this must be re-implemented
+        here: without it no gateway-built agent carries a temperature, so the
+        per-request chokepoint in ``agent.chat_completion_helpers`` falls back
+        to the provider default and the configured override never applies to
+        Discord turns.
+        """
+        from hermes_constants import resolve_temperature_config
+        return resolve_temperature_config(_load_gateway_runtime_config())
 
     @staticmethod
     def _parse_reasoning_command_args(raw_args: str) -> tuple[str, bool]:
@@ -15568,6 +15587,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     verbose_logging=False,
                     enabled_toolsets=enabled_toolsets,
                     disabled_toolsets=disabled_toolsets,
+                    temperature=getattr(self, "_temperature", None),
                     reasoning_config=reasoning_config,
                     service_tier=self._service_tier,
                     request_overrides=turn_route.get("request_overrides"),
@@ -21212,6 +21232,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     disabled_toolsets=disabled_toolsets,
                     ephemeral_system_prompt=combined_ephemeral or None,
                     prefill_messages=self._prefill_messages or None,
+                    temperature=getattr(self, "_temperature", None),
                     reasoning_config=reasoning_config,
                     service_tier=self._service_tier,
                     request_overrides=turn_route.get("request_overrides"),

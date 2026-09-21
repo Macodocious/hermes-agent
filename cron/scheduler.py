@@ -39,7 +39,7 @@ from typing import Any, List, Optional
 # the module) fail with ModuleNotFoundError for hermes_time et al.
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from hermes_constants import get_hermes_home
+from hermes_constants import get_hermes_home, resolve_temperature_config
 from hermes_cli._subprocess_compat import windows_hide_flags
 from hermes_cli.config import load_config, _expand_env_vars
 from hermes_cli.fallback_config import get_fallback_chain
@@ -3441,6 +3441,10 @@ def run_job(
             platform="cron",
             session_id=_cron_session_id,
             session_db=_session_db,
+            # Cron agents are built outside the CLI/gateway setup paths, so the
+            # configured temperature must be resolved here or the per-request
+            # chokepoint sees None and the override never applies to jobs.
+            temperature=resolve_temperature_config(_cfg),
         )
 
         # Publish the live agent to the scheduler's registry so the gateway
