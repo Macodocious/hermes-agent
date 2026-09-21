@@ -34,7 +34,7 @@ MIN_TEMPERATURE = 0.0
 MAX_TEMPERATURE = 2.0
 
 
-def declare_task_context(
+def switch_context(
     context: Optional[str],
     temperature: Optional[float] = None,
     agent=None,
@@ -125,7 +125,7 @@ def check_task_context_requirements() -> bool:
 # =============================================================================
 
 TASK_CONTEXT_SCHEMA = {
-    "name": "declare_task_context",
+    "name": "switch_context",
     "description": (
         "Declare whether the current work is `general` conversation or "
         "`coding` output. Call this the moment the nature of your work "
@@ -168,10 +168,10 @@ TASK_CONTEXT_SCHEMA = {
 from tools.registry import registry
 
 registry.register(
-    name="declare_task_context",
+    name="switch_context",
     toolset="task_context",
     schema=TASK_CONTEXT_SCHEMA,
-    handler=lambda args, **kw: declare_task_context(
+    handler=lambda args, **kw: switch_context(
         context=args.get("context"),
         temperature=args.get("temperature"),
         agent=kw.get("agent")),

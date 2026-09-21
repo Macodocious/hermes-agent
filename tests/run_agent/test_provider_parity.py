@@ -521,53 +521,53 @@ class TestBuildApiKwargsTemperatureOverride:
         kwargs = agent._build_api_kwargs(messages)
         assert kwargs.get("temperature") == 0.0
 
-    def test_declare_task_context_records_declaration(self):
-        from tools.task_context_tool import declare_task_context
+    def test_switch_context_records_declaration(self):
+        from tools.task_context_tool import switch_context
 
         class _StubAgent:
             _declared_task_context = None
 
         agent = _StubAgent()
-        result = declare_task_context(context="coding", agent=agent)
+        result = switch_context(context="coding", agent=agent)
         assert agent._declared_task_context == "coding"
         assert '"declared": "coding"' in result
 
-    def test_declare_task_context_rejects_invalid_value(self):
-        from tools.task_context_tool import declare_task_context
+    def test_switch_context_rejects_invalid_value(self):
+        from tools.task_context_tool import switch_context
 
         class _StubAgent:
             _declared_task_context = None
             _declared_explicit_temperature = None
 
         agent = _StubAgent()
-        result = declare_task_context(context="yolo", agent=agent)
+        result = switch_context(context="yolo", agent=agent)
         # Invalid values are rejected; the previous declaration stands.
         assert agent._declared_task_context is None
         assert "error" in result
 
-    def test_declare_task_context_with_explicit_temperature(self):
-        from tools.task_context_tool import declare_task_context
+    def test_switch_context_with_explicit_temperature(self):
+        from tools.task_context_tool import switch_context
 
         class _StubAgent:
             _declared_task_context = None
             _declared_explicit_temperature = None
 
         agent = _StubAgent()
-        result = declare_task_context(
+        result = switch_context(
             context="general", temperature=1.0, agent=agent)
         assert agent._declared_task_context == "general"
         assert agent._declared_explicit_temperature == 1.0
         assert '"explicit_temperature": 1.0' in result
 
-    def test_declare_task_context_rejects_out_of_range_temperature(self):
-        from tools.task_context_tool import declare_task_context
+    def test_switch_context_rejects_out_of_range_temperature(self):
+        from tools.task_context_tool import switch_context
 
         class _StubAgent:
             _declared_task_context = None
             _declared_explicit_temperature = None
 
         agent = _StubAgent()
-        result = declare_task_context(
+        result = switch_context(
             context="general", temperature=5.0, agent=agent)
         assert agent._declared_task_context is None
         assert agent._declared_explicit_temperature is None
@@ -591,15 +591,15 @@ class TestBuildApiKwargsTemperatureOverride:
     def test_explicit_temperature_resets_to_none_after_knob_declaration(self, monkeypatch):
         # A subsequent context-only declaration clears the explicit value
         # so the knob applies again.
-        from tools.task_context_tool import declare_task_context
+        from tools.task_context_tool import switch_context
 
         class _StubAgent:
             _declared_task_context = None
             _declared_explicit_temperature = None
 
         agent = _StubAgent()
-        declare_task_context(context="coding", temperature=1.0, agent=agent)
-        declare_task_context(context="general", agent=agent)
+        switch_context(context="coding", temperature=1.0, agent=agent)
+        switch_context(context="general", agent=agent)
         assert agent._declared_task_context == "general"
         assert agent._declared_explicit_temperature is None
 
