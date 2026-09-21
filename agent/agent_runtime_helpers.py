@@ -2503,9 +2503,9 @@ def invoke_tool(agent, function_name: str, function_args: dict, effective_task_i
                 except Exception:
                     pass
             return _finish_agent_tool(result, next_args)
-    elif function_name == "declare_task_context":
+    elif function_name == "switch_context":
         def _execute(next_args: dict) -> Any:
-            from tools.task_context_tool import declare_task_context as _declare
+            from tools.task_context_tool import switch_context as _declare
             return _finish_agent_tool(_declare(
                 context=next_args.get("context"),
                 temperature=next_args.get("temperature"),
