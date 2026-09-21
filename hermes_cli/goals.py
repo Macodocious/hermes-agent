@@ -744,6 +744,67 @@ def _goal_judge_max_tokens() -> int:
     return DEFAULT_JUDGE_MAX_TOKENS
 
 
+def _resolve_goal_judge_route() -> Tuple[str, str, bool]:
+    """Resolve the goal_judge task's *effective* provider and model.
+
+    Returns ``(provider, model, inherited)`` where ``inherited`` is True when
+    no explicit ``auxiliary.goal_judge`` block is set and the task falls back
+    to the main model (the documented default). The ``auto`` provider sentinel
+    is not a real provider — it means "inherit from the main runtime", so it
+    is resolved through the same main-model readers the auto chain uses.
+
+    Returns ``("", "", False)`` when nothing is resolvable, so callers can
+    point at the config surface without inventing a provider/model pair.
+    """
+    provider = ""
+    model = ""
+    inherited = False
+    try:
+        from agent.auxiliary_client import (
+            _read_main_model,
+            _read_main_provider,
+            _resolve_task_provider_model,
+        )
+
+        resolved_provider, resolved_model, _base_url, _api_key, _api_mode = (
+            _resolve_task_provider_model("goal_judge")
+        )
+        provider = (resolved_provider or "").strip()
+        model = (resolved_model or "").strip()
+        if provider == "auto" or not provider:
+            provider = _read_main_provider()
+            model = model or _read_main_model()
+            inherited = True
+    except Exception:
+        pass
+    return provider, model, inherited
+
+
+def _goal_judge_route_hint() -> str:
+    """Render the goal_judge config block for the *resolved* route.
+
+    The auto-pause messages name the surface the user must fix, so reporting a
+    hardcoded example provider/model pair misleads whenever it drifts from
+    what the judge actually resolves to. This reports the live resolution
+    instead, with a comment marking an inherited (unset) task block.
+    """
+    provider, model, inherited = _resolve_goal_judge_route()
+    if not provider:
+        return (
+            "  auxiliary:\n"
+            "    goal_judge:\n"
+            "      provider: <provider>\n"
+            "      model: <model>\n"
+        )
+    inherited_note = "  # unset — inherited from model.provider" if inherited else ""
+    return (
+        "  auxiliary:\n"
+        "    goal_judge:\n"
+        f"      provider: {provider}{inherited_note}\n"
+        f"      model: {model or '<provider default>'}\n"
+    )
+
+
 def _parse_judge_response(raw: str) -> Tuple[str, str, bool, Optional[Dict[str, Any]], bool]:
     """Parse the judge's reply. Fail-open on unusable output.
 
@@ -1743,11 +1804,8 @@ class GoalManager:
                     f"⏸ Goal paused — judge API returned errors "
                     f"({state.consecutive_transport_failures} turns). "
                     "Check the goal_judge provider/key in ~/.hermes/config.yaml:\n"
-                    "  auxiliary:\n"
-                    "    goal_judge:\n"
-                    "      provider: deepseek\n"
-                    "      model: deepseek-v4-flash\n"
-                    "Then /goal resume to continue."
+                    + _goal_judge_route_hint()
+                    + "Then /goal resume to continue."
                 ),
             }
 
@@ -1773,11 +1831,8 @@ class GoalManager:
                     f"⏸ Goal paused — the judge model ({state.consecutive_parse_failures} turns) "
                     "isn't returning the required JSON verdict. Route the judge to a stricter "
                     "model in ~/.hermes/config.yaml:\n"
-                    "  auxiliary:\n"
-                    "    goal_judge:\n"
-                    "      provider: openrouter\n"
-                    "      model: google/gemini-3-flash-preview\n"
-                    "Then /goal resume to continue."
+                    + _goal_judge_route_hint()
+                    + "Then /goal resume to continue."
                 ),
             }
 
