@@ -618,3 +618,101 @@ def test_audit_skips_when_no_task_list() -> None:
         agent, final_response="I did the work.", interrupted=False, tool_call_count=2
     )
     assert nudge is None
+
+
+# ── on_todo_write: block parks the loop ───────────────────────────────
+
+
+def test_on_todo_write_block_parks_goal_with_reason(monkeypatch) -> None:
+    """A declared block is the state change: the hook parks the goal."""
+    store = TodoStore()
+    _seed(store, "1", "Build the thing")
+    agent = _make_agent(store)
+    calls: list[str] = []
+
+    class FakeMgr:
+        def __init__(self, **kwargs):
+            calls.append("init")
+
+        def set(self, text: str, **kwargs) -> None:
+            calls.append(f"set:{text}")
+
+        def park(self, reason: str) -> None:
+            calls.append(f"park:{reason}")
+
+        def clear(self) -> None:
+            calls.append("clear")
+
+    monkeypatch.setattr(task_manager, "_load_goal_manager", lambda a: FakeMgr())
+    monkeypatch.setattr(task_manager, "_persist", lambda a: calls.append("persist"))
+
+    store.transition("begin", "1")
+    task_manager.on_todo_write(
+        agent, {"action": "block", "item_id": "1", "reason": "need your call"}
+    )
+
+    assert "park:need your call" in calls
+    assert "persist" in calls
+    # Block must not re-arm (that would reset the turn budget) or clear.
+    assert not any(c.startswith("set:") for c in calls)
+    assert "clear" not in calls
+
+
+def test_on_todo_write_block_leaves_task_in_progress(monkeypatch) -> None:
+    """The task is still the current work — block does not shelve it."""
+    store = TodoStore()
+    _seed(store, "1", "Build the thing")
+    agent = _make_agent(store)
+
+    class FakeMgr:
+        def park(self, reason: str) -> None:
+            pass
+
+        def set(self, text: str, **kwargs) -> None:
+            raise AssertionError("block must not arm the goal")
+
+        def clear(self) -> None:
+            raise AssertionError("block must not clear the goal")
+
+    monkeypatch.setattr(task_manager, "_load_goal_manager", lambda a: FakeMgr())
+    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
+
+    store.transition("begin", "1")
+    task_manager.on_todo_write(
+        agent, {"action": "block", "item_id": "1", "reason": "waiting on you"}
+    )
+
+    assert store.read()[0]["status"] == "in_progress"
+
+
+def test_on_todo_write_routine_write_does_not_release_park(monkeypatch) -> None:
+    """A parked goal is the user's to release: a later routine write must
+    not re-arm it (which would rebuild state with the barrier down)."""
+    store = TodoStore()
+    _seed(store, "1", "Edited content while parked")
+    agent = _make_agent(store)
+    calls: list[str] = []
+
+    class FakeMgr:
+        def __init__(self, **kwargs):
+            # Parked, and the goal text no longer matches the item.
+            self.state = SimpleNamespace(
+                status="active",
+                goal="Complete the task per its specification: old content",
+                awaiting_user_input=True,
+            )
+
+        def set(self, text: str, **kwargs) -> None:
+            calls.append(f"set:{text}")
+
+        def clear(self) -> None:
+            calls.append("clear")
+
+    monkeypatch.setattr(task_manager, "_load_goal_manager", lambda a: FakeMgr())
+    monkeypatch.setattr(task_manager, "_persist", lambda a: calls.append("persist"))
+
+    store.transition("begin", "1")
+    task_manager.on_todo_write(agent, {"action": None})
+
+    assert not any(c.startswith("set:") for c in calls)
+    assert "clear" not in calls

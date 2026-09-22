@@ -29,7 +29,7 @@ VALID_STATUSES = {
 # Lifecycle actions the agent can issue against a single task (P1). Each
 # action is a deterministic state transition enforced by TodoStore.transition;
 # the model never writes lifecycle statuses directly through the todos list.
-LIFECYCLE_ACTIONS = {"begin", "pause", "resume", "close", "escalate"}
+LIFECYCLE_ACTIONS = {"begin", "pause", "resume", "close", "escalate", "block"}
 
 # Lifecycle statuses that must never be written through the todos list
 # (P7). The model drives task state through the ``action`` parameter; a
@@ -52,6 +52,7 @@ _LIFECYCLE_TRANSITIONS = {
     "resume": {"paused", "closing"},
     "close": {"in_progress", "paused", "closing"},
     "escalate": {"pending", "in_progress", "paused", "closing"},
+    "block": {"in_progress"},
     "finalize": {"closing"},
 }
 
@@ -535,6 +536,17 @@ class TodoStore:
             item["status"] = "closing"
         elif action == "escalate":
             item["status"] = "escalated"
+        elif action == "block":
+            # Block is deliberately status-preserving: the task stays
+            # in_progress because it is STILL the current work — the agent
+            # has not shelved it, it cannot proceed without the user. The
+            # park itself lives on the goal state (GoalManager.park, set
+            # by agent/task_manager.on_todo_write), so adding a new item
+            # status here would only give the target selectors
+            # (_current_item/_closing_item) a hole to fall through into
+            # mgr.clear() and destroy the armed goal. No store mutation is
+            # correct for this action.
+            pass
         return {"ok": True, "item": item.copy()}
 
     def finalize(self, item_id: Any) -> Dict[str, Any]:
@@ -926,6 +938,7 @@ def todo_tool(
     dispositions: Any = None,
     action: Optional[str] = None,
     item_id: Any = None,
+    reason: Optional[str] = None,
 ) -> str:
     """
     Single entry point for the todo tool. Reads or writes depending on params.
@@ -937,11 +950,14 @@ def todo_tool(
         dispositions: optional mapping/list of captured-request dispositions
             (P3). Applied after any write so a single call can both update
             the plan and disposition captured requests.
-        action: lifecycle action (begin|pause|resume|close|escalate) applied
-            to the task named by item_id (P1). Mutually exclusive with
-            todos; when both are provided the lifecycle action wins and the
-            write is ignored.
+        action: lifecycle action (begin|pause|resume|close|escalate|block)
+            applied to the task named by item_id (P1). Mutually exclusive
+            with todos; when both are provided the lifecycle action wins
+            and the write is ignored. ``block`` parks the goal loop until
+            the user's next turn.
         item_id: id of the task the lifecycle action targets.
+        reason: why the task is blocked. Required by ``block`` (the park
+            reason is shown to the user); ignored by other actions.
 
     Returns:
         JSON string with the full current list, pending captured requests,
@@ -951,6 +967,13 @@ def todo_tool(
         return tool_error("TodoStore not initialized")
 
     if action is not None:
+        # ``block`` parks the goal loop, and the park reason is what the
+        # user sees when the loop quiesces. Refuse a reasonless block
+        # rather than parking with an empty explanation.
+        if str(action).strip().lower() == "block" and not str(reason or "").strip():
+            return tool_error(
+                "block requires a reason: state what you need from the user"
+            )
         result = store.transition(action, item_id)
         if not result.get("ok"):
             return tool_error(result.get("error", "lifecycle transition refused"))
@@ -1026,6 +1049,7 @@ TODO_SCHEMA = {
         "- resume: continue a paused task.\n"
         "- close: declare the current task finished (it enters closing; "
         "the lifecycle judge's done verdict finalizes it as completed).\n"
+        "- block: preserve the current task and park the loop until the user's next turn — use when you cannot proceed without the user. Requires a reason.\n"
         "- escalate: abandon the current task and surface it to the user.\n"
         "Use action + item_id to apply a lifecycle action.\n\n"
         "Writing:\n"
@@ -1113,15 +1137,25 @@ TODO_SCHEMA = {
             },
             "action": {
                 "type": "string",
-                "enum": ["begin", "pause", "resume", "close", "escalate"],
+                "enum": ["begin", "pause", "resume", "close", "escalate", "block"],
                 "description": (
                     "Lifecycle action applied to the task named by item_id. "
-                    "Mutually exclusive with todos."
+                    "Mutually exclusive with todos. ``block`` preserves the "
+                    "task and parks the loop until the user's next turn — "
+                    "it requires a reason."
                 )
             },
             "item_id": {
                 "type": "string",
                 "description": "Id of the task a lifecycle action targets."
+            },
+            "reason": {
+                "type": "string",
+                "description": (
+                    "Why the task is blocked. Required by ``block``: the "
+                    "reason is shown to the user while the loop is parked. "
+                    "Ignored by other actions."
+                )
             },
             "dispositions": {
                 "type": "array",

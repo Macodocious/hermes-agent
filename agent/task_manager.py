@@ -248,6 +248,20 @@ def on_todo_write(agent: Any, args: Dict[str, Any]) -> None:
         return
     if args.get("action") is not None:
         agent._task_lifecycle_action_issued = True
+    # ``block`` is not a status transition — it parks the loop. Handle it
+    # before the arm/clear logic: the task stays in_progress, so falling
+    # through would let the arm branch run and (on a changed goal text)
+    # rebuild fresh state, silently dropping the park. Only the guard
+    # below keeps the parked state intact on later writes.
+    if str(args.get("action") or "") == "block":
+        mgr = _load_goal_manager(agent)
+        if mgr is not None:
+            try:
+                mgr.park(str(args.get("reason") or ""))
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.debug("task_manager: goal park failed: %s", exc)
+        _persist(agent)
+        return
     current = _current_item(agent)
     closing = _closing_item(agent)
     mgr = _load_goal_manager(agent)
@@ -278,7 +292,15 @@ def on_todo_write(agent: Any, args: Dict[str, Any]) -> None:
                     and getattr(state, "status", None) == "active"
                     and getattr(state, "goal", "") == goal_text
                 )
-                if not already_armed:
+                # A parked goal is not re-armed even when the goal text
+                # moved (the agent edited the blocked item): the park is
+                # the user's to release, and set() would rebuild fresh
+                # state with awaiting_user_input=False — releasing the
+                # barrier behind the user's back.
+                parked = state is not None and getattr(
+                    state, "awaiting_user_input", False
+                )
+                if not already_armed and not parked:
                     # The goal is stamped as a task-lifecycle goal at
                     # arming time. Scope decisions (gateway suppression,
                     # wait bypass, completion line) read this marker on

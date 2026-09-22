@@ -240,3 +240,52 @@ def test_write_demotes_in_progress_when_another_task_is_closing() -> None:
     )
     statuses = {i["id"]: i["status"] for i in s.read()}
     assert statuses == {"1": "closing", "2": "pending"}
+
+
+# ── block: status-preserving park ─────────────────────────────────────
+
+
+def test_block_preserves_in_progress_status(store: TodoStore) -> None:
+    """Block is not a status transition: the task stays the current work.
+
+    The agent has not shelved the task (that is pause) — it cannot
+    proceed without the user. Parking lives on the goal state, so the
+    store must show no change.
+    """
+    store.transition("begin", "1")
+    result = store.transition("block", "1")
+    assert result["ok"] is True
+    assert result["item"]["status"] == "in_progress"
+    statuses = {i["id"]: i["status"] for i in store.read()}
+    assert statuses == {"1": "in_progress", "2": "pending"}
+
+
+def test_block_refuses_task_not_in_progress(store: TodoStore) -> None:
+    """Only the executing task can be blocked."""
+    result = store.transition("block", "1")
+    assert result["ok"] is False
+    assert "cannot block" in result["error"]
+
+
+def test_block_refuses_paused_task(store: TodoStore) -> None:
+    store.transition("begin", "1")
+    store.transition("pause", "1")
+    result = store.transition("block", "1")
+    assert result["ok"] is False
+    assert store.read()[0]["status"] == "paused"
+
+
+def test_block_leaves_the_slot_occupied(store: TodoStore) -> None:
+    """A blocked task still holds the current-task slot (unlike pause):
+    starting another task while one is blocked is refused."""
+    store.transition("begin", "1")
+    store.transition("block", "1")
+    result = store.transition("begin", "2")
+    assert result["ok"] is False
+    assert "in_progress" in result["error"]
+
+
+def test_block_is_a_known_action(store: TodoStore) -> None:
+    """Block resolves through the action set, not the unknown-action path."""
+    result = store.transition("block", "9")
+    assert "unknown" not in result["error"]

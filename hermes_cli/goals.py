@@ -1321,6 +1321,27 @@ class GoalManager:
             self._state.awaiting_authorization_armed_at = 0.0
             save_goal(self.session_id, self._state)
 
+    def park(self, reason: str) -> None:
+        """Park the loop until the user's next real turn (mechanical block).
+
+        Set by the todo ``block`` action when the agent declares it cannot
+        proceed without the user — the declaration is the state change,
+        not a request to the judge. Writes the SAME field the goal
+        judge's ``blocked`` done verdict writes (see evaluate_after_turn),
+        so one park state has two entry points rather than two concepts.
+
+        While parked, ``is_waiting()`` is true and ``evaluate_after_turn``
+        short-circuits before the judge — no continuation is enqueued, no
+        turn is burned. The user's next real turn releases the barrier
+        through the lifecycle wait-bypass and the loop re-judges, exactly
+        as it does for a judge-set park.
+        """
+        if self._state is not None:
+            self._state.awaiting_user_input = True
+            self._state.waiting_reason = (reason or "").strip() or None
+            self._state.waiting_since = time.time()
+            save_goal(self.session_id, self._state)
+
     def clear(self) -> None:
         if self._state is None:
             return

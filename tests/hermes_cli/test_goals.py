@@ -1844,3 +1844,92 @@ class TestContractAndBackgroundCompose:
             )
         assert verdict == "done"
         assert wait_directive is None
+
+
+# ──────────────────────────────────────────────────────────────────────
+# park() — the mechanical block (todo action=block)
+# ──────────────────────────────────────────────────────────────────────
+
+
+class TestPark:
+    """``park`` is the second entry point to ``awaiting_user_input``.
+
+    The judge sets it on a ``blocked`` done verdict; the todo ``block``
+    action sets it directly. Both land on the same field, so the release
+    path (a real user turn) needs no new code.
+    """
+
+    def test_park_sets_awaiting_user_input_and_reason(self, hermes_home):
+        from hermes_cli.goals import GoalManager
+
+        mgr = GoalManager(session_id="park-1")
+        mgr.set("ship it", lifecycle=True)
+        mgr.park("need your call")
+
+        assert mgr.state.awaiting_user_input is True
+        assert mgr.state.waiting_reason == "need your call"
+        assert mgr.is_waiting() is True
+
+    def test_parked_goal_does_not_judge_or_continue(self, hermes_home):
+        from hermes_cli import goals
+        from hermes_cli.goals import GoalManager
+
+        mgr = GoalManager(session_id="park-2")
+        mgr.set("ship it", max_turns=5, lifecycle=True)
+        mgr.park("blocked on your decision")
+
+        judge = MagicMock(return_value=("continue", "x", False, None, False, False))
+        with patch.object(goals, "judge_goal", judge):
+            decision = mgr.evaluate_after_turn("standing by")
+
+        judge.assert_not_called()
+        assert decision["verdict"] == "waiting"
+        assert decision["should_continue"] is False
+        assert decision["continuation_prompt"] is None
+        assert mgr.state.turns_used == 0  # no turn burned while parked
+        assert mgr.state.status == "active"  # still active, just parked
+
+    def test_park_survives_a_reload(self, hermes_home):
+        from hermes_cli.goals import GoalManager
+
+        mgr = GoalManager(session_id="park-3")
+        mgr.set("ship it", lifecycle=True)
+        mgr.park("need your call")
+
+        # A fresh manager on the same session restores the park.
+        mgr2 = GoalManager(session_id="park-3")
+        assert mgr2.state.awaiting_user_input is True
+        assert mgr2.is_waiting() is True
+
+    def test_park_noop_without_an_armed_goal(self, hermes_home):
+        from hermes_cli.goals import GoalManager
+
+        mgr = GoalManager(session_id="park-4")
+        mgr.park("nothing armed")  # must not raise
+        assert mgr.is_waiting() is False
+
+    def test_stop_waiting_releases_the_park(self, hermes_home):
+        from hermes_cli import goals
+        from hermes_cli.goals import GoalManager
+
+        mgr = GoalManager(session_id="park-5")
+        mgr.set("ship it", max_turns=5, lifecycle=True)
+        mgr.park("need your call")
+        assert mgr.stop_waiting() is True
+        assert mgr.state.awaiting_user_input is False
+        assert mgr.is_waiting() is False
+
+        # Releasing resumes normal judging.
+        with patch.object(goals, "judge_goal", return_value=("continue", "more", False, None, False, False)):
+            decision = mgr.evaluate_after_turn("here is my answer")
+        assert decision["should_continue"] is True
+
+    def test_park_replaces_a_stale_reason(self, hermes_home):
+        from hermes_cli.goals import GoalManager
+
+        mgr = GoalManager(session_id="park-6")
+        mgr.set("ship it", lifecycle=True)
+        mgr.park("first reason")
+        mgr.stop_waiting()
+        mgr.park("second reason")
+        assert mgr.state.waiting_reason == "second reason"
