@@ -194,7 +194,10 @@ class TestRunConversationCodexPath:
         # User message + 3 projected (assistant tool_call + tool + assistant text)
         assert len(msgs) >= 4
         assert msgs[0]["role"] == "user"
-        assert msgs[0]["content"] == "hello"
+        # P2 visibility: the seeded-task block prefixes the user turn; the
+        # original message is preserved as the trailing content.
+        assert msgs[0]["content"].startswith("[Active tasks]")
+        assert msgs[0]["content"].endswith("hello")
         # Last assistant message has the final text
         final = [m for m in msgs if m.get("role") == "assistant"
                  and m.get("content") == "echo: hello"]
@@ -237,9 +240,14 @@ class TestRunConversationCodexPath:
         agent = _make_codex_agent()
         with patch.object(agent, "_spawn_background_review", return_value=None):
             result = agent.run_conversation("ping unique 12345")
+        # The pre-loop appends the current turn with the P2 seeded-task block
+        # prefixed; match on the trailing original text so the block does not
+        # mask a genuine duplicate append.
         user_count = sum(
             1 for m in result["messages"]
-            if m.get("role") == "user" and m.get("content") == "ping unique 12345"
+            if m.get("role") == "user"
+            and isinstance(m.get("content"), str)
+            and m["content"].endswith("ping unique 12345")
         )
         assert user_count == 1, f"user message appeared {user_count}× in {result['messages']}"
 

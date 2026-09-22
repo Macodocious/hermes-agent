@@ -177,3 +177,36 @@ class TestTodoStoreBounds:
         items = store.read()
         assert [i["content"] for i in items] == ["write the report", "review PR"]
         assert "[truncated]" not in items[0]["content"]
+
+
+class TestSpecRefValidation:
+    """The item carries an explicit spec ref for the renamed spec artifact."""
+
+    def test_spec_ref_survives_validation(self):
+        store = TodoStore()
+        store.write([
+            {"id": "1", "content": "Build", "status": "pending",
+             "spec": "/p/plans/auth-oauth.md"},
+        ])
+        assert store.read()[0]["spec"] == "/p/plans/auth-oauth.md"
+
+    def test_spec_ref_absent_when_unset(self):
+        """No invented spec ref — an item without one carries no key."""
+        store = TodoStore()
+        store.write([{"id": "1", "content": "Build", "status": "pending"}])
+        assert "spec" not in store.read()[0]
+
+    def test_blank_spec_ref_is_not_carried(self):
+        store = TodoStore()
+        store.write([
+            {"id": "1", "content": "Build", "status": "pending", "spec": "   "},
+        ])
+        assert "spec" not in store.read()[0]
+
+    def test_non_string_spec_ref_is_rejected(self):
+        """Only a string spec ref is a reference; a non-string is ignored."""
+        store = TodoStore()
+        store.write([
+            {"id": "1", "content": "Build", "status": "pending", "spec": 123},
+        ])
+        assert "spec" not in store.read()[0]

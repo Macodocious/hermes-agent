@@ -1503,7 +1503,7 @@ class TestQuickSnapshot:
 
         snap_id = create_quick_snapshot(hermes_home=hermes_home)
 
-        copied = hermes_home / "state-snapshots" / snap_id / "gateway" / ledger.name
+        copied = hermes_home / "snapshots" / snap_id / "gateway" / ledger.name
         assert copied.exists()
         conn = sqlite3.connect(copied)
         assert conn.execute("SELECT message_id FROM handled").fetchall() == [("123",)]
@@ -1540,7 +1540,7 @@ class TestQuickSnapshot:
             hermes_home=hermes_home, max_file_size=cap
         )
         assert snap_id is not None
-        snap_dir = hermes_home / "state-snapshots" / snap_id
+        snap_dir = hermes_home / "snapshots" / snap_id
         assert not (snap_dir / "state.db").exists()
         # Small files still captured
         assert (snap_dir / "cron" / "jobs.json").exists()
@@ -1555,14 +1555,14 @@ class TestQuickSnapshot:
         """Default (no cap) preserves manual /snapshot behavior."""
         from hermes_cli.backup import create_quick_snapshot
         snap_id = create_quick_snapshot(hermes_home=hermes_home, max_file_size=None)
-        assert (hermes_home / "state-snapshots" / snap_id / "state.db").exists()
+        assert (hermes_home / "snapshots" / snap_id / "state.db").exists()
 
     def test_max_file_size_under_cap_copies(self, hermes_home):
         from hermes_cli.backup import create_quick_snapshot
         snap_id = create_quick_snapshot(
             hermes_home=hermes_home, max_file_size=1 << 30
         )
-        assert (hermes_home / "state-snapshots" / snap_id / "state.db").exists()
+        assert (hermes_home / "snapshots" / snap_id / "state.db").exists()
 
     def test_list_snapshots(self, hermes_home):
         from hermes_cli.backup import create_quick_snapshot, list_quick_snapshots
@@ -2229,7 +2229,7 @@ class TestRunPreUpdateBackup:
 
     @staticmethod
     def _snaps(hermes_home):
-        d = hermes_home / "state-snapshots"
+        d = hermes_home / "snapshots"
         return [p for p in d.iterdir() if p.is_dir()] if d.exists() else []
 
     def test_default_creates_quick_snapshot_only(self, hermes_home, capsys):

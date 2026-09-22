@@ -1361,6 +1361,14 @@ def _build_child_agent(
     if isinstance(child_max_tokens, int):
         child_optional_kwargs["max_tokens"] = child_max_tokens
 
+    # Inherit the parent's resolved temperature so a subagent samples exactly
+    # as its session does. Temperature is resolved once at construction from
+    # config.yaml, so copying the attribute propagates the operator's
+    # general/coding override without the child re-reading config.
+    child_temperature = getattr(parent_agent, "temperature", None)
+    if child_temperature is not None:
+        child_optional_kwargs["temperature"] = child_temperature
+
     # Inherit the parent's rules posture so delegated work stays bound by
     # the same ~/.hermes/rules/*.md constraints as the parent.  The parent's
     # effective value is resolved at construction (agent.load_rules), so an

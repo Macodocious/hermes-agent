@@ -1433,10 +1433,10 @@ def init_agent(
     agent._todo_store = TodoStore()
 
     # Per-turn task-context declaration (temperature override selection).
-    # None means "general" — the agent's declare_task_context calls update it.
+    # None means "general" — the agent's switch_context calls update it.
     agent._declared_task_context = None
     # Optional user-directed explicit temperature (declared through
-    # declare_task_context when the operator states a specific value).
+    # switch_context when the operator states a specific value).
     # None means no explicit override — the context knob applies.
     agent._declared_explicit_temperature = None
 

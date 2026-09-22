@@ -136,6 +136,23 @@ def _read_plan_text(plan_ref: str) -> str:
         return ""
 
 
+def _spec_ref_for_item(item: Dict[str, Any], plan_ref: str) -> str:
+    """Resolve the spec file the post-close probe verifies the task against.
+
+    The spec artifact is named ``<plan>-<spec>.md``, so it cannot be
+    derived from the plan ref alone — the item's explicit ``spec`` ref is
+    the authoritative source when set. The sibling ``spec.md`` of the
+    approved plan is the fallback, which is the layout ``writing_plan``
+    produces.
+    """
+    spec_ref = str(item.get("spec") or "").strip()
+    if spec_ref:
+        return spec_ref
+    if plan_ref:
+        return str(Path(plan_ref).parent / "spec.md")
+    return ""
+
+
 def _lifecycle_config() -> Dict[str, Any]:
     """The tasks.lifecycle config block (best-effort, never raises)."""
     try:
@@ -674,14 +691,15 @@ def _write_probe(session_id: str, item: Dict[str, Any]) -> None:
     active_dir.mkdir(parents=True, exist_ok=True)
     now = datetime.now(timezone.utc)
     # R5: the probe verifies against the attached spec — "did it do what
-    # the user approved" instead of "did it do what it said". The spec is
-    # the sibling spec.md of the item's approved plan; its text is bound
-    # into the intent prompt (capped), and the plan path is named in the
-    # change description so the probe-runner has the contract location.
+    # the user approved" instead of "did it do what it said". The spec ref
+    # is the item's explicit spec path when set (the spec artifact is
+    # named <plan>-<spec>.md, so it is not derivable from the plan ref
+    # alone); otherwise the sibling spec.md of the item's approved plan,
+    # which is the layout writing_plan produces.
     plan_ref = str(item.get("plan") or "").strip()
     spec_text = ""
-    if plan_ref:
-        spec_ref = str(Path(plan_ref).parent / "spec.md")
+    spec_ref = _spec_ref_for_item(item, plan_ref)
+    if spec_ref:
         spec_text = _read_plan_text(spec_ref)
     probe = {
         "target": f"task:{item['id']}",

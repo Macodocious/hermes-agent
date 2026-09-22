@@ -1164,7 +1164,10 @@ _SLACK_PRIORITY_ALIASES = ("btw", "bg")
 #   - moa: high-cost slash mode, available through /hermes moa to avoid
 #     displacing existing native Slack slash commands at the 50-command cap.
 #   - debug: the log/report upload surface; reached via /hermes debug on Slack.
-_SLACK_VIA_HERMES_ONLY = frozenset({"topup", "moa", "debug"})
+#   - version: the build/version readout; low-frequency and purely
+#     informational, so it yields its native slot to a canonical command
+#     rather than being silently clamped last off the 50-command cap.
+_SLACK_VIA_HERMES_ONLY = frozenset({"topup", "moa", "debug", "version"})
 
 
 def _sanitize_slack_name(raw: str) -> str:

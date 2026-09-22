@@ -135,10 +135,11 @@ def test_current_user_turn_is_persisted_before_provider_call(agent):
     assert observed[0][0] == "persist"
     assert observed[1][0] == "provider"
     persisted_messages = observed[0][1]
-    assert persisted_messages[-1] == {
-        "role": "user",
-        "content": "new message that must survive a crash",
-    }
+    # The seeded-task block prefixes the inbound turn; the original message is
+    # preserved as the trailing content. Match on the suffix so the assertion
+    # still proves the user turn was flushed before the provider call.
+    assert persisted_messages[-1]["role"] == "user"
+    assert persisted_messages[-1]["content"].endswith("new message that must survive a crash")
 
 
 class TestHTTP413Compression:
@@ -499,9 +500,14 @@ class TestHTTP413Compression:
             patch.object(agent, "_save_trajectory"),
             patch.object(agent, "_cleanup_task_resources"),
         ):
-            # Compression returns same number of messages → can't compress further
-            mock_compress.return_value = (
-                [{"role": "user", "content": "hello"}],
+            # Model "no progress" faithfully: hand the compressor's input back
+            # unchanged so neither the message count NOR the token estimate
+            # drops. The progress gate (#39550) treats a token reduction as
+            # progress and retries, so a mock returning a *shorter* payload
+            # reads as progress instead of exhaustion — and the seeded-task
+            # block folded into the inbound turn only widens that gap.
+            mock_compress.side_effect = lambda messages, *args, **kwargs: (
+                list(messages),
                 "same prompt",
             )
             result = agent.run_conversation("hello")

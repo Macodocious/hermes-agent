@@ -468,12 +468,14 @@ class TodoStore:
         Deterministic state machine: ``begin`` / ``pause`` / ``resume`` /
         ``close`` / ``escalate`` move a single item between lifecycle
         statuses per ``_LIFECYCLE_TRANSITIONS``; anything else is refused
-        with an error dict. ``begin`` is refused while another task is
-        ``in_progress`` (one task executing); a ``closing`` task no longer
-        blocks begin — the R4 pivot relaxation, safe because execution is
-        gated on the user's verdict. ``close`` moves the task to
-        ``closing`` — the judge's ``done`` verdict is the second key that
-        finalizes it via ``finalize`` (internal, not model-facing).
+        with an error dict. ``begin`` and ``resume`` — the two doors into
+        ``in_progress`` — are each refused while another task is
+        ``in_progress`` (one task executing) or ``closing``; sequential
+        close: the closing task occupies the current-task slot until the
+        judge's done verdict finalizes it.
+        ``close`` moves the task to ``closing`` — the judge's ``done``
+        verdict is the second key that finalizes it via ``finalize``
+        (internal, not model-facing).
 
         Returns ``{"ok": True, "item": {...}}`` on success or
         ``{"ok": False, "error": "..."}`` on refusal. Never raises.
@@ -510,13 +512,25 @@ class TodoStore:
                         ),
                     }
         if action == "begin":
-            # Pivot rule (R4): the sequential lock is "one task executing",
-            # not "one task in flight". Execution is gated on the user's
-            # verdict, so beginning the next item while the previous is
-            # closing is safe — the closing task occupies only the judge
-            # slot and the verdict flow finalizes it independently.
-            # Another task still in_progress is still refused: it is the
-            # one executing.
+            # Sequential close: the closing task occupies the current-task
+            # slot until the judge's done verdict finalizes it, so beginning
+            # the next item while one is closing would re-create the
+            # closing + in_progress overlap _enforce_invariants() rejects —
+            # the persist write would demote the newly begun task straight
+            # back to pending and the following close would be refused.
+            # Refuse here, naming the closing task, before mutating.
+            for other in self._items:
+                if other is not item and other["status"] == "closing":
+                    return {
+                        "ok": False,
+                        "error": (
+                            f"cannot begin task {item_id}: task {other['id']} "
+                            "is closing — wait for the judge to finalize it "
+                            "(or escalate it) before beginning another"
+                        ),
+                    }
+            # Another task still in_progress is also refused: it is the one
+            # executing.
             for other in self._items:
                 if other is not item and other["status"] == "in_progress":
                     return {
@@ -531,6 +545,45 @@ class TodoStore:
         elif action == "pause":
             item["status"] = "paused"
         elif action == "resume":
+            # Sequential close: a paused task cannot resume while a sibling
+            # is closing. Closing occupies the current-task slot until the
+            # judge's done verdict finalizes it, so resuming a paused
+            # sibling would construct the same closing + in_progress
+            # overlap the begin guard refuses — the persist write would
+            # demote it straight back to pending and the following close
+            # would be refused. The task's own closing -> in_progress
+            # transition stays allowed: that is the judge's premature-close
+            # reversal (task_manager.observe_verdict), not a second
+            # concurrent task.
+            for other in self._items:
+                if other is not item and other["status"] == "closing":
+                    return {
+                        "ok": False,
+                        "error": (
+                            f"cannot resume task {item_id}: task {other['id']} "
+                            "is closing — wait for the judge to finalize it "
+                            "(or escalate it) before resuming another"
+                        ),
+                    }
+            # Another task still in_progress is the one executing: resuming
+            # a paused sibling alongside it would construct two current
+            # tasks, and the write-path invariant would demote the resumed
+            # one straight back to pending — a success that silently
+            # reverts. Resume of a *closing* task is exempt: that is the
+            # judge's premature-close reversal (observe_verdict), which
+            # deliberately passes through the overlap for the write path to
+            # collapse (see test_verdict_continue_with_closing_and_in_progress_keeps_both_open).
+            if item["status"] == "paused":
+                for other in self._items:
+                    if other is not item and other["status"] == "in_progress":
+                        return {
+                            "ok": False,
+                            "error": (
+                                f"cannot resume task {item_id}: task {other['id']} "
+                                "is still in_progress — pause, close, or escalate "
+                                "it first"
+                            ),
+                        }
             item["status"] = "in_progress"
         elif action == "close":
             item["status"] = "closing"
@@ -868,6 +921,13 @@ class TodoStore:
         # only an explicit plan ref is model-authorable.
         if isinstance(item.get("plan"), str) and str(item["plan"]).strip():
             validated["plan"] = str(item["plan"]).strip()
+        # The spec reference survives validation alongside the plan ref for
+        # the same reason the plan ref exists: the post-close probe binds the
+        # approved spec into its intent prompt. A single plan path cannot
+        # name which spec — the spec artifact is <plan>-<spec>.md — so the
+        # spec ref is carried explicitly rather than derived.
+        if isinstance(item.get("spec"), str) and str(item["spec"]).strip():
+            validated["spec"] = str(item["spec"]).strip()
         origin = str(item.get("origin", "")).strip()
         if origin:
             validated["origin"] = origin
@@ -1121,6 +1181,17 @@ TODO_SCHEMA = {
                                 "the audit checks work advances it, and the "
                                 "post-close probe verifies against its "
                                 "attached spec."
+                            )
+                        },
+                        "spec": {
+                            "type": "string",
+                            "description": (
+                                "Optional specification file path for this "
+                                "task. The spec artifact is named "
+                                "<plan>-<spec>.md, so it cannot be derived "
+                                "from the plan ref alone; set this when the "
+                                "task was authored from a spec so the "
+                                "post-close probe verifies against it."
                             )
                         }
                     },

@@ -1372,9 +1372,9 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
             tool_duration = time.time() - tool_start_time
             if agent._should_emit_quiet_tool_messages():
                 agent._vprint(f"  {_get_cute_tool_message_impl('todo', function_args, tool_duration, result=function_result)}")
-        elif function_name == "declare_task_context":
+        elif function_name == "switch_context":
             def _execute(next_args: dict) -> Any:
-                from tools.task_context_tool import declare_task_context as _declare
+                from tools.task_context_tool import switch_context as _declare
                 return _declare(
                     context=next_args.get("context"),
                     temperature=next_args.get("temperature"),
@@ -1390,7 +1390,7 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
             )
             tool_duration = time.time() - tool_start_time
             if agent._should_emit_quiet_tool_messages():
-                agent._vprint(f"  {_get_cute_tool_message_impl('declare_task_context', function_args, tool_duration, result=function_result)}")
+                agent._vprint(f"  {_get_cute_tool_message_impl('switch_context', function_args, tool_duration, result=function_result)}")
         elif function_name == "session_search":
             def _execute(next_args: dict) -> Any:
                 session_db = agent._get_session_db_for_recall()

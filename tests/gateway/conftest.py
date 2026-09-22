@@ -184,11 +184,74 @@ def _ensure_discord_mock() -> None:
             self.description = description
     discord_mod.SelectOption = _FakeSelectOption
 
+    # Components V2 layout classes.  Real classes (not MagicMock) so the
+    # task-card sender's serialized payload can be asserted structurally:
+    # to_component_dict() emits the same wire shape the real library does.
+    class _FakeTextDisplay:
+        def __init__(self, content="", *, id=None, **_):
+            self.content = content
+            self.id = id
+        def to_component_dict(self):
+            base = {"type": 10, "content": self.content}
+            if self.id is not None:
+                base["id"] = self.id
+            return base
+
+    class _FakeSeparator:
+        def __init__(self, *, visible=True, spacing=None, id=None, **_):
+            self.visible = visible
+            self.spacing = spacing
+            self.id = id
+        def to_component_dict(self):
+            base = {"type": 14, "divider": self.visible, "spacing": 1}
+            if self.id is not None:
+                base["id"] = self.id
+            return base
+
+    class _FakeContainer:
+        def __init__(self, *children, accent_color=None, accent_colour=None,
+                     spoiler=False, id=None, **_):
+            self.children = list(children)
+            self.accent_color = accent_color if accent_color is not None else accent_colour
+            self.spoiler = spoiler
+            self.id = id
+        def add_item(self, item):
+            self.children.append(item)
+            return self
+        def to_components(self):
+            return [child.to_component_dict() for child in self.children]
+        def to_component_dict(self):
+            base = {
+                "type": 17,
+                "accent_color": self.accent_color,
+                "spoiler": self.spoiler,
+                "components": self.to_components(),
+            }
+            if self.id is not None:
+                base["id"] = self.id
+            return base
+
+    class _FakeLayoutView:
+        def __init__(self, *, timeout=None, **_):
+            self.timeout = timeout
+            self.children = []
+        def add_item(self, item):
+            self.children.append(item)
+            return self
+        def to_components(self):
+            return [child.to_component_dict() for child in self.children]
+        def has_components_v2(self):
+            return True
+
     discord_mod.ui = SimpleNamespace(
         View=_FakeView,
         Select=_FakeSelect,
         Button=_FakeButton,
         button=lambda *a, **k: (lambda fn: fn),
+        LayoutView=_FakeLayoutView,
+        Container=_FakeContainer,
+        TextDisplay=_FakeTextDisplay,
+        Separator=_FakeSeparator,
     )
     discord_mod.ButtonStyle = SimpleNamespace(
         success=1, primary=2, secondary=2, danger=3,
@@ -198,6 +261,9 @@ def _ensure_discord_mock() -> None:
         orange=lambda: 1, green=lambda: 2, blue=lambda: 3,
         red=lambda: 4, purple=lambda: 5, greyple=lambda: 6,
         gold=lambda: 7,
+        # Computes the packed RGB integer discord.py's Color.from_rgb returns,
+        # so tests asserting on an embed's accent see a realistic value.
+        from_rgb=lambda r, g, b: (r << 16) + (g << 8) + b,
     )
 
     # app_commands — needed by _register_slash_commands auto-registration

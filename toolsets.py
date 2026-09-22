@@ -54,7 +54,7 @@ _HERMES_CORE_TOOLS = [
     "todo", "memory",
     # Per-turn task-context declaration (temperature override selection;
     # schema gated on agent.temperature.override.enabled via check_fn)
-    "declare_task_context",
+    "switch_context",
     # NOTE: the desktop Project tools (project_list/create/switch) are
     # deliberately NOT here. They only make sense where a GUI can follow the
     # move, so they live in the `project` toolset and are enabled solely by the

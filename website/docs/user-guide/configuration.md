@@ -1334,6 +1334,54 @@ You can also change the reasoning effort at runtime with the `/reasoning` comman
 Effort changes are session-scoped by default; add `--global` to save the
 new level as your `agent.reasoning_effort` default.
 
+## Temperature
+
+Control how random the model's sampling is:
+
+```yaml
+agent:
+  temperature: 0.7    # 0.0-2.0; unset = provider default
+```
+
+A single number applies to every request. Lower is more deterministic, higher
+is more varied. When unset, the provider's own default is used and no
+`temperature` field is sent.
+
+### Per-Task-Type Override
+
+Set different temperatures for conversation and for coding work, and let the
+agent pick per turn:
+
+```yaml
+agent:
+  temperature:
+    value: 0.7          # base value, used while the override is off
+    override:
+      enabled: true
+      general: 1.0      # conversation turns
+      coding: 0.0       # coding turns
+```
+
+While `override.enabled` is `true`, the agent declares which kind of work it is
+doing by calling the `declare_task_context` tool, and the matching knob is
+applied to the next request. The declaration defaults to `general` when the
+agent has not called the tool.
+
+The `declare_task_context` tool only exists in the model's tool list while
+`override.enabled` is `true`. With the override off, the tool is absent
+altogether, and `value` (or the provider default) applies to every request.
+
+:::note
+The configured temperature is read when an agent is created. A change to
+`agent.temperature` takes effect for new sessions; an already-running gateway
+picks it up on its next agent build or after a restart.
+:::
+
+The operator can also direct a one-off temperature in conversation (for example
+"retry with temperature 1.0"). The agent passes that exact value to
+`declare_task_context`, and it takes precedence over the context knob for that
+one request. The tool reports the temperature that will actually be sent.
+
 #### Per-Model Reasoning Overrides
 
 You can set different reasoning effort levels for different models. This is useful when you want high reasoning for complex models but medium for faster ones:

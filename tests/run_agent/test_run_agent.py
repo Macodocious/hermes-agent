@@ -2768,8 +2768,15 @@ class TestConcurrentToolExecution:
                 mock_seq.assert_called_once()
                 mock_con.assert_not_called()
 
-    def test_disjoint_write_batch_uses_concurrent_path(self, agent):
-        """Independent file writes should still run concurrently."""
+    def test_disjoint_write_batch_stays_sequential(self, agent):
+        """Independent file writes must NOT run concurrently.
+
+        write_file/patch are approval-gated; running them in a parallel
+        segment stacks N simultaneous approval prompts on one turn (see
+        adabfaa180). They are permanent sequential barriers regardless of
+        whether their target paths overlap, so a two-write batch takes the
+        sequential path.
+        """
         tc1 = _mock_tool_call(
             name="write_file",
             arguments='{"path":"src/a.py","content":"print(1)"}',
@@ -2785,8 +2792,8 @@ class TestConcurrentToolExecution:
         with patch.object(agent, "_execute_tool_calls_sequential") as mock_seq:
             with patch.object(agent, "_execute_tool_calls_concurrent") as mock_con:
                 agent._execute_tool_calls(mock_msg, messages, "task-1")
-                mock_con.assert_called_once()
-                mock_seq.assert_not_called()
+                mock_seq.assert_called_once()
+                mock_con.assert_not_called()
 
     def test_overlapping_write_batch_forces_sequential(self, agent):
         """Writes to the same file must stay ordered."""
@@ -3393,11 +3400,22 @@ class TestConcurrentToolExecution:
         )
         monkeypatch.setattr("hermes_cli.plugins.has_hook", lambda name: True)
 
+        store_before = agent._todo_store
         with patch("tools.todo_tool.todo_tool", return_value='{"ok":true}') as mock_todo:
             agent._execute_tool_calls_sequential(mock_msg, messages, "task-1")
 
         assert seen["middleware_args"] == {"todos": [], "request_rewritten": True}
-        mock_todo.assert_called_once_with(todos=[], merge=True, store=agent._todo_store)
+        # The write-through persist merges the DB row back in and REPLACES
+        # agent._todo_store, so assert against the store captured at call time
+        # (what production actually passed) rather than the post-merge object.
+        mock_todo.assert_called_once_with(
+            todos=[],
+            merge=True,
+            store=store_before,
+            dispositions=None,
+            action=None,
+            item_id=None,
+        )
         post_call = next(call for call in hook_calls if call[0] == "post_tool_call")
         assert post_call[1]["tool_name"] == "todo"
         assert post_call[1]["args"] == {"todos": [], "request_rewritten": True, "merge": True}
@@ -4410,7 +4428,12 @@ class TestRunConversation:
         ]
         assert all("message_count" in c and isinstance(c.get("request_messages"), list) for c in pre_request_calls)
         assert all("request" in c and "messages" in c["request"]["body"] for c in pre_request_calls)
-        assert any(msg.get("role") == "user" and msg.get("content") == "search something" for msg in pre_request_calls[0]["request_messages"])
+        assert any(
+            msg.get("role") == "user"
+            and isinstance(msg.get("content"), str)
+            and msg["content"].endswith("search something")
+            for msg in pre_request_calls[0]["request_messages"]
+        )
         assert all("usage" in c and "response" in c for c in post_request_calls)
         assert all("assistant_message" in c["response"] for c in post_request_calls)
 
@@ -6321,6 +6344,7 @@ class TestCredentialPoolRecovery:
                 status_code,
                 error_context=None,
                 api_key_hint=None,
+                model=None,
             ):
                 assert status_code == 402
                 assert error_context is None
@@ -6349,6 +6373,7 @@ class TestCredentialPoolRecovery:
                 status_code,
                 error_context=None,
                 api_key_hint=None,
+                model=None,
             ):
                 assert status_code == 400
                 assert error_context == {"reason": "out_of_extra_usage"}
@@ -6376,7 +6401,7 @@ class TestCredentialPoolRecovery:
             def current(self):
                 return SimpleNamespace(label="primary")
 
-            def mark_exhausted_and_rotate(self, *, status_code, error_context=None):
+            def mark_exhausted_and_rotate(self, *, status_code, error_context=None, model=None):
                 assert status_code == 429
                 assert error_context is None
                 return next_entry
@@ -6481,7 +6506,7 @@ class TestCredentialPoolRecovery:
             def try_refresh_current(self):
                 return None  # refresh failed
 
-            def mark_exhausted_and_rotate(self, *, status_code, error_context=None):
+            def mark_exhausted_and_rotate(self, *, status_code, error_context=None, model=None):
                 assert status_code == 401
                 assert error_context is None
                 return next_entry
@@ -6505,7 +6530,7 @@ class TestCredentialPoolRecovery:
             def try_refresh_current(self):
                 return None
 
-            def mark_exhausted_and_rotate(self, *, status_code, error_context=None):
+            def mark_exhausted_and_rotate(self, *, status_code, error_context=None, model=None):
                 assert error_context is None
                 return None  # no more credentials
 
@@ -6582,7 +6607,7 @@ class TestCredentialPoolRecovery:
             def current(self):
                 return SimpleNamespace(label="primary")
 
-            def mark_exhausted_and_rotate(self, *, status_code, error_context=None):
+            def mark_exhausted_and_rotate(self, *, status_code, error_context=None, model=None):
                 captured["status_code"] = status_code
                 captured["error_context"] = error_context
                 return next_entry
