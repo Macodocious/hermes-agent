@@ -133,3 +133,40 @@ class TestSchemaTeachesTheRule:
         desc = TODO_SCHEMA["description"]
         assert "driven by the action parameter" in desc
         assert "action=close" in desc
+
+    def test_schema_exposes_block_action(self):
+        """The schema is the instruction surface: block must be offered."""
+        from tools.todo_tool import TODO_SCHEMA
+        assert "block" in TODO_SCHEMA["description"]
+        enum = TODO_SCHEMA["parameters"]["properties"]["action"]["enum"]
+        assert "block" in enum
+
+    def test_schema_declares_reason_parameter(self):
+        from tools.todo_tool import TODO_SCHEMA
+        props = TODO_SCHEMA["parameters"]["properties"]
+        assert props["reason"]["type"] == "string"
+
+
+class TestBlockActionToolEntry:
+    """The tool entry refuses a reasonless block and passes a valid one
+    through the transition door."""
+
+    def test_block_without_reason_is_refused(self):
+        store = TodoStore()
+        store.write([{"id": "1", "content": "Task", "status": "pending"}])
+        store.transition("begin", "1")
+        result = json.loads(
+            todo_tool(action="block", item_id="1", store=store)
+        )
+        assert "error" in result
+        assert "reason" in result["error"]
+
+    def test_block_with_reason_succeeds_and_preserves_status(self):
+        store = TodoStore()
+        store.write([{"id": "1", "content": "Task", "status": "pending"}])
+        store.transition("begin", "1")
+        result = json.loads(
+            todo_tool(action="block", item_id="1", reason="need your call", store=store)
+        )
+        assert "error" not in result
+        assert result["todos"][0]["status"] == "in_progress"
