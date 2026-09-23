@@ -716,3 +716,37 @@ def test_on_todo_write_routine_write_does_not_release_park(monkeypatch) -> None:
 
     assert not any(c.startswith("set:") for c in calls)
     assert "clear" not in calls
+
+
+# ── _advances_open_plan: membership is the TOOLSET, not the tool name ──
+
+
+def test_advances_open_plan_resolves_toolset_not_tool_name() -> None:
+    """A plan tool stays plan-advancing after a rename.
+
+    Membership is the toolset the registry reports, so the write_plan tool
+    surface can be renamed under the plugin without silently dropping out of
+    the audit predicate. Previously a hardcoded name set plus a `plan_` prefix
+    stopped matching every plan tool the moment the surface was renamed.
+    """
+    from tools.registry import registry
+
+    registry.register(
+        name="write_spec",
+        toolset="write_plan",
+        schema={"name": "write_spec", "parameters": {}},
+        handler=lambda args, **kw: None,
+    )
+    assert task_manager._advances_open_plan(["write_spec"]) is True
+
+
+def test_advances_open_plan_ignores_unrelated_tools() -> None:
+    """Work with no plan-advancing tool is still drift."""
+    assert task_manager._advances_open_plan(["read_file", "patch"]) is False
+    assert task_manager._advances_open_plan([]) is False
+    assert task_manager._advances_open_plan(None) is False
+
+
+def test_advances_open_plan_accepts_todo_transitions() -> None:
+    """The lifecycle lever itself always counts as advancing the plan."""
+    assert task_manager._advances_open_plan(["todo"]) is True
