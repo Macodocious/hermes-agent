@@ -1981,8 +1981,16 @@ def try_activate_fallback(agent, reason: "FailoverReason | None" = None) -> bool
 
 
 
-def handle_max_iterations(agent, messages: list, api_call_count: int) -> str:
-    """Request a summary when max iterations are reached. Returns the final response text."""
+def handle_max_iterations(agent, messages: list, api_call_count: int, append_to_history: bool = True) -> str:
+    """Request a summary when max iterations are reached.
+
+    Returns the summary text. When ``append_to_history`` is True — the
+    terminal fallback — the synthetic request and the model's summary are
+    appended to ``messages`` so they persist as the turn's closing exchange.
+    When False — the continuation path — ``messages`` is left untouched; the
+    caller folds the returned summary into its own context instead, so the
+    summary never becomes user-facing output.
+    """
     print(f"⚠️  Reached maximum iterations ({agent.max_iterations}). Requesting summary...")
 
     summary_request = (
@@ -1990,14 +1998,20 @@ def handle_max_iterations(agent, messages: list, api_call_count: int) -> str:
         "Please provide a final response summarizing what you've found and accomplished so far, "
         "without calling any more tools."
     )
-    messages.append({"role": "user", "content": summary_request})
+    if append_to_history:
+        messages.append({"role": "user", "content": summary_request})
+        request_messages = messages
+    else:
+        # Build against a copy so the caller's transcript gains neither the
+        # synthetic request nor the summary.
+        request_messages = list(messages) + [{"role": "user", "content": summary_request}]
 
     try:
         # Build API messages, stripping internal-only fields
         # (finish_reason, reasoning) that strict APIs like Mistral reject with 422
         _needs_sanitize = agent._should_sanitize_tool_calls()
         api_messages = []
-        for msg in messages:
+        for msg in request_messages:
             api_msg = msg.copy()
             agent._copy_reasoning_content_for_api(msg, api_msg)
             for internal_field in ("reasoning", "finish_reason", "_thinking_prefill"):
@@ -2176,7 +2190,8 @@ def handle_max_iterations(agent, messages: list, api_call_count: int) -> str:
             if "<think>" in final_response:
                 final_response = re.sub(r'<think>.*?</think>\s*', '', final_response, flags=re.DOTALL).strip()
             if final_response:
-                messages.append({"role": "assistant", "content": final_response})
+                if append_to_history:
+                    messages.append({"role": "assistant", "content": final_response})
             else:
                 final_response = "I reached the iteration limit and couldn't generate a summary."
         else:
@@ -2219,7 +2234,8 @@ def handle_max_iterations(agent, messages: list, api_call_count: int) -> str:
                 if "<think>" in final_response:
                     final_response = re.sub(r'<think>.*?</think>\s*', '', final_response, flags=re.DOTALL).strip()
                 if final_response:
-                    messages.append({"role": "assistant", "content": final_response})
+                    if append_to_history:
+                        messages.append({"role": "assistant", "content": final_response})
                 else:
                     final_response = "I reached the iteration limit and couldn't generate a summary."
             else:

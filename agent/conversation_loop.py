@@ -28,6 +28,7 @@ import uuid
 from typing import Any, Dict, List, Optional
 
 from agent.codex_responses_adapter import _summarize_user_message_for_log
+from agent.context_compressor import COMPRESSED_SUMMARY_METADATA_KEY
 from agent.conversation_compression import conversation_history_after_compression
 from agent.display import KawaiiSpinner
 from agent.error_classifier import FailoverReason, classify_api_error
@@ -100,6 +101,61 @@ _LOCAL_PROCESSING_MODULES = frozenset({
 _API_CALL_MODULES = frozenset({
     "chat_completion_helpers",
 })
+
+# Status emitted while a turn extends itself past an exhausted iteration
+# budget. Deliberately the same wording as the terminal fallback in
+# ``turn_finalizer`` so the user sees one consistent signal whether the turn
+# continues or ends.
+ITERATION_BUDGET_EXHAUSTED_STATUS = (
+    "⚠️ Iteration budget exhausted ({used}/{max_total}) — asking model to summarise"
+)
+
+
+def _try_iteration_continuation(agent: Any, messages: list, api_call_count: int) -> Optional[int]:
+    """Extend a turn past an exhausted iteration budget, compaction-style.
+
+    Summarises progress, folds the summary into the agent's own context as a
+    tagged summary message, and returns the api_call_count to resume from so
+    the caller can ``continue``. The summary is context for the agent; it is
+    never returned as the turn's response.
+
+    Returns ``None`` when no continuation happens — the configured cap is
+    spent, or no summary could be produced — so the caller falls through to
+    the terminal fallback and the turn ends normally. Missing attributes are
+    treated as cap-exhausted so an agent that never went through normal
+    construction degrades to the legacy behaviour instead of raising.
+    """
+    _used = getattr(agent, "_iteration_continuations", 0)
+    _max = getattr(agent, "_max_iteration_continuations", 0)
+    if _used >= _max:
+        return None
+
+    agent._iteration_continuations = _used + 1
+    agent._emit_status(
+        ITERATION_BUDGET_EXHAUSTED_STATUS.format(
+            used=agent.iteration_budget.used,
+            max_total=agent.iteration_budget.max_total,
+        )
+    )
+    summary = agent._handle_max_iterations(messages, api_call_count, append_to_history=False)
+    if not summary:
+        # Nothing to fold in; let the turn end with a normal fallback.
+        return None
+
+    # Tagged exactly like a compaction summary so frontends exclude it from
+    # the conversation. The tail at exhaustion is a tool result, so assistant
+    # is the alternation-safe role and matches the terminal path.
+    messages.append({
+        "role": "assistant",
+        "content": summary,
+        COMPRESSED_SUMMARY_METADATA_KEY: True,
+    })
+    # Both counters must reset: the loop gate requires
+    # api_call_count < max_iterations AND remaining > 0, so restoring the
+    # budget alone would still exit on the exhausted call count.
+    agent._api_call_count = 0
+    agent.iteration_budget = IterationBudget(agent.max_iterations)
+    return 0
 
 
 def _image_error_max_dimension(error: Exception) -> Optional[int]:
@@ -743,6 +799,17 @@ def run_conversation(
             _turn_exit_reason = "budget_exhausted"
             if not agent.quiet_mode:
                 agent._safe_print(f"\n⚠️  Iteration budget exhausted ({agent.iteration_budget.used}/{agent.iteration_budget.max_total} iterations used)")
+
+            # Mirror context compaction: summarise progress, fold it into the
+            # agent's own context, reset the budget, and keep working — rather
+            # than breaking out and letting the finalizer hand the summary to
+            # the user as the turn's response.
+            _resumed_count = _try_iteration_continuation(agent, messages, api_call_count)
+            if _resumed_count is not None:
+                api_call_count = _resumed_count
+                _turn_exit_reason = "unknown"
+                continue
+            # Cap spent, or nothing to summarise — end the turn as before.
             break
 
         # Fire step_callback for gateway hooks (agent:step event)

@@ -1011,6 +1011,17 @@ DEFAULT_CONFIG = {
     "max_live_sessions": 16,
     "agent": {
         "max_turns": 90,
+        # Iteration-budget continuations: when a turn exhausts the
+        # iteration budget, the agent summarises its progress, folds that
+        # summary into its own context, resets the budget, and keeps
+        # working — instead of returning the summary to the user as the
+        # final response. This mirrors how context compaction lets a turn
+        # continue past a limit. Each continuation resets the full budget,
+        # so this cap bounds total work per turn at
+        # ``max_turns * (1 + max_iteration_continuations)``. Set to 0 to
+        # disable continuation and restore the legacy behaviour of
+        # surfacing the summary as the final response.
+        "max_iteration_continuations": 3,
         # Inactivity timeout for gateway agent execution (seconds).
         # The agent can run indefinitely as long as it's actively calling
         # tools or receiving API responses.  Only fires when the agent has

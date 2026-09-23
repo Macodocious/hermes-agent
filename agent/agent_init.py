@@ -725,6 +725,28 @@ def init_agent(
     agent._budget_exhausted_injected = False
     agent._budget_grace_call = False
 
+    # Iteration-budget continuations.  When the loop exhausts the budget it
+    # summarises progress, folds the summary into context, resets the budget,
+    # and continues instead of surfacing the summary as the final response.
+    # Bounded per turn so a stuck agent cannot loop forever — each
+    # continuation grants a full fresh budget, so the cap is the only brake.
+    agent._iteration_continuations = 0
+    agent._max_iteration_continuations = 3
+    try:
+        from hermes_cli.config import load_config as _load_mc_cfg
+
+        _mc_cfg = _load_mc_cfg().get("agent", {}) or {}
+        _mc_raw = _mc_cfg.get("max_iteration_continuations", 3)
+        agent._max_iteration_continuations = max(0, int(_mc_raw))
+    except Exception:
+        # Config is untrusted input; a malformed value falls back to the
+        # documented default rather than disabling the feature or crashing
+        # agent construction.
+        logger.warning(
+            "Invalid agent.max_iteration_continuations — using default 3",
+            exc_info=True,
+        )
+
     # Activity tracking — updated on each API call, tool execution, and
     # stream chunk.  Used by the gateway timeout handler to report what the
     # agent was doing when it was killed, and by the "still working"
