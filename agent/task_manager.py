@@ -410,19 +410,27 @@ def audit_turn_end(
     return LIFECYCLE_AUDIT_NUDGE
 
 
-# Tool names that count as advancing the open task's plan: the lifecycle
-# lever (todo transitions) and plan authoring (the write-plan tools). A
-# substantive turn whose tool calls contain none of these — while an open
-# task carries a plan — is work outside the plan and gets nudged.
-_ADVANCE_TOOL_NAMES = frozenset({"todo", "writing_plan", "write_plan"})
-_ADVANCE_TOOL_PREFIX = "plan_"
+# Toolsets that count as advancing the open task's plan: the lifecycle lever
+# (todo transitions) and plan authoring. A substantive turn whose tool calls
+# contain none of these — while an open task carries a plan — is work outside
+# the plan and gets nudged.
+#
+# Membership is resolved by TOOLSET through the registry, not by tool name.
+# The plan-authoring tools are owned by the write_plan plugin and get renamed
+# as that surface evolves; the earlier name-set + `plan_` prefix could not
+# track a rename and silently stopped matching every plan tool at once, which
+# fired the out-of-plan nudge on genuine plan work. A toolset is the stable
+# contract.
+_ADVANCE_TOOLSETS = frozenset({"todo", "write_plan"})
 
 
-def _advances_open_plan(tool_names: list) -> bool:
+def _advances_open_plan(tool_names: Optional[list]) -> bool:
     """True when the turn's tool calls show work on the open task's plan."""
+    from tools.registry import registry
+
     return any(
-        name in _ADVANCE_TOOL_NAMES or name.startswith(_ADVANCE_TOOL_PREFIX)
-        for name in tool_names
+        registry.get_toolset_for_tool(name) in _ADVANCE_TOOLSETS
+        for name in tool_names or []
     )
 
 
