@@ -42,6 +42,32 @@ LIFECYCLE_ACTIONS = {"begin", "pause", "resume", "close", "escalate", "block"}
 # (P4) must stay markable completed/cancelled directly.
 LIFECYCLE_TRANSITION_STATUSES = {"in_progress", "paused", "closing", "escalated"}
 
+# Row format for the always-on "[Active tasks]" block. The item id and the
+# live status are rendered explicitly instead of a status glyph: the id is
+# the addressing handle the model passes back in ``action`` + ``item_id``,
+# and a block that hides it lets the agent assert state about tasks it
+# cannot name (the "all five done / task 3 not done" incident).
+TASK_BLOCK_ROW_TEMPLATE = "- [{id}] [{status}] {content}"
+
+
+def render_task_board_with_ids(items: List[Dict[str, Any]]) -> List[str]:
+    """Render the always-on task block rows.
+
+    One ``"- [id] [status] content"`` line per item. The id is the
+    addressing handle the model passes back in ``action`` + ``item_id``;
+    the status is the live store status. Rendering both makes the injected
+    block truthful about what the store holds — the previous marker-only
+    line hid the id, so the agent could not name the task it described.
+    """
+    return [
+        TASK_BLOCK_ROW_TEMPLATE.format(
+            id=item.get("id", "?"),
+            status=item.get("status", "?"),
+            content=item.get("content", ""),
+        )
+        for item in items
+    ]
+
 # Allowed transitions per lifecycle action, keyed by the item's current
 # status. Anything not listed is refused with an error. "finalize" is the
 # internal closing -> closed step driven by the task lifecycle judge (the
@@ -695,19 +721,8 @@ class TodoStore:
         if not active_items and not completed_items and not pending_captures:
             return None
 
-        markers = {
-            "completed": "[x]",
-            "in_progress": "[>]",
-            "pending": "[ ]",
-            "cancelled": "[~]",
-            "paused": "[‖]",
-            "closing": "[>]",
-            "escalated": "[!]",
-        }
         lines = ["[Active tasks]"]
-        for item in active_items:
-            marker = markers.get(item["status"], "[?]")
-            lines.append(f"- {marker} {item['content']}")
+        lines.extend(render_task_board_with_ids(active_items))
         if completed_items:
             lines.append("Completed:")
             for item in completed_items:
@@ -1030,13 +1045,20 @@ def todo_tool(
         # ``block`` parks the goal loop, and the park reason is what the
         # user sees when the loop quiesces. Refuse a reasonless block
         # rather than parking with an empty explanation.
-        if str(action).strip().lower() == "block" and not str(reason or "").strip():
+        action_normalized = str(action).strip().lower()
+        if action_normalized == "block" and not str(reason or "").strip():
             return tool_error(
                 "block requires a reason: state what you need from the user"
             )
         result = store.transition(action, item_id)
         if not result.get("ok"):
-            return tool_error(result.get("error", "lifecycle transition refused"))
+            error = result.get("error", "lifecycle transition refused")
+            if action_normalized == "block":
+                # A refused block parked nothing — the loop is still
+                # running. Say so explicitly: a bare transition error reads
+                # as "the task is blocked" when in fact nothing was held.
+                return tool_error(f"block did not park: {error}")
+            return tool_error(error)
         items = store.read()
     elif todos is not None:
         # Guard: LLM sometimes sends todos as a JSON string instead of a list
@@ -1267,7 +1289,8 @@ registry.register(
     handler=lambda args, **kw: todo_tool(
         todos=args.get("todos"), merge=args.get("merge", False),
         dispositions=args.get("dispositions"), store=kw.get("store"),
-        action=args.get("action"), item_id=args.get("item_id")),
+        action=args.get("action"), item_id=args.get("item_id"),
+        reason=args.get("reason")),
     check_fn=check_todo_requirements,
     emoji="📋",
 )

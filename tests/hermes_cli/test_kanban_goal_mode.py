@@ -182,7 +182,7 @@ def _patch_judge(monkeypatch, verdicts):
     def _fake_judge(goal, response, subgoals=None, background_processes=None, **_kw):
         v = seq.pop(0) if seq else "done"
         # 6-tuple contract: verdict, reason, parse failure, wait, transport failure, blocked.
-        return v, f"scripted:{v}", False, None, False, False
+        return v, f"scripted:{v}", False, None, False, False, False
 
     monkeypatch.setattr(goals, "judge_goal", _fake_judge)
 
@@ -350,7 +350,7 @@ class TestCLIJudgeGate:
         # (verdict, reason, parse_failed, wait_directive, transport_failed, blocked)
         monkeypatch.setattr(
             "hermes_cli.goals.judge_goal",
-            lambda **kw: (verdict, reason, False, None, False, False),
+            lambda **kw: (verdict, reason, False, None, False, False, False),
         )
 
         args = argparse.Namespace(task_ids=["t1"], summary=summary, result=None, metadata=None)

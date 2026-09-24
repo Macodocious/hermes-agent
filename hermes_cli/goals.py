@@ -121,13 +121,22 @@ CONTINUATION_PROMPT_WITH_SUBGOALS_TEMPLATE = (
 JUDGE_SYSTEM_PROMPT = (
     "You are a strict judge evaluating whether an autonomous agent has "
     "achieved a user's stated goal. You receive the goal text, the agent's "
-    "most recent response, and — when present — a list of background "
-    "processes the agent has running. Decide one of three verdicts.\n\n"
+    "most recent response, the live task-store rows when a task store block "
+    "is present, and — when present — a list of background processes the "
+    "agent has running. Decide one of three verdicts.\n\n"
     "DONE — the goal is fully satisfied:\n"
-    "- The response explicitly confirms the goal was completed, OR\n"
-    "- The response clearly shows the final deliverable was produced, OR\n"
+    "- The response clearly shows the final deliverable was produced AND "
+    "carries mechanical evidence of it (a command result, a file-contents "
+    "excerpt, test or benchmark output). A bare claim — \"done\", \"all "
+    "tests pass\", \"everything is finished\" — is NOT evidence, and the "
+    "agent's own confirmation that the goal was completed is NOT proof, OR\n"
     "- The response explains the goal is unachievable / blocked / needs "
     "user input (treat this as DONE with reason describing the block, and set \"blocked\": true — the loop must stop and wait for the user, not force a continuation).\n\n"
+    "When a task store block is present it is the authoritative record of "
+    "the agent's tasks: a DONE verdict is valid only when the task the goal "
+    "is bound to is ``closing`` or ``completed`` there. Any open row "
+    "(``pending`` / ``in_progress`` / ``paused``) mechanically blocks DONE — "
+    "report CONTINUE naming the open task instead.\n\n"
     "WAIT — the goal is NOT done, but the next step is to wait for async "
     "work to finish rather than act again. Choose this ONLY when the agent's "
     "progress is genuinely gated on something running on its own:\n"
@@ -147,10 +156,19 @@ JUDGE_SYSTEM_PROMPT = (
     "finishes.\n\n"
     "CONTINUE — not done, and there is a concrete next step the agent can "
     "take right now. This is the default when in doubt.\n\n"
+    "CLARIFY — set \"clarify\": true when the agent's most recent response "
+    "ends by asking the user a question, OR declares it awaits the user's "
+    "authorization / approval before acting. clarify is an attribute of the "
+    "verdict, not a fourth verdict: a response that asks the user something "
+    "is CONTINUE with \"clarify\": true (or DONE with \"clarify\": true when "
+    "it also satisfies DONE above). Do NOT set clarify on a response that "
+    "merely describes future work — the agent must actually be handing the "
+    "decision to the user.\n\n"
     "Reply ONLY with a single JSON object on one line. Shapes:\n"
     '{"verdict": "done", "reason": "<one sentence>"}\n'
     '{"verdict": "done", "blocked": true, "reason": "<one sentence>"}\n'
     '{"verdict": "continue", "reason": "<one sentence>"}\n'
+    '{"verdict": "continue", "clarify": true, "reason": "<one sentence>"}\n'
     '{"verdict": "wait", "wait_on_session": "<id>", "reason": "<one sentence>"}\n'
     '{"verdict": "wait", "wait_on_pid": <int>, "reason": "<one sentence>"}\n'
     '{"verdict": "wait", "wait_for_seconds": <int>, "reason": "<one sentence>"}\n'
@@ -167,10 +185,34 @@ JUDGE_BACKGROUND_BLOCK_TEMPLATE = (
     "on one of these):\n{background_lines}\n\n"
 )
 
+# Cap on rows rendered into the judge's task-store block. The store is a
+# planning aid, not the judge's subject matter — the block exists so the
+# judge can see whether the bound task is actually closed, and a runaway
+# board must not crowd out the agent's response.
+JUDGE_TASK_STORE_MAX_ROWS = 40
+
+# Rendered into the judge prompt when the session has todo rows. Gives the
+# judge the persisted store as evidence so a DONE verdict can be checked
+# against the record instead of the agent's own assertion — the
+# "all five items done / task 3 not done" incident shipped because the
+# judge saw only the agent's prose.
+JUDGE_TASK_STORE_BLOCK_TEMPLATE = (
+    "The agent's task store (the authoritative record of its tasks — an "
+    "open row blocks DONE):\n{task_store_lines}\n\n"
+)
+
+JUDGE_TASK_STORE_TRUNCATION_NOTE = (
+    "… [task store truncated at {max_rows} rows]"
+)
+
+# Rendered into the judge prompt when the agent has todo rows.
+JUDGE_TASK_STORE_ROW_TEMPLATE = "- [{id}] [{status}] {content}"
+
 
 JUDGE_USER_PROMPT_TEMPLATE = (
     "Goal:\n{goal}\n\n"
     "Agent's most recent response:\n{response}\n\n"
+    "{task_store_block}"
     "{background_block}"
     "Current time: {current_time}\n\n"
     "Is the goal satisfied — done, continue, or wait?"
@@ -183,6 +225,7 @@ JUDGE_USER_PROMPT_WITH_SUBGOALS_TEMPLATE = (
     "Additional criteria the user added mid-loop (all must also be "
     "satisfied for the goal to be DONE):\n{subgoals_block}\n\n"
     "Agent's most recent response:\n{response}\n\n"
+    "{task_store_block}"
     "{background_block}"
     "Current time: {current_time}\n\n"
     "Decision: For each numbered criterion above, find concrete "
@@ -205,6 +248,7 @@ JUDGE_USER_PROMPT_WITH_CONTRACT_TEMPLATE = (
     "Completion contract (the authoritative definition of done):\n"
     "{contract_block}\n\n"
     "Agent's most recent response:\n{response}\n\n"
+    "{task_store_block}"
     "{background_block}"
     "Current time: {current_time}\n\n"
     "Decision rules:\n"
@@ -220,6 +264,10 @@ JUDGE_USER_PROMPT_WITH_CONTRACT_TEMPLATE = (
     "- If the response explains the work is blocked / unachievable / needs "
     "user input (e.g. the stated Stop condition was hit), treat it as DONE "
     "with the reason describing the block.\n"
+    "- If the response hands the decision to the user — it asks a question or "
+    "declares it awaits the user's authorization before acting — set "
+    "\"clarify\": true alongside the verdict; that is a stop for the user, not "
+    "a step to force-continue.\n"
     "- Otherwise the goal is NOT done — CONTINUE.\n\n"
     "Is the goal satisfied per its completion contract — done, continue, or wait?"
 )
@@ -805,10 +853,13 @@ def _goal_judge_route_hint() -> str:
     )
 
 
-def _parse_judge_response(raw: str) -> Tuple[str, str, bool, Optional[Dict[str, Any]], bool]:
+def _parse_judge_response(
+    raw: str,
+) -> Tuple[str, str, bool, Optional[Dict[str, Any]], bool, bool]:
     """Parse the judge's reply. Fail-open on unusable output.
 
-    Returns ``(verdict, reason, parse_failed, wait_directive, blocked)`` where:
+    Returns ``(verdict, reason, parse_failed, wait_directive, blocked, clarify)``
+    where:
       - ``verdict`` is ``"done"``, ``"continue"``, or ``"wait"``.
       - ``parse_failed`` is True when the judge returned output that couldn't
         be interpreted as the expected JSON verdict (empty body, prose,
@@ -823,12 +874,20 @@ def _parse_judge_response(raw: str) -> Tuple[str, str, bool, Optional[Dict[str, 
         goal is parked on a human decision, not actually complete. Callers
         use it to skip the lifecycle rejection gate: a blocked stop must
         never be force-continued.
+      - ``clarify`` is True when the agent's message handed the decision back
+        to the user — it ended by asking a question, or declared it awaits the
+        user's authorization before acting. It is an ATTRIBUTE of the verdict,
+        not a fourth verdict. ``blocked``'s definition is untouched: blocked
+        means the judge decided DONE *because* the goal is unreachable, while
+        clarify means the agent is asking for a user decision. A response
+        missing the key fails back to False (back-compat: both prompts always
+        emit it).
 
     Accepts both the new ``{"verdict": ...}`` shape and the legacy
     ``{"done": <bool>}`` shape.
     """
     if not raw:
-        return "continue", "judge returned empty response", True, None, False
+        return "continue", "judge returned empty response", True, None, False, False
 
     text = raw.strip()
 
@@ -854,7 +913,7 @@ def _parse_judge_response(raw: str) -> Tuple[str, str, bool, Optional[Dict[str, 
                 data = None
 
     if not isinstance(data, dict):
-        return "continue", f"judge reply was not JSON: {_truncate(raw, 200)!r}", True, None, False
+        return "continue", f"judge reply was not JSON: {_truncate(raw, 200)!r}", True, None, False, False
 
     reason = str(data.get("reason") or "").strip() or "no reason provided"
 
@@ -874,6 +933,16 @@ def _parse_judge_response(raw: str) -> Tuple[str, str, bool, Optional[Dict[str, 
     if verdict not in {"done", "continue", "wait"}:
         verdict = "continue"
 
+    # clarify — the agent handed the decision back to the user (asked a
+    # question or declared it awaits authorization). Parsed for every verdict
+    # so the classify-to-park path can read it; a response without the key
+    # (older prompts, legacy shapes) fails back to False.
+    clarify_val = data.get("clarify")
+    if isinstance(clarify_val, str):
+        clarify = clarify_val.strip().lower() in {"true", "yes", "1"}
+    else:
+        clarify = bool(clarify_val)
+
     if verdict != "wait":
         # The blocked flag is meaningful only for a done verdict: the judge
         # decided DONE because the agent is blocked awaiting user input.
@@ -882,7 +951,7 @@ def _parse_judge_response(raw: str) -> Tuple[str, str, bool, Optional[Dict[str, 
             blocked = blocked_val.strip().lower() in {"true", "yes", "1"}
         else:
             blocked = bool(blocked_val)
-        return verdict, reason, False, None, (verdict == "done" and blocked)
+        return verdict, reason, False, None, (verdict == "done" and blocked), clarify
 
     # Wait verdict: extract a concrete directive (pid or seconds). Accept a
     # few key spellings the model might emit.
@@ -903,15 +972,15 @@ def _parse_judge_response(raw: str) -> Tuple[str, str, bool, Optional[Dict[str, 
     # exit OR watch-pattern match), then pid (exit only), then seconds.
     sess = data.get("wait_on_session") or data.get("session_id") or data.get("wait_session")
     if isinstance(sess, str) and sess.strip():
-        return "wait", reason, False, {"session_id": sess.strip()}, False
+        return "wait", reason, False, {"session_id": sess.strip()}, False, clarify
     pid = _first_int("wait_on_pid", "pid", "wait_pid")
     if pid is not None:
-        return "wait", reason, False, {"pid": pid}, False
+        return "wait", reason, False, {"pid": pid}, False, clarify
     seconds = _first_int("wait_for_seconds", "seconds", "wait_seconds")
     if seconds is not None:
-        return "wait", reason, False, {"seconds": seconds}, False
+        return "wait", reason, False, {"seconds": seconds}, False, clarify
     # Wait with no usable target — can't park on nothing; treat as continue.
-    return "continue", f"{reason} (wait verdict had no target — continuing)", False, None, False
+    return "continue", f"{reason} (wait verdict had no target — continuing)", False, None, False, clarify
 
 
 def _render_background_block(background_processes: Optional[List[Dict[str, Any]]]) -> str:
@@ -960,6 +1029,65 @@ def _render_background_block(background_processes: Optional[List[Dict[str, Any]]
     return JUDGE_BACKGROUND_BLOCK_TEMPLATE.format(background_lines="\n".join(lines))
 
 
+def _render_task_store_block(task_store: Optional[List[Dict[str, Any]]]) -> str:
+    """Render the persisted todo rows for the judge prompt.
+
+    Each entry is a store row dict (``id`` / ``status`` / ``content``). Rows
+    are capped at ``JUDGE_TASK_STORE_MAX_ROWS`` with an explicit truncation
+    note — the block is evidence about the bound task, not the judge's
+    subject matter. Returns an empty string when there are no rows, so the
+    judge prompt is byte-identical to the pre-store case on a session with
+    no board (no behavior change for native /goal).
+    """
+    if not task_store:
+        return ""
+    lines: List[str] = []
+    for row in task_store[:JUDGE_TASK_STORE_MAX_ROWS]:
+        if not isinstance(row, dict):
+            continue
+        lines.append(
+            JUDGE_TASK_STORE_ROW_TEMPLATE.format(
+                id=row.get("id", "?"),
+                status=row.get("status", "?"),
+                content=_truncate(
+                    str(row.get("content") or "").replace("\n", " ").strip(), 200
+                ),
+            )
+        )
+    if not lines:
+        return ""
+    if len(task_store) > JUDGE_TASK_STORE_MAX_ROWS:
+        lines.append(
+            JUDGE_TASK_STORE_TRUNCATION_NOTE.format(
+                max_rows=JUDGE_TASK_STORE_MAX_ROWS
+            )
+        )
+    return JUDGE_TASK_STORE_BLOCK_TEMPLATE.format(task_store_lines="\n".join(lines))
+
+
+def gather_task_store_rows(session_id: str) -> List[Dict[str, Any]]:
+    """Return the persisted todo rows for the goal judge (fail-open).
+
+    Thin, fail-safe wrapper over ``hermes_cli.tasks.load_todo``. Returns the
+    store's rows as plain dicts, or ``[]`` on any failure — a missing row,
+    an unloadable store, or an import error must never break the judge call,
+    so the loop degrades to goal-text-plus-response evidence exactly as it
+    behaved before the store block existed.
+    """
+    if not session_id:
+        return []
+    try:
+        from hermes_cli.tasks import load_todo
+
+        store = load_todo(session_id)
+        if store is None:
+            return []
+        return [dict(row) for row in store.read()]
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.debug("goal judge: task store load failed for %s: %s", session_id, exc)
+        return []
+
+
 def judge_goal(
     goal: str,
     last_response: str,
@@ -968,10 +1096,11 @@ def judge_goal(
     subgoals: Optional[List[str]] = None,
     background_processes: Optional[List[Dict[str, Any]]] = None,
     contract: Optional[GoalContract] = None,
-) -> Tuple[str, str, bool, Optional[Dict[str, Any]], bool, bool]:
+    task_store: Optional[List[Dict[str, Any]]] = None,
+) -> Tuple[str, str, bool, Optional[Dict[str, Any]], bool, bool, bool]:
     """Ask the auxiliary model whether the goal is satisfied.
 
-    Returns ``(verdict, reason, parse_failed, wait_directive, transport_failed, blocked)``
+    Returns ``(verdict, reason, parse_failed, wait_directive, transport_failed, blocked, clarify)``
     where verdict is ``"done"``, ``"continue"``, ``"wait"``, or ``"skipped"``
     (when the judge couldn't be reached). ``wait_directive`` is set only for
     ``"wait"`` (``{"pid": int}`` or ``{"seconds": int}``); ``None`` otherwise.
@@ -1013,16 +1142,16 @@ def judge_goal(
     judge doesn't burn the entire turn budget.
     """
     if not goal.strip():
-        return "skipped", "empty goal", False, None, False, False
+        return "skipped", "empty goal", False, None, False, False, False
     if not last_response.strip():
         # No substantive reply this turn — almost certainly not done yet.
-        return "continue", "empty response (nothing to evaluate)", False, None, False, False
+        return "continue", "empty response (nothing to evaluate)", False, None, False, False, False
 
     try:
         from agent.auxiliary_client import call_llm
     except Exception as exc:
         logger.debug("goal judge: auxiliary client import failed: %s", exc)
-        return "continue", "auxiliary client unavailable", False, None, False, False
+        return "continue", "auxiliary client unavailable", False, None, False, False, False
 
     # Build the prompt. Priority: contract > subgoals > plain. When both a
     # contract and subgoals exist, the subgoals are appended into the
@@ -1030,6 +1159,7 @@ def judge_goal(
     # truth.
     clean_subgoals = [s.strip() for s in (subgoals or []) if s and s.strip()]
     background_block = _render_background_block(background_processes)
+    task_store_block = _render_task_store_block(task_store)
     current_time = datetime.now(tz=timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
 
     if contract is not None and not contract.is_empty():
@@ -1044,6 +1174,7 @@ def judge_goal(
             goal=_truncate(goal, 2000),
             contract_block=_truncate(contract_block, 2500),
             response=_truncate(last_response, _JUDGE_RESPONSE_SNIPPET_CHARS),
+            task_store_block=task_store_block,
             background_block=background_block,
             current_time=current_time,
         )
@@ -1055,6 +1186,7 @@ def judge_goal(
             goal=_truncate(goal, 2000),
             subgoals_block=_truncate(subgoals_block, 2000),
             response=_truncate(last_response, _JUDGE_RESPONSE_SNIPPET_CHARS),
+            task_store_block=task_store_block,
             background_block=background_block,
             current_time=current_time,
         )
@@ -1062,6 +1194,7 @@ def judge_goal(
         prompt = JUDGE_USER_PROMPT_TEMPLATE.format(
             goal=_truncate(goal, 2000),
             response=_truncate(last_response, _JUDGE_RESPONSE_SNIPPET_CHARS),
+            task_store_block=task_store_block,
             background_block=background_block,
             current_time=current_time,
         )
@@ -1082,21 +1215,22 @@ def judge_goal(
         )
     except Exception as exc:
         logger.info("goal judge: API call failed (%s) — falling through to continue", exc)
-        return "continue", f"judge error: {type(exc).__name__}", False, None, True, False
+        return "continue", f"judge error: {type(exc).__name__}", False, None, True, False, False
 
     try:
         raw = resp.choices[0].message.content or ""
     except Exception:
         raw = ""
 
-    verdict, reason, parse_failed, wait_directive, blocked = _parse_judge_response(raw)
+    verdict, reason, parse_failed, wait_directive, blocked, clarify = _parse_judge_response(raw)
     logger.info(
-        "goal judge: verdict=%s reason=%s%s%s",
+        "goal judge: verdict=%s reason=%s%s%s%s",
         verdict, _truncate(reason, 120),
         f" wait={wait_directive}" if wait_directive else "",
         " blocked" if blocked else "",
+        " clarify" if clarify else "",
     )
-    return verdict, reason, parse_failed, wait_directive, False, blocked
+    return verdict, reason, parse_failed, wait_directive, False, blocked, clarify
 
 
 def gather_background_processes(task_id: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -1382,7 +1516,7 @@ class GoalManager:
             self._state.awaiting_authorization_armed_at = 0.0
             save_goal(self.session_id, self._state)
 
-    def park(self, reason: str) -> None:
+    def park(self, reason: str) -> bool:
         """Park the loop until the user's next real turn (mechanical block).
 
         Set by the todo ``block`` action when the agent declares it cannot
@@ -1396,12 +1530,20 @@ class GoalManager:
         turn is burned. The user's next real turn releases the barrier
         through the lifecycle wait-bypass and the loop re-judges, exactly
         as it does for a judge-set park.
+
+        Returns True when a park actually landed, False when there is no
+        goal state to hold. The False is an explicit no-op signal, not a
+        silent success: a block that parked nothing leaves the loop
+        running, and the caller (the lifecycle hook) logs it rather than
+        letting a declared block pass unnoticed.
         """
-        if self._state is not None:
-            self._state.awaiting_user_input = True
-            self._state.waiting_reason = (reason or "").strip() or None
-            self._state.waiting_since = time.time()
-            save_goal(self.session_id, self._state)
+        if self._state is None:
+            return False
+        self._state.awaiting_user_input = True
+        self._state.waiting_reason = (reason or "").strip() or None
+        self._state.waiting_since = time.time()
+        save_goal(self.session_id, self._state)
+        return True
 
     def clear(self) -> None:
         if self._state is None:
@@ -1708,12 +1850,13 @@ class GoalManager:
         state.turns_used += 1
         state.last_turn_at = time.time()
 
-        verdict, reason, parse_failed, wait_directive, transport_failed, blocked = judge_goal(
+        verdict, reason, parse_failed, wait_directive, transport_failed, blocked, clarify = judge_goal(
             state.goal,
             last_response,
             subgoals=state.subgoals or None,
             background_processes=background_processes,
             contract=state.contract if state.has_contract() else None,
+            task_store=gather_task_store_rows(self.session_id),
         )
         state.last_verdict = verdict
         state.last_reason = reason
@@ -1777,7 +1920,20 @@ class GoalManager:
             # (gateway wait-bypass) is lifecycle-gated, so parking a native
             # ``/goal`` blocked verdict would strand it forever. Native goals
             # keep the base behavior below (done + "Goal achieved").
-            if blocked and getattr(state, "lifecycle", False):
+            #
+            # One contract: ``is_completion`` (agent/task_manager) is the
+            # single definition of "this done verdict completes the bound
+            # task" — verdict done AND not blocked. A done verdict that is
+            # not a completion is a PARK, and so is one the judge flagged as
+            # a declared user-gate (``clarify``): the agent handed the
+            # decision to the user, either by asking a question or by
+            # declaring it awaits the user's authorization. Parking here is
+            # what keeps the judge's documented CONTINUE default from being
+            # taken and no synthetic continuation turn from being enqueued
+            # on the back of a declared gate.
+            from agent.task_manager import is_completion as _is_completion
+            _completion_decision = {"verdict": verdict, "blocked": blocked}
+            if (not _is_completion(_completion_decision) or clarify) and getattr(state, "lifecycle", False):
                 state.awaiting_user_input = True
                 state.waiting_reason = (reason or "").strip() or None
                 state.waiting_since = time.time()
@@ -1788,7 +1944,8 @@ class GoalManager:
                     "continuation_prompt": None,
                     "verdict": "done",
                     "reason": reason,
-                    "blocked": True,
+                    "blocked": bool(blocked),
+                    "clarify": bool(clarify),
                     "message": "",
                 }
             state.status = "done"
@@ -1801,6 +1958,42 @@ class GoalManager:
                 "reason": reason,
                 "blocked": blocked,
                 "message": f"✓ Goal achieved: {reason}",
+            }
+
+        # Declared user-gate (one contract): a turn that ends by handing the
+        # decision back to the user — the judge flagged ``clarify`` — is a
+        # PARK, not a step to force-continue. Without this, a declared gate
+        # falls through to the documented CONTINUE default below and a
+        # synthetic continuation turn is enqueued on its back. Executed
+        # defect (thread 1552054565246083215, 2026-09-22): the turn ended
+        # 16:37:41 with verdict ``continue``, shipped 16:37:42, and the
+        # synthetic continuation was enqueued at 16:37:46 — four seconds
+        # after the agent said it would wait for the user's go.
+        #
+        # Scoped to ``lifecycle``: the park's release path (the gateway
+        # wait-bypass) is lifecycle-gated, so parking a native ``/goal``
+        # clarify verdict would strand it forever. Native goals keep the
+        # base behavior below.
+        #
+        # ``done`` verdicts never reach here — the done branch above already
+        # parks when ``clarify`` is set, and a genuine completion finalizes
+        # regardless of clarify (the task row is the second key, not the
+        # question). This catches continue / wait, where clarify alone is
+        # the stop.
+        if clarify and getattr(state, "lifecycle", False):
+            state.awaiting_user_input = True
+            state.waiting_reason = (reason or "").strip() or None
+            state.waiting_since = time.time()
+            save_goal(self.session_id, state)
+            return {
+                "status": "active",
+                "should_continue": False,
+                "continuation_prompt": None,
+                "verdict": verdict,
+                "reason": reason,
+                "blocked": bool(blocked),
+                "clarify": True,
+                "message": "",
             }
 
         # Auto-pause when the judge cannot reach the API at all N turns in a
@@ -2026,7 +2219,7 @@ def run_kanban_goal_loop(
         # The kanban worker loop has no wait-barrier concept (workers finish
         # via kanban_complete / kanban_block, not by parking), so a WAIT
         # verdict is treated as CONTINUE here.
-        verdict, reason, _parse_failed, _wait, _transport_failed, _blocked = judge_goal(goal_text, last_response)
+        verdict, reason, _parse_failed, _wait, _transport_failed, _blocked, _clarify = judge_goal(goal_text, last_response)
         if verdict == "wait":
             verdict = "continue"
         _log(f"kanban goal loop: turn {turns_used}/{max_turns} verdict={verdict} reason={_truncate(reason, 120)}")

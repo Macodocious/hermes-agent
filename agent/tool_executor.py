@@ -1340,6 +1340,7 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
                     store=agent._todo_store,
                     action=next_args.get("action"),
                     item_id=next_args.get("item_id"),
+                    reason=next_args.get("reason"),
                 )
                 # Write-through (P1): persist after any mutating call so the
                 # state_meta row survives the per-message agent. Reads skip it.

@@ -241,6 +241,65 @@ def _closing_item(agent: Any) -> Optional[Dict[str, Any]]:
     return None
 
 
+# =============================================================================
+# Shared completion predicate (one contract)
+# =============================================================================
+# The judge's ``done`` verdict is the second key of the two-key close, and
+# ``blocked`` vetoes it. Five sites re-derived that rule in their own words;
+# they now call one predicate so the two can no longer drift apart. The
+# ``blocked`` definition itself is untouched — this predicate CONSUMES it.
+#
+# ``blocked`` carries three meanings in the judge prompt (goal unachievable /
+# blocked on a system lock / awaiting user input). All three make a done
+# verdict a parked stop rather than an achievement, so ``blocked`` alone
+# disqualifies completion.
+
+# The one verdict string that constitutes completion.
+COMPLETION_VERDICT = "done"
+
+# Task rows a ``done`` verdict may finalize. ``closing`` is the canonical
+# second key: the agent declared the task finished and the judge agrees.
+# ``in_progress`` is the bounded-hostage fallback — the judge says done but
+# the agent never closed the task, so the verdict closes it explicitly rather
+# than stranding it open forever (LIFECYCLE_FINALIZE_NUDGE). Every other
+# status (pending / paused / escalated / completed / cancelled) fails closed:
+# a done verdict is not a completion for a row that was never worked.
+COMPLETION_TASK_STATUSES = frozenset({"closing", "in_progress"})
+
+
+def is_completion(
+    decision: Dict[str, Any], task_status: Optional[str] = None
+) -> bool:
+    """True iff a judge decision is a completion for the bound task.
+
+    The single definition of the two-key close, called by every veto site:
+
+    - the verdict must be ``done`` — a continue / wait / skipped verdict is
+      not a completion;
+    - ``blocked`` must be false — a blocked-awaiting-input done verdict is a
+      parked stop, not an achievement;
+    - when ``task_status`` is supplied, the bound row must be one a done
+      verdict may finalize (``COMPLETION_TASK_STATUSES``). Any other row
+      fails closed.
+
+    ``task_status`` is the authoritative form at the two-key close, where the
+    caller has already selected the row. A caller with no row to bind — or a
+    veto that runs before the store is read — passes ``None``, and the
+    predicate then decides on the verdict and ``blocked`` alone.
+
+    Mechanically pure: no LLM, no I/O, no store access. The caller supplies
+    the row status so the same predicate serves the live-agent, persisted-
+    store, and gateway paths alike.
+    """
+    if str(decision.get("verdict") or "").strip() != COMPLETION_VERDICT:
+        return False
+    if decision.get("blocked"):
+        return False
+    if task_status is None:
+        return True
+    return str(task_status).strip() in COMPLETION_TASK_STATUSES
+
+
 def on_todo_write(agent: Any, args: Dict[str, Any]) -> None:
     """Post-write lifecycle hook for the todo dispatch point.
 
@@ -270,11 +329,26 @@ def on_todo_write(agent: Any, args: Dict[str, Any]) -> None:
     # through would let the arm branch run and (on a changed goal text)
     # rebuild fresh state, silently dropping the park. Only the guard
     # below keeps the parked state intact on later writes.
-    if str(args.get("action") or "") == "block":
+    #
+    # The action is normalized exactly as the tool normalizes it (strip +
+    # lower). The tool accepts ``Block``/``BLOCK`` and parks the store, so an
+    # exact-match here silently skipped the park for any variant casing —
+    # the store transitioned, the loop was never parked, and the agent
+    # continued against a block it had just declared.
+    if str(args.get("action") or "").strip().lower() == "block":
         mgr = _load_goal_manager(agent)
         if mgr is not None:
             try:
-                mgr.park(str(args.get("reason") or ""))
+                # park() returns True only when a park actually landed.
+                # A no-op (no goal state loaded) must be logged, never
+                # silent: an unlanded park is exactly the "block, yet
+                # immediately continue" failure.
+                if not mgr.park(str(args.get("reason") or "")):
+                    logger.warning(
+                        "task_manager: block parked nothing for session %s "
+                        "(no active goal state) — the loop will not be held",
+                        getattr(agent, "session_id", "") or "",
+                    )
             except Exception as exc:  # pragma: no cover - defensive
                 logger.debug("task_manager: goal park failed: %s", exc)
         _persist(agent)
@@ -530,7 +604,7 @@ def _apply_verdict(store: Any, decision: Dict[str, Any]) -> Optional[str]:
 
     closing = next((i for i in store.read() if i["status"] == "closing"), None)
     if closing is not None:
-        if verdict == "done":
+        if is_completion(decision, closing["status"]):
             # The done verdict is the second key for the closing task
             # only. The begin pivot and the write-path invariant make a
             # concurrent in_progress task impossible, so nothing else is
@@ -588,7 +662,7 @@ def _apply_verdict(store: Any, decision: Dict[str, Any]) -> Optional[str]:
             rework_id=rework_id,
         )
     current = next((i for i in store.read() if i["status"] == "in_progress"), None)
-    if current is not None and verdict == "done":
+    if current is not None and is_completion(decision, current["status"]):
         # Judge believes the work is done but the agent never closed the
         # task. Finalize (bounded hostage risk) and tell the agent.
         # finalize only accepts closing tasks, so move it through the
