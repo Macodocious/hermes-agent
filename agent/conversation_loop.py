@@ -28,7 +28,7 @@ import uuid
 from typing import Any, Dict, List, Optional
 
 from agent.codex_responses_adapter import _summarize_user_message_for_log
-from agent.context_compressor import COMPRESSED_SUMMARY_METADATA_KEY
+from agent.context_compressor import COMPRESSED_SUMMARY_METADATA_KEY, _SUMMARY_END_MARKER
 from agent.conversation_compression import conversation_history_after_compression
 from agent.display import KawaiiSpinner
 from agent.error_classifier import FailoverReason, classify_api_error
@@ -130,6 +130,16 @@ def _try_iteration_continuation(agent: Any, messages: list, api_call_count: int)
     if _used >= _max:
         return None
 
+    # Kanban workers are deliberately excluded.  Their budget is owned by the
+    # dispatcher, and exhaustion carries its own contract: record a
+    # ``timed_out`` failure so the dispatcher's consecutive-failure breaker
+    # trips and the task is re-dispatched with a fresh budget rather than
+    # silently extended in-turn (see turn_finalizer's kanban exhaustion
+    # bridge).  Continuing here would extend a dispatched run past the budget
+    # the dispatcher accounted for and delay the breaker.
+    if os.environ.get("HERMES_KANBAN_TASK"):
+        return None
+
     agent._iteration_continuations = _used + 1
     agent._emit_status(
         ITERATION_BUDGET_EXHAUSTED_STATUS.format(
@@ -137,17 +147,29 @@ def _try_iteration_continuation(agent: Any, messages: list, api_call_count: int)
             max_total=agent.iteration_budget.max_total,
         )
     )
-    summary = agent._handle_max_iterations(messages, api_call_count, append_to_history=False)
+    try:
+        summary = agent._handle_max_iterations(messages, api_call_count, append_to_history=False)
+    except Exception:
+        # Fail closed: a failed summary must not strand the turn mid-loop.
+        # Returning None sends the caller to the terminal fallback, which
+        # re-attempts the summary through its own path.
+        logger.warning("iteration continuation summary failed", exc_info=True)
+        return None
     if not summary:
         # Nothing to fold in; let the turn end with a normal fallback.
         return None
 
-    # Tagged exactly like a compaction summary so frontends exclude it from
-    # the conversation. The tail at exhaustion is a tool result, so assistant
-    # is the alternation-safe role and matches the terminal path.
+    # The folded summary is always immediately followed by the model's own
+    # assistant response (the loop continues into the next API call), so
+    # ``user`` is the only alternation-safe role: appending ``assistant`` would
+    # sit directly before that response and produce two consecutive assistant
+    # messages, which strict providers reject (and which the loop's repair pass
+    # would then merge, corrupting the summary). A ``user``-role summary can be
+    # misread by weak models as fresh input quoting a past request (#11475,
+    # #14521), so it carries the explicit end marker below.
     messages.append({
-        "role": "assistant",
-        "content": summary,
+        "role": "user",
+        "content": summary + "\n\n" + _SUMMARY_END_MARKER,
         COMPRESSED_SUMMARY_METADATA_KEY: True,
     })
     # Both counters must reset: the loop gate requires
@@ -774,7 +796,46 @@ def run_conversation(
             should_review_memory=_should_review_memory,
         )
 
-    while (api_call_count < agent.max_iterations and agent.iteration_budget.remaining > 0) or agent._budget_grace_call:
+    while True:
+        # Budget gate.  Checked explicitly at the top of each iteration so
+        # exhaustion is detected where the loop actually stops.  The previous
+        # form put this test in the `while` condition and the continuation in
+        # the body — but the condition only admitted iterations with headroom,
+        # so an in-body exhaustion branch could never run.
+        _budget_available = (
+            api_call_count < agent.max_iterations
+            and agent.iteration_budget.remaining > 0
+        )
+        if not _budget_available and not agent._budget_grace_call:
+            _turn_exit_reason = "budget_exhausted"
+            if not agent.quiet_mode:
+                agent._safe_print(f"\n⚠️  Iteration budget exhausted ({agent.iteration_budget.used}/{agent.iteration_budget.max_total} iterations used)")
+
+            # Only extend a turn that is genuinely mid-work — the tail is a
+            # tool result, so the model asked for work and has not yet produced
+            # an answer. Every other way the loop re-enters the gate with the
+            # budget spent (verify-on-stop, pre_verify, kanban-stop, intent
+            # ack) appends a user-role prompt and deliberately parks state for
+            # the finalizer to own: verify/pre_verify hold a real candidate in
+            # _pending_verification_response, and the ack path is explicitly
+            # non-final. Continuing there would duplicate the finalizer's
+            # contract and could surface premature text, so those states end
+            # the turn exactly as they did before.
+            if messages and messages[-1].get("role") == "tool":
+                # Mirror context compaction: summarise progress, fold the
+                # summary into the agent's own context, reset the budget, and
+                # keep working — rather than breaking out and letting the
+                # finalizer hand the summary to the user as the turn's
+                # response.
+                _resumed_count = _try_iteration_continuation(agent, messages, api_call_count)
+                if _resumed_count is not None:
+                    api_call_count = _resumed_count
+                    _turn_exit_reason = "unknown"
+                    continue
+            # Cap spent, not mid-work, or nothing to summarise — end the turn
+            # as before.
+            break
+
         # Reset per-turn checkpoint dedup so each iteration can take one snapshot
         agent._checkpoint_mgr.new_turn()
 
@@ -792,25 +853,13 @@ def run_conversation(
 
         # Grace call: the budget is exhausted but we gave the model one
         # more chance.  Consume the grace flag so the loop exits after
-        # this iteration regardless of outcome.
+        # this iteration regardless of outcome.  Otherwise count this
+        # iteration against the budget; exhaustion itself is detected by the
+        # gate at the top of the loop, so no branch is needed here.
         if agent._budget_grace_call:
             agent._budget_grace_call = False
-        elif not agent.iteration_budget.consume():
-            _turn_exit_reason = "budget_exhausted"
-            if not agent.quiet_mode:
-                agent._safe_print(f"\n⚠️  Iteration budget exhausted ({agent.iteration_budget.used}/{agent.iteration_budget.max_total} iterations used)")
-
-            # Mirror context compaction: summarise progress, fold it into the
-            # agent's own context, reset the budget, and keep working — rather
-            # than breaking out and letting the finalizer hand the summary to
-            # the user as the turn's response.
-            _resumed_count = _try_iteration_continuation(agent, messages, api_call_count)
-            if _resumed_count is not None:
-                api_call_count = _resumed_count
-                _turn_exit_reason = "unknown"
-                continue
-            # Cap spent, or nothing to summarise — end the turn as before.
-            break
+        else:
+            agent.iteration_budget.consume()
 
         # Fire step_callback for gateway hooks (agent:step event)
         if agent.step_callback is not None:

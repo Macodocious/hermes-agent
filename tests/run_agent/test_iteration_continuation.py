@@ -92,8 +92,10 @@ def test_summary_is_folded_into_context_and_never_returned():
     assert result != agent._summary
 
     folded = messages[-1]
-    assert folded["role"] == "assistant"
-    assert folded["content"] == agent._summary
+    assert folded["role"] == "user"
+    # Terminated with the compaction end marker so a weak model cannot replay
+    # the summary as fresh input (#11475, #14521).
+    assert folded["content"].startswith(agent._summary)
     # Tagged exactly like a compaction summary so frontends exclude it.
     assert folded.get("_compressed_summary") is True
 
@@ -188,12 +190,12 @@ def test_role_alternation_is_preserved():
     _try_iteration_continuation(agent, messages, agent._api_call_count)
 
     roles = [m["role"] for m in messages]
-    for prev, curr in zip(roles, roles[1:]):
-        if prev in {"assistant", "tool", "user"} and curr == prev:
-            # A tool result followed by the summary is the one legal repeat
-            # of interest; tool -> assistant is the expected shape here.
-            assert not (prev == "assistant" and curr == "assistant")
-    assert roles[-2:] == ["tool", "assistant"]
+    assert not any(
+        prev == curr == "assistant" for prev, curr in zip(roles, roles[1:])
+    )
+    # tool -> user: the summary is user-role because the loop's next message is
+    # always the model's assistant response, so assistant here would collide.
+    assert roles[-2:] == ["tool", "user"]
 
 
 def test_status_line_is_emitted_once_per_continuation():
