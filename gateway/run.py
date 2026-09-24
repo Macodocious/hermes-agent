@@ -11976,6 +11976,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                                 else str(getattr(event, "text", "") or "")
                             ),
                             user_initiated=not self._is_goal_continuation_event(event),
+                            turn_started_at=self._running_agents_ts.get(_quick_key, 0.0),
                         )
                         if _suppress_final_response:
                             # The judge said DONE on a synthetic goal-
@@ -14697,6 +14698,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         task_lifecycle_nudge: str = "",
         user_message: str = "",
         user_initiated: bool = True,
+        turn_started_at: float = 0.0,
     ) -> bool:
         """Run the goal judge after a gateway turn and, if still active,
         enqueue a continuation prompt for the same session.
@@ -14776,8 +14778,24 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         # goal so the judge evaluates the fresh exchange instead of
         # staying parked. Native /goal keeps the base behavior.
         _is_lifecycle = _is_lifecycle_goal(mgr.state)
+        from agent.task_manager import is_completion
         if _is_lifecycle and user_initiated and mgr.is_waiting():
-            mgr.stop_waiting()
+            # Same-turn guard: a park armed DURING this turn — a ``block``
+            # the agent declared, or a judge gate that parked it — must
+            # survive this release. Otherwise the very turn that made the
+            # blocking declaration undoes it on the way out and the loop
+            # immediately continues against a task the agent said it cannot
+            # proceed on ("block, yet immediately continue"). Only a park
+            # that predates this turn is the stale barrier the bypass exists
+            # to clear. A missing/zero turn timestamp fails open to the
+            # original release-everything behavior.
+            same_turn_park_armed = bool(
+                turn_started_at
+                and float(getattr(mgr.state, "waiting_since", 0.0) or 0.0)
+                >= float(turn_started_at)
+            )
+            if not same_turn_park_armed:
+                mgr.stop_waiting()
 
         try:
             from hermes_cli.goals import gather_background_processes as _gather_bg
@@ -14803,8 +14821,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         if (
             _is_lifecycle
             and user_initiated
-            and decision.get("verdict") == "done"
-            and not decision.get("blocked")
+            and is_completion(decision)
             and _is_lifecycle_rejection_message(user_message)
         ):
             logger.info(
@@ -14830,7 +14847,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         # Finalization hold (Part 2): a real user turn whose done verdict
         # STANDS is the user's final finalization — release the hold so
         # the task may finalize normally.
-        elif _is_lifecycle and user_initiated and decision.get("verdict") == "done" and not decision.get("blocked"):
+        elif _is_lifecycle and user_initiated and is_completion(decision):
             mgr.release_finalization()
         # Finalization hold (Part 2): a synthetic continuation turn whose
         # judge says done while the hold is armed must NOT finalize the
@@ -14840,8 +14857,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         elif (
             _is_lifecycle
             and not user_initiated
-            and decision.get("verdict") == "done"
-            and not decision.get("blocked")
+            and is_completion(decision)
             and getattr(mgr.state, "awaiting_finalization", False)
         ):
             logger.info(
@@ -14886,7 +14902,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         # /goal verdicts are untouched.
         if _is_lifecycle_goal(mgr.state):
             _verdict = str(decision.get("verdict") or "")
-            if _verdict == "done" and not decision.get("blocked"):
+            if is_completion(decision):
                 _task_name = _lifecycle_task_name(sid, mgr.state) or "(no description)"
                 msg = f"✅ Task completed: {_task_name}"
                 # Suppress the final response ONLY on a synthetic goal-
