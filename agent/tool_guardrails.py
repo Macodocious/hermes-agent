@@ -59,6 +59,18 @@ MUTATING_TOOL_NAMES = frozenset(
     }
 )
 
+# Coarse repeat detection. Exact-args keying (sha256 of canonical args) misses
+# reconnaissance loops that vary offset/limit/query slightly: every variation
+# is a new signature, so the threshold is never reached. These tools are keyed
+# on their *target* instead, so a window of near-identical calls accumulates
+# one count.
+READ_FILE_TOOL = "read_file"
+SEARCH_FILES_TOOL = "search_files"
+FILE_MUTATION_TOOLS = frozenset({"write_file", "patch"})
+# Mirrors the read_file_tool signature defaults in tools/file_tools.py.
+READ_FILE_DEFAULT_OFFSET = 1
+READ_FILE_DEFAULT_LIMIT = 500
+
 
 @dataclass(frozen=True)
 class ToolCallGuardrailConfig:
@@ -77,6 +89,8 @@ class ToolCallGuardrailConfig:
     same_tool_failure_halt_after: int = 8
     no_progress_warn_after: int = 2
     no_progress_block_after: int = 5
+    repeat_target_warn_after: int = 4
+    repeat_target_deny_after: int = 8
     idempotent_tools: frozenset[str] = field(default_factory=lambda: IDEMPOTENT_TOOL_NAMES)
     mutating_tools: frozenset[str] = field(default_factory=lambda: MUTATING_TOOL_NAMES)
 
@@ -121,6 +135,14 @@ class ToolCallGuardrailConfig:
                 hard_stop_after.get("idempotent_no_progress", data.get("no_progress_block_after")),
                 defaults.no_progress_block_after,
             ),
+            repeat_target_warn_after=_positive_int(
+                warn_after.get("repeat_target", data.get("repeat_target_warn_after")),
+                defaults.repeat_target_warn_after,
+            ),
+            repeat_target_deny_after=_positive_int(
+                hard_stop_after.get("repeat_target", data.get("repeat_target_deny_after")),
+                defaults.repeat_target_deny_after,
+            ),
         )
 
 
@@ -145,7 +167,7 @@ class ToolCallSignature:
 class ToolGuardrailDecision:
     """Decision returned by the tool-call guardrail controller."""
 
-    action: str = "allow"  # allow | warn | block | halt
+    action: str = "allow"  # allow | warn | deny | block | halt
     code: str = "allow"
     message: str = ""
     tool_name: str = ""
@@ -232,6 +254,8 @@ class ToolCallGuardrailController:
         self._exact_failure_counts: dict[ToolCallSignature, int] = {}
         self._same_tool_failure_counts: dict[str, int] = {}
         self._no_progress: dict[ToolCallSignature, tuple[str, int]] = {}
+        self._repeat_counts: dict[tuple[str, ...], int] = {}
+        self._read_coverage: dict[str, list[tuple[int, int]]] = {}
         self._halt_decision: ToolGuardrailDecision | None = None
 
     @property
@@ -239,9 +263,27 @@ class ToolCallGuardrailController:
         return self._halt_decision
 
     def before_call(self, tool_name: str, args: Mapping[str, Any] | None) -> ToolGuardrailDecision:
-        signature = ToolCallSignature.from_call(tool_name, _coerce_args(args))
+        args = _coerce_args(args)
+        signature = ToolCallSignature.from_call(tool_name, args)
         if not self.config.hard_stop_enabled:
             return ToolGuardrailDecision(tool_name=tool_name, signature=signature)
+
+        # Coarse target repeat: deny (never halt) once a read/search target has
+        # been repeated past the deny threshold. Deny refuses this single call
+        # and leaves the turn running; the synthetic result carries a coverage
+        # manifest so the model can self-heal from what it already has.
+        coarse = self._coarse_state(tool_name, args)
+        if coarse is not None:
+            key, redundant, count = coarse
+            if redundant and count >= self.config.repeat_target_deny_after:
+                return ToolGuardrailDecision(
+                    action="deny",
+                    code="repeat_target_deny",
+                    message=self._repeat_deny_message(tool_name, key, count),
+                    tool_name=tool_name,
+                    count=count,
+                    signature=signature,
+                )
 
         exact_count = self._exact_failure_counts.get(signature, 0)
         if exact_count >= self.config.exact_failure_block_after:
@@ -347,9 +389,17 @@ class ToolCallGuardrailController:
         self._exact_failure_counts.pop(signature, None)
         self._same_tool_failure_counts.pop(tool_name, None)
 
+        # A landed file mutation invalidates read coverage for that path:
+        # read → edit → read is legitimate, so the post-edit re-read must not
+        # count as a redundant repeat.
+        if tool_name in FILE_MUTATION_TOOLS:
+            self._clear_read_coverage(args)
+
+        coarse_warn = self._record_coarse_repeat(tool_name, args, signature)
+
         if not self._is_idempotent(tool_name):
             self._no_progress.pop(signature, None)
-            return ToolGuardrailDecision(tool_name=tool_name, signature=signature)
+            return coarse_warn or ToolGuardrailDecision(tool_name=tool_name, signature=signature)
 
         result_hash = _result_hash(result)
         previous = self._no_progress.get(signature)
@@ -372,12 +422,132 @@ class ToolCallGuardrailController:
                 signature=signature,
             )
 
-        return ToolGuardrailDecision(tool_name=tool_name, count=repeat_count, signature=signature)
+        return coarse_warn or ToolGuardrailDecision(tool_name=tool_name, count=repeat_count, signature=signature)
 
     def _is_idempotent(self, tool_name: str) -> bool:
         if tool_name in self.config.mutating_tools:
             return False
         return tool_name in self.config.idempotent_tools
+
+    def _coarse_state(
+        self, tool_name: str, args: Mapping[str, Any]
+    ) -> tuple[tuple[str, ...], bool, int] | None:
+        """Return (key, is_redundant, count_including_this_call) for a target-keyed tool.
+
+        ``count`` is the total number of touches of this target in the window.
+        ``read_file`` is redundant when the requested line range is already
+        covered; ``search_files`` is redundant when the same
+        (pattern, path, target) has already been searched. Returns None for
+        every other tool.
+        """
+        key = _coarse_key(tool_name, args)
+        if key is None:
+            return None
+        count = self._repeat_counts.get(key, 0) + 1
+        if tool_name == SEARCH_FILES_TOOL:
+            return key, count > 1, count
+        start, end = _read_range(args)
+        covered = self._read_coverage.get(key[1], [])
+        return key, _range_covered(covered, start, end), count
+
+    def _record_coarse_repeat(
+        self, tool_name: str, args: Mapping[str, Any], signature: ToolCallSignature
+    ) -> ToolGuardrailDecision | None:
+        """Record a coarse target touch; warn once the repeat threshold is met."""
+        state = self._coarse_state(tool_name, args)
+        if state is None:
+            return None
+        key, redundant, count = state
+        self._repeat_counts[key] = count
+        if tool_name == READ_FILE_TOOL and not redundant:
+            start, end = _read_range(args)
+            self._read_coverage[key[1]] = _merge_range(
+                self._read_coverage.get(key[1], []), start, end
+            )
+            return None
+        if not redundant:
+            return None
+        if self.config.warnings_enabled and count >= self.config.repeat_target_warn_after:
+            return ToolGuardrailDecision(
+                action="warn",
+                code="repeat_target_warning",
+                message=self._repeat_warn_message(tool_name, key, count),
+                tool_name=tool_name,
+                count=count,
+                signature=signature,
+            )
+        return None
+
+    def _clear_read_coverage(self, args: Mapping[str, Any]) -> None:
+        """Drop read coverage invalidated by a landed file mutation."""
+        path = args.get("path")
+        if isinstance(path, str) and path:
+            self._read_coverage.pop(path, None)
+            self._repeat_counts.pop((READ_FILE_TOOL, path), None)
+            return
+        # V4A multi-file patches carry their targets inside the patch body, not
+        # in ``path``. We cannot attribute the mutation to one file, so drop all
+        # read coverage — the safe direction for a nudge (never over-block).
+        self._read_coverage.clear()
+        self._repeat_counts = {
+            key: count
+            for key, count in self._repeat_counts.items()
+            if key[0] != READ_FILE_TOOL
+        }
+
+    def _repeat_warn_message(self, tool_name: str, key: tuple[str, ...], count: int) -> str:
+        if tool_name == READ_FILE_TOOL:
+            ranges = self._read_coverage.get(key[1], [])
+            covered = f" (lines {_format_ranges(ranges)} already covered)" if ranges else ""
+            return (
+                f"{tool_name} has re-read {key[1]} {count} times in this window"
+                f"{covered}. The content is already in your context — use it "
+                "instead of reading it again."
+            )
+        return (
+            f"{tool_name} has repeated the search {key[1]!r} in {key[2] or '.'} "
+            f"{count} times in this window. Use the results already provided or "
+            "narrow the query instead of repeating it."
+        )
+
+    def _repeat_deny_message(self, tool_name: str, key: tuple[str, ...], count: int) -> str:
+        if tool_name == READ_FILE_TOOL:
+            header = (
+                f"Denied {tool_name}: {key[1]} has already been read {count} times "
+                "in this window. The content is already in your context — use it "
+                "instead of re-reading."
+            )
+        else:
+            header = (
+                f"Denied {tool_name}: the search {key[1]!r} in {key[2] or '.'} has "
+                f"already been run {count} times in this window. Use the results "
+                "already provided or narrow the query."
+            )
+        manifest = self._coverage_manifest()
+        if not manifest:
+            return header
+        return header + "\n\nAlready covered this window:\n" + "\n".join(manifest)
+
+    def _coverage_manifest(self, limit: int = 10) -> list[str]:
+        """Compact list of what this window has already read and searched."""
+        lines: list[str] = []
+        reads = sorted(
+            (path, ranges) for path, ranges in self._read_coverage.items() if ranges
+        )
+        for path, ranges in reads[:limit]:
+            lines.append(f"  {path}  lines {_format_ranges(ranges)}")
+        if len(reads) > limit:
+            lines.append(f"  …and {len(reads) - limit} more files")
+        searches = sorted(
+            (key, count)
+            for key, count in self._repeat_counts.items()
+            if key[0] == SEARCH_FILES_TOOL
+        )
+        for key, count in searches[:limit]:
+            lines.append(f"  search {key[1]!r} in {key[2] or '.'} ×{count}")
+        if len(searches) > limit:
+            lines.append(f"  …and {len(searches) - limit} more searches")
+        return lines
 
 
 def toolguard_synthetic_result(decision: ToolGuardrailDecision) -> str:
@@ -425,6 +595,54 @@ def _tool_failure_recovery_hint(tool_name: str, count: int) -> str:
 
 def _coerce_args(args: Mapping[str, Any] | None) -> Mapping[str, Any]:
     return args if isinstance(args, Mapping) else {}
+
+
+def _coarse_key(tool_name: str, args: Mapping[str, Any]) -> tuple[str, ...] | None:
+    """Coarse repeat key for a target-keyed tool, else None."""
+    if tool_name == READ_FILE_TOOL:
+        path = args.get("path")
+        if isinstance(path, str) and path:
+            return (READ_FILE_TOOL, path)
+        return None
+    if tool_name == SEARCH_FILES_TOOL:
+        pattern = args.get("pattern")
+        if isinstance(pattern, str) and pattern:
+            return (
+                SEARCH_FILES_TOOL,
+                pattern,
+                str(args.get("path") or ""),
+                str(args.get("target") or ""),
+            )
+        return None
+    return None
+
+
+def _read_range(args: Mapping[str, Any]) -> tuple[int, int]:
+    """Half-open line range [start, end) a read_file call will cover."""
+    start = _positive_int(args.get("offset"), READ_FILE_DEFAULT_OFFSET)
+    span = _positive_int(args.get("limit"), READ_FILE_DEFAULT_LIMIT)
+    return start, start + span
+
+
+def _range_covered(ranges: list[tuple[int, int]], start: int, end: int) -> bool:
+    """True when [start, end) is fully inside one merged coverage range."""
+    return any(s <= start and end <= e for s, e in ranges)
+
+
+def _merge_range(ranges: list[tuple[int, int]], start: int, end: int) -> list[tuple[int, int]]:
+    """Add [start, end) to a sorted, disjoint range list, merging overlaps."""
+    merged: list[tuple[int, int]] = []
+    for s, e in sorted(ranges + [(start, end)]):
+        if merged and s <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], e))
+        else:
+            merged.append((s, e))
+    return merged
+
+
+def _format_ranges(ranges: list[tuple[int, int]]) -> str:
+    """Render half-open ranges as inclusive line spans, e.g. '1-500, 700-900'."""
+    return ", ".join(f"{start}-{end - 1}" for start, end in ranges)
 
 
 def _result_hash(result: str | None) -> str:
