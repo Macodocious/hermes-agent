@@ -94,25 +94,25 @@ REVIEW_SOURCE = "review"
 # the review must hold the implementation to — the goal text names it
 # explicitly so the verdict is bound to the task's stated objective.
 #
-# R2: when the item carries a plan ref (the writing_plan plan.md path,
-# resolved by the post-close review), the goal binds the judge to the
-# plan file instead of one item line — the verdict evaluates the whole
-# plan's criteria, not item 1's content. The plan text is read inline
-# (capped) because the judge prompt cannot rely on file access.
+# R2 previously bound a plan-carrying item's goal to the whole plan file.
+# That contradicted the judge's open-row rule (JUDGE_SYSTEM_PROMPT): a
+# multi-item plan keeps siblings open until its last item closes, so every
+# plan item's verdict saw open rows and could never clear the judge, while
+# each rejection appended a rework row that blocked it harder. The
+# lifecycle is task-by-task — the judge evaluates the task's own row — and
+# plan completion is an aggregate computed from the store, not a verdict.
+# The goal therefore names the bound task and its own content, and never
+# inlines the plan.
 def _goal_text_for_item(item: Dict[str, Any]) -> str:
-    plan_ref = str(item.get("plan") or "").strip()
-    if plan_ref:
-        plan_text = _read_plan_text(plan_ref)
-        if plan_text:
-            return (
-                "Complete the task per its plan: "
-                f"{plan_ref}\n\n"
-                f"{plan_text}\n\n"
-                f"(Task spec: {str(item.get('content') or '(no description)')[:200]})"
-            )
+    content = str(item.get("content") or "(no description)")
+    task_id = str(item.get("id") or "").strip()
+    if not task_id:
+        return f"Complete the task per its specification: {content}"
     return (
-        "Complete the task per its specification: "
-        f"{item.get('content', '(no description)')}"
+        f"Complete the task per its specification: {content}\n\n"
+        f"(Bound task: todo item {task_id}. Your verdict is about this task "
+        "alone — the status of any other row in the task store does not bear "
+        "on it.)"
     )
 
 
@@ -298,6 +298,42 @@ def is_completion(
     if task_status is None:
         return True
     return str(task_status).strip() in COMPLETION_TASK_STATUSES
+
+
+# Task rows that will never advance again without new input. A task in any
+# other status (pending / in_progress / closing / paused / escalated) is
+# still live and keeps its plan open.
+TERMINAL_TASK_STATUSES = frozenset({"completed", "cancelled"})
+
+
+def plan_is_complete(store: Any, plan_ref: str) -> bool:
+    """True iff every task carrying ``plan_ref`` has reached a terminal state.
+
+    The plan is the unit of approved work; the lifecycle itself is
+    task-by-task. This is the *mechanical* definition of "the plan is
+    complete" — a set predicate over the store rows that carry the plan
+    ref. It is deliberately not a judge verdict and not a second goal: the
+    judge decides one task's own row (``is_completion``), and plan
+    completion is derived afterwards from what the store actually holds.
+
+    A row with no plan ref belongs to no plan; a plan ref that matches no
+    row is not complete. Both return False rather than raising, so callers
+    can treat this as a pure predicate.
+    """
+    ref = str(plan_ref or "").strip()
+    if not ref:
+        return False
+    rows = [
+        item
+        for item in store.read()
+        if str(item.get("plan") or "").strip() == ref
+    ]
+    if not rows:
+        return False
+    return all(
+        str(item.get("status") or "").strip() in TERMINAL_TASK_STATUSES
+        for item in rows
+    )
 
 
 def on_todo_write(agent: Any, args: Dict[str, Any]) -> None:

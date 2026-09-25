@@ -133,10 +133,13 @@ JUDGE_SYSTEM_PROMPT = (
     "- The response explains the goal is unachievable / blocked / needs "
     "user input (treat this as DONE with reason describing the block, and set \"blocked\": true — the loop must stop and wait for the user, not force a continuation).\n\n"
     "When a task store block is present it is the authoritative record of "
-    "the agent's tasks: a DONE verdict is valid only when the task the goal "
-    "is bound to is ``closing`` or ``completed`` there. Any open row "
-    "(``pending`` / ``in_progress`` / ``paused``) mechanically blocks DONE — "
-    "report CONTINUE naming the open task instead.\n\n"
+    "the agent's tasks. The lifecycle is task-by-task: a DONE verdict is "
+    "valid only when the task the goal is bound to is ``closing`` or "
+    "``completed`` there. The status of any *other* row — a sibling task "
+    "still ``pending``, ``in_progress``, or ``paused`` — never blocks DONE; "
+    "each task is judged on its own row, and the plan is complete only when "
+    "all of its tasks are. If the bound task is itself still ``pending``, "
+    "``in_progress``, or ``paused``, report CONTINUE naming that task.\n\n"
     "WAIT — the goal is NOT done, but the next step is to wait for async "
     "work to finish rather than act again. Choose this ONLY when the agent's "
     "progress is genuinely gated on something running on its own:\n"
@@ -197,8 +200,9 @@ JUDGE_TASK_STORE_MAX_ROWS = 40
 # "all five items done / task 3 not done" incident shipped because the
 # judge saw only the agent's prose.
 JUDGE_TASK_STORE_BLOCK_TEMPLATE = (
-    "The agent's task store (the authoritative record of its tasks — an "
-    "open row blocks DONE):\n{task_store_lines}\n\n"
+    "The agent's task store (the authoritative record of its tasks — the "
+    "bound task's own row is what your verdict is about):\n"
+    "{task_store_lines}\n\n"
 )
 
 JUDGE_TASK_STORE_TRUNCATION_NOTE = (

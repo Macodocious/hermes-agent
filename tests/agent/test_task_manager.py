@@ -26,6 +26,32 @@ def _seed(store: TodoStore, item_id: str, content: str) -> None:
     store.write([{"id": item_id, "content": content, "status": "pending"}])
 
 
+def _armed_goal_text(store: TodoStore, item_id: str) -> str:
+    """The goal text on_todo_write is expected to arm for an item.
+
+    Derived from the production builder so these tests assert the *wiring*
+    (the hook arms the loop with the bound item's goal text) rather than
+    freezing the text's wording, which is the goal-builder's own concern.
+    """
+    item = next(i for i in store.read() if i["id"] == item_id)
+    return task_manager._goal_text_for_item(item)
+
+
+def _spec_prefix(content: str) -> str:
+    """The goal text's leading clause for an item's own content."""
+    return f"Complete the task per its specification: {content}"
+
+
+def _calls_set_entry(content: str) -> str:
+    """A FakeMgr ``set:`` call entry for an item's content clause.
+
+    FakeMgrs record ``f"set:{text}"``; this builds the matching prefix so an
+    assertion can check that the hook armed the loop with the item's goal
+    text without freezing the rest of the wording.
+    """
+    return f"set:{_spec_prefix(content)}"
+
+
 @pytest.fixture(autouse=True)
 def _lifecycle_on(monkeypatch, tmp_path) -> None:
     """Pin the lifecycle config so tests are independent of the host config."""
@@ -59,7 +85,7 @@ def test_on_todo_write_arms_goal_on_begin(monkeypatch) -> None:
     store.transition("begin", "1")
     task_manager.on_todo_write(agent, {"action": "begin", "item_id": "1"})
 
-    assert "set:Complete the task per its specification: Build the thing" in calls
+    assert f"set:{_armed_goal_text(store, '1')}" in calls
     assert "persist" in calls
 
 
@@ -98,7 +124,7 @@ def test_on_todo_write_holds_authorization_on_plan_begin(monkeypatch) -> None:
     store.transition("begin", "1")
     task_manager.on_todo_write(agent, {"action": "begin", "item_id": "1"})
 
-    assert "set:Complete the task per its specification: Build the thing" in calls
+    assert f"set:{_armed_goal_text(store, '1')}" in calls
     assert "hold_authorization" in calls
 
 
@@ -128,7 +154,7 @@ def test_on_todo_write_does_not_hold_without_plan(monkeypatch) -> None:
     store.transition("begin", "1")
     task_manager.on_todo_write(agent, {"action": "begin", "item_id": "1"})
 
-    assert "set:Complete the task per its specification: Build the thing" in calls
+    assert f"set:{_armed_goal_text(store, '1')}" in calls
     assert "hold_authorization" not in calls
 
 
@@ -253,13 +279,21 @@ def test_on_todo_write_rearms_when_active_goal_text_changes(monkeypatch) -> None
     agent = _make_agent(store)
     calls: list[str] = []
 
+    armed_text = task_manager._goal_text_for_item(
+        {"id": "1", "content": "Build the thing now", "status": "in_progress"}
+    )
+    stale_text = task_manager._goal_text_for_item(
+        {"id": "1", "content": "Old content", "status": "in_progress"}
+    )
+    assert stale_text != armed_text
+
     class FakeMgr:
         def __init__(self, **kwargs):
             calls.append("init")
 
         @property
         def state(self):
-            return SimpleNamespace(status="active", goal="Complete the task per its specification: Old content")
+            return SimpleNamespace(status="active", goal=stale_text)
 
         def set(self, text: str, **kwargs) -> None:
             calls.append(f"set:{text}")
@@ -274,7 +308,8 @@ def test_on_todo_write_rearms_when_active_goal_text_changes(monkeypatch) -> None
     store.write([{"id": "1", "content": "Build the thing now", "status": "in_progress"}])
     task_manager.on_todo_write(agent, {})
 
-    assert "set:Complete the task per its specification: Build the thing now" in calls
+    assert f"set:{armed_text}" in calls
+    assert _spec_prefix("Build the thing now") in armed_text
 
 
 # ── config toggle: tasks.lifecycle.enabled=false disables the lifecycle ─
@@ -716,6 +751,87 @@ def test_on_todo_write_routine_write_does_not_release_park(monkeypatch) -> None:
 
     assert not any(c.startswith("set:") for c in calls)
     assert "clear" not in calls
+
+
+# ── the goal binds the judge to the task's own row, not the plan ──────
+
+
+def test_goal_text_binds_to_task_row_not_plan_file(tmp_path) -> None:
+    """A plan-carrying item's goal must not inline the plan file.
+
+    Inlining the plan handed the judge a multi-item document whose siblings
+    stay open until the plan's last item closes, so every item's DONE verdict
+    was blocked by rows that were none of its business (the D1 deadlock).
+    """
+    plan_file = tmp_path / "plan.md"
+    plan_file.write_text("# Plan\n- item A\n- item B\n- item C\n", encoding="utf-8")
+
+    text = task_manager._goal_text_for_item(
+        {"id": "1", "content": "Item A", "status": "in_progress", "plan": str(plan_file)}
+    )
+
+    assert _spec_prefix("Item A") in text
+    assert str(plan_file) not in text
+    assert "item B" not in text
+
+
+def test_goal_text_names_the_bound_task() -> None:
+    """The goal text states which task the verdict is about."""
+    text = task_manager._goal_text_for_item(
+        {"id": "7", "content": "Item A", "status": "in_progress"}
+    )
+    assert "todo item 7" in text
+
+
+def test_goal_text_without_id_has_no_bound_task_clause() -> None:
+    """An id-less item still yields a usable goal text."""
+    text = task_manager._goal_text_for_item({"content": "Item A", "status": "pending"})
+    assert _spec_prefix("Item A") in text
+    assert "Bound task" not in text
+
+
+# ── plan_is_complete: the mechanical aggregate over the bound plan ────
+
+
+def test_plan_is_complete_false_while_any_task_is_open() -> None:
+    store = TodoStore()
+    store.write(
+        [
+            {"id": "1", "content": "A", "status": "completed", "plan": "P"},
+            {"id": "2", "content": "B", "status": "pending", "plan": "P"},
+        ]
+    )
+    assert task_manager.plan_is_complete(store, "P") is False
+
+
+def test_plan_is_complete_true_when_every_task_is_terminal() -> None:
+    store = TodoStore()
+    store.write(
+        [
+            {"id": "1", "content": "A", "status": "completed", "plan": "P"},
+            {"id": "2", "content": "B", "status": "cancelled", "plan": "P"},
+        ]
+    )
+    assert task_manager.plan_is_complete(store, "P") is True
+
+
+def test_plan_is_complete_ignores_rows_of_other_plans() -> None:
+    """Only rows carrying the same plan ref are the plan's business."""
+    store = TodoStore()
+    store.write(
+        [
+            {"id": "1", "content": "A", "status": "completed", "plan": "P"},
+            {"id": "2", "content": "B", "status": "pending", "plan": "OTHER"},
+        ]
+    )
+    assert task_manager.plan_is_complete(store, "P") is True
+
+
+def test_plan_is_complete_false_for_unknown_or_empty_ref() -> None:
+    store = TodoStore()
+    store.write([{"id": "1", "content": "A", "status": "completed", "plan": "P"}])
+    assert task_manager.plan_is_complete(store, "NOPE") is False
+    assert task_manager.plan_is_complete(store, "") is False
 
 
 # ── _advances_open_plan: membership is the TOOLSET, not the tool name ──

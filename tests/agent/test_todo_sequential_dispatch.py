@@ -45,6 +45,19 @@ TOOL_DEFINITIONS = [
 ]
 
 
+def _armed_entry(store: TodoStore, item_id: str) -> str:
+    """The ``set:`` call the fake GoalManager records for an item's goal text.
+
+    Derived from the production builder so the assertion pins the *wiring*
+    (begin arms the loop with the bound item's goal text) rather than the
+    text's wording, which is the goal-builder's own contract.
+    """
+    from agent import task_manager
+
+    item = next(i for i in store.read() if i["id"] == item_id)
+    return f"set:{task_manager._goal_text_for_item(item)}"
+
+
 def _make_agent():
     """Real AIAgent driven through the real sequential dispatch surface."""
     hermes_home = Path(tempfile.mkdtemp(prefix="hermes-test-home-"))
@@ -158,7 +171,7 @@ def test_sequential_begin_transitions_store_and_arms_goal(dispatched) -> None:
     _dispatch_sequential(agent, json.dumps({"action": "begin", "item_id": "1"}))
 
     assert agent._todo_store.read()[0]["status"] == "in_progress"
-    assert "set:Complete the task per its specification: Build the thing" in seams["calls"]
+    assert _armed_entry(agent._todo_store, "1") in seams["calls"]
     assert agent._task_lifecycle_action_issued is True
 
 

@@ -37,6 +37,19 @@ def _seed(store: TodoStore, item_id: str, content: str) -> None:
     store.write([{"id": item_id, "content": content, "status": "pending"}])
 
 
+def _armed_entry(store: TodoStore, item_id: str) -> str:
+    """The ``set:`` call the FakeGoalManager records for an item's goal text.
+
+    Derived from the production builder so the assertion pins the *wiring*
+    (begin arms the loop with the bound item's goal text) rather than the
+    text's wording, which is the goal-builder's own contract.
+    """
+    from agent import task_manager
+
+    item = next(i for i in store.read() if i["id"] == item_id)
+    return f"set:{task_manager._goal_text_for_item(item)}"
+
+
 class FakeGoalManager:
     """Records arm/clear calls; never touches a real goals provider."""
 
@@ -110,7 +123,7 @@ def test_begin_write_arms_goal(dispatched) -> None:
     agent, calls = dispatched
     _invoke(agent, "begin", "1")
 
-    assert "set:Complete the task per its specification: Build the thing" in calls
+    assert _armed_entry(agent._todo_store, "1") in calls
     assert agent._todo_store.read()[0]["status"] == "in_progress"
     assert agent._task_lifecycle_action_issued is True
 
