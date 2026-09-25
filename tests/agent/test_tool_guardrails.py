@@ -277,3 +277,118 @@ def test_after_call_survives_lone_surrogates_in_result_and_args():
     controller.after_call("web_search", {"query": dirty}, '{"error":"\ud835 boom"}', failed=True)
     controller.after_call("web_search", {"query": dirty}, '{"error":"\ud835 boom"}', failed=True)
     assert controller.before_call("web_search", {"query": dirty}).action == "block"
+
+
+def _coarse_controller(**overrides) -> ToolCallGuardrailController:
+    return ToolCallGuardrailController(
+        ToolCallGuardrailConfig(hard_stop_enabled=True, **overrides)
+    )
+
+
+def _varying_read_calls(path: str, count: int) -> list[dict]:
+    """Distinct-args read_file calls that all land inside the first read's range.
+
+    The real reconnaissance loop varied offset/limit on every call, so exact-args
+    keying saw a new signature each time and never accumulated a count. These
+    calls reproduce that: every signature differs, every range is already
+    covered by the first read.
+    """
+    return [{"path": path, "offset": 1, "limit": 500 - i} for i in range(count)]
+
+
+def test_read_file_repeat_is_keyed_on_path_and_line_coverage_not_exact_args():
+    # Same path + already covered lines must count as one repeat regardless of
+    # the args that differ between calls.
+    controller = _coarse_controller()
+
+    assert controller.before_call("read_file", {"path": "/tmp/a.py", "offset": 1, "limit": 500}).action == "allow"
+    controller.after_call("read_file", {"path": "/tmp/a.py", "offset": 1, "limit": 500}, "body", failed=False)
+
+    # Same range, different limit spelling -> still redundant.
+    assert controller.before_call("read_file", {"path": "/tmp/a.py", "offset": 1, "limit": 500}).action == "allow"
+    controller.after_call("read_file", {"path": "/tmp/a.py", "offset": 1, "limit": 500}, "body", failed=False)
+
+    # A genuinely new line range is NOT a repeat.
+    assert controller.before_call("read_file", {"path": "/tmp/a.py", "offset": 900, "limit": 100}).action == "allow"
+    controller.after_call("read_file", {"path": "/tmp/a.py", "offset": 900, "limit": 100}, "more", failed=False)
+
+    # A different file is its own key.
+    assert controller.before_call("read_file", {"path": "/tmp/b.py", "offset": 1, "limit": 500}).action == "allow"
+
+
+def _coarse_signals(controller, tool_name: str, calls: list[dict]) -> list[str]:
+    """Effective per-call signal: deny from before_call, warn from after_call.
+
+    Mirrors the runtime split — ``before_call`` refuses a call (deny), while
+    ``after_call`` appends guidance to the result (warn).
+    """
+    signals = []
+    for args in calls:
+        decision = controller.before_call(tool_name, args)
+        if not decision.allows_execution:
+            signals.append(decision.action)
+            continue
+        after = controller.after_call(tool_name, args, "body", failed=False)
+        signals.append(after.action)
+    return signals
+
+
+def test_read_file_warns_at_four_and_denies_at_eight_without_halting():
+    controller = _coarse_controller()
+
+    signals = _coarse_signals(controller, "read_file", _varying_read_calls("/tmp/hooks.py", 8))
+
+    # warn on the 4th touch, deny on the 8th — Mac's warn-4 / deny-8 spec.
+    assert signals == ["allow", "allow", "allow", "warn", "warn", "warn", "warn", "deny"]
+
+    denied = controller.before_call("read_file", {"path": "/tmp/hooks.py", "offset": 1, "limit": 500})
+    assert denied.action == "deny"
+    assert denied.code == "repeat_target_deny"
+    # Deny refuses the call but must NOT halt the turn.
+    assert denied.allows_execution is False
+    assert denied.should_halt is False
+    assert controller.halt_decision is None
+    # The reason carries the coverage manifest so the model can self-heal.
+    assert "/tmp/hooks.py" in denied.message
+    assert "lines 1-500" in denied.message
+
+
+def test_search_files_repeat_is_keyed_on_pattern_path_target():
+    controller = _coarse_controller()
+    base = {"pattern": "transform_llm_output", "path": "/usr/local/lib/hermes-agent", "target": "content"}
+    calls = [{**base, "limit": 50 - i} for i in range(8)]  # distinct signature, same coarse key
+
+    signals = _coarse_signals(controller, "search_files", calls)
+
+    assert signals == ["allow", "allow", "allow", "warn", "warn", "warn", "warn", "deny"]
+
+    # A different pattern is a different key and stays allowed.
+    assert controller.before_call("search_files", {**base, "pattern": "other"}).action == "allow"
+
+
+def test_file_mutation_clears_read_coverage_so_post_edit_reread_is_allowed():
+    # read -> edit -> read is legitimate; the post-edit re-read must not be
+    # counted as a redundant repeat of the pre-edit content.
+    controller = _coarse_controller()
+
+    for args in _varying_read_calls("/tmp/planner.py", 7):
+        controller.before_call("read_file", args)
+        controller.after_call("read_file", args, "body", failed=False)
+
+    assert controller.before_call("read_file", {"path": "/tmp/planner.py", "offset": 1, "limit": 500}).action == "deny"
+
+    controller.after_call("patch", {"path": "/tmp/planner.py", "old_string": "a", "new_string": "b"}, "ok", failed=False)
+
+    assert controller.before_call("read_file", {"path": "/tmp/planner.py", "offset": 1, "limit": 500}).action == "allow"
+
+
+def test_coarse_repeat_state_is_cleared_by_reset_for_turn():
+    controller = _coarse_controller()
+    for args in _varying_read_calls("/tmp/run.py", 8):
+        controller.before_call("read_file", args)
+        controller.after_call("read_file", args, "body", failed=False)
+    assert controller.before_call("read_file", {"path": "/tmp/run.py", "offset": 1, "limit": 500}).action == "deny"
+
+    controller.reset_for_turn()
+
+    assert controller.before_call("read_file", {"path": "/tmp/run.py", "offset": 1, "limit": 500}).action == "allow"
