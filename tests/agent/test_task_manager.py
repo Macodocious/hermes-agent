@@ -339,6 +339,72 @@ def test_disabled_lifecycle_short_circuits_hooks(monkeypatch) -> None:
 # ── observe_verdict: the two-key close ────────────────────────────────
 
 
+def test_verdict_records_finalized_id_on_canonical_close(monkeypatch) -> None:
+    """The verdict records which task it actually finalized.
+
+    The gateway emits ``✅ Task completed`` off this id, so a done verdict
+    and an actual completion can never be confused.
+    """
+    store = TodoStore()
+    _seed(store, "1", "Build the thing")
+    agent = _make_agent(store)
+    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
+
+    store.transition("begin", "1")
+    store.transition("close", "1")
+    decision = {"verdict": "done"}
+    task_manager.observe_verdict(agent, decision)
+
+    assert decision.get("lifecycle_finalized_id") == "1"
+
+
+def test_verdict_records_no_finalized_id_for_a_continue(monkeypatch) -> None:
+    """A plan-level continue that reopens the task finalizes nothing."""
+    store = TodoStore()
+    _seed(store, "1", "Build the thing")
+    agent = _make_agent(store)
+    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
+
+    store.transition("begin", "1")
+    store.transition("close", "1")
+    decision = {"verdict": "continue", "reason": "not yet"}
+    task_manager.observe_verdict(agent, decision)
+
+    assert decision.get("lifecycle_finalized_id") is None
+    assert store.read()[0]["status"] == "in_progress"
+
+
+def test_verdict_records_finalized_id_on_auto_finalize(monkeypatch) -> None:
+    """A done verdict on an open task closes and finalizes it for real."""
+    store = TodoStore()
+    _seed(store, "1", "Build the thing")
+    agent = _make_agent(store)
+    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
+
+    store.transition("begin", "1")
+    decision = {"verdict": "done"}
+    task_manager.observe_verdict(agent, decision)
+
+    assert decision.get("lifecycle_finalized_id") == "1"
+    assert store.read()[0]["status"] == "completed"
+
+
+def test_verdict_records_no_finalized_id_when_blocked(monkeypatch) -> None:
+    """A blocked done verdict is a park: nothing finalizes, no id claims it."""
+    store = TodoStore()
+    _seed(store, "1", "Build the thing")
+    agent = _make_agent(store)
+    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
+
+    store.transition("begin", "1")
+    store.transition("close", "1")
+    decision = {"verdict": "done", "blocked": True}
+    task_manager.observe_verdict(agent, decision)
+
+    assert decision.get("lifecycle_finalized_id") is None
+    assert store.read()[0]["status"] == "closing"
+
+
 def test_verdict_done_finalizes_closing_task(monkeypatch) -> None:
     store = TodoStore()
     _seed(store, "1", "Build the thing")

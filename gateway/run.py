@@ -1187,30 +1187,48 @@ def _is_lifecycle_goal(goal_state: Optional[Any]) -> bool:
         return False
 
 
-def _lifecycle_task_name(session_id: str, goal_state: Optional[Any]) -> Optional[str]:
+def _lifecycle_task_name(
+    session_id: str,
+    goal_state: Optional[Any],
+    item_id: Optional[str] = None,
+) -> Optional[str]:
     """Best-effort display name for a lifecycle goal's completion line.
 
-    The authoritative name is the task's own ``content`` from the
-    persisted todo store — the target — never derived by stripping text
-    off the goal. Falls back to the goal state's own text only when no
-    store or open task exists (degraded setup) so a completion line still
-    ships.
+    The authoritative name is the finalized task's own ``content`` from the
+    persisted todo store, looked up by the ``item_id`` the two-key close
+    actually finalized. When no id is supplied (or the row is gone) the
+    legacy status scan runs, and the goal state's own text is the last
+    resort, so a completion line still ships on a degraded setup.
     """
+    target_id = str(item_id or "").strip()
     try:
         if session_id:
             from hermes_cli.tasks import load_todo
 
             store = load_todo(session_id)
             if store is not None:
-                for item in store.read():
-                    if str(item.get("status") or "") in (
-                        "closing",
-                        "in_progress",
-                        "completed",
-                    ):
-                        name = str(item.get("content") or "").strip()
+                rows = store.read()
+                if target_id:
+                    # Look up the exact finalized row — a status scan could
+                    # name a different task's content in a multi-task store.
+                    exact = next(
+                        (i for i in rows if str(i.get("id") or "") == target_id),
+                        None,
+                    )
+                    if exact is not None:
+                        name = str(exact.get("content") or "").strip()
                         if name:
                             return name
+                else:
+                    for item in rows:
+                        if str(item.get("status") or "") in (
+                            "closing",
+                            "in_progress",
+                            "completed",
+                        ):
+                            name = str(item.get("content") or "").strip()
+                            if name:
+                                return name
     except Exception:
         pass
     try:
@@ -14902,22 +14920,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         # /goal verdicts are untouched.
         if _is_lifecycle_goal(mgr.state):
             _verdict = str(decision.get("verdict") or "")
-            if is_completion(decision):
-                _task_name = _lifecycle_task_name(sid, mgr.state) or "(no description)"
-                msg = f"✅ Task completed: {_task_name}"
-                # Suppress the final response ONLY on a synthetic goal-
-                # continuation turn whose judge already said done on the
-                # PRECEDING real user turn (_prev_verdict == "done"): the
-                # wrap-up prose there is a SECOND conclusion — the
-                # conversation prose already shipped on the real user
-                # turn — so the deferred ✅ line is the only completion
-                # message. A continuation whose done is the FIRST done
-                # (judge said continue on the real user turn) ships its
-                # prose — that is the only completion prose. A real user
-                # turn's prose always ships.
-                if not user_initiated and _prev_verdict == "done":
-                    _suppress_final_response = True
-            elif _verdict in ("continue", "wait") and str(decision.get("status") or "") == "active":
+            if _verdict in ("continue", "wait") and str(decision.get("status") or "") == "active":
                 msg = ""  # per-turn progress noise — suppress
 
         # Task-lifecycle two-key close (P1/P2): observe the judge's verdict
@@ -14931,6 +14934,31 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         except Exception as _verdict_exc:
             logger.debug("task-lifecycle verdict observation failed: %s", _verdict_exc)
             _verdict_nudge = None
+
+        # The completion line is the deferred status notice, and it reports
+        # the STORE's state, not the judge's verdict. It ships only when the
+        # two-key close actually finalized a task (``lifecycle_finalized_id``,
+        # set by ``_apply_verdict``) — a done verdict the finalization hold
+        # held back, or one that found no closing/in_progress row to
+        # finalize, must never tell the user the task completed.
+        if _is_lifecycle_goal(mgr.state) and decision.get("lifecycle_finalized_id"):
+            _task_name = (
+                _lifecycle_task_name(sid, mgr.state, decision.get("lifecycle_finalized_id"))
+                or "(no description)"
+            )
+            msg = f"✅ Task completed: {_task_name}"
+            # Suppress the final response ONLY on a synthetic goal-
+            # continuation turn whose judge already said done on the
+            # PRECEDING real user turn (_prev_verdict == "done"): the
+            # wrap-up prose there is a SECOND conclusion — the
+            # conversation prose already shipped on the real user
+            # turn — so the deferred ✅ line is the only completion
+            # message. A continuation whose done is the FIRST done
+            # (judge said continue on the real user turn) ships its
+            # prose — that is the only completion prose. A real user
+            # turn's prose always ships.
+            if not user_initiated and _prev_verdict == "done":
+                _suppress_final_response = True
 
         # Defer the status line until after the adapter has delivered the
         # agent's visible final response. The judge runs after the response is

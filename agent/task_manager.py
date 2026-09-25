@@ -612,10 +612,18 @@ def _apply_verdict(store: Any, decision: Dict[str, Any]) -> Optional[str]:
       with no rework task (a park, not a rejection).
 
     Returns a continuation nudge when one is needed, else None.
+
+    Side effect: ``decision["lifecycle_finalized_id"]`` is set to the id of
+    the task this verdict actually finalized, else ``None``. A ``done``
+    verdict held by the finalization hold, or one that judged a task still
+    open after a plan-level continue, finalizes nothing — the gateway reads
+    this to emit ``✅ Task completed`` only when the store record truly
+    reached ``completed``, never off the raw verdict.
     """
     # A blocked-awaiting-input done verdict is a parked stop, not a
     # completion: the task stays in_progress and the user's next message
     # re-arms the loop. Never finalize, never nudge, never review.
+    decision["lifecycle_finalized_id"] = None
     if decision.get("blocked"):
         return None
     verdict = str(decision.get("verdict") or "").strip()
@@ -657,6 +665,7 @@ def _apply_verdict(store: Any, decision: Dict[str, Any]) -> Optional[str]:
             # task the model had begun before the judge cleared the
             # closing one).
             store.finalize(closing["id"])
+            decision["lifecycle_finalized_id"] = closing["id"]
             return _plan_next_nudge(closing)
         # Judge says not done: the close was premature — back to work.
         # A continue verdict is a review rejection: the task returns to
@@ -713,6 +722,7 @@ def _apply_verdict(store: Any, decision: Dict[str, Any]) -> Optional[str]:
         # close transition first.
         store.transition("close", current["id"])
         store.finalize(current["id"])
+        decision["lifecycle_finalized_id"] = current["id"]
         plan_nudge = _plan_next_nudge(current)
         if plan_nudge:
             return plan_nudge
