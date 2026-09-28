@@ -133,10 +133,13 @@ JUDGE_SYSTEM_PROMPT = (
     "- The response explains the goal is unachievable / blocked / needs "
     "user input (treat this as DONE with reason describing the block, and set \"blocked\": true — the loop must stop and wait for the user, not force a continuation).\n\n"
     "When a task store block is present it is the authoritative record of "
-    "the agent's tasks: a DONE verdict is valid only when the task the goal "
-    "is bound to is ``closing`` or ``completed`` there. Any open row "
-    "(``pending`` / ``in_progress`` / ``paused``) mechanically blocks DONE — "
-    "report CONTINUE naming the open task instead.\n\n"
+    "the agent's tasks. The lifecycle is task-by-task: a DONE verdict is "
+    "valid only when the task the goal is bound to is ``closing`` or "
+    "``completed`` there. The status of any *other* row — a sibling task "
+    "still ``pending``, ``in_progress``, or ``paused`` — never blocks DONE; "
+    "each task is judged on its own row, and the plan is complete only when "
+    "all of its tasks are. If the bound task is itself still ``pending``, "
+    "``in_progress``, or ``paused``, report CONTINUE naming that task.\n\n"
     "WAIT — the goal is NOT done, but the next step is to wait for async "
     "work to finish rather than act again. Choose this ONLY when the agent's "
     "progress is genuinely gated on something running on its own:\n"
@@ -197,8 +200,9 @@ JUDGE_TASK_STORE_MAX_ROWS = 40
 # "all five items done / task 3 not done" incident shipped because the
 # judge saw only the agent's prose.
 JUDGE_TASK_STORE_BLOCK_TEMPLATE = (
-    "The agent's task store (the authoritative record of its tasks — an "
-    "open row blocks DONE):\n{task_store_lines}\n\n"
+    "The agent's task store (the authoritative record of its tasks — the "
+    "bound task's own row is what your verdict is about):\n"
+    "{task_store_lines}\n\n"
 )
 
 JUDGE_TASK_STORE_TRUNCATION_NOTE = (
@@ -480,6 +484,12 @@ class GoalState:
     # state itself; goal text is never parsed for this. Backwards-
     # compatible: old state_meta rows load with False (native /goal).
     lifecycle: bool = False
+    # The todo row this lifecycle goal is bound to (stamped at arming by
+    # agent/task_manager.py on_todo_write). The judge's verdict is about
+    # this row alone; the two-key close reads it so a verdict about a
+    # different row can never reopen a task that was not its subject.
+    # Backwards-compatible: old state_meta rows load with None.
+    bound_task_id: Optional[str] = None
     # Awaiting-user-input park (Bug 2): set when the goal judge returns a
     # ``blocked`` done verdict — the agent has parked on a human decision
     # and its final message is a question. Handled like a wait barrier:
@@ -555,6 +565,7 @@ class GoalState:
             awaiting_authorization=bool(data.get("awaiting_authorization", False)),
             awaiting_authorization_armed_at=float(data.get("awaiting_authorization_armed_at", 0.0) or 0.0),
             lifecycle=bool(data.get("lifecycle", False)),
+            bound_task_id=(str(data["bound_task_id"]) if data.get("bound_task_id") else None),
             awaiting_user_input=bool(data.get("awaiting_user_input", False)),
             paused_reason=data.get("paused_reason"),
             consecutive_parse_failures=int(data.get("consecutive_parse_failures", 0) or 0),
@@ -1400,7 +1411,7 @@ class GoalManager:
 
     # --- mutation -----------------------------------------------------
 
-    def set(self, goal: str, *, max_turns: Optional[int] = None, contract: Optional[GoalContract] = None, lifecycle: bool = False) -> GoalState:
+    def set(self, goal: str, *, max_turns: Optional[int] = None, contract: Optional[GoalContract] = None, lifecycle: bool = False, bound_task_id: Optional[str] = None) -> GoalState:
         goal = (goal or "").strip()
         if not goal:
             raise ValueError("goal text is empty")
@@ -1413,6 +1424,7 @@ class GoalManager:
             last_turn_at=0.0,
             contract=contract if contract is not None else GoalContract(),
             lifecycle=bool(lifecycle),
+            bound_task_id=(str(bound_task_id).strip() or None) if bound_task_id else None,
         )
         self._state = state
         save_goal(self.session_id, state)

@@ -88,31 +88,38 @@ LIFECYCLE_PLAN_NEXT_NUDGE = (
 # fix-task lookup work.
 REVIEW_SOURCE = "review"
 
+# Task-status groupings for the one status-query owner (_items_with_status).
+# Single-sourced here so the lifecycle's notion of "current", "closing" and
+# "open" cannot drift between the helpers that ask the same question.
+CURRENT_TASK_STATUSES: tuple = ("in_progress",)
+CLOSING_TASK_STATUSES: tuple = ("closing",)
+OPEN_TASK_STATUSES: tuple = ("in_progress", "closing")
+
 # The goal text stored for an armed task. The todo item is the task; the
 # goal text is its description, so the judge evaluates the same content
 # the agent sees in the task list. The task content is the specification
 # the review must hold the implementation to — the goal text names it
 # explicitly so the verdict is bound to the task's stated objective.
 #
-# R2: when the item carries a plan ref (the writing_plan plan.md path,
-# resolved by the post-close review), the goal binds the judge to the
-# plan file instead of one item line — the verdict evaluates the whole
-# plan's criteria, not item 1's content. The plan text is read inline
-# (capped) because the judge prompt cannot rely on file access.
+# R2 previously bound a plan-carrying item's goal to the whole plan file.
+# That contradicted the judge's open-row rule (JUDGE_SYSTEM_PROMPT): a
+# multi-item plan keeps siblings open until its last item closes, so every
+# plan item's verdict saw open rows and could never clear the judge, while
+# each rejection appended a rework row that blocked it harder. The
+# lifecycle is task-by-task — the judge evaluates the task's own row — and
+# plan completion is an aggregate computed from the store, not a verdict.
+# The goal therefore names the bound task and its own content, and never
+# inlines the plan.
 def _goal_text_for_item(item: Dict[str, Any]) -> str:
-    plan_ref = str(item.get("plan") or "").strip()
-    if plan_ref:
-        plan_text = _read_plan_text(plan_ref)
-        if plan_text:
-            return (
-                "Complete the task per its plan: "
-                f"{plan_ref}\n\n"
-                f"{plan_text}\n\n"
-                f"(Task spec: {str(item.get('content') or '(no description)')[:200]})"
-            )
+    content = str(item.get("content") or "(no description)")
+    task_id = str(item.get("id") or "").strip()
+    if not task_id:
+        return f"Complete the task per its specification: {content}"
     return (
-        "Complete the task per its specification: "
-        f"{item.get('content', '(no description)')}"
+        f"Complete the task per its specification: {content}\n\n"
+        f"(Bound task: todo item {task_id}. Your verdict is about this task "
+        "alone — the status of any other row in the task store does not bear "
+        "on it.)"
     )
 
 
@@ -207,15 +214,24 @@ def _persist(agent: Any) -> None:
         logger.debug("task_manager: persist failed: %s", exc)
 
 
+def _items_with_status(store: Any, statuses: tuple) -> list:
+    """The rows whose status is in ``statuses``, in list order (priority).
+
+    The one owner of the status query. Four sites used to recompute
+    "which row is current" and "which row is closing" in their own words
+    — ``_current_item``, ``_closing_item``, ``_open_item_ids`` and two
+    inline ``next`` scans — with four chances to disagree about the same
+    fact. They now all read through here.
+    """
+    if store is None:
+        return []
+    return [item for item in store.read() if item["status"] in statuses]
+
+
 def _current_item(agent: Any) -> Optional[Dict[str, Any]]:
     """The single in_progress task, or None."""
-    store = getattr(agent, "_todo_store", None)
-    if store is None:
-        return None
-    for item in store.read():
-        if item["status"] == "in_progress":
-            return item
-    return None
+    items = _items_with_status(getattr(agent, "_todo_store", None), CURRENT_TASK_STATUSES)
+    return items[0] if items else None
 
 
 def _next_item_id(store: Any) -> str:
@@ -232,13 +248,8 @@ def _next_item_id(store: Any) -> str:
 
 def _closing_item(agent: Any) -> Optional[Dict[str, Any]]:
     """The single closing task, or None."""
-    store = getattr(agent, "_todo_store", None)
-    if store is None:
-        return None
-    for item in store.read():
-        if item["status"] == "closing":
-            return item
-    return None
+    items = _items_with_status(getattr(agent, "_todo_store", None), CLOSING_TASK_STATUSES)
+    return items[0] if items else None
 
 
 # =============================================================================
@@ -298,6 +309,42 @@ def is_completion(
     if task_status is None:
         return True
     return str(task_status).strip() in COMPLETION_TASK_STATUSES
+
+
+# Task rows that will never advance again without new input. A task in any
+# other status (pending / in_progress / closing / paused / escalated) is
+# still live and keeps its plan open.
+TERMINAL_TASK_STATUSES = frozenset({"completed", "cancelled"})
+
+
+def plan_is_complete(store: Any, plan_ref: str) -> bool:
+    """True iff every task carrying ``plan_ref`` has reached a terminal state.
+
+    The plan is the unit of approved work; the lifecycle itself is
+    task-by-task. This is the *mechanical* definition of "the plan is
+    complete" — a set predicate over the store rows that carry the plan
+    ref. It is deliberately not a judge verdict and not a second goal: the
+    judge decides one task's own row (``is_completion``), and plan
+    completion is derived afterwards from what the store actually holds.
+
+    A row with no plan ref belongs to no plan; a plan ref that matches no
+    row is not complete. Both return False rather than raising, so callers
+    can treat this as a pure predicate.
+    """
+    ref = str(plan_ref or "").strip()
+    if not ref:
+        return False
+    rows = [
+        item
+        for item in store.read()
+        if str(item.get("plan") or "").strip() == ref
+    ]
+    if not rows:
+        return False
+    return all(
+        str(item.get("status") or "").strip() in TERMINAL_TASK_STATUSES
+        for item in rows
+    )
 
 
 def on_todo_write(agent: Any, args: Dict[str, Any]) -> None:
@@ -397,7 +444,11 @@ def on_todo_write(agent: Any, args: Dict[str, Any]) -> None:
                     # wait bypass, completion line) read this marker on
                     # the goal state itself — goal text is never parsed
                     # for lifecycle identification.
-                    mgr.set(goal_text, lifecycle=True)
+                    mgr.set(
+                        goal_text,
+                        lifecycle=True,
+                        bound_task_id=str(target.get("id") or ""),
+                    )
                     # Per-task execution authorization (writing_plan
                     # integration): a task begun with a plan ref holds
                     # execution until the user's verdict. Stamped only on
@@ -495,7 +546,7 @@ def audit_turn_end(
 # track a rename and silently stopped matching every plan tool at once, which
 # fired the out-of-plan nudge on genuine plan work. A toolset is the stable
 # contract.
-_ADVANCE_TOOLSETS = frozenset({"todo", "write_plan"})
+_ADVANCE_TOOLSETS = frozenset({"todo", "write_plan", "file", "terminal"})
 
 
 def _advances_open_plan(tool_names: Optional[list]) -> bool:
@@ -506,6 +557,25 @@ def _advances_open_plan(tool_names: Optional[list]) -> bool:
         registry.get_toolset_for_tool(name) in _ADVANCE_TOOLSETS
         for name in tool_names or []
     )
+
+
+def _bound_task_id_for_session(session_id: str) -> Optional[str]:
+    """The todo row the session's lifecycle goal is bound to, or None.
+
+    The judge's verdict is about one row; the goal state records which.
+    Best-effort: a missing goals module or state is None, and the
+    two-key close then falls back to its unbound behaviour.
+    """
+    if not session_id:
+        return None
+    try:
+        from hermes_cli.goals import load_goal
+
+        state = load_goal(session_id)
+        return str(getattr(state, "bound_task_id", None) or "").strip() or None
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.debug("task_manager: bound task lookup failed: %s", exc)
+        return None
 
 
 def observe_verdict(agent: Any, decision: Dict[str, Any]) -> Optional[str]:
@@ -523,6 +593,9 @@ def observe_verdict(agent: Any, decision: Dict[str, Any]) -> Optional[str]:
     if store is None:
         return None
     before = _open_item_ids(store)
+    decision.setdefault(
+        "bound_task_id", _bound_task_id_for_session(getattr(agent, "session_id", "") or "")
+    )
     nudge = _apply_verdict(store, decision)
     review_nudge = _maybe_probe(
         getattr(agent, "session_id", "") or "", store, before, decision
@@ -550,6 +623,7 @@ def observe_verdict_for_session(session_id: str, decision: Dict[str, Any]) -> Op
         if store is None:
             return None
         before = _open_item_ids(store)
+        decision.setdefault("bound_task_id", _bound_task_id_for_session(session_id))
         nudge = _apply_verdict(store, decision)
         review_nudge = _maybe_probe(session_id, store, before, decision)
         save_todo(session_id, store)
@@ -576,28 +650,44 @@ def _apply_verdict(store: Any, decision: Dict[str, Any]) -> Optional[str]:
       with no rework task (a park, not a rejection).
 
     Returns a continuation nudge when one is needed, else None.
+
+    Side effect: ``decision["lifecycle_finalized_id"]`` is set to the id of
+    the task this verdict actually finalized, else ``None``. A ``done``
+    verdict held by the finalization hold, or one that judged a task still
+    open after a plan-level continue, finalizes nothing — the gateway reads
+    this to emit ``✅ Task completed`` only when the store record truly
+    reached ``completed``, never off the raw verdict.
     """
     # A blocked-awaiting-input done verdict is a parked stop, not a
     # completion: the task stays in_progress and the user's next message
     # re-arms the loop. Never finalize, never nudge, never review.
+    decision["lifecycle_finalized_id"] = None
     if decision.get("blocked"):
         return None
     verdict = str(decision.get("verdict") or "").strip()
 
     def _plan_next_nudge(item: Dict[str, Any]) -> Optional[str]:
         """R3 plan-level completion: after a plan-carrying item finalizes,
-        return a continuation nudge naming the next pending sibling of the
+        return a continuation nudge naming the next live sibling of the
         same plan. The plan is the unit of approved work — finalizing one
-        item must not strand the rest of a multi-item plan. None when the
-        plan is complete or the item has no plan ref."""
+        item must not strand the rest of a multi-item plan.
+
+        The aggregate predicate is authoritative: ``plan_is_complete``
+        decides whether the plan still has work, so a sibling sitting in
+        ANY non-terminal status keeps the plan open and is named — not
+        just the ``pending``/``paused`` rows a bare sibling scan would
+        catch. None when the plan is complete or the item has no plan ref.
+        """
         plan_ref = str(item.get("plan") or "").strip()
         if not plan_ref:
+            return None
+        if plan_is_complete(store, plan_ref):
             return None
         siblings = [
             i
             for i in store.read()
             if str(i.get("plan") or "").strip() == plan_ref
-            and i["status"] in ("pending", "paused")
+            and str(i.get("status") or "").strip() not in TERMINAL_TASK_STATUSES
             and i["id"] != item["id"]
         ]
         if not siblings:
@@ -621,7 +711,20 @@ def _apply_verdict(store: Any, decision: Dict[str, Any]) -> Optional[str]:
             # task the model had begun before the judge cleared the
             # closing one).
             store.finalize(closing["id"])
+            decision["lifecycle_finalized_id"] = closing["id"]
             return _plan_next_nudge(closing)
+        # Judge says not done. Before reading that as THIS task's review
+        # failure, confirm the verdict actually judged this task. The
+        # judge is bound to one row — the goal text names it and
+        # ``bound_task_id`` (stamped at arming) carries that binding onto
+        # the decision. A verdict about a DIFFERENT row — a plan-level
+        # continue raised while a sibling is open — must never reopen a
+        # task that was not its subject and must never append a rework
+        # row for it. The closing task keeps its close in flight; the
+        # verdict that judges it is the one that reopens or finalizes it.
+        bound = str(decision.get("bound_task_id") or "").strip()
+        if bound and bound != str(closing["id"]).strip():
+            return None
         # Judge says not done: the close was premature — back to work.
         # A continue verdict is a review rejection: the task returns to
         # in_progress and a rework task is appended (source=review,
@@ -677,6 +780,7 @@ def _apply_verdict(store: Any, decision: Dict[str, Any]) -> Optional[str]:
         # close transition first.
         store.transition("close", current["id"])
         store.finalize(current["id"])
+        decision["lifecycle_finalized_id"] = current["id"]
         plan_nudge = _plan_next_nudge(current)
         if plan_nudge:
             return plan_nudge
@@ -718,9 +822,7 @@ PROBE_MAX_IMPORT_CHECKS = 4
 def _open_item_ids(store: Any) -> set:
     """Ids of items that were open (in_progress/closing) before a verdict."""
     return {
-        item["id"]
-        for item in store.read()
-        if item["status"] in ("in_progress", "closing")
+        item["id"] for item in _items_with_status(store, OPEN_TASK_STATUSES)
     }
 
 
@@ -754,7 +856,42 @@ def _maybe_probe(
             "task_manager: probe write failed for task %s: %s",
             item["id"], exc,
         )
+    _launch_review(session_id, item)
     return None
+
+
+def _launch_review(session_id: str, item: Dict[str, Any]) -> None:
+    """Launch the async post-implementation review of a finalized task.
+
+    The judge's ``done`` verdict finalizes the task (the two-key close) and
+    this is the moment it launches the async review instance: a separate,
+    read-only pass that does a full quality sweep of the implementation AND
+    checks its adherence against the plan and specifications, then appends
+    its findings to the end of the ``todo`` list. It runs asynchronously —
+    the verdict path never waits on it. A launch failure is logged, never
+    silent, and never blocks the finalization.
+    """
+    try:
+        from agent import task_review
+
+        plan_ref = str(item.get("plan") or "").strip()
+        spec_ref = _spec_ref_for_item(item, plan_ref)
+        evidence_parts = []
+        if plan_ref:
+            evidence_parts.append(f"Approved plan: {plan_ref}")
+        if spec_ref:
+            evidence_parts.append(f"Approved spec: {spec_ref}")
+        task_review.launch(
+            session_id=session_id,
+            item_id=str(item.get("id") or ""),
+            task=str(item.get("content") or ""),
+            evidence="\n".join(evidence_parts),
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.error(
+            "task_manager: review launch failed for task %s: %s",
+            item.get("id"), exc,
+        )
 
 
 def _write_probe(session_id: str, item: Dict[str, Any]) -> None:
