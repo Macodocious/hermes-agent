@@ -2509,8 +2509,16 @@ def invoke_tool(agent, function_name: str, function_args: dict, effective_task_i
                 try:
                     from agent.task_manager import on_todo_write
                     on_todo_write(agent, next_args)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    # A lifecycle fault must be visible: a silent failure
+                    # leaves the loop unarmed (or armed against a stale
+                    # row) with nothing in the logs to explain why.
+                    logger.error(
+                        "lifecycle hook on_todo_write failed (action=%s, item=%s): %s",
+                        next_args.get("action"),
+                        next_args.get("item_id"),
+                        exc,
+                    )
             return _finish_agent_tool(result, next_args)
     elif function_name == "switch_context":
         def _execute(next_args: dict) -> Any:

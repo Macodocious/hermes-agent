@@ -932,3 +932,118 @@ def test_advances_open_plan_ignores_unrelated_tools() -> None:
 def test_advances_open_plan_accepts_todo_transitions() -> None:
     """The lifecycle lever itself always counts as advancing the plan."""
     assert task_manager._advances_open_plan(["todo"]) is True
+
+
+# ── verdict split: a sibling's verdict never reopens a closing task ───
+
+
+def test_verdict_bound_to_sibling_does_not_reopen_closing_task(monkeypatch) -> None:
+    """A verdict about a DIFFERENT row must not reopen the closing task.
+
+    The judge is bound to one row. A plan-level continue raised while a
+    sibling is open is not this task's review failure: the closing task
+    keeps its close in flight and no rework row is appended for it.
+    """
+    store = TodoStore()
+    store.write(
+        [
+            {"id": "1", "content": "Build the thing", "status": "pending"},
+            {"id": "2", "content": "Ship the thing", "status": "pending"},
+        ]
+    )
+    agent = _make_agent(store)
+    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
+
+    store.transition("begin", "1")
+    store.transition("close", "1")
+    nudge = task_manager.observe_verdict(
+        agent, {"verdict": "continue", "reason": "sibling still open", "bound_task_id": "2"}
+    )
+
+    assert nudge is None
+    assert store.read()[0]["status"] == "closing"
+    assert not any(i.get("review_of") == "1" for i in store.read())
+
+
+def test_verdict_bound_to_closing_task_still_reopens(monkeypatch) -> None:
+    """The genuine per-task review failure still reopens and appends rework."""
+    store = TodoStore()
+    _seed(store, "1", "Build the thing")
+    agent = _make_agent(store)
+    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
+
+    store.transition("begin", "1")
+    store.transition("close", "1")
+    nudge = task_manager.observe_verdict(
+        agent, {"verdict": "continue", "reason": "spec not met", "bound_task_id": "1"}
+    )
+
+    assert nudge is not None
+    assert store.read()[0]["status"] == "in_progress"
+    assert any(i.get("review_of") == "1" for i in store.read())
+
+
+# ── plan-next nudge: the aggregate predicate is authoritative ─────────
+
+
+def _two_item_plan() -> TodoStore:
+    """A two-item plan with item 1 closing and item 2 still live."""
+    store = TodoStore()
+    store.write(
+        [
+            {"id": "1", "content": "A", "status": "pending", "plan": "P"},
+            {"id": "2", "content": "B", "status": "in_progress", "plan": "P"},
+        ]
+    )
+    # Item 1 goes to closing; item 2 stays live in_progress. That is the
+    # state the sibling scan previously misread as "plan done" (it looked
+    # only for pending/paused, so a live sibling was invisible).
+    store.write([{"id": "1", "status": "closing"}], merge=True)
+    return store
+
+
+def test_plan_next_nudge_names_a_sibling_in_any_live_status(monkeypatch) -> None:
+    """A sibling that is not terminal keeps the plan open and is named.
+
+    The earlier sibling scan matched only ``pending``/``paused``, so a
+    sibling sitting in ``in_progress`` or ``closing`` read as "plan done"
+    and stranded the plan. ``plan_is_complete`` is the authority now: any
+    non-terminal status counts as live work and the nudge names the row.
+    """
+    store = _two_item_plan()
+    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
+
+    nudge = task_manager.observe_verdict(
+        _make_agent(store),
+        {"verdict": "done", "reason": "done", "bound_task_id": "1"},
+    )
+
+    assert store.read()[0]["status"] == "completed"
+    assert nudge is not None
+    assert "task 2" in nudge or "item 2" in nudge or " 2" in nudge
+
+
+def test_plan_next_nudge_is_silent_when_every_row_is_terminal(monkeypatch) -> None:
+    """A plan whose rows are all terminal yields no continuation nudge.
+
+    Drives the same verdict path as the test above; the only difference is
+    that the sibling is already terminal, so ``plan_is_complete`` holds and
+    no further work is named.
+    """
+    store = TodoStore()
+    store.write(
+        [
+            {"id": "1", "content": "A", "status": "pending", "plan": "P"},
+            {"id": "2", "content": "B", "status": "cancelled", "plan": "P"},
+        ]
+    )
+    store.write([{"id": "1", "status": "closing"}], merge=True)
+    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
+
+    nudge = task_manager.observe_verdict(
+        _make_agent(store),
+        {"verdict": "done", "reason": "done", "bound_task_id": "1"},
+    )
+
+    assert store.read()[0]["status"] == "completed"
+    assert nudge is None

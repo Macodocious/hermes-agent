@@ -484,6 +484,12 @@ class GoalState:
     # state itself; goal text is never parsed for this. Backwards-
     # compatible: old state_meta rows load with False (native /goal).
     lifecycle: bool = False
+    # The todo row this lifecycle goal is bound to (stamped at arming by
+    # agent/task_manager.py on_todo_write). The judge's verdict is about
+    # this row alone; the two-key close reads it so a verdict about a
+    # different row can never reopen a task that was not its subject.
+    # Backwards-compatible: old state_meta rows load with None.
+    bound_task_id: Optional[str] = None
     # Awaiting-user-input park (Bug 2): set when the goal judge returns a
     # ``blocked`` done verdict — the agent has parked on a human decision
     # and its final message is a question. Handled like a wait barrier:
@@ -559,6 +565,7 @@ class GoalState:
             awaiting_authorization=bool(data.get("awaiting_authorization", False)),
             awaiting_authorization_armed_at=float(data.get("awaiting_authorization_armed_at", 0.0) or 0.0),
             lifecycle=bool(data.get("lifecycle", False)),
+            bound_task_id=(str(data["bound_task_id"]) if data.get("bound_task_id") else None),
             awaiting_user_input=bool(data.get("awaiting_user_input", False)),
             paused_reason=data.get("paused_reason"),
             consecutive_parse_failures=int(data.get("consecutive_parse_failures", 0) or 0),
@@ -1404,7 +1411,7 @@ class GoalManager:
 
     # --- mutation -----------------------------------------------------
 
-    def set(self, goal: str, *, max_turns: Optional[int] = None, contract: Optional[GoalContract] = None, lifecycle: bool = False) -> GoalState:
+    def set(self, goal: str, *, max_turns: Optional[int] = None, contract: Optional[GoalContract] = None, lifecycle: bool = False, bound_task_id: Optional[str] = None) -> GoalState:
         goal = (goal or "").strip()
         if not goal:
             raise ValueError("goal text is empty")
@@ -1417,6 +1424,7 @@ class GoalManager:
             last_turn_at=0.0,
             contract=contract if contract is not None else GoalContract(),
             lifecycle=bool(lifecycle),
+            bound_task_id=(str(bound_task_id).strip() or None) if bound_task_id else None,
         )
         self._state = state
         save_goal(self.session_id, state)

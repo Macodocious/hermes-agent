@@ -1359,8 +1359,16 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
                     try:
                         from agent.task_manager import on_todo_write
                         on_todo_write(agent, next_args)
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        # A lifecycle fault must be visible: a silent failure
+                        # leaves the loop unarmed (or armed against a stale
+                        # row) with nothing in the logs to explain why.
+                        logger.error(
+                            "lifecycle hook on_todo_write failed (action=%s, item=%s): %s",
+                            next_args.get("action"),
+                            next_args.get("item_id"),
+                            exc,
+                        )
                 return result
             function_result, function_args = _run_agent_tool_execution_middleware(
                 agent,
