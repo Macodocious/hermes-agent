@@ -11983,11 +11983,20 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                             _lifecycle_nudge = str(
                                 _agent_result.get("task_lifecycle_nudge") or ""
                             )
+                        # Plan-approval relay: when this turn approved a plan,
+                        # the finalizer stamped the user-role text the gateway
+                        # must deliver (and the turn must ship nothing).
+                        _plan_approval_nudge = ""
+                        if isinstance(_agent_result, dict):
+                            _plan_approval_nudge = str(
+                                _agent_result.get("plan_approval_nudge") or ""
+                            )
                         _suppress_final_response = await self._post_turn_goal_continuation(
                             session_entry=session_entry,
                             source=source,
                             final_response=_final_text,
                             task_lifecycle_nudge=_lifecycle_nudge,
+                            plan_approval_nudge=_plan_approval_nudge,
                             user_message=(
                                 ""
                                 if self._is_goal_continuation_event(event)
@@ -11997,14 +12006,21 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                             turn_started_at=self._running_agents_ts.get(_quick_key, 0.0),
                         )
                         if _suppress_final_response:
-                            # The judge said DONE on a synthetic goal-
-                            # continuation turn: the wrap-up prose on this
-                            # turn is redundant — the conversation prose
-                            # already shipped on the real user turn — so
-                            # blank the final response and let the deferred
-                            # "✅ Task completed" line be the only
-                            # user-visible completion message. Real user
-                            # turns are never suppressed.
+                            # Two suppressions share this flag. (a) The judge
+                            # said DONE on a synthetic goal-continuation turn:
+                            # the wrap-up prose on this turn is redundant — the
+                            # conversation prose already shipped on the real
+                            # user turn — so blank the final response and let
+                            # the deferred "✅ Task completed" line be the only
+                            # user-visible completion message. Real user turns
+                            # are never suppressed by (a). (b) The user approved
+                            # a plan at the authorization prompt on this turn
+                            # (Mac's "zero output"): the approval is relayed as
+                            # the next user-role turn, so this turn's prose would
+                            # only narrate what that turn now instructs. (b) is
+                            # the one deliberate suppression of a real-turn
+                            # response, and it is scoped to the approval turn by
+                            # the finalizer's stamp.
                             _agent_result = None
             except Exception as _goal_exc:
                 logger.debug("goal continuation hook failed: %s", _goal_exc)
@@ -14727,6 +14743,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         source: Any,
         final_response: str,
         task_lifecycle_nudge: str = "",
+        plan_approval_nudge: str = "",
         user_message: str = "",
         user_initiated: bool = True,
         turn_started_at: float = 0.0,
@@ -14744,6 +14761,18 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         ``task_lifecycle_nudge`` (P1/P2): a pull-back nudge produced by the
         turn-end audit. It is enqueued ahead of any goal continuation so
         the agent is pulled back to the task lifecycle first.
+
+        ``plan_approval_nudge``: the plan-approval relay. When the user
+        approved a plan at the authorization prompt on this turn, core
+        carries the approval to the model as a real user-role turn — the
+        approval is the permission the Tool Permission rule requires, and
+        the click that granted it is the user's own act. Because the relay
+        is the only thing that should reach the model, the approval turn
+        itself ships nothing: returning the suppress flag here (before any
+        goal machinery) blanks this turn's prose. Unlike the lifecycle-done
+        suppression, this one applies to a REAL user turn and is therefore
+        scoped by the finalizer's stamp — it can only be set when the
+        approval actually landed this turn.
 
         ``user_message`` is the raw user message that triggered this turn
         (empty for a self-fed continuation). For task-lifecycle goals only,
@@ -14776,6 +14805,41 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         except Exception as exc:
             logger.debug("goal continuation: goals module unavailable: %s", exc)
             return False
+
+        # Plan-approval relay (Mac's "zero output"). Delivered BEFORE any
+        # goal machinery: the approval turn carries the user's permission to
+        # the model as a real user-role turn, and the approval turn itself
+        # ships nothing. Returning here keeps this independent of the goal
+        # loop — an approval with no standing goal must still relay.
+        if plan_approval_nudge and source is not None:
+            try:
+                adapter = self._adapter_for_source(source)
+                _approval_key = self._session_key_for_source(source)
+                if adapter and _approval_key:
+                    self._enqueue_fifo(
+                        _approval_key,
+                        MessageEvent(
+                            text=plan_approval_nudge,
+                            message_type=MessageType.TEXT,
+                            source=source,
+                            message_id=None,
+                            channel_prompt=None,
+                        ),
+                        adapter,
+                    )
+                    logger.info(
+                        "Plan approval relayed as a user-role turn for session %s",
+                        _approval_key,
+                    )
+                else:
+                    logger.info(
+                        "Plan approval relay skipped — no adapter/session for %s",
+                        getattr(source, "chat_id", ""),
+                    )
+            except Exception as exc:
+                # Fail-soft: an approval that landed must never fail the turn.
+                logger.debug("plan-approval relay: enqueue failed: %s", exc)
+            return True
 
         sid = getattr(session_entry, "session_id", None) or ""
         if not sid:
