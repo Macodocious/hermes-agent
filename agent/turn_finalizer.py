@@ -22,10 +22,80 @@ keep the exact logger name (``"agent.conversation_loop"``).
 
 from __future__ import annotations
 
+import json
 import os
 
 from agent.codex_responses_adapter import _summarize_user_message_for_log
 from agent.message_content import flatten_message_text
+
+
+# Plan-approval user-role delivery. When the user approves a plan at the
+# authorization prompt, that click IS the permission the Tool Permission rule
+# requires — but the approval lands on a tool result, and a tool result carries
+# no authority over a rule. So the gateway relays the approval to the model as
+# a real user-role turn carrying the granted permission; the tool result stays
+# a plain result. This is the text of that turn.
+PLAN_APPROVAL_NUDGE = (
+    "[Plan approved] The user authorized the plan at the authorization "
+    "prompt, and that click is your permission to proceed. Begin the first "
+    "seeded task now with todo (action=\"begin\") and implement it; do not "
+    "ask for a go-ahead. Specs are internal: read the task's specification "
+    "document and build from it."
+)
+
+# The result markers identifying an approved plan. The plugin's
+# ``_authorization_outcome`` reads the consumed inner ``plan_presented`` result
+# and surfaces its existing ``executed`` field on the tool result the model
+# actually sees (``status: writing_plan_created`` / ``writing_spec_created``),
+# alongside ``plan_id``. A denial carries ``error`` and a re-presentation
+# ``plan_already_presented``; neither sets ``executed``.
+_PLAN_EXECUTED_MARKER = '"executed": true'
+_PLAN_ID_MARKER = '"plan_id"'
+
+
+def _detect_plan_approval_nudge(messages: list) -> str:
+    """Return the plan-approval turn text when THIS turn approved a plan.
+
+    Detection only: the approval happened at the prompt (approval-gate wrote
+    the executed mark) and the gateway owns the enqueue. The plugin surfaces
+    the approval as the already-named ``executed`` field on its tool result,
+    so core keys on that plus ``plan_id`` — a fact the plugin already computed,
+    not new prose.
+
+    A truncated tool result is tolerated: the markers are matched as
+    substrings before any JSON parse, so an oversized plan result still
+    registers.
+
+    Scanned turn-scoped. ``messages`` spans the entire conversation, so the
+    walk stops at the user message that opened this turn. Without that stop a
+    plan approved on an earlier turn would relay — and suppress output — on
+    every later turn.
+    """
+    for msg in reversed(messages):
+        if not isinstance(msg, dict):
+            continue
+        if msg.get("role") == "user":
+            break  # turn boundary — an earlier turn's approval is not this turn's
+        if msg.get("role") != "tool":
+            continue
+        content = flatten_message_text(msg.get("content"))
+        if not content:
+            continue
+        if _PLAN_EXECUTED_MARKER not in content or _PLAN_ID_MARKER not in content:
+            continue
+        # Confirm structurally when the payload is intact — the substring pair
+        # alone could in principle co-occur in prose. A parse failure means the
+        # result was truncated, in which case the substring pair stands.
+        try:
+            payload = json.loads(content)
+        except Exception:
+            return PLAN_APPROVAL_NUDGE
+        if isinstance(payload, dict):
+            if payload.get("executed") is True and payload.get("plan_id"):
+                return PLAN_APPROVAL_NUDGE
+            continue
+        return PLAN_APPROVAL_NUDGE
+    return ""
 
 
 def _is_pure_tool_call_tail(msg: dict) -> bool:
@@ -577,6 +647,16 @@ def finalize_turn(
             agent._task_lifecycle_nudge = _lifecycle_nudge
     except Exception as _audit_exc:
         logger.debug("task-lifecycle audit failed: %s", _audit_exc)
+    # Plan-approval user-role delivery: when this turn approved a plan, the
+    # gateway relays that approval to the model as a user-role turn (see
+    # _detect_plan_approval_nudge). Stamped only on an actual approval, so the
+    # gateway can scope its zero-output suppression to exactly this turn.
+    try:
+        _plan_approval_nudge = _detect_plan_approval_nudge(messages)
+        if _plan_approval_nudge:
+            result["plan_approval_nudge"] = _plan_approval_nudge
+    except Exception as _plan_exc:
+        logger.debug("plan-approval detection failed: %s", _plan_exc)
     if agent._tool_guardrail_halt_decision is not None:
         result["guardrail"] = agent._tool_guardrail_halt_decision.to_metadata()
     # Surface any post-loop cleanup failures so the caller can distinguish a
