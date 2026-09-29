@@ -89,8 +89,10 @@ def test_on_todo_write_arms_goal_on_begin(monkeypatch) -> None:
     assert "persist" in calls
 
 
-def test_on_todo_write_holds_authorization_on_plan_begin(monkeypatch) -> None:
-    """A plan-carrying task stamps the execution-authorization hold on begin."""
+def test_on_todo_write_arms_goal_on_plan_begin(monkeypatch) -> None:
+    """A plan-carrying task arms the goal on begin and stamps no
+    execution-authorization hold — the plan authorization prompt in
+    approval-gate already holds execution authorization for the plan."""
     store = TodoStore()
     store.write(
         [
@@ -112,9 +114,6 @@ def test_on_todo_write_holds_authorization_on_plan_begin(monkeypatch) -> None:
         def set(self, text: str, **kwargs) -> None:
             calls.append(f"set:{text}")
 
-        def hold_authorization(self) -> None:
-            calls.append("hold_authorization")
-
         def clear(self) -> None:
             calls.append("clear")
 
@@ -125,37 +124,7 @@ def test_on_todo_write_holds_authorization_on_plan_begin(monkeypatch) -> None:
     task_manager.on_todo_write(agent, {"action": "begin", "item_id": "1"})
 
     assert f"set:{_armed_goal_text(store, '1')}" in calls
-    assert "hold_authorization" in calls
-
-
-def test_on_todo_write_does_not_hold_without_plan(monkeypatch) -> None:
-    """A plain begin (no plan ref) must not stamp the authorization hold."""
-    store = TodoStore()
-    _seed(store, "1", "Build the thing")
-    agent = _make_agent(store)
-    calls: list[str] = []
-
-    class FakeMgr:
-        def __init__(self, **kwargs):
-            calls.append("init")
-
-        def set(self, text: str, **kwargs) -> None:
-            calls.append(f"set:{text}")
-
-        def hold_authorization(self) -> None:
-            calls.append("hold_authorization")
-
-        def clear(self) -> None:
-            calls.append("clear")
-
-    monkeypatch.setattr(task_manager, "_load_goal_manager", lambda a: FakeMgr())
-    monkeypatch.setattr(task_manager, "_persist", lambda a: calls.append("persist"))
-
-    store.transition("begin", "1")
-    task_manager.on_todo_write(agent, {"action": "begin", "item_id": "1"})
-
-    assert f"set:{_armed_goal_text(store, '1')}" in calls
-    assert "hold_authorization" not in calls
+    assert not any(c.startswith("hold_") for c in calls)
 
 
 def test_on_todo_write_clears_goal_when_no_task_open(monkeypatch) -> None:

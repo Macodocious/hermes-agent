@@ -377,98 +377,49 @@ class TestGoalManager:
         mgr.hold_finalization()
         mgr.release_finalization()
 
-    def test_authorization_hold_round_trip(self, hermes_home):
-        """The execution-authorization hold must arm and persist across
-        managers — the gateway rebinds a fresh GoalManager per message,
-        so the park depends on the hold surviving persistence."""
+    def test_no_authorization_hold_surface_on_manager(self, hermes_home):
+        """The per-task execution-authorization hold is gone: the manager
+        exposes neither accessor, and a goal carries no hold state. The
+        plan authorization prompt in approval-gate is the sole execution
+        authorization gate."""
         from hermes_cli.goals import GoalManager
 
         mgr = GoalManager(session_id="authz-sid-1")
         mgr.set("Complete the task per its specification: Build the thing")
 
-        mgr.hold_authorization()
-        assert mgr.state.awaiting_authorization is True
+        assert not hasattr(mgr, "hold_authorization")
+        assert not hasattr(mgr, "release_authorization")
+        assert not hasattr(mgr.state, "awaiting_authorization")
+        assert not hasattr(mgr.state, "awaiting_authorization_armed_at")
 
-        # A fresh manager on the same session sees the armed hold.
-        mgr2 = GoalManager(session_id="authz-sid-1")
-        assert mgr2.state.awaiting_authorization is True
-
-        mgr2.release_authorization()
-        assert mgr2.state.awaiting_authorization is False
-
-        # And the release persists too.
-        mgr3 = GoalManager(session_id="authz-sid-1")
-        assert mgr3.state.awaiting_authorization is False
-
-    def test_authorization_hold_idempotent(self, hermes_home):
-        """Holding an already-held goal must not error or double-arm."""
-        from hermes_cli.goals import GoalManager
+    def test_stale_authorization_keys_load_without_error(self, hermes_home):
+        """A goal row persisted before the removal carries the hold's keys.
+        The loader reads only the keys it names, so the stale keys are
+        ignored: the row loads and is judged normally."""
+        from hermes_cli import goals
+        from hermes_cli.goals import GoalManager, GoalState
 
         mgr = GoalManager(session_id="authz-sid-2")
         mgr.set("Complete the task per its specification: Build the thing")
-        mgr.hold_authorization()
-        mgr.hold_authorization()
-        assert mgr.state.awaiting_authorization is True
-        mgr.release_authorization()
-        mgr.release_authorization()
-        assert mgr.state.awaiting_authorization is False
+        current = mgr.state
+        assert current is not None
 
-    def test_authorization_hold_no_goal_noop(self, hermes_home):
-        """Holding with no goal set must be a safe no-op."""
-        from hermes_cli.goals import GoalManager
+        raw = json.loads(current.to_json())
+        raw["awaiting_authorization"] = True
+        raw["awaiting_authorization_armed_at"] = 12345.0
 
-        mgr = GoalManager(session_id="authz-sid-3")
-        mgr.hold_authorization()
-        mgr.release_authorization()
+        state = GoalState.from_json(json.dumps(raw))
+        assert not hasattr(state, "awaiting_authorization")
+        assert not hasattr(state, "awaiting_authorization_armed_at")
+        goals.save_goal("authz-sid-2", state)
 
-    def test_authorization_park_blocks_continuation(self, hermes_home):
-        """A held goal parks on a synthetic continuation turn — no judge,
-        no continuation, no turn burned."""
-        from hermes_cli import goals
-        from hermes_cli.goals import GoalManager
+        mgr2 = GoalManager(session_id="authz-sid-2")
+        with patch.object(goals, "judge_goal", return_value=("continue", "more", False, None, False, False, False)) as j:
+            decision = mgr2.evaluate_after_turn("did a turn", user_initiated=True)
 
-        mgr = GoalManager(session_id="authz-eval-sid-1")
-        mgr.set("Complete the task per its specification: Build the thing")
-        mgr.hold_authorization()
-
-        with patch.object(goals, "judge_goal", return_value=("done", "x", False, None, False, False, False)) as j:
-            decision = mgr.evaluate_after_turn("", user_initiated=False)
-
-        j.assert_not_called()
-        assert decision["verdict"] == "waiting"
-        assert decision["should_continue"] is False
-        assert decision["continuation_prompt"] is None
-        assert mgr.state.awaiting_authorization is True
-        assert mgr.state.turns_used == 0
-
-    def test_authorization_arming_turn_parks_even_when_user_initiated(self, hermes_home):
-        """The turn that stamps the hold (begin + plan just ran mid-turn)
-        parks even if user_initiated, because the user has not yet seen
-        the presented plan. The next real turn releases."""
-        from hermes_cli import goals
-        from hermes_cli.goals import GoalManager
-
-        mgr = GoalManager(session_id="authz-eval-sid-2")
-        mgr.set("Complete the task per its specification: Build the thing")
-        mgr.hold_authorization()
-        # Armed after the last real turn: this evaluate is the arming turn.
-        mgr.state.last_turn_at = mgr.state.awaiting_authorization_armed_at - 10.0
-
-        with patch.object(goals, "judge_goal", return_value=("done", "x", False, None, False, False, False)) as j:
-            d1 = mgr.evaluate_after_turn("I began it.", user_initiated=True)
-
-        j.assert_not_called()
-        assert d1["verdict"] == "waiting"
-        assert mgr.state.awaiting_authorization is True
-
-        # Next real turn: the user's verdict arrives → released, judge runs.
-        with patch.object(goals, "judge_goal", return_value=("continue", "approved", False, None, False, False, False)):
-            d2 = mgr.evaluate_after_turn("Proceed.", user_initiated=True)
-
-        assert d2["verdict"] == "continue"
-        assert d2["should_continue"] is True
-        assert mgr.state.awaiting_authorization is False
-        assert mgr.state.turns_used == 1
+        j.assert_called_once()
+        assert decision["verdict"] == "continue"
+        assert decision["should_continue"] is True
 
     def test_clear(self, hermes_home):
         from hermes_cli.goals import GoalManager

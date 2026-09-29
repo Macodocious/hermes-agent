@@ -70,9 +70,7 @@ LIFECYCLE_REVIEW_REJECT_NUDGE = (
 # the same plan remain (R3 plan-level completion). The plan, not the todo
 # list, is the unit of approved work — finishing one item must not strand
 # the rest of a multi-item plan ("items 4-7 still pending" failure). The
-# agent is pulled back to begin the next sibling; the per-task
-# authorization hold re-arms on that begin, so the user's verdict gates
-# each item of the plan.
+# agent is pulled back to begin the next sibling.
 LIFECYCLE_PLAN_NEXT_NUDGE = (
     "[Plan item {item_id} is done — more plan items remain]\n"
     "Plan: {plan}\n"
@@ -449,21 +447,6 @@ def on_todo_write(agent: Any, args: Dict[str, Any]) -> None:
                         lifecycle=True,
                         bound_task_id=str(target.get("id") or ""),
                     )
-                    # Per-task execution authorization (writing_plan
-                    # integration): a task begun with a plan ref holds
-                    # execution until the user's verdict. Stamped only on
-                    # an explicit begin of a plan-carrying item — routine
-                    # re-arms (the guard above) and close-in-flight never
-                    # re-hold, so an already-authorized task keeps running
-                    # and a closing task keeps its two-key flow.
-                    if (
-                        str(args.get("action") or "") == "begin"
-                        and str(target.get("plan") or "").strip()
-                    ):
-                        try:
-                            mgr.hold_authorization()
-                        except Exception as exc:  # pragma: no cover - defensive
-                            logger.debug("task_manager: authorization hold failed: %s", exc)
         except Exception as exc:  # pragma: no cover - defensive
             logger.debug("task_manager: goal arm failed: %s", exc)
     else:
