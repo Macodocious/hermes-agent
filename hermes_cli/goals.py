@@ -56,8 +56,19 @@ DEFAULT_JUDGE_TIMEOUT = 30.0
 # we've live-tested; override via auxiliary.goal_judge.max_tokens for
 # specifically constrained setups.
 DEFAULT_JUDGE_MAX_TOKENS = 4096
-# Cap how much of the last response + recent messages we send to the judge.
-_JUDGE_RESPONSE_SNIPPET_CHARS = 4000
+# Cap how much of the last response we send to the judge. The judge decides the
+# `clarify` attribute on how the response ENDS — a response that closes by
+# asking the user a question parks the loop instead of drawing a continuation —
+# but `_truncate` keeps the head and drops the tail, so any window smaller than
+# a real response deletes the very ending that attribute keys on. Live evidence:
+# a 7041-char review closed with a question, the judge saw only its first 4000
+# chars, returned `continue`, and the loop injected a continuation two seconds
+# before the review was delivered. 65536 (2**16) clears every realistic
+# response while keeping the prompt finite: the judge call is bounded by
+# DEFAULT_JUDGE_TIMEOUT and fails open to `continue`, so an unbounded prompt
+# would trade a silent truncation for a timeout — the same spurious
+# continuation by another route.
+_JUDGE_RESPONSE_SNIPPET_CHARS = 65536
 # After this many consecutive judge *parse* failures (empty output / non-JSON),
 # the loop auto-pauses and points the user at the goal_judge config. API /
 # transport errors do NOT count toward this — those are transient. This guards
