@@ -345,6 +345,48 @@ def plan_is_complete(store: Any, plan_ref: str) -> bool:
     )
 
 
+def task_position(store: Any, item_id: Any) -> tuple:
+    """Return the 1-based ``(position, total)`` of a task in the ordered list.
+
+    Position is the row's index in list order (list order is priority), not
+    the row id: a replace-mode write renumbers ids to 1..N, so the id is not
+    a position a human reader can follow. Returns ``(0, total)`` when the row
+    is absent, so a caller renders a line without a position rather than
+    failing — the completion line must still ship on a degraded store.
+    """
+    rows = store.read()
+    target = str(item_id or "").strip()
+    for position, item in enumerate(rows, start=1):
+        if str(item.get("id") or "") == target:
+            return position, len(rows)
+    return 0, len(rows)
+
+
+def task_plan_ref(store: Any, item_id: Any) -> str:
+    """Return the plan reference carried by a task row, or ''. Absent row
+    and absent reference are the same answer: this task belongs to no plan."""
+    target = str(item_id or "").strip()
+    if not target:
+        return ""
+    for item in store.read():
+        if str(item.get("id") or "") == target:
+            return str(item.get("plan") or "").strip()
+    return ""
+
+
+def plan_task_total(store: Any, plan_ref: str) -> int:
+    """Count the task rows carrying ``plan_ref`` — the plan's size, used by
+    the user-visible plan-completion line to report how many tasks finished."""
+    ref = str(plan_ref or "").strip()
+    if not ref:
+        return 0
+    return sum(
+        1
+        for item in store.read()
+        if str(item.get("plan") or "").strip() == ref
+    )
+
+
 def on_todo_write(agent: Any, args: Dict[str, Any]) -> None:
     """Post-write lifecycle hook for the todo dispatch point.
 

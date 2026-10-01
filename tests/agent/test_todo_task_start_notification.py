@@ -81,6 +81,18 @@ class TestCliSpinnerTaskStart:
         )
         assert cli._spinner_text == "📋 Working on ship the feature"
 
+    def test_working_on_label_names_ordered_position(self):
+        cli, _ = self._make_cli()
+        cli._on_tool_progress(
+            "tool.started", "todo", "Updating 1 task",
+            {"todos": [{"id": "3", "content": "ship the feature", "status": "in_progress"}]},
+            started_task={
+                "id": "3", "content": "ship the feature", "status": "in_progress",
+                "position": 3, "total": 5,
+            },
+        )
+        assert cli._spinner_text == "📋 Working on task 3 of 5: ship the feature"
+
     def test_generic_label_when_no_started_task(self):
         cli, _ = self._make_cli()
         cli._on_tool_progress(

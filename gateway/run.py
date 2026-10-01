@@ -15018,12 +15018,50 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         # set by ``_apply_verdict``) — a done verdict the finalization hold
         # held back, or one that found no closing/in_progress row to
         # finalize, must never tell the user the task completed.
+        _plan_msg = ""
         if _is_lifecycle_goal(mgr.state) and decision.get("lifecycle_finalized_id"):
+            _finalized_id = decision.get("lifecycle_finalized_id")
             _task_name = (
-                _lifecycle_task_name(sid, mgr.state, decision.get("lifecycle_finalized_id"))
+                _lifecycle_task_name(sid, mgr.state, _finalized_id)
                 or "(no description)"
             )
-            msg = f"✅ Task completed: {_task_name}"
+            # Ordered-list identification: the completion line names the task
+            # by its position in the list the user is reading, not by the row
+            # id (a replace-mode write renumbers ids, so the id is not a
+            # position a human can follow).
+            _position, _total = 0, 0
+            _plan_ref = ""
+            _store = None
+            try:
+                from hermes_cli.tasks import load_todo
+                from agent.task_manager import task_plan_ref, task_position
+
+                _store = load_todo(sid)
+                if _store is not None:
+                    _position, _total = task_position(_store, _finalized_id)
+                    _plan_ref = task_plan_ref(_store, _finalized_id)
+            except Exception as _pos_exc:
+                logger.debug("task-lifecycle position lookup failed: %s", _pos_exc)
+            if _position:
+                msg = f"✅ Task {_position} of {_total} complete: {_task_name}"
+            else:
+                msg = f"✅ Task completed: {_task_name}"
+            # Plan-completion signal: when the finalized task's plan has no
+            # remaining non-terminal row, tell the user the whole plan is
+            # done. Without it a plan that finishes looks identical to one
+            # still running, and the next turn's work is unattributable.
+            # Best-effort — a signal failure must never suppress the
+            # completion line above.
+            try:
+                from agent.task_manager import plan_is_complete, plan_task_total
+
+                if _plan_ref and _store is not None and plan_is_complete(_store, _plan_ref):
+                    _plan_msg = (
+                        f"🏁 Plan complete: all {plan_task_total(_store, _plan_ref)} "
+                        f"tasks done ({_plan_ref})"
+                    )
+            except Exception as _plan_exc:
+                logger.debug("task-lifecycle plan signal failed: %s", _plan_exc)
             # Suppress the final response ONLY on a synthetic goal-
             # continuation turn whose judge already said done on the
             # PRECEDING real user turn (_prev_verdict == "done"): the
@@ -15045,6 +15083,11 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         # without reversing the user-visible ordering.
         if msg and source is not None:
             await self._defer_goal_status_notice_after_delivery(source, msg)
+        # The plan-completion line registers second so it ships after the
+        # task-completed line (chained callbacks fire in registration order),
+        # which is the order the spec requires.
+        if _plan_msg and source is not None:
+            await self._defer_goal_status_notice_after_delivery(source, _plan_msg)
 
         if not decision.get("should_continue"):
             # The loop is stopping (done/paused/cleared). Lifecycle
@@ -20363,7 +20406,12 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     _started_content = str(_started_task["content"]).strip()
                     if len(_started_content) > _cap:
                         _started_content = _started_content[:_cap - 3] + "..."
-                    msg = f"{emoji} Working on {_started_content}"
+                    from agent.display import task_position_label
+                    _started_position = task_position_label(_started_task)
+                    if _started_position:
+                        msg = f"{emoji} Working on task {_started_position}: {_started_content}"
+                    else:
+                        msg = f"{emoji} Working on {_started_content}"
                 else:
                     # Task-stop notification: a todo call that moved an item
                     # out of in_progress/closing into cancelled/escalated
@@ -20379,10 +20427,17 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                         _stopped_content = str(_stopped_task["content"]).strip()
                         if len(_stopped_content) > _cap:
                             _stopped_content = _stopped_content[:_cap - 3] + "..."
-                        if str(_stopped_task.get("status", "")).strip() == "cancelled":
-                            msg = f"{emoji} Task cancelled: {_stopped_content}"
+                        from agent.display import task_position_label
+                        _stopped_position = task_position_label(_stopped_task)
+                        _stopped_outcome = (
+                            "cancelled"
+                            if str(_stopped_task.get("status", "")).strip() == "cancelled"
+                            else "escalated"
+                        )
+                        if _stopped_position:
+                            msg = f"{emoji} Task {_stopped_position} {_stopped_outcome}: {_stopped_content}"
                         else:
-                            msg = f"{emoji} Task escalated: {_stopped_content}"
+                            msg = f"{emoji} Task {_stopped_outcome}: {_stopped_content}"
                     else:
                         # todo's preview is a complete capitalized phrase
                         # ("Reading the task list") — render it standalone

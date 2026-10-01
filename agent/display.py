@@ -170,6 +170,27 @@ def get_tool_emoji(tool_name: str, default: str = "⚡") -> str:
     return default
 
 
+def task_position_label(task: Any) -> str:
+    """Return the ``"<position> of <total>"`` label for a lifecycle notice.
+
+    The task-lifecycle notices name a task by its place in the list the user
+    is reading, not by the row id (a replace-mode write renumbers ids, so the
+    id is not a position a human can follow). One builder keeps the gateway
+    bubbles and the CLI spinner on the same vocabulary; each caller supplies
+    its own punctuation because the forms differ ("Working on task 3 of 5:
+    ..." names the task before its content, "Task 4 of 6 cancelled: ..."
+    names the outcome first). Returns ``""`` when the position is unknown, so
+    a caller falls back to its plain line rather than rendering "of 0".
+    """
+    if not isinstance(task, dict):
+        return ""
+    position = task.get("position") or 0
+    total = task.get("total") or 0
+    if not position or not total:
+        return ""
+    return f"{position} of {total}"
+
+
 # =========================================================================
 # Tool preview (one-line summary of a tool call's primary argument)
 # =========================================================================
