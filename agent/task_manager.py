@@ -581,19 +581,29 @@ def observe_verdict(agent: Any, decision: Dict[str, Any]) -> Optional[str]:
     )
     nudge = _apply_verdict(store, decision)
     review_nudge = _maybe_probe(
-        getattr(agent, "session_id", "") or "", store, before, decision
+        getattr(agent, "session_id", "") or "",
+        store,
+        before,
+        decision,
+        getattr(agent, "_turn_file_mutation_paths", None),
     )
     _persist(agent)
     return review_nudge or nudge
 
 
-def observe_verdict_for_session(session_id: str, decision: Dict[str, Any]) -> Optional[str]:
+def observe_verdict_for_session(
+    session_id: str, decision: Dict[str, Any], changed_paths: Any = None
+) -> Optional[str]:
     """Observe a goal-loop verdict from the persisted store (gateway path).
 
     The gateway mints a fresh agent per message, so the post-turn hook has
     no live agent — load the store from SessionDB, apply the verdict, and
     persist. Best-effort: a missing row or DB failure is a no-op. When
     ``tasks.lifecycle.enabled`` is false the observation is a no-op.
+
+    ``changed_paths`` is the turn's file-mutation record, carried here from
+    the turn finalizer because the gateway has no live agent to read it
+    from. The review gate treats an absent or empty record as non-mutative.
     """
     if not _lifecycle_enabled():
         return None
@@ -608,7 +618,9 @@ def observe_verdict_for_session(session_id: str, decision: Dict[str, Any]) -> Op
         before = _open_item_ids(store)
         decision.setdefault("bound_task_id", _bound_task_id_for_session(session_id))
         nudge = _apply_verdict(store, decision)
-        review_nudge = _maybe_probe(session_id, store, before, decision)
+        review_nudge = _maybe_probe(
+            session_id, store, before, decision, changed_paths
+        )
         save_todo(session_id, store)
         return review_nudge or nudge
     except Exception as exc:  # pragma: no cover - defensive
@@ -810,7 +822,11 @@ def _open_item_ids(store: Any) -> set:
 
 
 def _maybe_probe(
-    session_id: str, store: Any, before: set, decision: Dict[str, Any]
+    session_id: str,
+    store: Any,
+    before: set,
+    decision: Dict[str, Any],
+    changed_paths: Any = None,
 ) -> Optional[str]:
     """Write the post-close verification probe when a task just finalized.
 
@@ -821,6 +837,12 @@ def _maybe_probe(
     finalizes. The write is unconditional (mandatory for ALL tasks): a
     failed write is logged, never silent. Returns None — the probe is
     deferred verification, so there is no continuation nudge.
+
+    ``changed_paths`` is the turn's record of file mutation. The async
+    review is gated on it: a task that changed no file is not reviewed, so
+    reviews are not spent on read-only work. The determination fails toward
+    not reviewing — an absent or empty record is treated as non-mutative,
+    and the skip is logged so it is never mistaken for a silent failure.
     """
     if not session_id:
         return None
@@ -839,6 +861,13 @@ def _maybe_probe(
             "task_manager: probe write failed for task %s: %s",
             item["id"], exc,
         )
+    if not changed_paths:
+        logger.info(
+            "task_manager: review skipped for task %s — the turn recorded no "
+            "file mutation",
+            item["id"],
+        )
+        return None
     _launch_review(session_id, item)
     return None
 

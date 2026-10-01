@@ -11991,6 +11991,13 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                             _plan_approval_nudge = str(
                                 _agent_result.get("plan_approval_nudge") or ""
                             )
+                        # The turn's file-mutation record, carried to the
+                        # finalization path where it gates the async review.
+                        _file_mutation_paths = None
+                        if isinstance(_agent_result, dict):
+                            _file_mutation_paths = (
+                                _agent_result.get("file_mutation_paths") or None
+                            )
                         _suppress_final_response = await self._post_turn_goal_continuation(
                             session_entry=session_entry,
                             source=source,
@@ -12004,6 +12011,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                             ),
                             user_initiated=not self._is_goal_continuation_event(event),
                             turn_started_at=self._running_agents_ts.get(_quick_key, 0.0),
+                            file_mutation_paths=_file_mutation_paths,
                         )
                         if _suppress_final_response:
                             # Two suppressions share this flag. (a) The judge
@@ -14747,6 +14755,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         user_message: str = "",
         user_initiated: bool = True,
         turn_started_at: float = 0.0,
+        file_mutation_paths: Any = None,
     ) -> bool:
         """Run the goal judge after a gateway turn and, if still active,
         enqueue a continuation prompt for the same session.
@@ -15007,7 +15016,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         try:
             from agent.task_manager import observe_verdict_for_session
 
-            _verdict_nudge = observe_verdict_for_session(sid, decision)
+            _verdict_nudge = observe_verdict_for_session(
+                sid, decision, changed_paths=file_mutation_paths
+            )
         except Exception as _verdict_exc:
             logger.debug("task-lifecycle verdict observation failed: %s", _verdict_exc)
             _verdict_nudge = None

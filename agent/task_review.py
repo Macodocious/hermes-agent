@@ -1,8 +1,8 @@
 """Async post-implementation review — the reviewer that replaces the review phase.
 
 When the judge decides a task is done, it launches this instance: a separate,
-asynchronous, read-only pass that does a full quality sweep of the
-implementation AND checks its adherence against the plan and specifications.
+asynchronous, read-only pass that checks the implementation's adherence to the
+approved plan and specifications.
 Its findings are appended to the end of the ``todo`` list so the agent picks
 them up on the next turn.
 
@@ -74,20 +74,16 @@ REVIEW_SOURCE = "review"
 
 _PROMPT_TEMPLATE = (
     "You are the post-implementation reviewer. A task was just finalized as "
-    "done. Review the implementation in this repository and report what is "
-    "still wrong with it.\n\n"
-    "Do two passes:\n"
-    "1. A full and thorough quality pass: any remaining bugs, issues, or "
-    "quality-of-life improvements.\n"
-    "2. An adherence pass: does the implementation match the approved plan "
-    "and its specifications?\n\n"
+    "done. Review the implementation in this repository and report where it "
+    "does not match the approved plan and specifications.\n\n"
     "Inspect the implementation directly. Test results are never evidence, "
     "and never delegate to test runs.\n\n"
     "Report every finding on its own line, in exactly this format:\n"
-    "{sentinel} <severity> {separator} <what is wrong and where>\n\n"
+    "{sentinel} <severity> {separator} <how the implementation departs from "
+    "the approved plan and specifications>\n\n"
     "Give each finding the severity you judge it to carry. Put nothing else "
-    "on a finding line. If you find nothing wrong, output no finding lines "
-    "at all.\n\n"
+    "on a finding line. If the implementation matches, output no finding "
+    "lines at all.\n\n"
     "Task: {task}\n"
     "{evidence}"
 )

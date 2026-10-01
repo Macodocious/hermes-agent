@@ -89,6 +89,7 @@ def test_done_verdict_launches_the_review(monkeypatch, tmp_path) -> None:
         session_id="test-session",
         _task_lifecycle_action_issued=False,
         _task_lifecycle_nudge="",
+        _turn_file_mutation_paths={"/repo/agent/x.py"},
     )
     store.transition("begin", "1")
     store.transition("close", "1")
@@ -105,6 +106,68 @@ def test_done_verdict_launches_the_review(monkeypatch, tmp_path) -> None:
     assert launched[0]["task"] == "Build the thing"
     assert nudge is None or isinstance(nudge, str)
     assert before  # sanity: the task was open before the verdict
+
+
+def test_read_only_task_skips_the_review(monkeypatch, tmp_path) -> None:
+    """A task whose turn changed no file finalizes with no review launched."""
+    monkeypatch.setattr(task_manager, "_lifecycle_config", lambda: {"enabled": True})
+    monkeypatch.setattr("hermes_constants.get_hermes_home", lambda: tmp_path)
+    launched: list[dict] = []
+    monkeypatch.setattr(
+        task_review, "launch", lambda **kwargs: launched.append(kwargs) or True
+    )
+
+    from tools.todo_tool import TodoStore
+
+    store = TodoStore()
+    store.write([{"id": "1", "content": "Research the thing", "status": "pending"}])
+    agent = SimpleNamespace(
+        _todo_store=store,
+        session_id="test-session",
+        _task_lifecycle_action_issued=False,
+        _task_lifecycle_nudge="",
+        _turn_file_mutation_paths=set(),  # read-only turn
+    )
+    store.transition("begin", "1")
+    store.transition("close", "1")
+
+    task_manager.observe_verdict(
+        agent, {"verdict": "done", "reason": "complete", "bound_task_id": "1"}
+    )
+
+    assert store.read()[0]["status"] == "completed"  # finalization still stands
+    assert launched == []  # but no review is spent on read-only work
+
+
+def test_missing_mutation_record_fails_toward_not_reviewing(monkeypatch, tmp_path) -> None:
+    """An absent mutation record is non-mutative — the check never raises."""
+    monkeypatch.setattr(task_manager, "_lifecycle_config", lambda: {"enabled": True})
+    monkeypatch.setattr("hermes_constants.get_hermes_home", lambda: tmp_path)
+    launched: list[dict] = []
+    monkeypatch.setattr(
+        task_review, "launch", lambda **kwargs: launched.append(kwargs) or True
+    )
+
+    from tools.todo_tool import TodoStore
+
+    store = TodoStore()
+    store.write([{"id": "1", "content": "Build the thing", "status": "pending"}])
+    # A path that finalizes without a turn context: no mutation attribute.
+    agent = SimpleNamespace(
+        _todo_store=store,
+        session_id="test-session",
+        _task_lifecycle_action_issued=False,
+        _task_lifecycle_nudge="",
+    )
+    store.transition("begin", "1")
+    store.transition("close", "1")
+
+    task_manager.observe_verdict(
+        agent, {"verdict": "done", "reason": "complete", "bound_task_id": "1"}
+    )
+
+    assert store.read()[0]["status"] == "completed"
+    assert launched == []
 
 
 def test_review_launch_never_blocks_finalization(monkeypatch, tmp_path) -> None:
@@ -126,6 +189,7 @@ def test_review_launch_never_blocks_finalization(monkeypatch, tmp_path) -> None:
         session_id="test-session",
         _task_lifecycle_action_issued=False,
         _task_lifecycle_nudge="",
+        _turn_file_mutation_paths={"/repo/agent/x.py"},
     )
     store.transition("begin", "1")
     store.transition("close", "1")
