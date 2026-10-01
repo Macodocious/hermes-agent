@@ -10882,7 +10882,12 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                 and isinstance(_started_task, dict)
                 and str(_started_task.get("content", "")).strip()
             ):
-                label = f"Working on {str(_started_task['content']).strip()}"
+                from agent.display import task_position_label
+                _started_position = task_position_label(_started_task)
+                if _started_position:
+                    label = f"Working on task {_started_position}: {str(_started_task['content']).strip()}"
+                else:
+                    label = f"Working on {str(_started_task['content']).strip()}"
             else:
                 # Task-stop notification: a todo call that moved an item
                 # out of in_progress/closing into cancelled/escalated shows
@@ -10895,10 +10900,17 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                     and isinstance(_stopped_task, dict)
                     and str(_stopped_task.get("content", "")).strip()
                 ):
-                    if str(_stopped_task.get("status", "")).strip() == "cancelled":
-                        label = f"Task cancelled: {str(_stopped_task['content']).strip()}"
+                    from agent.display import task_position_label
+                    _stopped_position = task_position_label(_stopped_task)
+                    _stopped_outcome = (
+                        "cancelled"
+                        if str(_stopped_task.get("status", "")).strip() == "cancelled"
+                        else "escalated"
+                    )
+                    if _stopped_position:
+                        label = f"Task {_stopped_position} {_stopped_outcome}: {str(_stopped_task['content']).strip()}"
                     else:
-                        label = f"Task escalated: {str(_stopped_task['content']).strip()}"
+                        label = f"Task {_stopped_outcome}: {str(_stopped_task['content']).strip()}"
                 else:
                     label = preview or function_name
             if _pl > 0 and len(label) > _pl:

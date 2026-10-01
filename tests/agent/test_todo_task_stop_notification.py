@@ -121,6 +121,18 @@ class TestCliSpinnerTaskStop:
         )
         assert cli._spinner_text == "📋 Task escalated: ship the feature"
 
+    def test_cancelled_label_names_ordered_position(self):
+        cli, _ = self._make_cli()
+        cli._on_tool_progress(
+            "tool.started", "todo", "Updating 1 task",
+            {"todos": [{"id": "4", "content": "ship the feature", "status": "cancelled"}]},
+            stopped_task={
+                "id": "4", "content": "ship the feature", "status": "cancelled",
+                "position": 4, "total": 6,
+            },
+        )
+        assert cli._spinner_text == "📋 Task 4 of 6 cancelled: ship the feature"
+
     def test_generic_label_when_no_stopped_task(self):
         cli, _ = self._make_cli()
         cli._on_tool_progress(
@@ -138,6 +150,6 @@ class TestCliSpinnerTaskStop:
             {"todos": [{"id": "1", "content": long_content, "status": "cancelled"}]},
             stopped_task={"id": "1", "content": long_content, "status": "cancelled"},
         )
-        assert cli._spinner_text.startswith("📋 Task cancelled: ")
+        assert cli._spinner_text.startswith("📋 Task ")
         assert cli._spinner_text.endswith("...")
         assert len(cli._spinner_text) < 60

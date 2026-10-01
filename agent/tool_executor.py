@@ -53,6 +53,31 @@ from tools.budget_config import BudgetConfig, DEFAULT_BUDGET, budget_for_context
 logger = logging.getLogger(__name__)
 
 
+def _enrich_todo_transition(store, detected):
+    """Add the ordered-list position, list total, and plan reference to a
+    detected task transition (start or stop).
+
+    The store detectors know the task's id and content but not where it sits
+    in the list, and the notification must name the task the way a human
+    reads it — "task 3 of 6" — rather than by an id that a replace-mode write
+    renumbers. Position is read before the tool executes (pre-call state), so
+    it is the position the in_progress/cancelled row held when the user saw
+    it. Best-effort: any failure leaves the detected dict usable.
+    """
+    if detected is None:
+        return None
+    try:
+        from agent.task_manager import task_plan_ref, task_position
+
+        position, total = task_position(store, detected.get("id"))
+        detected["position"] = position
+        detected["total"] = total
+        detected["plan"] = task_plan_ref(store, detected.get("id"))
+    except Exception:
+        logging.debug("Todo transition enrichment failed", exc_info=True)
+    return detected
+
+
 def _detect_todo_task_start(agent, tool_name: str, args: dict) -> Optional[Dict[str, str]]:
     """Detect a task-start transition in a pending todo write (task notification).
 
@@ -72,7 +97,9 @@ def _detect_todo_task_start(agent, tool_name: str, args: dict) -> Optional[Dict[
         from tools.todo_tool import TodoStore
         if not isinstance(store, TodoStore):
             return None
-        return store.detect_task_start(args.get("todos"), bool(args.get("merge", False)))
+        return _enrich_todo_transition(
+            store, store.detect_task_start(args.get("todos"), bool(args.get("merge", False)))
+        )
     except Exception:
         logging.debug("Todo task-start detection failed", exc_info=True)
         return None
@@ -97,7 +124,9 @@ def _detect_todo_task_stop(agent, tool_name: str, args: dict) -> Optional[Dict[s
         from tools.todo_tool import TodoStore
         if not isinstance(store, TodoStore):
             return None
-        return store.detect_task_stop(args.get("todos"), bool(args.get("merge", False)))
+        return _enrich_todo_transition(
+            store, store.detect_task_stop(args.get("todos"), bool(args.get("merge", False)))
+        )
     except Exception:
         logging.debug("Todo task-stop detection failed", exc_info=True)
         return None
