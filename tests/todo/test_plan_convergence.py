@@ -106,8 +106,10 @@ def test_open_siblings_never_append_rework_rows(monkeypatch) -> None:
 def test_plan_still_converges_through_a_rejected_close(monkeypatch) -> None:
     """A rejection leg: one close fails review once, the plan still finishes.
 
-    Item 2's close is rejected, appending exactly one rework row. The plan
-    continues past the failure and every original item still terminates.
+    Item 2's close is rejected: the task returns to in_progress with no
+    rework row and no nudge (the async review and its auto-rework append
+    were removed). The plan continues past the failure and every original
+    item still terminates.
     """
     monkeypatch.setattr(task_manager, "_persist", lambda a: None)
     store = TodoStore()
@@ -116,18 +118,17 @@ def test_plan_still_converges_through_a_rejected_close(monkeypatch) -> None:
 
     _close_and_finalize(store, agent, "1")
 
-    # Item 2 is closed, then rejected by the judge, then reworked and closed.
+    # Item 2 is closed, then rejected by the judge, then closed again.
     store.transition("begin", "2")
     store.transition("close", "2")
     rework_nudge = task_manager.observe_verdict(
         agent, {"verdict": "continue", "reason": "spec not met", "bound_task_id": "2"}
     )
-    assert rework_nudge is not None
-    rework_rows = [i for i in store.read() if i.get("review_of") == "2"]
-    assert len(rework_rows) == 1
+    assert rework_nudge is None
+    assert not [i for i in store.read() if i.get("review_of") == "2"]
     assert store.read()[1]["status"] == "in_progress"
 
-    # Work the rework, then close and finalize the original item.
+    # Close and finalize the original item.
     assert store.transition("close", "2")["ok"] is True
     task_manager.observe_verdict(
         agent, {"verdict": "done", "reason": "rework complete", "bound_task_id": "2"}
