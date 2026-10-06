@@ -17,8 +17,7 @@ contract:
   tui_gateway/server.py) so the judge's ``done`` verdict is the second key
   of the two-key close: a ``closing`` task finalizes to ``completed``; a
   task still ``in_progress`` when the judge says done gets one explicit
-  nudge to close it, then finalizes. Every finalized task also writes its
-  post-close verification probe (the mandatory second set of eyes).
+  nudge to close it, then finalizes.
 
 Everything here is deterministic code — no LLM calls, no model discretion.
 The agent is the only worker; the GoalEngine only checks and pulls back.
@@ -27,12 +26,7 @@ The agent is the only worker; the GoalEngine only checks and pulls back.
 from __future__ import annotations
 
 import logging
-import subprocess
-from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Dict, Optional
-
-import yaml
 
 logger = logging.getLogger(__name__)
 
@@ -55,17 +49,6 @@ LIFECYCLE_AUDIT_NUDGE = (
     "task you were working on, or explain why no task applies."
 )
 
-# The nudge delivered when the judge rejects a close (verdict continue/wait
-# on a closing task). The task returns to in_progress and a rework task is
-# appended so the failure is never lost: the agent is told exactly why the
-# review failed and where the rework task sits.
-LIFECYCLE_REVIEW_REJECT_NUDGE = (
-    "[Task {item_id} was reviewed incomplete]\n"
-    "Reason: {reason}\n\n"
-    "The task is back in_progress and a rework task (id {rework_id}) was "
-    "added to the list. Address the review failure before closing again."
-)
-
 # The nudge delivered when a plan-carrying task finalizes while siblings of
 # the same plan remain (R3 plan-level completion). The plan, not the todo
 # list, is the unit of approved work — finishing one item must not strand
@@ -80,18 +63,11 @@ LIFECYCLE_PLAN_NEXT_NUDGE = (
     "wanted, mark them cancelled instead."
 )
 
-# Source tag for rework tasks spawned by a rejected review (P6 lineage).
-# Code-owned (task_manager), never model-authorable — _validate preserves
-# the tag and the review_of parent id so the lineage depth cap and the
-# fix-task lookup work.
-REVIEW_SOURCE = "review"
-
 # Task-status groupings for the one status-query owner (_items_with_status).
-# Single-sourced here so the lifecycle's notion of "current", "closing" and
-# "open" cannot drift between the helpers that ask the same question.
+# Single-sourced here so the lifecycle's notion of "current" and "closing"
+# cannot drift between the helpers that ask the same question.
 CURRENT_TASK_STATUSES: tuple = ("in_progress",)
 CLOSING_TASK_STATUSES: tuple = ("closing",)
-OPEN_TASK_STATUSES: tuple = ("in_progress", "closing")
 
 # The goal text stored for an armed task. The todo item is the task; the
 # goal text is its description, so the judge evaluates the same content
@@ -119,43 +95,6 @@ def _goal_text_for_item(item: Dict[str, Any]) -> str:
         "alone — the status of any other row in the task store does not bear "
         "on it.)"
     )
-
-
-# Cap on plan content bound into the goal text so an oversized plan file
-# cannot balloon the judge/continuation prompt.
-_GOAL_PLAN_TEXT_CAP: int = 4000
-
-
-def _read_plan_text(plan_ref: str) -> str:
-    """Read a plan file's text for goal binding (best-effort, capped)."""
-    try:
-        path = Path(plan_ref)
-        if not path.is_absolute():
-            path = Path.cwd() / path
-        if not path.is_file():
-            return ""
-        text = path.read_text(encoding="utf-8")[:_GOAL_PLAN_TEXT_CAP]
-        return text
-    except Exception as exc:  # pragma: no cover - defensive
-        logger.debug("task_manager: plan file read failed: %s", exc)
-        return ""
-
-
-def _spec_ref_for_item(item: Dict[str, Any], plan_ref: str) -> str:
-    """Resolve the spec file the post-close probe verifies the task against.
-
-    The spec artifact is named ``<plan>-<spec>.md``, so it cannot be
-    derived from the plan ref alone — the item's explicit ``spec`` ref is
-    the authoritative source when set. The sibling ``spec.md`` of the
-    approved plan is the fallback, which is the layout ``writing_plan``
-    produces.
-    """
-    spec_ref = str(item.get("spec") or "").strip()
-    if spec_ref:
-        return spec_ref
-    if plan_ref:
-        return str(Path(plan_ref).parent / "spec.md")
-    return ""
 
 
 def _lifecycle_config() -> Dict[str, Any]:
@@ -215,11 +154,11 @@ def _persist(agent: Any) -> None:
 def _items_with_status(store: Any, statuses: tuple) -> list:
     """The rows whose status is in ``statuses``, in list order (priority).
 
-    The one owner of the status query. Four sites used to recompute
+    The one owner of the status query. Sites used to recompute
     "which row is current" and "which row is closing" in their own words
-    — ``_current_item``, ``_closing_item``, ``_open_item_ids`` and two
-    inline ``next`` scans — with four chances to disagree about the same
-    fact. They now all read through here.
+    — ``_current_item``, ``_closing_item`` and two inline ``next`` scans —
+    with several chances to disagree about the same fact. They now all
+    read through here.
     """
     if store is None:
         return []
@@ -230,18 +169,6 @@ def _current_item(agent: Any) -> Optional[Dict[str, Any]]:
     """The single in_progress task, or None."""
     items = _items_with_status(getattr(agent, "_todo_store", None), CURRENT_TASK_STATUSES)
     return items[0] if items else None
-
-
-def _next_item_id(store: Any) -> str:
-    """Next sequential id for a code-owned append (max existing + 1).
-
-    Mirrors TodoStore._next_item_id so the rework task lands with a
-    stable id the nudge can name. Falls back to "1" on an empty list.
-    """
-    numeric_ids = [
-        int(item["id"]) for item in store.read() if str(item["id"]).isdigit()
-    ]
-    return str(max(numeric_ids, default=0) + 1)
 
 
 def _closing_item(agent: Any) -> Optional[Dict[str, Any]]:
@@ -617,24 +544,16 @@ def observe_verdict(agent: Any, decision: Dict[str, Any]) -> Optional[str]:
     store = getattr(agent, "_todo_store", None)
     if store is None:
         return None
-    before = _open_item_ids(store)
     decision.setdefault(
         "bound_task_id", _bound_task_id_for_session(getattr(agent, "session_id", "") or "")
     )
     nudge = _apply_verdict(store, decision)
-    review_nudge = _maybe_probe(
-        getattr(agent, "session_id", "") or "",
-        store,
-        before,
-        decision,
-        getattr(agent, "_turn_file_mutation_paths", None),
-    )
     _persist(agent)
-    return review_nudge or nudge
+    return nudge
 
 
 def observe_verdict_for_session(
-    session_id: str, decision: Dict[str, Any], changed_paths: Any = None
+    session_id: str, decision: Dict[str, Any]
 ) -> Optional[str]:
     """Observe a goal-loop verdict from the persisted store (gateway path).
 
@@ -642,10 +561,6 @@ def observe_verdict_for_session(
     no live agent — load the store from SessionDB, apply the verdict, and
     persist. Best-effort: a missing row or DB failure is a no-op. When
     ``tasks.lifecycle.enabled`` is false the observation is a no-op.
-
-    ``changed_paths`` is the turn's file-mutation record, carried here from
-    the turn finalizer because the gateway has no live agent to read it
-    from. The review gate treats an absent or empty record as non-mutative.
     """
     if not _lifecycle_enabled():
         return None
@@ -657,14 +572,10 @@ def observe_verdict_for_session(
         store = load_todo(session_id)
         if store is None:
             return None
-        before = _open_item_ids(store)
         decision.setdefault("bound_task_id", _bound_task_id_for_session(session_id))
         nudge = _apply_verdict(store, decision)
-        review_nudge = _maybe_probe(
-            session_id, store, before, decision, changed_paths
-        )
         save_todo(session_id, store)
-        return review_nudge or nudge
+        return nudge
     except Exception as exc:  # pragma: no cover - defensive
         logger.debug("task_manager: session verdict failed: %s", exc)
         return None
@@ -680,11 +591,10 @@ def _apply_verdict(store: Any, decision: Dict[str, Any]) -> Optional[str]:
       explicit nudge (the agent never closed it; the nudge tells it the
       task is recorded done).
     - task ``closing`` + verdict ``continue`` → back to
-      ``in_progress``, a rework task is appended (source=review,
-      review_of=<parent id>), and a nudge returns with the judge's
-      reason — the review failure is never silent.
+      ``in_progress`` (a review rejection; the review is now owned by the
+      code-review plugin, which reports out of band).
     - task ``closing`` + verdict ``wait`` → back to ``in_progress``
-      with no rework task (a park, not a rejection).
+      (a park, not a rejection).
 
     Returns a continuation nudge when one is needed, else None.
 
@@ -763,52 +673,12 @@ def _apply_verdict(store: Any, decision: Dict[str, Any]) -> Optional[str]:
         if bound and bound != str(closing["id"]).strip():
             return None
         # Judge says not done: the close was premature — back to work.
-        # A continue verdict is a review rejection: the task returns to
-        # in_progress and a rework task is appended (source=review,
-        # review_of=<parent id>) so the agent is pulled back to the
-        # failed task with the judge's reason attached. The nudge is
-        # enqueued ahead of the goal continuation (gateway/run.py), so
-        # the agent sees exactly why the review rejected the close. A
-        # wait verdict is a park, not a rejection — the loop resumes
-        # automatically when the async thing clears, so no rework task
-        # is spawned.
+        # A continue verdict is a review rejection and a wait verdict is a
+        # park; both return the task to in_progress. The rework task and
+        # its nudge were removed with the async review — the review is now
+        # owned by the code-review plugin, which reports out of band.
         store.transition("resume", closing["id"])
-        if verdict != "continue":
-            return None
-        reason = str(decision.get("reason") or "the review found the task incomplete").strip()
-        rework = {
-            # Merge-mode write drops id-less items, so the rework task
-            # carries the next sequential id (mirrors _next_item_id).
-            "id": _next_item_id(store),
-            "content": (
-                f"Rework: {closing.get('content', '(no description)')} — "
-                f"review failed: {reason}"
-            ),
-            "status": "pending",
-            "source": REVIEW_SOURCE,
-            "review_of": closing["id"],
-        }
-        try:
-            store.write([rework], merge=True)
-        except Exception as exc:  # pragma: no cover - defensive
-            logger.error(
-                "task_manager: rework task append failed for task %s: %s",
-                closing["id"], exc,
-            )
-            return LIFECYCLE_REVIEW_REJECT_NUDGE.format(
-                item_id=closing["id"],
-                reason=reason,
-                rework_id="(append failed)",
-            )
-        rework_id = next(
-            (i["id"] for i in store.read() if i.get("review_of") == closing["id"]),
-            "(unknown)",
-        )
-        return LIFECYCLE_REVIEW_REJECT_NUDGE.format(
-            item_id=closing["id"],
-            reason=reason,
-            rework_id=rework_id,
-        )
+        return None
     current = next((i for i in store.read() if i["status"] == "in_progress"), None)
     if current is not None and is_completion(decision, current["status"]):
         # Judge believes the work is done but the agent never closed the
@@ -826,259 +696,3 @@ def _apply_verdict(store: Any, decision: Dict[str, Any]) -> Optional[str]:
             item_id=current["id"],
         )
     return None
-
-
-# =============================================================================
-# Post-close verification probe (P6) — the mandatory second set of eyes
-# =============================================================================
-# The judge's ``done`` verdict is self-certification: the same model that
-# did the work decides it is done. The probe step makes the loop
-# self-correcting — every finalized task writes a probe entry into
-# ~/.hermes/probes/active/ (the probe-runner plugin's queue) that fires
-# at the next gateway restart and verifies the implementation:
-#
-#   - intent (mandatory)  → the auxiliary provider judges whether the
-#                           change works as intended, from the change
-#                           description and the mechanical evidence.
-#   - import (code tasks) → the changed modules import cleanly.
-#
-# The probe verifies the implementation, never the tests. Only failed
-# probes report to #probe-reports — the remediation signal. The write is
-# unconditional: every finalized task gets a probe (mandatory for ALL
-# tasks); a failed write is logged, never silent.
-
-# Activation for task-close probes: the change is in the tree, so the
-# next gateway restart loads it and the sweep fires the probe.
-PROBE_ACTIVATION = "gateway_restart"
-
-# Cap on import checks derived from the session's changed files — the
-# probe stays small; the intent check is the behavioral core.
-PROBE_MAX_IMPORT_CHECKS = 4
-
-
-def _open_item_ids(store: Any) -> set:
-    """Ids of items that were open (in_progress/closing) before a verdict."""
-    return {
-        item["id"] for item in _items_with_status(store, OPEN_TASK_STATUSES)
-    }
-
-
-def _maybe_probe(
-    session_id: str,
-    store: Any,
-    before: set,
-    decision: Dict[str, Any],
-    changed_paths: Any = None,
-) -> Optional[str]:
-    """Write the post-close verification probe when a task just finalized.
-
-    Called from the verdict observation paths after ``_apply_verdict``.
-    ``before`` is the set of open item ids captured before the verdict was
-    applied; a probe fires only when a task that was open is now
-    ``completed`` — the single choke point where a task actually
-    finalizes. The write is unconditional (mandatory for ALL tasks): a
-    failed write is logged, never silent. Returns None — the probe is
-    deferred verification, so there is no continuation nudge.
-
-    ``changed_paths`` is the turn's record of file mutation. The async
-    review is gated on it: a task that changed no file is not reviewed, so
-    reviews are not spent on read-only work. The determination fails toward
-    not reviewing — an absent or empty record is treated as non-mutative,
-    and the skip is logged so it is never mistaken for a silent failure.
-    """
-    if not session_id:
-        return None
-    finalized = [
-        item
-        for item in store.read()
-        if item["status"] == "completed" and item["id"] in before
-    ]
-    if not finalized:
-        return None
-    item = finalized[0]
-    try:
-        _write_probe(session_id, item)
-    except Exception as exc:  # pragma: no cover - defensive
-        logger.error(
-            "task_manager: probe write failed for task %s: %s",
-            item["id"], exc,
-        )
-    if not changed_paths:
-        logger.info(
-            "task_manager: review skipped for task %s — the turn recorded no "
-            "file mutation",
-            item["id"],
-        )
-        return None
-    _launch_review(session_id, item)
-    return None
-
-
-def _launch_review(session_id: str, item: Dict[str, Any]) -> None:
-    """Launch the async post-implementation review of a finalized task.
-
-    The judge's ``done`` verdict finalizes the task (the two-key close) and
-    this is the moment it launches the async review instance: a separate,
-    read-only pass that does a full quality sweep of the implementation AND
-    checks its adherence against the plan and specifications, then appends
-    its findings to the end of the ``todo`` list. It runs asynchronously —
-    the verdict path never waits on it. A launch failure is logged, never
-    silent, and never blocks the finalization.
-    """
-    try:
-        from agent import task_review
-
-        plan_ref = str(item.get("plan") or "").strip()
-        spec_ref = _spec_ref_for_item(item, plan_ref)
-        evidence_parts = []
-        if plan_ref:
-            evidence_parts.append(f"Approved plan: {plan_ref}")
-        if spec_ref:
-            evidence_parts.append(f"Approved spec: {spec_ref}")
-        task_review.launch(
-            session_id=session_id,
-            item_id=str(item.get("id") or ""),
-            task=str(item.get("content") or ""),
-            evidence="\n".join(evidence_parts),
-        )
-    except Exception as exc:  # pragma: no cover - defensive
-        logger.error(
-            "task_manager: review launch failed for task %s: %s",
-            item.get("id"), exc,
-        )
-
-
-def _write_probe(session_id: str, item: Dict[str, Any]) -> None:
-    """Write the probe entry for a finalized task into probes/active/.
-
-    The probe is the verification contract for the change: an ``intent``
-    check (mandatory — the auxiliary provider judges whether the change
-    works as intended) plus ``import`` checks for code tasks (derived
-    from the session's changed files, capped). The probe verifies the
-    implementation, never the tests. It fires at the next gateway
-    restart and reports only on failure.
-    """
-    from hermes_constants import get_hermes_home
-
-    active_dir = get_hermes_home() / "probes" / "active"
-    active_dir.mkdir(parents=True, exist_ok=True)
-    now = datetime.now(timezone.utc)
-    # R5: the probe verifies against the attached spec — "did it do what
-    # the user approved" instead of "did it do what it said". The spec ref
-    # is the item's explicit spec path when set (the spec artifact is
-    # named <plan>-<spec>.md, so it is not derivable from the plan ref
-    # alone); otherwise the sibling spec.md of the item's approved plan,
-    # which is the layout writing_plan produces.
-    plan_ref = str(item.get("plan") or "").strip()
-    spec_text = ""
-    spec_ref = _spec_ref_for_item(item, plan_ref)
-    if spec_ref:
-        spec_text = _read_plan_text(spec_ref)
-    probe = {
-        "target": f"task:{item['id']}",
-        "change": (
-            f"Task {item['id']} finalized as done: "
-            f"{str(item.get('content') or '(no description)')[:200]}"
-            + (f" Approved plan: {plan_ref}" if plan_ref else "")
-        ),
-        "activation": PROBE_ACTIVATION,
-        "created_at": now.isoformat(timespec="seconds").replace("+00:00", "Z"),
-        "checks": [
-            {
-                "type": "intent",
-                "prompt": (
-                    "Verify the completed task's implementation against the "
-                    "approved spec — did it do what the user approved, not "
-                    "just what the task's own description said. Inspect the "
-                    "implementation directly — test results are never "
-                    "evidence, and never delegate to test runs. Task: "
-                    f"{str(item.get('content') or '(no description)')[:500]}"
-                    + (
-                        "\nApproved spec:\n" + spec_text
-                        if spec_text else ""
-                    )
-                ),
-            }
-        ],
-        "status": "pending",
-    }
-    modules = _changed_modules(session_id)
-    for module in modules[:PROBE_MAX_IMPORT_CHECKS]:
-        probe["checks"].append({"type": "import", "module": module})
-    path = active_dir / f"{now.strftime('%Y%m%d_%H%M%S')}_task-{item['id']}.yaml"
-    with open(path, "w", encoding="utf-8") as handle:
-        yaml.safe_dump(probe, handle, sort_keys=False, default_flow_style=False)
-    logger.info(
-        "task_manager: post-close probe written for task %s (%s)",
-        item["id"], path.name,
-    )
-
-
-def _changed_modules(session_id: str) -> list:
-    """Derive importable module names from the session's changed files.
-
-    The session's git diff (when a repo is in scope) names the changed
-    files; Python files under the repo map to dotted module names. The
-    probe's import checks verify those modules import cleanly — the
-    mechanical half of the verification contract. Best-effort: no repo
-    or no diff yields an empty list (intent alone remains).
-    """
-    diff = _git_diff(session_id)
-    if not diff:
-        return []
-    modules = []
-    for line in diff.splitlines():
-        if not line.startswith("diff --git"):
-            continue
-        parts = line.split(" b/", 1)
-        if len(parts) != 2:
-            continue
-        path = parts[1].strip()
-        if not path.endswith(".py") or path.startswith("tests/") or "/tests/" in path:
-            continue
-        module = path[:-3].replace("/", ".")
-        if module not in modules:
-            modules.append(module)
-    return modules
-
-
-def _git_diff(session_id: str) -> Optional[str]:
-    """The uncommitted diff of the session's repo, when one is in scope."""
-    try:
-        from hermes_cli.tasks import _get_session_db
-
-        db = _get_session_db()
-        if db is None:
-            return None
-        session = db.get_session(session_id)
-        if not session:
-            return None
-        repo_root = str(session.get("git_repo_root") or "").strip()
-        if not repo_root or not Path(repo_root).is_dir():
-            return None
-        result = subprocess.run(
-            ["git", "-C", repo_root, "diff", "--stat", "--", "."],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if result.returncode != 0:
-            return None
-        stat = result.stdout.strip()
-        if not stat:
-            return None
-        result = subprocess.run(
-            ["git", "-C", repo_root, "diff", "--", "."],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if result.returncode != 0:
-            return None
-        diff = result.stdout.strip()
-        if not diff:
-            return stat
-        return f"{stat}\n\n{diff}"[:200_000]
-    except Exception as exc:  # pragma: no cover - defensive
-        logger.debug("task_manager: git diff failed: %s", exc)
-        return None

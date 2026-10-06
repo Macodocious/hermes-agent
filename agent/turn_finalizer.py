@@ -657,16 +657,6 @@ def finalize_turn(
             result["plan_approval_nudge"] = _plan_approval_nudge
     except Exception as _plan_exc:
         logger.debug("plan-approval detection failed: %s", _plan_exc)
-    # The turn's record of landed file mutations rides the result dict to the
-    # gateway's post-turn hook, which mints no live agent of its own. The
-    # finalization path gates the async review on it: a task that changed no
-    # file is not reviewed. Absent or empty => non-mutative (fail toward not
-    # reviewing). Sorted for deterministic transport; `key=str` never raises.
-    _mutation_paths = sorted(
-        getattr(agent, "_turn_file_mutation_paths", None) or [], key=str
-    )
-    if _mutation_paths:
-        result["file_mutation_paths"] = _mutation_paths
     if agent._tool_guardrail_halt_decision is not None:
         result["guardrail"] = agent._tool_guardrail_halt_decision.to_metadata()
     # Surface any post-loop cleanup failures so the caller can distinguish a

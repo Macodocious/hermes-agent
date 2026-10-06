@@ -516,14 +516,12 @@ def test_verdict_done_with_only_closing_task_keeps_single_finalize(monkeypatch) 
 
 def test_verdict_continue_with_closing_and_in_progress_keeps_both_open(monkeypatch) -> None:
     """A continue verdict must not finalize anything: the premature close
-    returns to in_progress, the write-path invariant demotes the
-    concurrent in_progress item to pending, and a rework task is
-    appended with the review-failure reason.
+    returns to in_progress and the write-path invariant demotes the
+    concurrent in_progress item to pending. No rework task is appended —
+    the async review and its auto-rework append were removed.
 
     The overlap is now constructible only by internal mutation — the
-    begin pivot refuses it — mirroring the verdict-done test. The
-    rework append rides the write path, so the invariant collapses the
-    mutated overlap to a single current task.
+    begin pivot refuses it — mirroring the verdict-done test.
     """
     store = TodoStore()
     store.write(
@@ -544,13 +542,9 @@ def test_verdict_continue_with_closing_and_in_progress_keeps_both_open(monkeypat
         agent, {"verdict": "continue", "reason": "the fix was reverted"}
     )
 
-    assert nudge is not None
-    assert "the fix was reverted" in nudge
-    assert "rework task" in nudge
-    assert [i["status"] for i in store.read()] == ["in_progress", "pending", "pending"]
-    rework = next(i for i in store.read() if i.get("review_of") == "1")
-    assert rework["source"] == "review"
-    assert "the fix was reverted" in rework["content"]
+    assert nudge is None
+    assert store.read()[0]["status"] == "in_progress"
+    assert not any(i.get("review_of") == "1" for i in store.read())
 
 
 def test_verdict_continue_returns_premature_close_to_in_progress(monkeypatch) -> None:
@@ -565,12 +559,9 @@ def test_verdict_continue_returns_premature_close_to_in_progress(monkeypatch) ->
         agent, {"verdict": "continue", "reason": "spec not met"}
     )
 
-    assert nudge is not None
-    assert "spec not met" in nudge
+    assert nudge is None
     assert store.read()[0]["status"] == "in_progress"
-    rework = next(i for i in store.read() if i.get("review_of") == "1")
-    assert rework["status"] == "pending"
-    assert rework["source"] == "review"
+    assert not any(i.get("review_of") == "1" for i in store.read())
 
 
 def test_verdict_wait_on_closing_task_parks_without_rework(monkeypatch) -> None:
@@ -935,7 +926,11 @@ def test_verdict_bound_to_sibling_does_not_reopen_closing_task(monkeypatch) -> N
 
 
 def test_verdict_bound_to_closing_task_still_reopens(monkeypatch) -> None:
-    """The genuine per-task review failure still reopens and appends rework."""
+    """The genuine per-task review failure still reopens the task.
+
+    The rework append was removed with the async review, so the task
+    returns to in_progress with no rework row and no nudge.
+    """
     store = TodoStore()
     _seed(store, "1", "Build the thing")
     agent = _make_agent(store)
@@ -947,9 +942,9 @@ def test_verdict_bound_to_closing_task_still_reopens(monkeypatch) -> None:
         agent, {"verdict": "continue", "reason": "spec not met", "bound_task_id": "1"}
     )
 
-    assert nudge is not None
+    assert nudge is None
     assert store.read()[0]["status"] == "in_progress"
-    assert any(i.get("review_of") == "1" for i in store.read())
+    assert not any(i.get("review_of") == "1" for i in store.read())
 
 
 # ── plan-next nudge: the aggregate predicate is authoritative ─────────
