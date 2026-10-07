@@ -401,9 +401,17 @@ def on_todo_write(agent: Any, args: Dict[str, Any]) -> None:
                 # moved (the agent edited the blocked item): the park is
                 # the user's to release, and set() would rebuild fresh
                 # state with awaiting_user_input=False — releasing the
-                # barrier behind the user's back.
-                parked = state is not None and getattr(
-                    state, "awaiting_user_input", False
+                # barrier behind the user's back. The park only binds a
+                # LIVE goal: status must be "active". A cleared/paused/
+                # done goal that still carries awaiting_user_input=True
+                # (clear() historically left the barrier set) must never
+                # block the re-arm, or the task-lifecycle loop is dead and
+                # a `closing` task — which finalizes only on the judge's
+                # `done` verdict — is stranded forever.
+                parked = (
+                    state is not None
+                    and getattr(state, "status", None) == "active"
+                    and getattr(state, "awaiting_user_input", False)
                 )
                 if not already_armed and not parked:
                     # The goal is stamped as a task-lifecycle goal at

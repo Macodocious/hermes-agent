@@ -1529,6 +1529,19 @@ class GoalManager:
         if self._state is None:
             return
         self._state.status = "cleared"
+        # A cleared goal is gone, not parked: reset the wait barrier so the
+        # persisted state never looks "awaiting user input" after it was
+        # cleared. A stale awaiting_user_input=True on a cleared goal blocks
+        # the task-lifecycle re-arm (on_todo_write honours the park), which
+        # leaves the goal permanently inactive — the judge never runs, and a
+        # `closing` task, whose only finalizer is the judge's `done` verdict,
+        # is stranded forever.
+        self._state.awaiting_user_input = False
+        self._state.waiting_on_pid = None
+        self._state.waiting_on_session = None
+        self._state.waiting_until = 0.0
+        self._state.waiting_reason = None
+        self._state.waiting_since = 0.0
         save_goal(self.session_id, self._state)
         self._state = None
 

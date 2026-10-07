@@ -430,6 +430,31 @@ class TestGoalManager:
         assert mgr.state is None
         assert not mgr.is_active()
 
+    def test_clear_resets_the_wait_barrier(self, hermes_home):
+        """A cleared goal must not persist looking 'parked'.
+
+        Regression: clear() set status='cleared' but left
+        awaiting_user_input=True, so a fresh GoalManager reloaded the
+        cleared state as parked and the task-lifecycle re-arm was blocked
+        forever — stranding any `closing` task, which finalizes only on the
+        judge's done verdict.
+        """
+        from hermes_cli.goals import GoalManager
+
+        mgr = GoalManager(session_id="clear-barrier-sid")
+        mgr.set("goal")
+        mgr.park("waiting on the user")
+        assert mgr.is_waiting()
+
+        mgr.clear()
+
+        reloaded = GoalManager(session_id="clear-barrier-sid")
+        assert reloaded.state is not None
+        assert reloaded.state.status == "cleared"
+        assert reloaded.state.awaiting_user_input is False
+        assert reloaded.state.waiting_reason is None
+        assert reloaded.is_waiting() is False
+
     def test_persistence_across_managers(self, hermes_home):
         """Key invariant: a second manager on the same session sees the goal.
 
