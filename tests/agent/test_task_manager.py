@@ -197,6 +197,85 @@ def test_on_todo_write_stays_armed_while_close_in_flight(monkeypatch) -> None:
     assert calls.count("set") == 2
 
 
+def test_on_todo_write_rearms_over_a_cleared_parked_goal(monkeypatch) -> None:
+    """A cleared goal that still carries awaiting_user_input must not block
+    the re-arm.
+
+    Regression (task-lifecycle wedge): GoalManager.clear() left
+    awaiting_user_input=True on the cleared row, and on_todo_write honored
+    that flag unconditionally — so the goal never re-armed, the judge never
+    ran, and a `closing` task (finalized only by the judge's done verdict)
+    was stranded forever. The park binds only a LIVE (active) goal.
+    """
+    store = TodoStore()
+    _seed(store, "1", "Build the thing")
+    agent = _make_agent(store)
+    calls: list[str] = []
+
+    class FakeMgr:
+        def __init__(self, **kwargs):
+            calls.append("init")
+
+        @property
+        def state(self):
+            return SimpleNamespace(
+                status="cleared", goal="", awaiting_user_input=True
+            )
+
+        def set(self, text: str, **kwargs) -> None:
+            calls.append(f"set:{text}")
+
+        def clear(self) -> None:
+            calls.append("clear")
+
+    monkeypatch.setattr(task_manager, "_load_goal_manager", lambda a: FakeMgr())
+    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
+
+    store.transition("begin", "1")
+    task_manager.on_todo_write(agent, {"action": "begin", "item_id": "1"})
+
+    assert f"set:{_armed_goal_text(store, '1')}" in calls
+
+
+def test_on_todo_write_holds_rearm_while_goal_is_actively_parked(
+    monkeypatch,
+) -> None:
+    """An ACTIVE parked goal still blocks the re-arm (the guard is preserved).
+
+    The status gate narrows the park to a live goal; a genuinely parked
+    active goal — awaiting a user decision — must still not be re-armed
+    behind the user's back.
+    """
+    store = TodoStore()
+    _seed(store, "1", "Build the thing")
+    agent = _make_agent(store)
+    calls: list[str] = []
+
+    class FakeMgr:
+        def __init__(self, **kwargs):
+            calls.append("init")
+
+        @property
+        def state(self):
+            return SimpleNamespace(
+                status="active", goal="", awaiting_user_input=True
+            )
+
+        def set(self, text: str, **kwargs) -> None:
+            calls.append(f"set:{text}")
+
+        def clear(self) -> None:
+            calls.append("clear")
+
+    monkeypatch.setattr(task_manager, "_load_goal_manager", lambda a: FakeMgr())
+    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
+
+    store.transition("begin", "1")
+    task_manager.on_todo_write(agent, {"action": "begin", "item_id": "1"})
+
+    assert not any(c.startswith("set:") for c in calls)
+
+
 def test_on_todo_write_does_not_rearm_identical_active_goal(monkeypatch) -> None:
     """A routine todo read-back must not reset the judge's turn budget.
 
