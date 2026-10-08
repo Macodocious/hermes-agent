@@ -21,11 +21,14 @@ import tempfile
 import threading
 import time
 import unicodedata
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 from hermes_cli.config import cfg_get
 
 from tools.interrupt import is_interrupted
 from utils import env_var_enabled, is_truthy_value
+
+if TYPE_CHECKING:
+    from hermes_cli.approval_presentation import PresentationSpec
 
 logger = logging.getLogger(__name__)
 
@@ -2304,6 +2307,24 @@ def prompt_dangerous_approval(command: str, description: str,
     if timeout_seconds is None:
         timeout_seconds = _get_approval_timeout()
 
+    # Plugin presentation seam: a plugin may supply the human-facing reason for
+    # this prompt (the CLI renders no embed). Absent hook -> the native
+    # description is used unchanged, exactly as the old wrapper did. Read the
+    # reason before redaction so the substitute is scrubbed like any other.
+    try:
+        _presentation = _invoke_approval_presentation(
+            tool_name="terminal",
+            args={"command": command},
+            reason=description,
+            session_key=get_current_session_key(),
+        )
+    except Exception:
+        _presentation = None
+    if isinstance(_presentation, dict):
+        _plugin_reason = _presentation.get("reason") or _presentation.get("description")
+        if isinstance(_plugin_reason, str) and _plugin_reason.strip():
+            description = _plugin_reason.strip()
+
     # Redact secrets before any user-visible rendering. The original
     # `command` is still what executes after approval; only the displayed
     # copy is scrubbed. Reuses the same redaction module used for memory
@@ -2917,15 +2938,18 @@ def _invoke_approval_presentation(
     args: Optional[dict],
     reason: str,
     session_key: str,
-) -> dict | None:
+) -> "PresentationSpec | None":
     """Consult the ``approval_presentation`` plugin hook for a prompt spec.
 
     Returns the first well-formed presentation spec a plugin supplies, else
     ``None`` so the caller renders core's default presentation. Fail-closed:
-    an absent hook, a raising hook, or a malformed return yields ``None``.
+    an absent hook, a raising hook, or a malformed return yields ``None``, and
+    each return is validated through ``validate_presentation_spec`` so a
+    renderer only ever sees a clean, platform-neutral spec.
     """
     try:
         from hermes_cli.plugins import has_hook, invoke_hook
+        from hermes_cli.approval_presentation import validate_presentation_spec
         if not has_hook("approval_presentation"):
             return None
         results = invoke_hook(
@@ -2938,9 +2962,38 @@ def _invoke_approval_presentation(
     except Exception:
         return None
     for result in results:
-        if isinstance(result, dict):
-            return result
+        spec = validate_presentation_spec(result)
+        if spec is not None:
+            return spec
     return None
+
+
+def _invoke_approval_action(action_id: str, session_key: str, user: str) -> bool:
+    """Fire the ``approval_action`` hook for a clicked approval control.
+
+    Lets a plugin handle a control the presentation spec declared (a
+    non-built-in id, e.g. a "Revoke Session" button) and observe core's own
+    resolve clicks (so it can capture the session grantor). Returns True when a
+    plugin reports it handled the action, else False so the caller leaves
+    core's own handling in place. Fail-closed: an absent hook, a raising hook,
+    or a malformed return yields False.
+    """
+    try:
+        from hermes_cli.plugins import has_hook, invoke_hook
+        if not has_hook("approval_action"):
+            return False
+        results = invoke_hook(
+            "approval_action",
+            action_id=action_id,
+            session_key=session_key or "",
+            user=user or "",
+        )
+    except Exception:
+        return False
+    for result in results:
+        if isinstance(result, dict) and result.get("handled") is True:
+            return True
+    return False
 
 
 def _should_skip_container_guards(env_type: str, has_host_access: bool = False) -> bool:
