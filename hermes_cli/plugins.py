@@ -232,6 +232,37 @@ VALID_HOOKS: Set[str] = {
     # Kwargs: thread_id: str, parent_channel_id: str, guild_id: str,
     #         thread_name: str.
     "on_thread_create",
+    # Guard-decision hook. Fired by the native dangerous-command guard
+    # (tools/approval.py) before it runs, so a plugin's own approval decision
+    # can supersede the native re-prompt. A callback returns
+    # {"approved": True} to skip the native guard; None or any other value
+    # runs it unchanged. Fail-closed: an absent, raising, or malformed hook
+    # runs the native guard.
+    # Kwargs: command: str, env_type: str, is_subagent: bool.
+    "guard_decision",
+    # Tool-schema contribution hook. Fired when tool definitions are built
+    # (tools/registry.py get_definitions, model_tools.py). Each callback
+    # returns a mapping of tool name -> partial schema fragment
+    # ({"properties": {...}, "required": [...]}); core merges it shallowly
+    # onto the base schema. Unknown tool names are ignored; a raising hook
+    # leaves the base schema untouched.
+    # Kwargs: none.
+    "tool_schema",
+    # Batch-dispatch hook. Fired by AIAgent._execute_tool_calls with the
+    # message's tool-call list before dispatch, so a plugin can gate a
+    # multi-mutation message as one batch. A callback returns
+    # {"action": "block", "message": ...} to abort the turn fail-closed, or
+    # {"action": "intercept"} when it handled the batch itself; None (or any
+    # other value) proceeds with normal dispatch.
+    # Kwargs: tool_calls: list, session_id: str, task_id: str.
+    "pre_batch_dispatch",
+    # Approval-presentation hook. Fired by the approval path
+    # (tools/approval.py) so a plugin can own the prompt's look without
+    # patching a platform adapter. A callback returns a presentation spec
+    # (embed fields, button labels, timeout seconds); None uses core's
+    # default presentation.
+    # Kwargs: tool_name: str, args: dict, reason: str, session_key: str.
+    "approval_presentation",
 }
 
 ENTRY_POINTS_GROUP = "hermes_agent.plugins"
@@ -2178,6 +2209,7 @@ def _get_pre_tool_call_directive_details(
     turn_id: str = "",
     api_request_id: str = "",
     middleware_trace: Optional[List[Dict[str, Any]]] = None,
+    reasoning: str = "",
 ) -> _PreToolCallDirective:
     """Check ``pre_tool_call`` hooks for a blocking or approval directive.
 
@@ -2223,6 +2255,7 @@ def _get_pre_tool_call_directive_details(
         turn_id=turn_id,
         api_request_id=api_request_id,
         middleware_trace=list(middleware_trace or []),
+        reasoning=reasoning or "",
     )
 
     for result in hook_results:
@@ -2255,6 +2288,7 @@ def get_pre_tool_call_directive(
     turn_id: str = "",
     api_request_id: str = "",
     middleware_trace: Optional[List[Dict[str, Any]]] = None,
+    reasoning: str = "",
 ) -> tuple[Optional[str], Optional[str]]:
     """Check ``pre_tool_call`` hooks for a blocking or approval directive.
 
@@ -2267,6 +2301,7 @@ def get_pre_tool_call_directive(
         tool_name, args, task_id=task_id, session_id=session_id,
         tool_call_id=tool_call_id, turn_id=turn_id,
         api_request_id=api_request_id, middleware_trace=middleware_trace,
+        reasoning=reasoning,
     )
     return (details.action, details.message)
 
@@ -2280,6 +2315,7 @@ def get_pre_tool_call_block_message(
     turn_id: str = "",
     api_request_id: str = "",
     middleware_trace: Optional[List[Dict[str, Any]]] = None,
+    reasoning: str = "",
 ) -> Optional[str]:
     """Back-compat shim: return only a ``block`` message (or ``None``).
 
@@ -2292,6 +2328,7 @@ def get_pre_tool_call_block_message(
         tool_name, args, task_id=task_id, session_id=session_id,
         tool_call_id=tool_call_id, turn_id=turn_id,
         api_request_id=api_request_id, middleware_trace=middleware_trace,
+        reasoning=reasoning,
     )
     return message if directive == "block" else None
 
@@ -2305,6 +2342,7 @@ def resolve_pre_tool_block(
     turn_id: str = "",
     api_request_id: str = "",
     middleware_trace: Optional[List[Dict[str, Any]]] = None,
+    reasoning: str = "",
 ) -> Optional[str]:
     """Resolve the pre_tool_call directive to a final block message (or None).
 
@@ -2324,6 +2362,7 @@ def resolve_pre_tool_block(
         tool_name, args, task_id=task_id, session_id=session_id,
         tool_call_id=tool_call_id, turn_id=turn_id,
         api_request_id=api_request_id, middleware_trace=middleware_trace,
+        reasoning=reasoning,
     )
     if details.action == "block":
         return details.message

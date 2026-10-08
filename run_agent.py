@@ -6194,6 +6194,43 @@ class AIAgent:
         """
         tool_calls = assistant_message.tool_calls
 
+        # Plugin batch-dispatch seam (see VALID_HOOKS "pre_batch_dispatch").
+        # Fired before dispatch so a plugin can gate a multi-mutation message
+        # as one batch. Fail-open: an absent hook, a raising hook, or an
+        # unknown directive proceeds with normal dispatch. A "block" directive
+        # aborts the turn fail-closed by appending a result for every call;
+        # "intercept" means the plugin handled the batch itself.
+        try:
+            from hermes_cli.plugins import has_hook, invoke_hook
+            if has_hook("pre_batch_dispatch"):
+                _batch_results = invoke_hook(
+                    "pre_batch_dispatch",
+                    tool_calls=list(tool_calls),
+                    session_id=getattr(self, "session_id", "") or "",
+                    task_id=effective_task_id or "",
+                )
+            else:
+                _batch_results = []
+        except Exception:
+            _batch_results = []
+        for _directive in _batch_results:
+            if not isinstance(_directive, dict):
+                continue
+            _action = _directive.get("action")
+            if _action == "block":
+                from agent.tool_dispatch_helpers import make_tool_result_message
+                _msg = _directive.get("message") or "APPROVAL GATE: batch blocked."
+                for _call in tool_calls:
+                    _name = getattr(getattr(_call, "function", None), "name", "") or ""
+                    messages.append(
+                        make_tool_result_message(
+                            _name, _msg, getattr(_call, "id", "") or ""
+                        )
+                    )
+                return
+            if _action == "intercept":
+                return
+
         # Allow _vprint during tool execution even with stream consumers
         self._executing_tools = True
         try:

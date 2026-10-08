@@ -6587,6 +6587,40 @@ class DiscordAdapter(BasePlatformAdapter):
             )
             embed.add_field(name="Reason", value=reason_display, inline=False)
 
+            # Plugin presentation seam: let a plugin own the prompt's look
+            # (embed fields, button labels, timeout) without patching this
+            # adapter. Absent hook → the default embed above is used unchanged.
+            _view_timeout = None
+            try:
+                from tools.approval import _invoke_approval_presentation
+                _spec = _invoke_approval_presentation(
+                    tool_name="terminal",
+                    args={"command": command},
+                    reason=description,
+                    session_key=session_key,
+                )
+            except Exception:
+                _spec = None
+            if isinstance(_spec, dict):
+                if isinstance(_spec.get("title"), str) and _spec["title"]:
+                    embed.title = _spec["title"]
+                if isinstance(_spec.get("description"), str):
+                    embed.description = _spec["description"]
+                if isinstance(_spec.get("color"), int):
+                    embed.color = discord.Color(_spec["color"])
+                _fields = _spec.get("fields")
+                if isinstance(_fields, list):
+                    embed.clear_fields()
+                    for _field in _fields:
+                        if isinstance(_field, dict) and _field.get("name"):
+                            embed.add_field(
+                                name=str(_field["name"]),
+                                value=str(_field.get("value", "")),
+                                inline=bool(_field.get("inline", False)),
+                            )
+                if isinstance(_spec.get("timeout"), int) and _spec["timeout"] > 0:
+                    _view_timeout = _spec["timeout"]
+
             require_admin, admin_user_ids = _resolve_exec_approval_admin_gate(
                 getattr(self.config, "extra", None)
             )
@@ -6599,6 +6633,8 @@ class DiscordAdapter(BasePlatformAdapter):
                 allow_permanent=allow_permanent,
                 smart_denied=smart_denied,
             )
+            if _view_timeout is not None:
+                view.timeout = _view_timeout
 
             send_kwargs: Dict[str, Any] = {"content": content, "embed": embed, "view": view}
             if mention_content:

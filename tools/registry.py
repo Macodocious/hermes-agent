@@ -84,6 +84,58 @@ def discover_builtin_tools(tools_dir: Optional[Path] = None) -> List[str]:
     return imported
 
 
+def _get_tool_schema_contributions() -> Dict[str, dict]:
+    """Collect ``tool_schema`` hook contributions, keyed by tool name.
+
+    Each plugin returns a mapping of tool name -> partial schema fragment
+    (``{"properties": {...}, "required": [...]}``). Fail-closed: an absent
+    hook, a raising hook, or a malformed return yields no contributions, so
+    schemas are byte-for-byte unchanged.
+    """
+    try:
+        from hermes_cli.plugins import has_hook, invoke_hook
+        if not has_hook("tool_schema"):
+            return {}
+        results = invoke_hook("tool_schema")
+    except Exception:
+        return {}
+    merged: Dict[str, dict] = {}
+    for result in results:
+        if not isinstance(result, dict):
+            continue
+        for tool_name, fragment in result.items():
+            if isinstance(tool_name, str) and isinstance(fragment, dict):
+                merged.setdefault(tool_name, {}).update(fragment)
+    return merged
+
+
+def _merge_schema_fragment(schema: dict, fragment: dict) -> dict:
+    """Shallow-merge a plugin schema *fragment* onto *schema* in place.
+
+    ``properties`` is merged key-by-key and ``required`` is unioned (base order
+    first) so a contribution can never drop an existing property or requirement.
+    Any other key overwrites. Returns *schema*.
+    """
+    for key, value in fragment.items():
+        if key == "properties" and isinstance(value, dict):
+            base_props = schema.get("properties")
+            if isinstance(base_props, dict):
+                base_props.update(value)
+            else:
+                schema["properties"] = dict(value)
+        elif key == "required" and isinstance(value, list):
+            base_required = schema.get("required")
+            if isinstance(base_required, list):
+                for item in value:
+                    if item not in base_required:
+                        base_required.append(item)
+            else:
+                schema["required"] = list(value)
+        else:
+            schema[key] = value
+    return schema
+
+
 class ToolEntry:
     """Metadata for a single registered tool."""
 
@@ -539,6 +591,9 @@ class ToolRegistry:
         flush on every call.
         """
         result = []
+        # Plugin schema contributions (tool_schema hook), collected once per
+        # pass. Absent hook → empty mapping → schemas unchanged.
+        _schema_contributions = _get_tool_schema_contributions()
         # Per-call cache on top of the 30 s TTL — handles repeat probes of the
         # same check_fn within one definitions pass without re-reading the
         # TTL clock.
@@ -557,6 +612,11 @@ class ToolRegistry:
                     continue
             # Ensure schema always has a "name" field — use entry.name as fallback
             schema_with_name = {**entry.schema, "name": entry.name}
+            # Merge any plugin schema contribution for this tool (shallow,
+            # additive — never drops existing properties/required).
+            _fragment = _schema_contributions.get(name)
+            if _fragment:
+                _merge_schema_fragment(schema_with_name, _fragment)
             # Apply runtime-dynamic overrides (e.g. delegate_task description
             # depends on current delegation.max_concurrent_children /
             # max_spawn_depth). Caller side (model_tools.get_tool_definitions)
