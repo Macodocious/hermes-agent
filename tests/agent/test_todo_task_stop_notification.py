@@ -43,24 +43,16 @@ class TestDetectTodoTaskStop:
         assert stopped["content"] == "task one"
         assert stopped["status"] == "cancelled"
 
-    def test_escalate_transition_detected(self):
+    def test_action_cancel_detected(self):
+        """The action path (action=cancel + item_id) is detected like a list write."""
         agent, _ = _agent_with_store([
             {"id": "1", "content": "task one", "status": "in_progress"},
         ])
         stopped = _detect_todo_task_stop(
-            agent, "todo", {"todos": [{"id": "1", "content": "task one", "status": "escalated"}]}
+            agent, "todo", {"action": "cancel", "item_id": "1"}
         )
         assert stopped is not None
-        assert stopped["status"] == "escalated"
-
-    def test_closing_to_cancelled_detected(self):
-        agent, _ = _agent_with_store([
-            {"id": "1", "content": "task one", "status": "closing"},
-        ])
-        stopped = _detect_todo_task_stop(
-            agent, "todo", {"todos": [{"id": "1", "content": "task one", "status": "cancelled"}]}
-        )
-        assert stopped is not None
+        assert stopped["id"] == "1"
         assert stopped["status"] == "cancelled"
 
     def test_pending_to_cancelled_returns_none(self):
@@ -111,15 +103,6 @@ class TestCliSpinnerTaskStop:
             stopped_task={"id": "1", "content": "ship the feature", "status": "cancelled"},
         )
         assert cli._spinner_text == "📋 Task cancelled: ship the feature"
-
-    def test_escalated_label_replaces_generic(self):
-        cli, _ = self._make_cli()
-        cli._on_tool_progress(
-            "tool.started", "todo", "Updating 1 task",
-            {"todos": [{"id": "1", "content": "ship the feature", "status": "escalated"}]},
-            stopped_task={"id": "1", "content": "ship the feature", "status": "escalated"},
-        )
-        assert cli._spinner_text == "📋 Task escalated: ship the feature"
 
     def test_cancelled_label_names_ordered_position(self):
         cli, _ = self._make_cli()

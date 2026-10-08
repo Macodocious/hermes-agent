@@ -105,13 +105,66 @@ def _enrich_todo_transition(store, detected):
     return detected
 
 
+def _resolved_todo_todos(store, args: dict):
+    """The write-shaped ``todos`` list a todo call will act on.
+
+    The action path (``action=begin``/``cancel`` with ``item_id``) mutates by
+    action, not by a list payload, so ``args["todos"]`` is absent. Reconstruct
+    the single-item write that action implies against the current store, so the
+    write-path detectors see the transition in the same shape a list write
+    carries. Returns None for a plain read or an action with no list effect.
+    """
+    todos = args.get("todos")
+    if todos is not None:
+        return todos
+    item_id = args.get("item_id")
+    if item_id is None:
+        return None
+    status = {"begin": "in_progress", "cancel": "cancelled"}.get(
+        str(args.get("action") or "").strip().lower()
+    )
+    if status is None:
+        return None
+    return [{"id": item_id, "status": status}]
+
+
 def _detect_todo_task_start(agent, tool_name: str, args: dict) -> Optional[Dict[str, str]]:
-    """Detect a task-start transition in a pending todo write (task notification).
+    """Detect a task-start transition in a pending todo call (task notification).
 
     Called on ``tool.started`` — before the tool executes — so the store still
-    holds pre-call state. When the call is a todo write that moves an item to
-    ``in_progress`` (or creates a new item directly in_progress), returns that
-    item so the UI can render a "working on" bubble instead of the generic
+    holds pre-call state. When the call moves an item to ``in_progress`` (a
+    list write, or an ``action=begin``), returns that item so the UI can render
+    a "working on" bubble instead of the generic "updating tasks" line. Returns
+    None for every other call (reads, non-todo tools, agents without a todo
+    store).
+    """
+    if tool_name != "todo":
+        return None
+    store = getattr(agent, "_todo_store", None)
+    if store is None:
+        return None
+    try:
+        from tools.todo_tool import TodoStore
+        if not isinstance(store, TodoStore):
+            return None
+        return _enrich_todo_transition(
+            store,
+            store.detect_task_start(
+                _resolved_todo_todos(store, args), bool(args.get("merge", False))
+            ),
+        )
+    except Exception:
+        logging.debug("Todo task-start detection failed", exc_info=True)
+        return None
+
+
+def _detect_todo_task_stop(agent, tool_name: str, args: dict) -> Optional[Dict[str, str]]:
+    """Detect a task-stop transition in a pending todo call (task notification).
+
+    Called on ``tool.started`` — before the tool executes — so the store still
+    holds pre-call state. When the call moves an item from ``in_progress`` to
+    ``cancelled`` (a list write, or an ``action=cancel``), returns that item so
+    the UI can render a "task cancelled" bubble instead of the generic
     "updating tasks" line. Returns None for every other call (reads, non-todo
     tools, agents without a todo store).
     """
@@ -125,34 +178,10 @@ def _detect_todo_task_start(agent, tool_name: str, args: dict) -> Optional[Dict[
         if not isinstance(store, TodoStore):
             return None
         return _enrich_todo_transition(
-            store, store.detect_task_start(args.get("todos"), bool(args.get("merge", False)))
-        )
-    except Exception:
-        logging.debug("Todo task-start detection failed", exc_info=True)
-        return None
-
-
-def _detect_todo_task_stop(agent, tool_name: str, args: dict) -> Optional[Dict[str, str]]:
-    """Detect a task-stop transition in a pending todo write (task notification).
-
-    Called on ``tool.started`` — before the tool executes — so the store still
-    holds pre-call state. When the call is a todo write that moves an item
-    from ``in_progress``/``closing`` to ``cancelled``/``escalated``, returns
-    that item so the UI can render a "task stopped" bubble instead of the
-    generic "updating tasks" line. Returns None for every other call (reads,
-    non-todo tools, agents without a todo store).
-    """
-    if tool_name != "todo":
-        return None
-    store = getattr(agent, "_todo_store", None)
-    if store is None:
-        return None
-    try:
-        from tools.todo_tool import TodoStore
-        if not isinstance(store, TodoStore):
-            return None
-        return _enrich_todo_transition(
-            store, store.detect_task_stop(args.get("todos"), bool(args.get("merge", False)))
+            store,
+            store.detect_task_stop(
+                _resolved_todo_todos(store, args), bool(args.get("merge", False))
+            ),
         )
     except Exception:
         logging.debug("Todo task-stop detection failed", exc_info=True)

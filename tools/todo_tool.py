@@ -20,27 +20,34 @@ from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 
 
-# Valid status values for todo items
+# Valid status values for todo items. The agent owns every state end to
+# end: a task is pending, being worked (in_progress), held (paused),
+# finished (completed), or set aside (cancelled). The judge-era holding
+# states (closing/escalated) are gone with the judge.
 VALID_STATUSES = {
-    "pending", "in_progress", "completed", "cancelled",
-    "paused", "closing", "escalated",
+    "pending", "in_progress", "paused", "completed", "cancelled",
 }
 
-# Lifecycle actions the agent can issue against a single task (P1). Each
-# action is a deterministic state transition enforced by TodoStore.transition;
-# the model never writes lifecycle statuses directly through the todos list.
-LIFECYCLE_ACTIONS = {"begin", "pause", "resume", "close", "escalate", "block"}
+# Lifecycle actions the agent can issue against a single task. Each action is
+# a deterministic state transition enforced by TodoStore.transition; the model
+# never writes lifecycle statuses directly through the todos list. ``begin``
+# opens a task and ``complete`` closes it — there is no second key and no
+# judge. ``cancel`` sets a task aside with a reason. ``pause``/``resume`` hold
+# and re-open a task. Adding a task and editing its content are NOT actions:
+# they ride the store's existing list-write path (merge by id), unchanged.
+LIFECYCLE_ACTIONS = {"begin", "complete", "cancel", "pause", "resume"}
 
-# Lifecycle statuses that must never be written through the todos list
-# (P7). The model drives task state through the ``action`` parameter; a
-# direct status write silently disables the enforcement — an
-# ``in_progress`` write silences the turn-end audit (a task is "open"),
-# never arms the GoalEngine (arming keys on ``action``), and never
-# reaches the judge or the post-close review. ``completed`` is blocked
-# for agent-authored items only: finishing via a write skips the
-# two-key close and the mandatory review, while user-sourced items
-# (P4) must stay markable completed/cancelled directly.
-LIFECYCLE_TRANSITION_STATUSES = {"in_progress", "paused", "closing", "escalated"}
+# The action that owns each lifecycle status a direct todos-list write must
+# not change. A write that would set one of these statuses is refused, naming
+# the action to use instead — it never redirects to a judge. ``cancelled`` is
+# deliberately absent: a list write may set an item aside directly, while
+# ``in_progress``/``paused``/``completed`` must go through their action so the
+# single-current-task invariant and next-task activation stay mechanical.
+LIFECYCLE_WRITE_ACTION = {
+    "in_progress": "begin",
+    "paused": "pause",
+    "completed": "complete",
+}
 
 # Row format for the always-on "[Active tasks]" block. The item id and the
 # live status are rendered explicitly instead of a status glyph: the id is
@@ -68,18 +75,58 @@ def render_task_board_with_ids(items: List[Dict[str, Any]]) -> List[str]:
         for item in items
     ]
 
+
+def format_notice(notice: Dict[str, Any], store: "TodoStore") -> str:
+    """Render one store lifecycle notice as a user-facing line.
+
+    The store records a notice per start/complete/cancel transition; both the
+    gateway and the CLI render it through here so the wording cannot drift
+    between surfaces. Plan completion is derived from the store once the
+    plan's last task is terminal — the completion line then reports the plan,
+    not a list position. Returns "" for an unknown notice kind.
+    """
+    kind = str(notice.get("kind") or "")
+    content = str(notice.get("content") or "(no description)")
+    if kind == NOTICE_STARTED:
+        return f"▶️ Working on: {content}"
+    if kind == NOTICE_CANCELLED:
+        line = f"🚫 Cancelled: {content}"
+        reason = str(notice.get("reason") or "").strip()
+        return f"{line}\n  reason: {reason}" if reason else line
+    if kind == NOTICE_COMPLETED:
+        try:
+            from agent.task_manager import (
+                plan_is_complete,
+                plan_task_total,
+                task_position,
+            )
+
+            plan_ref = str(notice.get("plan") or "").strip()
+            if plan_ref and plan_is_complete(store, plan_ref):
+                return (
+                    f"🏁 Plan complete: all {plan_task_total(store, plan_ref)} "
+                    f"tasks done ({plan_ref})"
+                )
+            position, total = task_position(store, notice.get("id"))
+        except Exception:  # pragma: no cover - defensive
+            position, total = 0, 0
+        if position:
+            return f"✅ Task {position} of {total} complete: {content}"
+        return f"✅ Task completed: {content}"
+    return ""
+
+
 # Allowed transitions per lifecycle action, keyed by the item's current
-# status. Anything not listed is refused with an error. "finalize" is the
-# internal closing -> closed step driven by the task lifecycle judge (the
-# second key of the two-key close); it is not a model-facing action.
+# status. Anything not listed is refused with an error. ``complete`` and
+# ``cancel`` are the two terminal moves; ``pause``/``resume`` are the hold and
+# re-open pair. Adding and content-editing are not actions — they ride the
+# list-write path.
 _LIFECYCLE_TRANSITIONS = {
-    "begin": {"pending", "paused"},
+    "begin": {"pending"},
     "pause": {"in_progress"},
-    "resume": {"paused", "closing"},
-    "close": {"in_progress", "paused", "closing"},
-    "escalate": {"pending", "in_progress", "paused", "closing"},
-    "block": {"in_progress"},
-    "finalize": {"closing"},
+    "resume": {"paused"},
+    "complete": {"in_progress"},
+    "cancel": {"pending", "in_progress"},
 }
 
 # Bounds on persisted todo state. The todo list is a planning aid the model
@@ -110,6 +157,19 @@ CAPTURE_STATUSES = {"captured", "merged", "addressed", "rejected"}
 # source key (backward compatible); user-sourced items are tagged and
 # protected from silent replacement.
 USER_SOURCE = "user"
+
+# Lifecycle transition notices the store records for the emitter to drain.
+# The gateway and CLI read and clear these after a turn, so a task's
+# start/completion/cancellation reaches the user deterministically — the
+# store owns the transitions, so the store owns the notices (no judge
+# verdict, no verdict-finalized id).
+NOTICE_STARTED = "started"
+NOTICE_COMPLETED = "completed"
+NOTICE_CANCELLED = "cancelled"
+# Bounded: the emitter drains every turn, so the cap only bites when notices
+# are never emitted (e.g. a headless run); keep the most recent so the newest
+# transition is never lost.
+MAX_TODO_NOTICES = 32
 
 # ---------------------------------------------------------------------------
 # User-message scaffold stripping (P5)
@@ -212,6 +272,10 @@ class TodoStore:
         # per-turn block nudges it to rename the seed into a concise title
         # on the first todo write. Any model write clears the flag.
         self._seeded = False
+        # Pending user-facing lifecycle notices — one per start/complete/
+        # cancel transition, drained by the emitter (see drain_notices). The
+        # store records them because the store owns the transition.
+        self._notices: List[Dict[str, Any]] = []
 
     def seed_from_user_message(self, text: Any, origin: str = "") -> Optional[Dict[str, str]]:
         """Seed an empty store with the user's opening message (P5).
@@ -330,15 +394,7 @@ class TodoStore:
     def _enforce_invariants(self, started_id: Optional[str] = None) -> None:
         """Enforce the single-current-task invariant.
 
-        At most one item may be current, where ``closing`` occupies the
-        current-task slot exactly like ``in_progress``: when any item is
-        ``closing``, every ``in_progress`` item demotes to ``pending``.
-        The judge finalizes exactly one closing task per done verdict, so
-        an in_progress task coexisting with a closing one would either
-        strand the closing task or get finalized behind the model's back
-        — the batch-close bug class this lifecycle exists to prevent.
-
-        With no closing item, at most one item may be ``in_progress``.
+        At most one item may be ``in_progress``.
         The kept item is the task this write started (``started_id``,
         the same transition ``detect_task_start`` detects) when it is
         present and ``in_progress``; otherwise the first ``in_progress``
@@ -351,15 +407,6 @@ class TodoStore:
         the load path renumber (see _renumber_items); merge-mode writes
         keep existing ids stable so merge-by-id stays safe.
         """
-        if any(item["status"] == "closing" for item in self._items):
-            # A closing task fills the current-task slot; demote any
-            # in_progress item so the write path can never re-create the
-            # closing + in_progress overlap (defense-in-depth behind the
-            # begin refusal in transition).
-            for item in self._items:
-                if item["status"] == "in_progress":
-                    item["status"] = "pending"
-            return
         current_id = started_id
         if current_id is not None:
             current = next(
@@ -443,10 +490,10 @@ class TodoStore:
     ) -> Optional[Dict[str, str]]:
         """Detect which task (if any) a pending write moves to a stop status.
 
-        A task "stops" when an item that was ``in_progress`` or ``closing``
-        before the call becomes ``cancelled`` or ``escalated``. Re-asserting
-        the same terminal status is not a stop. Returns the first stopped
-        item (list order is priority), or None when no item stops. Mirrors
+        A task "stops" when an item that was ``in_progress`` before the call
+        becomes ``cancelled``. Re-asserting the same terminal status is not
+        a stop. Returns the first stopped item (list order is priority), or
+        None when no item stops. Mirrors
         the write pipeline's normalization (string payloads, list shape,
         content fallback) so the detection matches what ``write`` will
         actually store.
@@ -469,12 +516,12 @@ class TodoStore:
             if not item_id:
                 continue
             status = str(t.get("status", "")).strip().lower()
-            if status not in ("cancelled", "escalated"):
+            if status != "cancelled":
                 continue
             prev_item = previous.get(item_id)
             if prev_item is None:
                 continue  # a net-new terminal item is not a stop
-            if prev_item["status"] not in ("in_progress", "closing"):
+            if prev_item["status"] != "in_progress":
                 continue  # only an active task can stop
             content = str(t.get("content", "")).strip()
             if not content:
@@ -488,20 +535,22 @@ class TodoStore:
             }
         return None
 
-    def transition(self, action: str, item_id: Any) -> Dict[str, Any]:
-        """Apply a lifecycle action to one task (P1).
+    def transition(self, action: str, item_id: Any, reason: str = "") -> Dict[str, Any]:
+        """Apply a lifecycle action to one task.
 
-        Deterministic state machine: ``begin`` / ``pause`` / ``resume`` /
-        ``close`` / ``escalate`` move a single item between lifecycle
-        statuses per ``_LIFECYCLE_TRANSITIONS``; anything else is refused
-        with an error dict. ``begin`` and ``resume`` — the two doors into
-        ``in_progress`` — are each refused while another task is
-        ``in_progress`` (one task executing) or ``closing``; sequential
-        close: the closing task occupies the current-task slot until the
-        judge's done verdict finalizes it.
-        ``close`` moves the task to ``closing`` — the judge's ``done``
-        verdict is the second key that finalizes it via ``finalize``
-        (internal, not model-facing).
+        The deterministic state machine the agent owns end to end:
+
+        - ``begin``    pending     -> in_progress
+        - ``pause``    in_progress -> paused
+        - ``resume``   paused      -> in_progress
+        - ``complete`` in_progress -> completed  (then the first ``pending``
+          task becomes ``in_progress``, so the plan advances mechanically)
+        - ``cancel``   pending | in_progress -> cancelled  (requires a reason,
+          stored on the row and rendered beneath the struck-through item)
+
+        ``begin`` and ``resume`` — the two doors into ``in_progress`` — are
+        each refused while another task is ``in_progress``: one task executes
+        at a time. Anything not listed is refused with an error dict.
 
         Returns ``{"ok": True, "item": {...}}`` on success or
         ``{"ok": False, "error": "..."}`` on refusal. Never raises.
@@ -522,134 +571,77 @@ class TodoStore:
                     f"'{item['status']}' (allowed from: {sorted(allowed) or 'none'})"
                 ),
             }
-        if action == "close":
-            # Cross-item invariant (revised fix 4): only one task may be
-            # closing at a time. The judge finalizes exactly one closing
-            # task per done verdict, so a second closing task would strand
-            # forever. Refuse, naming the task already closing.
-            for other in self._items:
-                if other is not item and other["status"] == "closing":
-                    return {
-                        "ok": False,
-                        "error": (
-                            f"cannot close task {item_id}: task {other['id']} "
-                            "is already closing — wait for the judge to "
-                            "finalize it before closing another"
-                        ),
-                    }
-        if action == "begin":
-            # Sequential close: the closing task occupies the current-task
-            # slot until the judge's done verdict finalizes it, so beginning
-            # the next item while one is closing would re-create the
-            # closing + in_progress overlap _enforce_invariants() rejects —
-            # the persist write would demote the newly begun task straight
-            # back to pending and the following close would be refused.
-            # Refuse here, naming the closing task, before mutating.
-            for other in self._items:
-                if other is not item and other["status"] == "closing":
-                    return {
-                        "ok": False,
-                        "error": (
-                            f"cannot begin task {item_id}: task {other['id']} "
-                            "is closing — wait for the judge to finalize it "
-                            "(or escalate it) before beginning another"
-                        ),
-                    }
-            # Another task still in_progress is also refused: it is the one
-            # executing.
+        if action in ("begin", "resume"):
+            # One task executes at a time: another in_progress task is the
+            # one being worked. Refuse, naming it, before mutating.
             for other in self._items:
                 if other is not item and other["status"] == "in_progress":
                     return {
                         "ok": False,
                         "error": (
-                            f"cannot begin task {item_id}: task {other['id']} "
-                            "is still in_progress — pause, close, or escalate "
-                            "it first"
+                            f"cannot {action} task {item_id}: task {other['id']} "
+                            "is still in_progress — complete or cancel it first"
                         ),
                     }
             item["status"] = "in_progress"
-        elif action == "pause":
+            self._record_notice(NOTICE_STARTED, item)
+            return {"ok": True, "item": item.copy()}
+        if action == "pause":
             item["status"] = "paused"
-        elif action == "resume":
-            # Sequential close: a paused task cannot resume while a sibling
-            # is closing. Closing occupies the current-task slot until the
-            # judge's done verdict finalizes it, so resuming a paused
-            # sibling would construct the same closing + in_progress
-            # overlap the begin guard refuses — the persist write would
-            # demote it straight back to pending and the following close
-            # would be refused. The task's own closing -> in_progress
-            # transition stays allowed: that is the judge's premature-close
-            # reversal (task_manager.observe_verdict), not a second
-            # concurrent task.
-            for other in self._items:
-                if other is not item and other["status"] == "closing":
-                    return {
-                        "ok": False,
-                        "error": (
-                            f"cannot resume task {item_id}: task {other['id']} "
-                            "is closing — wait for the judge to finalize it "
-                            "(or escalate it) before resuming another"
-                        ),
-                    }
-            # Another task still in_progress is the one executing: resuming
-            # a paused sibling alongside it would construct two current
-            # tasks, and the write-path invariant would demote the resumed
-            # one straight back to pending — a success that silently
-            # reverts. Resume of a *closing* task is exempt: that is the
-            # judge's premature-close reversal (observe_verdict), which
-            # deliberately passes through the overlap for the write path to
-            # collapse (see test_verdict_continue_with_closing_and_in_progress_keeps_both_open).
-            if item["status"] == "paused":
-                for other in self._items:
-                    if other is not item and other["status"] == "in_progress":
-                        return {
-                            "ok": False,
-                            "error": (
-                                f"cannot resume task {item_id}: task {other['id']} "
-                                "is still in_progress — pause, close, or escalate "
-                                "it first"
-                            ),
-                        }
-            item["status"] = "in_progress"
-        elif action == "close":
-            item["status"] = "closing"
-        elif action == "escalate":
-            item["status"] = "escalated"
-        elif action == "block":
-            # Block is deliberately status-preserving: the task stays
-            # in_progress because it is STILL the current work — the agent
-            # has not shelved it, it cannot proceed without the user. The
-            # park itself lives on the goal state (GoalManager.park, set
-            # by agent/task_manager.on_todo_write), so adding a new item
-            # status here would only give the target selectors
-            # (_current_item/_closing_item) a hole to fall through into
-            # mgr.clear() and destroy the armed goal. No store mutation is
-            # correct for this action.
-            pass
-        return {"ok": True, "item": item.copy()}
-
-    def finalize(self, item_id: Any) -> Dict[str, Any]:
-        """Finalize a closing task as completed (the judge's second key).
-
-        Internal counterpart to ``transition``: only a task in ``closing``
-        may be finalized, and only the task-lifecycle judge path calls this
-        (never the model directly). Returns the same shape as
-        ``transition``.
-        """
-        item_id = str(item_id or "").strip()
-        item = next((i for i in self._items if i["id"] == item_id), None)
-        if item is None:
-            return {"ok": False, "error": f"no task with id {item_id}"}
-        if item["status"] != "closing":
-            return {
-                "ok": False,
-                "error": (
-                    f"cannot finalize task {item_id} in status "
-                    f"'{item['status']}' (only 'closing' tasks finalize)"
-                ),
-            }
+            return {"ok": True, "item": item.copy()}
+        if action == "cancel":
+            # The reason is what renders beneath the struck-through item;
+            # a reasonless cancel would leave the user with a bare strike.
+            reason = str(reason or "").strip()
+            if not reason:
+                return {
+                    "ok": False,
+                    "error": (
+                        f"cannot cancel task {item_id}: a reason is required "
+                        "(it renders beneath the cancelled item)"
+                    ),
+                }
+            item["status"] = "cancelled"
+            item["reason"] = self._cap_content(reason)
+            self._record_notice(NOTICE_CANCELLED, item)
+            return {"ok": True, "item": item.copy()}
+        # action == "complete": finalize the task, then advance the plan — the
+        # first pending task becomes the active one, so the agent always has a
+        # current task to work without a separate begin call.
         item["status"] = "completed"
+        self._record_notice(NOTICE_COMPLETED, item)
+        nxt = next((i for i in self._items if i["status"] == "pending"), None)
+        if nxt is not None:
+            nxt["status"] = "in_progress"
+            self._record_notice(NOTICE_STARTED, nxt)
         return {"ok": True, "item": item.copy()}
+
+    def _record_notice(self, kind: str, item: Dict[str, Any]) -> None:
+        """Record a user-facing lifecycle notice for the emitter to drain.
+
+        Bounded to MAX_TODO_NOTICES keeping the most recent: the emitter
+        drains every turn, so the cap only bites when notices are never
+        emitted (a headless run), and the newest transition must survive.
+        """
+        self._notices.append({
+            "kind": kind,
+            "id": str(item.get("id", "")),
+            "content": str(item.get("content", "")),
+            "reason": str(item.get("reason", "")),
+            "plan": str(item.get("plan", "")),
+        })
+        if len(self._notices) > MAX_TODO_NOTICES:
+            self._notices = self._notices[-MAX_TODO_NOTICES:]
+
+    def drain_notices(self) -> List[Dict[str, Any]]:
+        """Return the pending lifecycle notices and clear them.
+
+        The caller emits them to the user; clearing here guarantees a
+        transition is never reported twice.
+        """
+        notices = self._notices
+        self._notices = []
+        return notices
 
     def format_for_injection(self) -> Optional[str]:
         """
@@ -657,11 +649,11 @@ class TodoStore:
 
         Completed items are injected alongside active ones under a
         "Completed — do not redo" header, so the full list survives
-        compression instead of vanishing when nothing is active. An
+        compression instead of vanishing when nothing is active. Cancelled
+        items are injected struck through with their reason, so abandoned
+        work stays visible as abandoned rather than silently vanishing. An
         all-completed list still renders (the compressed history keeps a
-        visible task anchor); cancelled items are excluded because they
-        were deliberately abandoned. Returns None only when the store is
-        empty.
+        visible task anchor). Returns None only when the store is empty.
         """
         if not self._items:
             return None
@@ -671,10 +663,7 @@ class TodoStore:
             "completed": "[x]",
             "in_progress": "[>]",
             "pending": "[ ]",
-            "cancelled": "[~]",
             "paused": "[‖]",
-            "closing": "[>]",
-            "escalated": "[!]",
         }
 
         # Completed items are visible (marked [x]) so finished work
@@ -682,10 +671,13 @@ class TodoStore:
         # header explicitly flags them as done to prevent redoing.
         active_items = [
             item for item in self._items
-            if item["status"] in {"pending", "in_progress", "paused", "closing", "escalated"}
+            if item["status"] in {"pending", "in_progress", "paused"}
         ]
         completed_items = [
             item for item in self._items if item["status"] == "completed"
+        ]
+        cancelled_items = [
+            item for item in self._items if item["status"] == "cancelled"
         ]
 
         lines = ["[Your active task list was preserved across context compression]"]
@@ -696,6 +688,12 @@ class TodoStore:
             lines.append("Completed — do not redo:")
             for item in completed_items:
                 lines.append(f"- [x] {item['content']}")
+        if cancelled_items:
+            lines.append("Cancelled:")
+            for item in cancelled_items:
+                lines.append(f"- ~~{item['content']}~~")
+                if item.get("reason"):
+                    lines.append(f"  reason: {item['reason']}")
 
         return "\n".join(lines)
 
@@ -712,17 +710,32 @@ class TodoStore:
         """
         active_items = [
             item for item in self._items
-            if item["status"] in {"pending", "in_progress", "paused", "closing", "escalated"}
+            if item["status"] in {"pending", "in_progress", "paused"}
         ]
         completed_items = [
             item for item in self._items if item["status"] == "completed"
         ]
+        cancelled_items = [
+            item for item in self._items if item["status"] == "cancelled"
+        ]
         pending_captures = self.pending_captures()
-        if not active_items and not completed_items and not pending_captures:
+        if (
+            not active_items
+            and not completed_items
+            and not cancelled_items
+            and not pending_captures
+        ):
             return None
 
         lines = ["[Active tasks]"]
         lines.extend(render_task_board_with_ids(active_items))
+        for item in cancelled_items:
+            # A cancelled task is shown struck through, its reason on the
+            # line beneath — the agent's own record of what it set aside and
+            # why, visible to the user reading the block.
+            lines.append(f"- [{item['id']}] [cancelled] ~~{item['content']}~~")
+            if item.get("reason"):
+                lines.append(f"  reason: {item['reason']}")
         if completed_items:
             lines.append("Completed:")
             for item in completed_items:
@@ -808,6 +821,7 @@ class TodoStore:
             {
                 "items": self._items,
                 "captures": self._captures,
+                "notices": self._notices,
                 "next_capture_id": self._next_capture_id,
                 "seeded": self._seeded,
             },
@@ -839,6 +853,25 @@ class TodoStore:
         # Restore the seeded flag (P5). Old persisted state without the key
         # defaults to False, so pre-existing sessions never render the nudge.
         store._seeded = bool(data.get("seeded", False))
+
+        # Restore pending lifecycle notices (defensive): only well-formed
+        # entries survive, so a replayed store cannot inject a bogus notice.
+        notices = data.get("notices")
+        if isinstance(notices, list):
+            for n in notices:
+                if not isinstance(n, dict):
+                    continue
+                kind = str(n.get("kind", "")).strip()
+                if kind not in (NOTICE_STARTED, NOTICE_COMPLETED, NOTICE_CANCELLED):
+                    continue
+                store._notices.append({
+                    "kind": kind,
+                    "id": str(n.get("id", "")).strip(),
+                    "content": store._cap_content(str(n.get("content", "")).strip()),
+                    "reason": store._cap_content(str(n.get("reason", "")).strip()),
+                    "plan": str(n.get("plan", "")).strip(),
+                })
+            store._notices = store._notices[-MAX_TODO_NOTICES:]
 
         captures = data.get("captures")
         if isinstance(captures, list):
@@ -946,6 +979,10 @@ class TodoStore:
         origin = str(item.get("origin", "")).strip()
         if origin:
             validated["origin"] = origin
+        # A cancelled item's reason survives validation (and therefore a
+        # store reload) so the strikethrough keeps its explanation.
+        if str(item.get("reason", "")).strip():
+            validated["reason"] = TodoStore._cap_content(str(item["reason"]).strip())
         return validated
 
     @staticmethod
@@ -965,15 +1002,17 @@ class TodoStore:
 def _lifecycle_write_violation(todos: List[Any], store: "TodoStore") -> Optional[str]:
     """Return an error message if a write would change a lifecycle status.
 
-    P7: the model drives task state through the ``action`` parameter; a
-    direct status write through the todos list silently disables the
-    enforcement — an ``in_progress`` write silences the turn-end audit (a
-    task is "open"), never arms the GoalEngine (arming keys on ``action``),
-    and never reaches the judge or the post-close review. No-op echoes of
-    the current state are allowed so replace-mode list maintenance keeps
-    working; any write that would CHANGE a lifecycle status is refused with
-    the corrective action. ``completed`` is refused for agent-authored items
-    only — user-sourced items (P4) stay markable directly.
+    Task state is driven through the ``action`` parameter; a direct status
+    write through the todos list bypasses the transition table — an
+    ``in_progress`` write silences the single-current-task invariant, and a
+    ``completed`` write skips the mechanical next-task activation. Any write
+    that would CHANGE one of those lifecycle statuses is refused, naming the
+    action to use instead (never a judge). No-op echoes of the current state
+    are allowed so replace-mode list maintenance keeps working.
+    ``completed`` is refused for agent-authored items only — user-sourced
+    items (P4) stay markable directly, since the user owns their own tasks.
+    A ``cancelled`` write is allowed: setting an item aside is not a state the
+    invariant or activation depends on.
     """
     current = {item["id"]: item for item in store.read()}
     for t in todos:
@@ -986,23 +1025,20 @@ def _lifecycle_write_violation(todos: List[Any], store: "TodoStore") -> Optional
         prev = current.get(item_id)
         if prev is not None and prev["status"] == status:
             continue  # no-op echo of current state — never a transition
-        if status in LIFECYCLE_TRANSITION_STATUSES:
-            return (
-                f"cannot write status '{status}' for task "
-                f"{item_id or '(new)'} through the todos list — lifecycle "
-                "states are driven by the action parameter: action=begin to "
-                "start, action=pause/resume to pause/resume, action=close "
-                "to finish, action=escalate to abandon"
-            )
-        if status == "completed" and not (
-            prev is not None and prev.get("source") == USER_SOURCE
+        action = LIFECYCLE_WRITE_ACTION.get(status)
+        if action is None:
+            continue  # not an action-owned lifecycle status — the write is allowed
+        if (
+            status == "completed"
+            and prev is not None
+            and prev.get("source") == USER_SOURCE
         ):
-            return (
-                f"cannot write status 'completed' for task "
-                f"{item_id or '(new)'} through the todos list — use "
-                "action=close so the lifecycle judge and the post-close "
-                "review run"
-            )
+            continue  # the user marks their own task done
+        return (
+            f"cannot write status '{status}' for task "
+            f"{item_id or '(new)'} through the todos list — use "
+            f"action={action} to change a task's lifecycle status"
+        )
     return None
 
 
@@ -1025,14 +1061,14 @@ def todo_tool(
         dispositions: optional mapping/list of captured-request dispositions
             (P3). Applied after any write so a single call can both update
             the plan and disposition captured requests.
-        action: lifecycle action (begin|pause|resume|close|escalate|block)
-            applied to the task named by item_id (P1). Mutually exclusive
+        action: lifecycle action (begin|complete|cancel|pause|resume)
+            applied to the task named by item_id. Mutually exclusive
             with todos; when both are provided the lifecycle action wins
-            and the write is ignored. ``block`` parks the goal loop until
-            the user's next turn.
+            and the write is ignored. ``cancel`` requires a reason.
         item_id: id of the task the lifecycle action targets.
-        reason: why the task is blocked. Required by ``block`` (the park
-            reason is shown to the user); ignored by other actions.
+        reason: why the task is cancelled. Required by ``cancel`` (the
+            reason is shown beneath the cancelled item); ignored by other
+            actions.
 
     Returns:
         JSON string with the full current list, pending captured requests,
@@ -1042,23 +1078,9 @@ def todo_tool(
         return tool_error("TodoStore not initialized")
 
     if action is not None:
-        # ``block`` parks the goal loop, and the park reason is what the
-        # user sees when the loop quiesces. Refuse a reasonless block
-        # rather than parking with an empty explanation.
-        action_normalized = str(action).strip().lower()
-        if action_normalized == "block" and not str(reason or "").strip():
-            return tool_error(
-                "block requires a reason: state what you need from the user"
-            )
-        result = store.transition(action, item_id)
+        result = store.transition(action, item_id, reason or "")
         if not result.get("ok"):
-            error = result.get("error", "lifecycle transition refused")
-            if action_normalized == "block":
-                # A refused block parked nothing — the loop is still
-                # running. Say so explicitly: a bare transition error reads
-                # as "the task is blocked" when in fact nothing was held.
-                return tool_error(f"block did not park: {error}")
-            return tool_error(error)
+            return tool_error(result.get("error", "lifecycle transition refused"))
         items = store.read()
     elif todos is not None:
         # Guard: LLM sometimes sends todos as a JSON string instead of a list
@@ -1087,8 +1109,6 @@ def todo_tool(
     completed = sum(1 for i in items if i["status"] == "completed")
     cancelled = sum(1 for i in items if i["status"] == "cancelled")
     paused = sum(1 for i in items if i["status"] == "paused")
-    closing = sum(1 for i in items if i["status"] == "closing")
-    escalated = sum(1 for i in items if i["status"] == "escalated")
 
     return json.dumps({
         "todos": items,
@@ -1100,8 +1120,6 @@ def todo_tool(
             "completed": completed,
             "cancelled": cancelled,
             "paused": paused,
-            "closing": closing,
-            "escalated": escalated,
         },
     }, ensure_ascii=False)
 
@@ -1124,25 +1142,26 @@ TODO_SCHEMA = {
         "with 3+ steps or when the user provides multiple tasks. "
         "Call with no parameters to read the current list.\n\n"
         "Lifecycle (task state machine):\n"
-        "- begin: start a pending/paused task (it becomes in_progress). "
-        "Starting a new task while another is in_progress is refused — "
-        "pause, close, or escalate the current task first.\n"
-        "- pause: stop the current task (it becomes paused; resume later).\n"
-        "- resume: continue a paused task.\n"
-        "- close: declare the current task finished (it enters closing; "
-        "the lifecycle judge's done verdict finalizes it as completed).\n"
-        "- block: preserve the current task and park the loop until the user's next turn — use when you cannot proceed without the user. Requires a reason.\n"
-        "- escalate: abandon the current task and surface it to the user.\n"
+        "- begin: start a pending task (it becomes in_progress). Refused "
+        "while another task is in_progress — complete or cancel it first.\n"
+        "- complete: finish the current task (it becomes completed); the "
+        "next pending task then becomes in_progress automatically.\n"
+        "- cancel: set a task aside (it becomes cancelled). Requires a "
+        "reason, which is shown beneath the item. Works on a pending or "
+        "in_progress task.\n"
+        "- pause: hold the current task (it becomes paused; resume later).\n"
+        "- resume: continue a paused task (it becomes in_progress).\n"
         "Use action + item_id to apply a lifecycle action.\n\n"
         "Writing:\n"
-        "- Provide 'todos' array to create/update items\n"
-        "- merge=false (default): replace the entire list with a fresh plan\n"
-        "- merge=true: update existing items by id, add any new ones\n"
-        "Lifecycle statuses (in_progress, paused, closing, escalated) are "
+        "- Provide 'todos' array to add or edit items\n"
+        "- To add a task, write one new item (merge=true, or a fresh list)\n"
+        "- To edit one item's content, write that item by id with merge=true\n"
+        "- Never overwrite the whole list to change one item — write only "
+        "the item you mean\n"
+        "Lifecycle statuses (in_progress, paused, completed, cancelled) are "
         "driven by the action parameter — a write that changes one is "
-        "refused. Finish tasks with action=close (the judge finalizes it); "
-        "user-sourced items (source=user) may be marked completed/cancelled "
-        "directly.\n\n"
+        "refused. User-sourced items (source=user) may be marked "
+        "completed/cancelled directly.\n\n"
         "Each item: {id: string, content: string, "
         "status: pending|in_progress|completed|cancelled, "
         "source?: user, plan?: string}\n"
@@ -1230,12 +1249,11 @@ TODO_SCHEMA = {
             },
             "action": {
                 "type": "string",
-                "enum": ["begin", "pause", "resume", "close", "escalate", "block"],
+                "enum": ["begin", "complete", "cancel", "pause", "resume"],
                 "description": (
                     "Lifecycle action applied to the task named by item_id. "
-                    "Mutually exclusive with todos. ``block`` preserves the "
-                    "task and parks the loop until the user's next turn — "
-                    "it requires a reason."
+                    "Mutually exclusive with todos. ``cancel`` requires a "
+                    "reason (shown beneath the cancelled item)."
                 )
             },
             "item_id": {
@@ -1245,9 +1263,9 @@ TODO_SCHEMA = {
             "reason": {
                 "type": "string",
                 "description": (
-                    "Why the task is blocked. Required by ``block``: the "
-                    "reason is shown to the user while the loop is parked. "
-                    "Ignored by other actions."
+                    "Why the task is cancelled. Required by ``cancel``: the "
+                    "reason is shown beneath the cancelled item. Ignored by "
+                    "other actions."
                 )
             },
             "dispositions": {

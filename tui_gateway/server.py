@@ -10264,31 +10264,12 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
                                     sid,
                                     {"kind": "goal", "text": verdict_msg},
                                 )
-                            # Task-lifecycle two-key close (P1/P2): observe
-                            # the judge's verdict against the live agent's
-                            # todo store — a closing task finalizes on
-                            # done, a premature close returns to
-                            # in_progress, and a done verdict on an open
-                            # task finalizes it with a nudge.
-                            _verdict_nudge = ""
-                            try:
-                                from agent.task_manager import observe_verdict
-
-                                _verdict_nudge = str(observe_verdict(agent, decision) or "")
-                            except Exception as _verdict_exc:
-                                print(
-                                    f"[tui_gateway] task-lifecycle verdict observation failed: "
-                                    f"{type(_verdict_exc).__name__}: {_verdict_exc}",
-                                    file=sys.stderr,
-                                )
                             if decision.get("should_continue"):
                                 cont_prompt = decision.get("continuation_prompt") or ""
                                 # Lifecycle nudges outrank the goal
                                 # continuation; the next turn re-judges.
                                 if _lifecycle_nudge:
                                     goal_followup = _lifecycle_nudge
-                                elif _verdict_nudge:
-                                    goal_followup = _verdict_nudge
                                 elif cont_prompt:
                                     goal_followup = cont_prompt
                         elif _lifecycle_nudge:

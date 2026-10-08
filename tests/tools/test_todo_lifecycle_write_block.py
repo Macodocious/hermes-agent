@@ -1,20 +1,14 @@
-"""Tests for the lifecycle write block (P7).
+"""Tests for the lifecycle write block.
 
-The legacy write path (``todos=[...]`` with a lifecycle status) was a
-complete bypass of the task lifecycle: an ``in_progress`` write silenced
-the turn-end audit, never armed the GoalEngine (arming keys on
-``action``), and never reached the judge or the post-close review. The
-tool now refuses any write that would CHANGE a lifecycle status, forcing
-the model through ``action=begin/pause/resume/close/escalate``.
-
-The store itself is NOT the boundary — hydration, seeding, and internal
-code (task_manager) write lifecycle statuses directly. Only the
-model-facing tool entry point enforces the block.
+The model drives task state through the ``action`` parameter; a direct
+lifecycle status write through the todos list bypasses the transition
+table, so the tool refuses any todos-list write that would CHANGE a
+lifecycle status, naming the action to use instead. ``completed`` and
+``cancelled`` are no longer redirected to a judge-owned close action — the
+agent owns them — but they are still driven by their own actions.
 """
 
 import json
-
-import pytest
 
 from tools.todo_tool import TodoStore, todo_tool
 
@@ -36,7 +30,6 @@ class TestLifecycleStatusWritesRefused:
         result = _write(store, [{"id": "1", "status": "in_progress"}], merge=True)
         assert "error" in result
         assert "action=begin" in result["error"]
-        # The write must not be applied.
         assert store.read()[0]["status"] == "pending"
 
     def test_paused_write_is_refused(self):
@@ -46,26 +39,14 @@ class TestLifecycleStatusWritesRefused:
         assert "error" in result
         assert "action=pause" in result["error"]
 
-    def test_closing_write_is_refused(self):
-        store = TodoStore()
-        store.write([{"id": "1", "content": "Task", "status": "pending"}])
-        result = _write(store, [{"id": "1", "status": "closing"}], merge=True)
-        assert "error" in result
-        assert "action=close" in result["error"]
-
-    def test_escalated_write_is_refused(self):
-        store = TodoStore()
-        store.write([{"id": "1", "content": "Task", "status": "pending"}])
-        result = _write(store, [{"id": "1", "status": "escalated"}], merge=True)
-        assert "error" in result
-        assert "action=escalate" in result["error"]
-
-    def test_completed_on_agent_item_is_refused(self):
+    def test_completed_on_agent_item_redirects_to_the_agent_action(self):
+        """The redirect names the agent-owned complete action, not a judge close."""
         store = TodoStore()
         store.write([{"id": "1", "content": "Task", "status": "pending"}])
         result = _write(store, [{"id": "1", "status": "completed"}], merge=True)
         assert "error" in result
-        assert "action=close" in result["error"]
+        assert "action=complete" in result["error"]
+        assert "action=close" not in result["error"]
 
     def test_refused_write_leaves_store_unchanged(self):
         store = TodoStore()
@@ -95,13 +76,6 @@ class TestLifecycleStatusWritesAllowed:
         assert "error" not in result
         assert result["summary"]["completed"] == 1
 
-    def test_cancelled_on_agent_item_is_allowed(self):
-        store = TodoStore()
-        store.write([{"id": "1", "content": "Task", "status": "pending"}])
-        result = _write(store, [{"id": "1", "status": "cancelled"}], merge=True)
-        assert "error" not in result
-        assert result["summary"]["cancelled"] == 1
-
     def test_pending_write_is_allowed(self):
         store = TodoStore()
         result = _write(store, [{"id": "1", "content": "Task", "status": "pending"}])
@@ -111,7 +85,7 @@ class TestLifecycleStatusWritesAllowed:
 
 class TestStoreBoundaryNotEnforced:
     """The store is not the boundary: hydration, seeding, and internal
-    code (task_manager) write lifecycle statuses directly."""
+    code write lifecycle statuses directly."""
 
     def test_store_write_accepts_in_progress(self):
         store = TodoStore()
@@ -125,48 +99,40 @@ class TestStoreBoundaryNotEnforced:
 
 
 class TestSchemaTeachesTheRule:
-    """The tool schema is the instruction surface (design contract:
-    behavioral guidance lives in the schema description)."""
+    """The tool schema is the instruction surface."""
 
-    def test_schema_mentions_action_driven_lifecycle(self):
+    def test_schema_action_enum_is_agent_owned(self):
         from tools.todo_tool import TODO_SCHEMA
-        desc = TODO_SCHEMA["description"]
-        assert "driven by the action parameter" in desc
-        assert "action=close" in desc
 
-    def test_schema_exposes_block_action(self):
-        """The schema is the instruction surface: block must be offered."""
-        from tools.todo_tool import TODO_SCHEMA
-        assert "block" in TODO_SCHEMA["description"]
         enum = TODO_SCHEMA["parameters"]["properties"]["action"]["enum"]
-        assert "block" in enum
+        assert set(enum) == {"begin", "complete", "cancel", "pause", "resume"}
 
     def test_schema_declares_reason_parameter(self):
         from tools.todo_tool import TODO_SCHEMA
+
         props = TODO_SCHEMA["parameters"]["properties"]
         assert props["reason"]["type"] == "string"
 
 
-class TestBlockActionToolEntry:
-    """The tool entry refuses a reasonless block and passes a valid one
-    through the transition door."""
+class TestCancelActionToolEntry:
+    """The tool entry requires a reason for cancel and passes it through."""
 
-    def test_block_without_reason_is_refused(self):
+    def test_cancel_without_reason_is_refused(self):
         store = TodoStore()
         store.write([{"id": "1", "content": "Task", "status": "pending"}])
         store.transition("begin", "1")
-        result = json.loads(
-            todo_tool(action="block", item_id="1", store=store)
-        )
+        result = json.loads(todo_tool(action="cancel", item_id="1", store=store))
         assert "error" in result
         assert "reason" in result["error"]
 
-    def test_block_with_reason_succeeds_and_preserves_status(self):
+    def test_cancel_with_reason_succeeds(self):
         store = TodoStore()
         store.write([{"id": "1", "content": "Task", "status": "pending"}])
         store.transition("begin", "1")
         result = json.loads(
-            todo_tool(action="block", item_id="1", reason="need your call", store=store)
+            todo_tool(action="cancel", item_id="1", reason="not needed", store=store)
         )
         assert "error" not in result
-        assert result["todos"][0]["status"] == "in_progress"
+        item = next(i for i in result["todos"] if i["id"] == "1")
+        assert item["status"] == "cancelled"
+        assert item["reason"] == "not needed"
