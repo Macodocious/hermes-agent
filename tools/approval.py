@@ -2869,6 +2869,80 @@ def _run_approval_gate(
     return {"approved": True, "message": None}
 
 
+def _invoke_guard_decision(command: str, env_type: str) -> dict | None:
+    """Consult the ``guard_decision`` plugin hook before the native guard.
+
+    Returns ``{"approved": True, "message": None, "gate_approved": True}`` when
+    a plugin reports it already approved this call, else ``None`` so the native
+    guard runs unchanged. Fail-closed: an absent hook, a raising hook, or a
+    malformed return yields ``None``.
+    """
+    try:
+        from hermes_cli.plugins import has_hook, invoke_hook
+        if not has_hook("guard_decision"):
+            return None
+        results = invoke_hook(
+            "guard_decision",
+            command=command,
+            env_type=env_type,
+            is_subagent=_is_subagent_approval_context(),
+        )
+    except Exception:
+        return None
+    for result in results:
+        if isinstance(result, dict) and result.get("approved") is True:
+            return {"approved": True, "message": None, "gate_approved": True}
+    return None
+
+
+def _is_subagent_approval_context() -> bool:
+    """Best-effort: True when this thread carries a delegate_task worker's
+    non-interactive approval callback — the same signal the gate uses to
+    detect subagent threads. Never raises."""
+    try:
+        from tools.terminal_tool import _get_approval_callback
+        callback = _get_approval_callback()
+        if callback is None:
+            return False
+        name = (getattr(callback, "__qualname__", "") or "") + " " + (
+            getattr(callback, "__name__", "") or ""
+        )
+        return "subagent" in name.lower()
+    except Exception:
+        return False
+
+
+def _invoke_approval_presentation(
+    tool_name: str,
+    args: Optional[dict],
+    reason: str,
+    session_key: str,
+) -> dict | None:
+    """Consult the ``approval_presentation`` plugin hook for a prompt spec.
+
+    Returns the first well-formed presentation spec a plugin supplies, else
+    ``None`` so the caller renders core's default presentation. Fail-closed:
+    an absent hook, a raising hook, or a malformed return yields ``None``.
+    """
+    try:
+        from hermes_cli.plugins import has_hook, invoke_hook
+        if not has_hook("approval_presentation"):
+            return None
+        results = invoke_hook(
+            "approval_presentation",
+            tool_name=tool_name,
+            args=args if isinstance(args, dict) else {},
+            reason=reason or "",
+            session_key=session_key or "",
+        )
+    except Exception:
+        return None
+    for result in results:
+        if isinstance(result, dict):
+            return result
+    return None
+
+
 def _should_skip_container_guards(env_type: str, has_host_access: bool = False) -> bool:
     """Return True when the backend is isolated enough to skip dangerous-command prompts.
 
@@ -3233,6 +3307,16 @@ def check_all_command_guards(command: str, env_type: str,
         logger.warning("User deny rule %r blocked command: %s",
                        deny_pattern, command[:200])
         return _user_deny_block_result(deny_pattern)
+
+    # Plugin guard-decision seam: a plugin that already obtained human
+    # approval for this exact call (e.g. the approval-gate plugin) returns
+    # {"approved": True} to skip the native re-prompt. Placed AFTER the
+    # unconditional floors above (hardline, sudo, user-deny) so no plugin can
+    # bypass them. Fail-closed: an absent, raising, or malformed hook runs the
+    # native guard unchanged.
+    _gate_decision = _invoke_guard_decision(command, env_type)
+    if _gate_decision is not None:
+        return _gate_decision
 
     # --yolo or approvals.mode=off: bypass all approval prompts.
     # Gateway /yolo is session-scoped; CLI --yolo remains process-scoped.
@@ -3672,6 +3756,11 @@ def check_execute_code_guard(code: str, env_type: str,
         return {"approved": True, "message": None}
     if _should_skip_container_guards(env_type, has_host_access=has_host_access):
         return {"approved": True, "message": None}
+
+    # Plugin guard-decision seam (see check_all_command_guards). Fail-closed.
+    _gate_decision = _invoke_guard_decision(code, env_type)
+    if _gate_decision is not None:
+        return _gate_decision
 
     # --yolo or approvals.mode=off: bypass (session- or process-scoped).
     approval_mode = _get_approval_mode()

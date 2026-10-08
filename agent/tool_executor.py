@@ -53,6 +53,33 @@ from tools.budget_config import BudgetConfig, DEFAULT_BUDGET, budget_for_context
 logger = logging.getLogger(__name__)
 
 
+def _extract_assistant_reasoning(assistant_message) -> str:
+    """Return the assistant message's reasoning text (empty when absent).
+
+    Field precedence mirrors what the approval-gate plugin used to capture via
+    a thread-local: ``reasoning``, then ``reasoning_content``, then ``content``.
+    Passed to ``pre_tool_call`` so a gate hook can read the LLM's reasoning
+    without monkey-patching the executors.
+    """
+    if assistant_message is None:
+        return ""
+    if isinstance(assistant_message, dict):
+        text = (
+            assistant_message.get("reasoning")
+            or assistant_message.get("reasoning_content")
+            or assistant_message.get("content")
+            or ""
+        )
+    else:
+        text = (
+            getattr(assistant_message, "reasoning", "")
+            or getattr(assistant_message, "reasoning_content", "")
+            or getattr(assistant_message, "content", "")
+            or ""
+        )
+    return text if isinstance(text, str) else ""
+
+
 def _enrich_todo_transition(store, detected):
     """Add the ordered-list position, list total, and plan reference to a
     detected task transition (start or stop).
@@ -562,6 +589,7 @@ def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effe
                     turn_id=getattr(agent, "_current_turn_id", "") or "",
                     api_request_id=getattr(agent, "_current_api_request_id", "") or "",
                     middleware_trace=list(middleware_trace),
+                    reasoning=_extract_assistant_reasoning(assistant_message),
                 )
             except Exception:
                 block_message = None
@@ -1233,6 +1261,7 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
                     turn_id=getattr(agent, "_current_turn_id", "") or "",
                     api_request_id=getattr(agent, "_current_api_request_id", "") or "",
                     middleware_trace=list(middleware_trace),
+                    reasoning=_extract_assistant_reasoning(assistant_message),
                 )
             except Exception:
                 pass

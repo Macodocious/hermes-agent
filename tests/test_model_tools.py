@@ -65,6 +65,7 @@ class TestHandleFunctionCall:
                 turn_id="",
                 api_request_id="",
                 middleware_trace=[],
+                reasoning="",
             ),
             call(
                 "post_tool_call",
