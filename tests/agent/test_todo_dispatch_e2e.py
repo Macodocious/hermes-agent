@@ -1,19 +1,12 @@
-"""E2E: the real todo dispatch path drives the lifecycle (P1/P2).
+"""E2E: the real todo dispatch path drives the agent-owned lifecycle.
 
-The design doc promised "begin write arms; close write + done verdict
-marks done" through the real dispatch — this is that test, added as a
-regression from PR review (the two-key close once cleared the goal on
-the close write, so the judge never ran and the task stranded in
-closing forever).
+Exercises ``agent_runtime_helpers.invoke_tool`` for the ``todo`` tool end to
+end: todo_tool -> persist_todo_store -> on_todo_write (persist + stamp). The
+lifecycle no longer arms a goal and no longer observes a verdict — the store
+owns the transitions and the agent's own complete action finalizes a task.
 
-Exercises ``agent_runtime_helpers.invoke_tool`` for the ``todo`` tool
-end to end: todo_tool -> persist_todo_store -> on_todo_write (goal
-arming/clearing), then the loop's verdict observation
-(``task_manager.observe_verdict``) for the second key.
-
-External seams are pinned: SessionDB persistence and the GoalManager
-are faked, so the test is deterministic and needs no real goals
-provider.
+External seams are pinned: SessionDB persistence is faked, so the test is
+deterministic and needs no real goals provider.
 """
 
 from types import SimpleNamespace
@@ -37,138 +30,64 @@ def _seed(store: TodoStore, item_id: str, content: str) -> None:
     store.write([{"id": item_id, "content": content, "status": "pending"}])
 
 
-def _armed_entry(store: TodoStore, item_id: str) -> str:
-    """The ``set:`` call the FakeGoalManager records for an item's goal text.
-
-    Derived from the production builder so the assertion pins the *wiring*
-    (begin arms the loop with the bound item's goal text) rather than the
-    text's wording, which is the goal-builder's own contract.
-    """
-    from agent import task_manager
-
-    item = next(i for i in store.read() if i["id"] == item_id)
-    return f"set:{task_manager._goal_text_for_item(item)}"
-
-
-class FakeGoalManager:
-    """Records arm/clear calls; never touches a real goals provider."""
-
-    def __init__(self, calls: list):
-        self.calls = calls
-
-    def set(self, text: str, **kwargs) -> None:
-        self.calls.append(f"set:{text}")
-
-    def clear(self) -> None:
-        self.calls.append("clear")
-
-
 @pytest.fixture
 def dispatched(monkeypatch, tmp_path):
-    """Pin persistence + GoalManager, return (agent, calls).
-
-    The patches resolve ``agent.task_manager`` by *string* at fixture
-    time (and the verdict calls re-import the module) so they survive
-    suites that delete ``agent.*`` from ``sys.modules`` mid-session
-    (e.g. test_empty_tool_name_loop_dampening): the dispatch re-imports
-    the module at call time, so patching the collection-time binding
-    would silently miss.
-    """
+    """Pin persistence + the lifecycle config; return (agent, calls)."""
     calls: list = []
     monkeypatch.setattr(
         "hermes_cli.tasks.persist_todo_store", lambda agent: calls.append("persist")
     )
-    monkeypatch.setattr(
-        "agent.task_manager._load_goal_manager",
-        lambda agent: FakeGoalManager(calls),
-    )
     monkeypatch.setattr("agent.task_manager._persist", lambda agent: None)
-    # Pin the lifecycle gate: the E2E must be independent of the host
-    # config (a config-touching test earlier in the suite can change what
-    # load_config returns and silently disable the gate).
     monkeypatch.setattr(
         "agent.task_manager._lifecycle_config", lambda: {"enabled": True}
     )
-    # The post-close probe must never touch the host probes dir in tests.
     monkeypatch.setattr("hermes_constants.get_hermes_home", lambda: tmp_path)
     store = TodoStore()
     _seed(store, "1", "Build the thing")
     return _make_agent(store), calls
 
 
-def _task_manager():
-    """Re-import at call time so verdict calls hit the live module.
-
-    The same sys.modules wipe that can orphan module-object patches also
-    orphans a collection-time ``from agent import task_manager`` binding;
-    re-importing here resolves whatever the dispatch would resolve.
-    """
-    import importlib
-
-    return importlib.import_module("agent.task_manager")
-
-
-def _invoke(agent, action: str, item_id: str) -> None:
+def _invoke(agent, action: str, item_id: str, **extra) -> None:
     invoke_tool(
         agent,
         "todo",
-        {"action": action, "item_id": item_id},
+        {"action": action, "item_id": item_id, **extra},
         effective_task_id="",
         pre_tool_block_checked=True,
         skip_tool_request_middleware=True,
     )
 
 
-def test_begin_write_arms_goal(dispatched) -> None:
+def test_begin_write_transitions_store_and_stamps(dispatched) -> None:
     agent, calls = dispatched
     _invoke(agent, "begin", "1")
 
-    assert _armed_entry(agent._todo_store, "1") in calls
     assert agent._todo_store.read()[0]["status"] == "in_progress"
     assert agent._task_lifecycle_action_issued is True
+    assert "persist" in calls
 
 
-def test_close_write_keeps_goal_armed_and_judge_done_finalizes(dispatched) -> None:
-    """The doc's E2E promise: close write + done verdict marks done.
-
-    Regression: the close write used to clear the goal, so the loop
-    stopped before the judge could run and the task stranded in closing.
-    """
+def test_complete_write_finalizes_without_a_verdict(dispatched) -> None:
+    """The agent's complete action alone marks the task done."""
     agent, calls = dispatched
     _invoke(agent, "begin", "1")
-    _invoke(agent, "close", "1")
+    _invoke(agent, "complete", "1")
 
-    # The loop must still be armed after the close write (second key).
-    assert "clear" not in calls
-    assert agent._todo_store.read()[0]["status"] == "closing"
-
-    nudge = _task_manager().observe_verdict(agent, {"verdict": "done"})
-    assert nudge is None
     assert agent._todo_store.read()[0]["status"] == "completed"
 
 
-def test_close_write_with_continue_verdict_returns_to_work(dispatched) -> None:
+def test_cancel_write_requires_a_reason(dispatched) -> None:
+    """A reasonless cancel is refused; the task stays in_progress."""
     agent, calls = dispatched
     _invoke(agent, "begin", "1")
-    _invoke(agent, "close", "1")
+    _invoke(agent, "cancel", "1")
 
-    nudge = _task_manager().observe_verdict(
-        agent, {"verdict": "continue", "reason": "spec not met"}
-    )
-    assert nudge is not None
-    assert "spec not met" in nudge
     assert agent._todo_store.read()[0]["status"] == "in_progress"
-    rework = next(
-        i for i in agent._todo_store.read() if i.get("review_of") == "1"
-    )
-    assert rework["status"] == "pending"
-    assert rework["source"] == "review"
 
 
-def test_pause_write_clears_goal(dispatched) -> None:
+def test_cancel_write_with_reason_cancels(dispatched) -> None:
     agent, calls = dispatched
     _invoke(agent, "begin", "1")
-    _invoke(agent, "pause", "1")
+    _invoke(agent, "cancel", "1", reason="not needed")
 
-    assert "clear" in calls
-    assert agent._todo_store.read()[0]["status"] == "paused"
+    assert agent._todo_store.read()[0]["status"] == "cancelled"

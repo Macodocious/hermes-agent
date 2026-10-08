@@ -1,8 +1,13 @@
-"""Tests for the task_manager lifecycle owner (P2).
+"""Tests for the task_manager lifecycle owner.
 
-Covers GoalEngine arming on begin, clearing when the current task leaves
-in_progress, the two-key close (verdict observation), and the turn-end
-audit (work with no open task must not end cleanly).
+The agent owns the task transitions (applied inside the todo store), so this
+module's job is narrow: ``on_todo_write`` stamps the turn and persists the
+store, and ``audit_turn_end`` pulls the agent back when a turn did work with
+no open task. The judge-era goal arming and verdict handling are gone.
+
+Covers ``on_todo_write``, the deterministic helpers (plan_is_complete,
+task_position, task_plan_ref, plan_task_total), the turn-end audit, the
+config toggle, and that the judge machinery has been removed from the module.
 """
 
 from types import SimpleNamespace
@@ -26,32 +31,6 @@ def _seed(store: TodoStore, item_id: str, content: str) -> None:
     store.write([{"id": item_id, "content": content, "status": "pending"}])
 
 
-def _armed_goal_text(store: TodoStore, item_id: str) -> str:
-    """The goal text on_todo_write is expected to arm for an item.
-
-    Derived from the production builder so these tests assert the *wiring*
-    (the hook arms the loop with the bound item's goal text) rather than
-    freezing the text's wording, which is the goal-builder's own concern.
-    """
-    item = next(i for i in store.read() if i["id"] == item_id)
-    return task_manager._goal_text_for_item(item)
-
-
-def _spec_prefix(content: str) -> str:
-    """The goal text's leading clause for an item's own content."""
-    return f"Complete the task per its specification: {content}"
-
-
-def _calls_set_entry(content: str) -> str:
-    """A FakeMgr ``set:`` call entry for an item's content clause.
-
-    FakeMgrs record ``f"set:{text}"``; this builds the matching prefix so an
-    assertion can check that the hook armed the loop with the item's goal
-    text without freezing the rest of the wording.
-    """
-    return f"set:{_spec_prefix(content)}"
-
-
 @pytest.fixture(autouse=True)
 def _lifecycle_on(monkeypatch, tmp_path) -> None:
     """Pin the lifecycle config so tests are independent of the host config."""
@@ -60,304 +39,48 @@ def _lifecycle_on(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr("hermes_constants.get_hermes_home", lambda: tmp_path)
 
 
-# ── on_todo_write: GoalEngine arming ──────────────────────────────────
-
-
-def test_on_todo_write_arms_goal_on_begin(monkeypatch) -> None:
-    store = TodoStore()
-    _seed(store, "1", "Build the thing")
-    agent = _make_agent(store)
-    calls: list[str] = []
-
-    class FakeMgr:
-        def __init__(self, **kwargs):
-            calls.append("init")
-
-        def set(self, text: str, **kwargs) -> None:
-            calls.append(f"set:{text}")
-
-        def clear(self) -> None:
-            calls.append("clear")
-
-    monkeypatch.setattr(task_manager, "_load_goal_manager", lambda a: FakeMgr())
-    monkeypatch.setattr(task_manager, "_persist", lambda a: calls.append("persist"))
-
-    store.transition("begin", "1")
-    task_manager.on_todo_write(agent, {"action": "begin", "item_id": "1"})
-
-    assert f"set:{_armed_goal_text(store, '1')}" in calls
-    assert "persist" in calls
-
-
-def test_on_todo_write_arms_goal_on_plan_begin(monkeypatch) -> None:
-    """A plan-carrying task arms the goal on begin and stamps no
-    execution-authorization hold — the plan authorization prompt in
-    approval-gate already holds execution authorization for the plan."""
-    store = TodoStore()
-    store.write(
-        [
-            {
-                "id": "1",
-                "content": "Build the thing",
-                "status": "pending",
-                "plan": "/tmp/some/plan.md",
-            }
-        ]
-    )
-    agent = _make_agent(store)
-    calls: list[str] = []
-
-    class FakeMgr:
-        def __init__(self, **kwargs):
-            calls.append("init")
-
-        def set(self, text: str, **kwargs) -> None:
-            calls.append(f"set:{text}")
-
-        def clear(self) -> None:
-            calls.append("clear")
-
-    monkeypatch.setattr(task_manager, "_load_goal_manager", lambda a: FakeMgr())
-    monkeypatch.setattr(task_manager, "_persist", lambda a: calls.append("persist"))
-
-    store.transition("begin", "1")
-    task_manager.on_todo_write(agent, {"action": "begin", "item_id": "1"})
-
-    assert f"set:{_armed_goal_text(store, '1')}" in calls
-    assert not any(c.startswith("hold_") for c in calls)
-
-
-def test_on_todo_write_clears_goal_when_no_task_open(monkeypatch) -> None:
-    store = TodoStore()
-    _seed(store, "1", "Build the thing")
-    agent = _make_agent(store)
-    calls: list[str] = []
-
-    class FakeMgr:
-        def __init__(self, **kwargs):
-            calls.append("init")
-
-        def set(self, text: str, **kwargs) -> None:
-            calls.append("set")
-
-        def clear(self) -> None:
-            calls.append("clear")
-
-    monkeypatch.setattr(task_manager, "_load_goal_manager", lambda a: FakeMgr())
-    monkeypatch.setattr(task_manager, "_persist", lambda a: calls.append("persist"))
-
-    store.transition("begin", "1")
-    task_manager.on_todo_write(agent, {"action": "begin", "item_id": "1"})
-    store.transition("pause", "1")
-    task_manager.on_todo_write(agent, {"action": "pause", "item_id": "1"})
-
-    assert "clear" in calls
-    assert calls.count("set") == 1
+# ── on_todo_write: agent-owned — stamp + persist, never arm a goal ────
 
 
 def test_on_todo_write_stamps_action_flag(monkeypatch) -> None:
     store = TodoStore()
     _seed(store, "1", "Build the thing")
     agent = _make_agent(store)
-    monkeypatch.setattr(task_manager, "_load_goal_manager", lambda a: None)
     monkeypatch.setattr(task_manager, "_persist", lambda a: None)
 
     task_manager.on_todo_write(agent, {"action": "begin", "item_id": "1"})
     assert agent._task_lifecycle_action_issued is True
 
 
-def test_on_todo_write_stays_armed_while_close_in_flight(monkeypatch) -> None:
-    """A close in flight must NOT clear the goal — the judge's done
-    verdict is the second key of the two-key close. Clearing here would
-    strand the task in closing forever (regression: PR review)."""
+def test_on_todo_write_persists(monkeypatch) -> None:
     store = TodoStore()
     _seed(store, "1", "Build the thing")
     agent = _make_agent(store)
-    calls: list[str] = []
-
-    class FakeMgr:
-        def __init__(self, **kwargs):
-            calls.append("init")
-
-        def set(self, text: str, **kwargs) -> None:
-            calls.append("set")
-
-        def clear(self) -> None:
-            calls.append("clear")
-
-    monkeypatch.setattr(task_manager, "_load_goal_manager", lambda a: FakeMgr())
-    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
-
-    store.transition("begin", "1")
-    task_manager.on_todo_write(agent, {"action": "begin", "item_id": "1"})
-    store.transition("close", "1")
-    task_manager.on_todo_write(agent, {"action": "close", "item_id": "1"})
-
-    assert "clear" not in calls
-    assert calls.count("set") == 2
-
-
-def test_on_todo_write_rearms_over_a_cleared_parked_goal(monkeypatch) -> None:
-    """A cleared goal that still carries awaiting_user_input must not block
-    the re-arm.
-
-    Regression (task-lifecycle wedge): GoalManager.clear() left
-    awaiting_user_input=True on the cleared row, and on_todo_write honored
-    that flag unconditionally — so the goal never re-armed, the judge never
-    ran, and a `closing` task (finalized only by the judge's done verdict)
-    was stranded forever. The park binds only a LIVE (active) goal.
-    """
-    store = TodoStore()
-    _seed(store, "1", "Build the thing")
-    agent = _make_agent(store)
-    calls: list[str] = []
-
-    class FakeMgr:
-        def __init__(self, **kwargs):
-            calls.append("init")
-
-        @property
-        def state(self):
-            return SimpleNamespace(
-                status="cleared", goal="", awaiting_user_input=True
-            )
-
-        def set(self, text: str, **kwargs) -> None:
-            calls.append(f"set:{text}")
-
-        def clear(self) -> None:
-            calls.append("clear")
-
-    monkeypatch.setattr(task_manager, "_load_goal_manager", lambda a: FakeMgr())
-    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
-
-    store.transition("begin", "1")
-    task_manager.on_todo_write(agent, {"action": "begin", "item_id": "1"})
-
-    assert f"set:{_armed_goal_text(store, '1')}" in calls
-
-
-def test_on_todo_write_holds_rearm_while_goal_is_actively_parked(
-    monkeypatch,
-) -> None:
-    """An ACTIVE parked goal still blocks the re-arm (the guard is preserved).
-
-    The status gate narrows the park to a live goal; a genuinely parked
-    active goal — awaiting a user decision — must still not be re-armed
-    behind the user's back.
-    """
-    store = TodoStore()
-    _seed(store, "1", "Build the thing")
-    agent = _make_agent(store)
-    calls: list[str] = []
-
-    class FakeMgr:
-        def __init__(self, **kwargs):
-            calls.append("init")
-
-        @property
-        def state(self):
-            return SimpleNamespace(
-                status="active", goal="", awaiting_user_input=True
-            )
-
-        def set(self, text: str, **kwargs) -> None:
-            calls.append(f"set:{text}")
-
-        def clear(self) -> None:
-            calls.append("clear")
-
-    monkeypatch.setattr(task_manager, "_load_goal_manager", lambda a: FakeMgr())
-    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
-
-    store.transition("begin", "1")
-    task_manager.on_todo_write(agent, {"action": "begin", "item_id": "1"})
-
-    assert not any(c.startswith("set:") for c in calls)
-
-
-def test_on_todo_write_does_not_rearm_identical_active_goal(monkeypatch) -> None:
-    """A routine todo read-back must not reset the judge's turn budget.
-
-    set() builds a fresh goal state with turns_used=0, so re-arming an
-    identical active goal on every todo write keeps the loop stuck at
-    (1/max_turns) forever — the budget can never fire. When the goal is
-    already active with the same text, on_todo_write must leave it alone
-    (regression: PR #51 'Continuing toward goal (1/100)' loop)."""
-    store = TodoStore()
-    _seed(store, "1", "Build the thing")
-    agent = _make_agent(store)
-    calls: list[str] = []
-
-    class FakeMgr:
-        def __init__(self, **kwargs):
-            calls.append("init")
-            self._state = None
-
-        @property
-        def state(self):
-            return self._state
-
-        def set(self, text: str, **kwargs) -> None:
-            calls.append(f"set:{text}")
-            # set() mirrors GoalManager: a fresh active goal with the text.
-            self._state = SimpleNamespace(status="active", goal=text)
-
-        def clear(self) -> None:
-            calls.append("clear")
-
-    manager = FakeMgr()
-    monkeypatch.setattr(task_manager, "_load_goal_manager", lambda a: manager)
+    calls: list = []
     monkeypatch.setattr(task_manager, "_persist", lambda a: calls.append("persist"))
 
-    store.transition("begin", "1")
-    # First write arms the loop (manager starts with no state).
     task_manager.on_todo_write(agent, {"action": "begin", "item_id": "1"})
-    # Subsequent read-back writes must not re-arm.
-    task_manager.on_todo_write(agent, {})
-
-    assert len([c for c in calls if c.startswith("set:")]) == 1
     assert "persist" in calls
 
 
-def test_on_todo_write_rearms_when_active_goal_text_changes(monkeypatch) -> None:
-    """Editing an in_progress task's content must sync the goal text."""
+def test_on_todo_write_ignores_a_read_back(monkeypatch) -> None:
+    """A routine read-back (no action) does not stamp the turn."""
     store = TodoStore()
     _seed(store, "1", "Build the thing")
     agent = _make_agent(store)
-    calls: list[str] = []
-
-    armed_text = task_manager._goal_text_for_item(
-        {"id": "1", "content": "Build the thing now", "status": "in_progress"}
-    )
-    stale_text = task_manager._goal_text_for_item(
-        {"id": "1", "content": "Old content", "status": "in_progress"}
-    )
-    assert stale_text != armed_text
-
-    class FakeMgr:
-        def __init__(self, **kwargs):
-            calls.append("init")
-
-        @property
-        def state(self):
-            return SimpleNamespace(status="active", goal=stale_text)
-
-        def set(self, text: str, **kwargs) -> None:
-            calls.append(f"set:{text}")
-
-        def clear(self) -> None:
-            calls.append("clear")
-
-    monkeypatch.setattr(task_manager, "_load_goal_manager", lambda a: FakeMgr())
     monkeypatch.setattr(task_manager, "_persist", lambda a: None)
 
-    # Change the item content so the goal text differs from the manager's.
-    store.write([{"id": "1", "content": "Build the thing now", "status": "in_progress"}])
     task_manager.on_todo_write(agent, {})
+    assert agent._task_lifecycle_action_issued is False
 
-    assert f"set:{armed_text}" in calls
-    assert _spec_prefix("Build the thing now") in armed_text
+
+def test_module_has_no_judge_machinery() -> None:
+    """The goal arming and verdict handling are removed from the module."""
+    assert not hasattr(task_manager, "_load_goal_manager")
+    assert not hasattr(task_manager, "observe_verdict")
+    assert not hasattr(task_manager, "observe_verdict_for_session")
+    assert not hasattr(task_manager, "_apply_verdict")
+    assert not hasattr(task_manager, "_goal_text_for_item")
 
 
 # ── config toggle: tasks.lifecycle.enabled=false disables the lifecycle ─
@@ -369,7 +92,7 @@ def test_disabled_lifecycle_short_circuits_hooks(monkeypatch) -> None:
     agent = _make_agent(store)
     monkeypatch.setattr(task_manager, "_lifecycle_config", lambda: {"enabled": False})
 
-    # No goal arming, no action stamp, no persistence.
+    # No action stamp.
     task_manager.on_todo_write(agent, {"action": "begin", "item_id": "1"})
     assert agent._task_lifecycle_action_issued is False
 
@@ -379,315 +102,17 @@ def test_disabled_lifecycle_short_circuits_hooks(monkeypatch) -> None:
     )
     assert nudge is None
 
-    # No verdict observation.
-    assert task_manager.observe_verdict(agent, {"verdict": "done"}) is None
-    assert task_manager.observe_verdict_for_session("test-session", {"verdict": "done"}) is None
 
+# ── is_completion: retained predicate for out-of-module callers ────────
 
-# ── observe_verdict: the two-key close ────────────────────────────────
 
+def test_is_completion_true_for_a_done_unblocked_verdict() -> None:
+    assert task_manager.is_completion({"verdict": "done"}) is True
 
-def test_verdict_records_finalized_id_on_canonical_close(monkeypatch) -> None:
-    """The verdict records which task it actually finalized.
 
-    The gateway emits ``✅ Task completed`` off this id, so a done verdict
-    and an actual completion can never be confused.
-    """
-    store = TodoStore()
-    _seed(store, "1", "Build the thing")
-    agent = _make_agent(store)
-    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
-
-    store.transition("begin", "1")
-    store.transition("close", "1")
-    decision = {"verdict": "done"}
-    task_manager.observe_verdict(agent, decision)
-
-    assert decision.get("lifecycle_finalized_id") == "1"
-
-
-def test_verdict_records_no_finalized_id_for_a_continue(monkeypatch) -> None:
-    """A plan-level continue that reopens the task finalizes nothing."""
-    store = TodoStore()
-    _seed(store, "1", "Build the thing")
-    agent = _make_agent(store)
-    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
-
-    store.transition("begin", "1")
-    store.transition("close", "1")
-    decision = {"verdict": "continue", "reason": "not yet"}
-    task_manager.observe_verdict(agent, decision)
-
-    assert decision.get("lifecycle_finalized_id") is None
-    assert store.read()[0]["status"] == "in_progress"
-
-
-def test_verdict_records_finalized_id_on_auto_finalize(monkeypatch) -> None:
-    """A done verdict on an open task closes and finalizes it for real."""
-    store = TodoStore()
-    _seed(store, "1", "Build the thing")
-    agent = _make_agent(store)
-    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
-
-    store.transition("begin", "1")
-    decision = {"verdict": "done"}
-    task_manager.observe_verdict(agent, decision)
-
-    assert decision.get("lifecycle_finalized_id") == "1"
-    assert store.read()[0]["status"] == "completed"
-
-
-def test_verdict_records_no_finalized_id_when_blocked(monkeypatch) -> None:
-    """A blocked done verdict is a park: nothing finalizes, no id claims it."""
-    store = TodoStore()
-    _seed(store, "1", "Build the thing")
-    agent = _make_agent(store)
-    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
-
-    store.transition("begin", "1")
-    store.transition("close", "1")
-    decision = {"verdict": "done", "blocked": True}
-    task_manager.observe_verdict(agent, decision)
-
-    assert decision.get("lifecycle_finalized_id") is None
-    assert store.read()[0]["status"] == "closing"
-
-
-def test_verdict_done_finalizes_closing_task(monkeypatch) -> None:
-    store = TodoStore()
-    _seed(store, "1", "Build the thing")
-    agent = _make_agent(store)
-    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
-
-    store.transition("begin", "1")
-    store.transition("close", "1")
-    nudge = task_manager.observe_verdict(agent, {"verdict": "done"})
-
-    assert nudge is None
-    assert store.read()[0]["status"] == "completed"
-
-
-def test_verdict_done_plan_sibling_pulls_next(monkeypatch) -> None:
-    """R3 plan-level completion: finalizing a plan-carrying item while a
-    sibling of the same plan remains must return a plan-continuation
-    nudge naming the next sibling — the plan, not the todo list, is the
-    unit of approved work (kills the 'items 4-7 still pending' gap)."""
-    store = TodoStore()
-    plan_ref = "/tmp/some/plan.md"
-    store.write(
-        [
-            {"id": "1", "content": "Build the thing", "status": "pending", "plan": plan_ref},
-            {"id": "2", "content": "Ship the thing", "status": "pending", "plan": plan_ref},
-        ]
-    )
-    agent = _make_agent(store)
-    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
-
-    store.transition("begin", "1")
-    store.transition("close", "1")
-    nudge = task_manager.observe_verdict(agent, {"verdict": "done"})
-
-    assert store.read()[0]["status"] == "completed"
-    # The sibling is NOT silently begun — the nudge pulls the agent back.
-    assert store.read()[1]["status"] == "pending"
-    assert nudge is not None
-    assert "action=begin" in nudge
-    assert "item_id=2" in nudge
-    assert "Ship the thing" in nudge
-
-
-def test_verdict_done_plan_sibling_pulls_next_auto_finalize(monkeypatch) -> None:
-    """R3 on the auto-finalize path: a done verdict on an OPEN plan-carrying
-    item finalizes it and returns the plan-continuation nudge instead of
-    the plain finalize nudge."""
-    store = TodoStore()
-    plan_ref = "/tmp/some/plan.md"
-    store.write(
-        [
-            {"id": "1", "content": "Build the thing", "status": "pending", "plan": plan_ref},
-            {"id": "2", "content": "Ship the thing", "status": "pending", "plan": plan_ref},
-        ]
-    )
-    agent = _make_agent(store)
-    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
-
-    store.transition("begin", "1")
-    nudge = task_manager.observe_verdict(agent, {"verdict": "done", "reason": "judge says done"})
-
-    assert store.read()[0]["status"] == "completed"
-    assert store.read()[1]["status"] == "pending"
-    assert nudge is not None
-    assert "action=begin" in nudge
-    assert "item_id=2" in nudge
-
-
-def test_verdict_done_last_plan_item_no_nudge(monkeypatch) -> None:
-    """R3 edge: finalizing the LAST plan-carrying item (no siblings left)
-    returns no plan nudge — the plan is complete."""
-    store = TodoStore()
-    plan_ref = "/tmp/some/plan.md"
-    store.write(
-        [{"id": "1", "content": "Build the thing", "status": "pending", "plan": plan_ref}]
-    )
-    agent = _make_agent(store)
-    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
-
-    store.transition("begin", "1")
-    store.transition("close", "1")
-    nudge = task_manager.observe_verdict(agent, {"verdict": "done"})
-
-    assert nudge is None
-    assert store.read()[0]["status"] == "completed"
-
-
-def test_verdict_done_finalizes_closing_task_only(monkeypatch) -> None:
-    """A done verdict finalizes exactly the closing task — no chain.
-
-    The begin pivot and the write-path invariant make a concurrent
-    in_progress task impossible through the tool, so the judge's done
-    verdict is the second key for the closing task alone (the PR #66
-    overlap chain is removed). This constructs the old overlap directly
-    (internal mutation) to prove finalization touches nothing else.
-    """
-    store = TodoStore()
-    store.write(
-        [
-            {"id": "1", "content": "Build the thing", "status": "pending"},
-            {"id": "2", "content": "Ship the thing", "status": "pending"},
-        ]
-    )
-    agent = _make_agent(store)
-    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
-
-    store.transition("begin", "1")
-    store.transition("close", "1")
-    # Old overlap: an in_progress task coexisting with the closing one
-    # (constructible only by internal mutation now; both public doors
-    # refuse it).
-    for item in store._items:
-        if item["id"] == "2":
-            item["status"] = "in_progress"
-    nudge = task_manager.observe_verdict(agent, {"verdict": "done", "reason": "both done"})
-
-    assert nudge is None
-    # The closing task finalized; the overlapped in_progress task was NOT
-    # auto-finalized — nothing happens behind the model's back. The
-    # write-path backstop demotes it on the next write, and the model
-    # begins it explicitly after the judge clears.
-    assert [i["status"] for i in store.read()] == ["completed", "in_progress"]
-
-
-def test_verdict_done_with_only_closing_task_keeps_single_finalize(monkeypatch) -> None:
-    """No in_progress task: the done verdict finalizes only the closing
-    task and returns no nudge (existing behavior preserved)."""
-    store = TodoStore()
-    _seed(store, "1", "Build the thing")
-    agent = _make_agent(store)
-    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
-
-    store.transition("begin", "1")
-    store.transition("close", "1")
-    nudge = task_manager.observe_verdict(agent, {"verdict": "done"})
-
-    assert nudge is None
-    assert store.read()[0]["status"] == "completed"
-
-
-def test_verdict_continue_with_closing_and_in_progress_keeps_both_open(monkeypatch) -> None:
-    """A continue verdict must not finalize anything: the premature close
-    returns to in_progress and the write-path invariant demotes the
-    concurrent in_progress item to pending. No rework task is appended —
-    the async review and its auto-rework append were removed.
-
-    The overlap is now constructible only by internal mutation — the
-    begin pivot refuses it — mirroring the verdict-done test.
-    """
-    store = TodoStore()
-    store.write(
-        [
-            {"id": "1", "content": "Build the thing", "status": "pending"},
-            {"id": "2", "content": "Ship the thing", "status": "pending"},
-        ]
-    )
-    agent = _make_agent(store)
-    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
-
-    store.transition("begin", "1")
-    store.transition("close", "1")
-    for item in store._items:
-        if item["id"] == "2":
-            item["status"] = "in_progress"
-    nudge = task_manager.observe_verdict(
-        agent, {"verdict": "continue", "reason": "the fix was reverted"}
-    )
-
-    assert nudge is None
-    assert store.read()[0]["status"] == "in_progress"
-    assert not any(i.get("review_of") == "1" for i in store.read())
-
-
-def test_verdict_continue_returns_premature_close_to_in_progress(monkeypatch) -> None:
-    store = TodoStore()
-    _seed(store, "1", "Build the thing")
-    agent = _make_agent(store)
-    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
-
-    store.transition("begin", "1")
-    store.transition("close", "1")
-    nudge = task_manager.observe_verdict(
-        agent, {"verdict": "continue", "reason": "spec not met"}
-    )
-
-    assert nudge is None
-    assert store.read()[0]["status"] == "in_progress"
-    assert not any(i.get("review_of") == "1" for i in store.read())
-
-
-def test_verdict_wait_on_closing_task_parks_without_rework(monkeypatch) -> None:
-    """A wait verdict is a park, not a rejection: the task returns to
-    in_progress and no rework task is spawned (the loop resumes
-    automatically when the async thing clears)."""
-    store = TodoStore()
-    _seed(store, "1", "Build the thing")
-    agent = _make_agent(store)
-    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
-
-    store.transition("begin", "1")
-    store.transition("close", "1")
-    nudge = task_manager.observe_verdict(
-        agent, {"verdict": "wait", "reason": "waiting on the build"}
-    )
-
-    assert nudge is None
-    assert store.read()[0]["status"] == "in_progress"
-    assert not any(i.get("review_of") == "1" for i in store.read())
-
-
-def test_verdict_done_on_open_task_finalizes_with_nudge(monkeypatch) -> None:
-    store = TodoStore()
-    _seed(store, "1", "Build the thing")
-    agent = _make_agent(store)
-    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
-
-    store.transition("begin", "1")
-    nudge = task_manager.observe_verdict(agent, {"verdict": "done", "reason": "looks done"})
-
-    assert nudge is not None
-    assert "close" in nudge
-    assert store.read()[0]["status"] == "completed"
-
-
-def test_verdict_continue_on_open_task_is_noop(monkeypatch) -> None:
-    store = TodoStore()
-    _seed(store, "1", "Build the thing")
-    agent = _make_agent(store)
-    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
-
-    store.transition("begin", "1")
-    nudge = task_manager.observe_verdict(agent, {"verdict": "continue"})
-
-    assert nudge is None
-    assert store.read()[0]["status"] == "in_progress"
+def test_is_completion_false_for_continue_or_blocked() -> None:
+    assert task_manager.is_completion({"verdict": "continue"}) is False
+    assert task_manager.is_completion({"verdict": "done", "blocked": True}) is False
 
 
 # ── audit_turn_end: work with no open task must not end cleanly ───────
@@ -760,141 +185,6 @@ def test_audit_skips_when_no_task_list() -> None:
     assert nudge is None
 
 
-# ── on_todo_write: block parks the loop ───────────────────────────────
-
-
-def test_on_todo_write_block_parks_goal_with_reason(monkeypatch) -> None:
-    """A declared block is the state change: the hook parks the goal."""
-    store = TodoStore()
-    _seed(store, "1", "Build the thing")
-    agent = _make_agent(store)
-    calls: list[str] = []
-
-    class FakeMgr:
-        def __init__(self, **kwargs):
-            calls.append("init")
-
-        def set(self, text: str, **kwargs) -> None:
-            calls.append(f"set:{text}")
-
-        def park(self, reason: str) -> None:
-            calls.append(f"park:{reason}")
-
-        def clear(self) -> None:
-            calls.append("clear")
-
-    monkeypatch.setattr(task_manager, "_load_goal_manager", lambda a: FakeMgr())
-    monkeypatch.setattr(task_manager, "_persist", lambda a: calls.append("persist"))
-
-    store.transition("begin", "1")
-    task_manager.on_todo_write(
-        agent, {"action": "block", "item_id": "1", "reason": "need your call"}
-    )
-
-    assert "park:need your call" in calls
-    assert "persist" in calls
-    # Block must not re-arm (that would reset the turn budget) or clear.
-    assert not any(c.startswith("set:") for c in calls)
-    assert "clear" not in calls
-
-
-def test_on_todo_write_block_leaves_task_in_progress(monkeypatch) -> None:
-    """The task is still the current work — block does not shelve it."""
-    store = TodoStore()
-    _seed(store, "1", "Build the thing")
-    agent = _make_agent(store)
-
-    class FakeMgr:
-        def park(self, reason: str) -> None:
-            pass
-
-        def set(self, text: str, **kwargs) -> None:
-            raise AssertionError("block must not arm the goal")
-
-        def clear(self) -> None:
-            raise AssertionError("block must not clear the goal")
-
-    monkeypatch.setattr(task_manager, "_load_goal_manager", lambda a: FakeMgr())
-    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
-
-    store.transition("begin", "1")
-    task_manager.on_todo_write(
-        agent, {"action": "block", "item_id": "1", "reason": "waiting on you"}
-    )
-
-    assert store.read()[0]["status"] == "in_progress"
-
-
-def test_on_todo_write_routine_write_does_not_release_park(monkeypatch) -> None:
-    """A parked goal is the user's to release: a later routine write must
-    not re-arm it (which would rebuild state with the barrier down)."""
-    store = TodoStore()
-    _seed(store, "1", "Edited content while parked")
-    agent = _make_agent(store)
-    calls: list[str] = []
-
-    class FakeMgr:
-        def __init__(self, **kwargs):
-            # Parked, and the goal text no longer matches the item.
-            self.state = SimpleNamespace(
-                status="active",
-                goal="Complete the task per its specification: old content",
-                awaiting_user_input=True,
-            )
-
-        def set(self, text: str, **kwargs) -> None:
-            calls.append(f"set:{text}")
-
-        def clear(self) -> None:
-            calls.append("clear")
-
-    monkeypatch.setattr(task_manager, "_load_goal_manager", lambda a: FakeMgr())
-    monkeypatch.setattr(task_manager, "_persist", lambda a: calls.append("persist"))
-
-    store.transition("begin", "1")
-    task_manager.on_todo_write(agent, {"action": None})
-
-    assert not any(c.startswith("set:") for c in calls)
-    assert "clear" not in calls
-
-
-# ── the goal binds the judge to the task's own row, not the plan ──────
-
-
-def test_goal_text_binds_to_task_row_not_plan_file(tmp_path) -> None:
-    """A plan-carrying item's goal must not inline the plan file.
-
-    Inlining the plan handed the judge a multi-item document whose siblings
-    stay open until the plan's last item closes, so every item's DONE verdict
-    was blocked by rows that were none of its business (the D1 deadlock).
-    """
-    plan_file = tmp_path / "plan.md"
-    plan_file.write_text("# Plan\n- item A\n- item B\n- item C\n", encoding="utf-8")
-
-    text = task_manager._goal_text_for_item(
-        {"id": "1", "content": "Item A", "status": "in_progress", "plan": str(plan_file)}
-    )
-
-    assert _spec_prefix("Item A") in text
-    assert str(plan_file) not in text
-    assert "item B" not in text
-
-
-def test_goal_text_names_the_bound_task() -> None:
-    """The goal text states which task the verdict is about."""
-    text = task_manager._goal_text_for_item(
-        {"id": "7", "content": "Item A", "status": "in_progress"}
-    )
-    assert "todo item 7" in text
-
-
-def test_goal_text_without_id_has_no_bound_task_clause() -> None:
-    """An id-less item still yields a usable goal text."""
-    text = task_manager._goal_text_for_item({"content": "Item A", "status": "pending"})
-    assert _spec_prefix("Item A") in text
-    assert "Bound task" not in text
-
-
 # ── plan_is_complete: the mechanical aggregate over the bound plan ────
 
 
@@ -939,6 +229,41 @@ def test_plan_is_complete_false_for_unknown_or_empty_ref() -> None:
     assert task_manager.plan_is_complete(store, "") is False
 
 
+# ── task_position / task_plan_ref / plan_task_total ───────────────────
+
+
+def test_task_position_reports_list_index_and_total() -> None:
+    store = TodoStore()
+    store.write(
+        [
+            {"id": "1", "content": "A", "status": "pending"},
+            {"id": "2", "content": "B", "status": "pending"},
+        ]
+    )
+    assert task_manager.task_position(store, "2") == (2, 2)
+    assert task_manager.task_position(store, "nope") == (0, 2)
+
+
+def test_task_plan_ref_reads_the_row_ref() -> None:
+    store = TodoStore()
+    store.write([{"id": "1", "content": "A", "status": "pending", "plan": "P"}])
+    assert task_manager.task_plan_ref(store, "1") == "P"
+    assert task_manager.task_plan_ref(store, "nope") == ""
+
+
+def test_plan_task_total_counts_the_plans_rows() -> None:
+    store = TodoStore()
+    store.write(
+        [
+            {"id": "1", "content": "A", "status": "pending", "plan": "P"},
+            {"id": "2", "content": "B", "status": "pending", "plan": "P"},
+            {"id": "3", "content": "C", "status": "pending", "plan": "Q"},
+        ]
+    )
+    assert task_manager.plan_task_total(store, "P") == 2
+    assert task_manager.plan_task_total(store, "") == 0
+
+
 # ── _advances_open_plan: membership is the TOOLSET, not the tool name ──
 
 
@@ -947,8 +272,7 @@ def test_advances_open_plan_resolves_toolset_not_tool_name() -> None:
 
     Membership is the toolset the registry reports, so the write_plan tool
     surface can be renamed under the plugin without silently dropping out of
-    the audit predicate. Previously a hardcoded name set plus a `plan_` prefix
-    stopped matching every plan tool the moment the surface was renamed.
+    the audit predicate.
     """
     from tools.registry import registry
 
@@ -962,8 +286,12 @@ def test_advances_open_plan_resolves_toolset_not_tool_name() -> None:
 
 
 def test_advances_open_plan_ignores_unrelated_tools() -> None:
-    """Work with no plan-advancing tool is still drift."""
-    assert task_manager._advances_open_plan(["read_file", "patch"]) is False
+    """Work with no plan-advancing tool is still drift.
+
+    Uses a tool whose toolset is never in the advance set so the assertion
+    is independent of which other suites have populated the registry.
+    """
+    assert task_manager._advances_open_plan(["web_search"]) is False
     assert task_manager._advances_open_plan([]) is False
     assert task_manager._advances_open_plan(None) is False
 
@@ -971,122 +299,3 @@ def test_advances_open_plan_ignores_unrelated_tools() -> None:
 def test_advances_open_plan_accepts_todo_transitions() -> None:
     """The lifecycle lever itself always counts as advancing the plan."""
     assert task_manager._advances_open_plan(["todo"]) is True
-
-
-# ── verdict split: a sibling's verdict never reopens a closing task ───
-
-
-def test_verdict_bound_to_sibling_does_not_reopen_closing_task(monkeypatch) -> None:
-    """A verdict about a DIFFERENT row must not reopen the closing task.
-
-    The judge is bound to one row. A plan-level continue raised while a
-    sibling is open is not this task's review failure: the closing task
-    keeps its close in flight and no rework row is appended for it.
-    """
-    store = TodoStore()
-    store.write(
-        [
-            {"id": "1", "content": "Build the thing", "status": "pending"},
-            {"id": "2", "content": "Ship the thing", "status": "pending"},
-        ]
-    )
-    agent = _make_agent(store)
-    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
-
-    store.transition("begin", "1")
-    store.transition("close", "1")
-    nudge = task_manager.observe_verdict(
-        agent, {"verdict": "continue", "reason": "sibling still open", "bound_task_id": "2"}
-    )
-
-    assert nudge is None
-    assert store.read()[0]["status"] == "closing"
-    assert not any(i.get("review_of") == "1" for i in store.read())
-
-
-def test_verdict_bound_to_closing_task_still_reopens(monkeypatch) -> None:
-    """The genuine per-task review failure still reopens the task.
-
-    The rework append was removed with the async review, so the task
-    returns to in_progress with no rework row and no nudge.
-    """
-    store = TodoStore()
-    _seed(store, "1", "Build the thing")
-    agent = _make_agent(store)
-    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
-
-    store.transition("begin", "1")
-    store.transition("close", "1")
-    nudge = task_manager.observe_verdict(
-        agent, {"verdict": "continue", "reason": "spec not met", "bound_task_id": "1"}
-    )
-
-    assert nudge is None
-    assert store.read()[0]["status"] == "in_progress"
-    assert not any(i.get("review_of") == "1" for i in store.read())
-
-
-# ── plan-next nudge: the aggregate predicate is authoritative ─────────
-
-
-def _two_item_plan() -> TodoStore:
-    """A two-item plan with item 1 closing and item 2 still live."""
-    store = TodoStore()
-    store.write(
-        [
-            {"id": "1", "content": "A", "status": "pending", "plan": "P"},
-            {"id": "2", "content": "B", "status": "in_progress", "plan": "P"},
-        ]
-    )
-    # Item 1 goes to closing; item 2 stays live in_progress. That is the
-    # state the sibling scan previously misread as "plan done" (it looked
-    # only for pending/paused, so a live sibling was invisible).
-    store.write([{"id": "1", "status": "closing"}], merge=True)
-    return store
-
-
-def test_plan_next_nudge_names_a_sibling_in_any_live_status(monkeypatch) -> None:
-    """A sibling that is not terminal keeps the plan open and is named.
-
-    The earlier sibling scan matched only ``pending``/``paused``, so a
-    sibling sitting in ``in_progress`` or ``closing`` read as "plan done"
-    and stranded the plan. ``plan_is_complete`` is the authority now: any
-    non-terminal status counts as live work and the nudge names the row.
-    """
-    store = _two_item_plan()
-    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
-
-    nudge = task_manager.observe_verdict(
-        _make_agent(store),
-        {"verdict": "done", "reason": "done", "bound_task_id": "1"},
-    )
-
-    assert store.read()[0]["status"] == "completed"
-    assert nudge is not None
-    assert "task 2" in nudge or "item 2" in nudge or " 2" in nudge
-
-
-def test_plan_next_nudge_is_silent_when_every_row_is_terminal(monkeypatch) -> None:
-    """A plan whose rows are all terminal yields no continuation nudge.
-
-    Drives the same verdict path as the test above; the only difference is
-    that the sibling is already terminal, so ``plan_is_complete`` holds and
-    no further work is named.
-    """
-    store = TodoStore()
-    store.write(
-        [
-            {"id": "1", "content": "A", "status": "pending", "plan": "P"},
-            {"id": "2", "content": "B", "status": "cancelled", "plan": "P"},
-        ]
-    )
-    store.write([{"id": "1", "status": "closing"}], merge=True)
-    monkeypatch.setattr(task_manager, "_persist", lambda a: None)
-
-    nudge = task_manager.observe_verdict(
-        _make_agent(store),
-        {"verdict": "done", "reason": "done", "bound_task_id": "1"},
-    )
-
-    assert store.read()[0]["status"] == "completed"
-    assert nudge is None

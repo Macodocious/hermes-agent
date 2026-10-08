@@ -2,24 +2,22 @@
 
 Regression for the dispatch asymmetry found in the post-merge health
 check: ``agent_runtime_helpers.invoke_tool`` (concurrent path) forwarded
-``action``/``item_id`` into ``todo_tool`` and ran the persist + goal
+``action``/``item_id`` into ``todo_tool`` and ran the persist + lifecycle
 hooks, but ``tool_executor.execute_tool_calls_sequential`` (single-call
 path — the majority of turns) dropped both. Every single-call
-``action=begin``/``close`` silently degraded to a plain read: the store
-never transitioned, nothing persisted, the GoalEngine never armed, and
-the post-close review never fired.
+``action=begin``/``complete`` silently degraded to a plain read: the store
+never transitioned and nothing persisted.
 
 These tests drive the REAL sequential dispatcher
 (``agent.tool_executor.execute_tool_calls_sequential``) with a real
-``AIAgent`` and pin all three contracts:
+``AIAgent`` and pin two contracts:
 
     1. ``action``/``item_id`` reach ``todo_tool`` (store transitions).
     2. Lifecycle actions persist the store (write-through).
-    3. ``on_todo_write`` arms/clears the GoalEngine.
 
 External seams are pinned by string-path monkeypatch (suite-survivable,
 same pattern as ``test_todo_dispatch_e2e``): SessionDB persistence, the
-GoalManager, lifecycle/review config gates, and tool-result persistence.
+lifecycle config gate, and tool-result persistence.
 """
 
 import json
@@ -43,19 +41,6 @@ TOOL_DEFINITIONS = [
         },
     }
 ]
-
-
-def _armed_entry(store: TodoStore, item_id: str) -> str:
-    """The ``set:`` call the fake GoalManager records for an item's goal text.
-
-    Derived from the production builder so the assertion pins the *wiring*
-    (begin arms the loop with the bound item's goal text) rather than the
-    text's wording, which is the goal-builder's own contract.
-    """
-    from agent import task_manager
-
-    item = next(i for i in store.read() if i["id"] == item_id)
-    return f"set:{task_manager._goal_text_for_item(item)}"
 
 
 def _make_agent():
@@ -99,19 +84,6 @@ def _mock_tool_call(arguments: str, call_id: str = "call_1"):
     )
 
 
-class FakeGoalManager:
-    """Records arm/clear calls; never touches a real goals provider."""
-
-    def __init__(self, calls: list):
-        self.calls = calls
-
-    def set(self, text: str, **kwargs) -> None:
-        self.calls.append(f"set:{text}")
-
-    def clear(self) -> None:
-        self.calls.append("clear")
-
-
 @pytest.fixture
 def dispatched(monkeypatch, tmp_path):
     """Pin the external seams; return (agent, seams).
@@ -121,20 +93,15 @@ def dispatched(monkeypatch, tmp_path):
     established for ``test_todo_dispatch_e2e`` against suites that wipe
     ``sys.modules`` mid-run.
     """
-    seams: dict = {"calls": [], "persist": 0}
+    seams: dict = {"persist": 0}
     monkeypatch.setattr(
         "hermes_cli.tasks.persist_todo_store",
         lambda agent: seams.__setitem__("persist", seams["persist"] + 1),
-    )
-    monkeypatch.setattr(
-        "agent.task_manager._load_goal_manager",
-        lambda agent: FakeGoalManager(seams["calls"]),
     )
     monkeypatch.setattr("agent.task_manager._persist", lambda agent: None)
     monkeypatch.setattr(
         "agent.task_manager._lifecycle_config", lambda: {"enabled": True}
     )
-    # The post-close probe must never touch the host probes dir in tests.
     monkeypatch.setattr("hermes_constants.get_hermes_home", lambda: tmp_path)
     monkeypatch.setattr(
         "agent.tool_executor.maybe_persist_tool_result",
@@ -160,18 +127,16 @@ def _dispatch_sequential(agent, arguments: str) -> list:
     return messages
 
 
-def test_sequential_begin_transitions_store_and_arms_goal(dispatched) -> None:
-    """action=begin must transition the store AND arm the GoalEngine.
+def test_sequential_begin_transitions_store(dispatched) -> None:
+    """action=begin must transition the store through the sequential path.
 
     Regression: the sequential path dropped ``action``/``item_id`` — the
-    tool saw a plain read, the item stayed pending, and the goal never
-    armed.
+    tool saw a plain read and the item stayed pending.
     """
     agent, seams = dispatched
     _dispatch_sequential(agent, json.dumps({"action": "begin", "item_id": "1"}))
 
     assert agent._todo_store.read()[0]["status"] == "in_progress"
-    assert _armed_entry(agent._todo_store, "1") in seams["calls"]
     assert agent._task_lifecycle_action_issued is True
 
 
@@ -188,20 +153,13 @@ def test_sequential_begin_persists_store(dispatched) -> None:
     assert seams["persist"] == 1
 
 
-def test_sequential_close_transitions_to_closing_and_keeps_goal(dispatched) -> None:
-    """action=close must reach the store: pending -> closing, goal armed.
-
-    Regression: closes through the sequential path were silent no-ops —
-    17 production close calls post-restart never reached ``closing``, so
-    the judge and the post-close review never ran.
-    """
+def test_sequential_complete_transitions_to_completed(dispatched) -> None:
+    """action=complete must reach the store: in_progress -> completed."""
     agent, seams = dispatched
     _dispatch_sequential(agent, json.dumps({"action": "begin", "item_id": "1"}))
-    _dispatch_sequential(agent, json.dumps({"action": "close", "item_id": "1"}))
+    _dispatch_sequential(agent, json.dumps({"action": "complete", "item_id": "1"}))
 
-    assert agent._todo_store.read()[0]["status"] == "closing"
-    # The loop must still be armed after the close write (second key).
-    assert "clear" not in seams["calls"]
+    assert agent._todo_store.read()[0]["status"] == "completed"
 
 
 def test_sequential_write_mode_still_persists_and_hooks(dispatched) -> None:
@@ -225,5 +183,4 @@ def test_sequential_plain_read_skips_persist_and_hooks(dispatched) -> None:
     _dispatch_sequential(agent, json.dumps({}))
 
     assert seams["persist"] == 0
-    assert seams["calls"] == []
     assert agent._todo_store.read()[0]["status"] == "pending"

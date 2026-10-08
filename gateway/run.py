@@ -1187,56 +1187,6 @@ def _is_lifecycle_goal(goal_state: Optional[Any]) -> bool:
         return False
 
 
-def _lifecycle_task_name(
-    session_id: str,
-    goal_state: Optional[Any],
-    item_id: Optional[str] = None,
-) -> Optional[str]:
-    """Best-effort display name for a lifecycle goal's completion line.
-
-    The authoritative name is the finalized task's own ``content`` from the
-    persisted todo store, looked up by the ``item_id`` the two-key close
-    actually finalized. When no id is supplied (or the row is gone) the
-    legacy status scan runs, and the goal state's own text is the last
-    resort, so a completion line still ships on a degraded setup.
-    """
-    target_id = str(item_id or "").strip()
-    try:
-        if session_id:
-            from hermes_cli.tasks import load_todo
-
-            store = load_todo(session_id)
-            if store is not None:
-                rows = store.read()
-                if target_id:
-                    # Look up the exact finalized row — a status scan could
-                    # name a different task's content in a multi-task store.
-                    exact = next(
-                        (i for i in rows if str(i.get("id") or "") == target_id),
-                        None,
-                    )
-                    if exact is not None:
-                        name = str(exact.get("content") or "").strip()
-                        if name:
-                            return name
-                else:
-                    for item in rows:
-                        if str(item.get("status") or "") in (
-                            "closing",
-                            "in_progress",
-                            "completed",
-                        ):
-                            name = str(item.get("content") or "").strip()
-                            if name:
-                                return name
-    except Exception:
-        pass
-    try:
-        return str(getattr(goal_state, "goal", "") or "").strip() or None
-    except Exception:
-        return None
-
-
 def _is_lifecycle_rejection_message(user_message: Optional[str]) -> bool:
     """Ask the auxiliary model whether the user's message rejects the answer.
 
@@ -15000,80 +14950,40 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             if _verdict in ("continue", "wait") and str(decision.get("status") or "") == "active":
                 msg = ""  # per-turn progress noise — suppress
 
-        # Task-lifecycle two-key close (P1/P2): observe the judge's verdict
-        # against the persisted todo store — a closing task finalizes on
-        # done, a premature close returns to in_progress, and a done
-        # verdict on an open task finalizes it with a nudge.
+        # Task-lifecycle completion is agent-owned: the store recorded a
+        # notice for each start/complete/cancel transition this turn. Emit
+        # them deterministically — derived from the store, never from a judge
+        # verdict. A missing or degraded store yields nothing, not an error.
         try:
-            from agent.task_manager import observe_verdict_for_session
+            from hermes_cli.tasks import load_todo, save_todo
+            from tools.todo_tool import format_notice
 
-            _verdict_nudge = observe_verdict_for_session(sid, decision)
-        except Exception as _verdict_exc:
-            logger.debug("task-lifecycle verdict observation failed: %s", _verdict_exc)
-            _verdict_nudge = None
-
-        # The completion line is the deferred status notice, and it reports
-        # the STORE's state, not the judge's verdict. It ships only when the
-        # two-key close actually finalized a task (``lifecycle_finalized_id``,
-        # set by ``_apply_verdict``) — a done verdict the finalization hold
-        # held back, or one that found no closing/in_progress row to
-        # finalize, must never tell the user the task completed.
-        _plan_msg = ""
-        if _is_lifecycle_goal(mgr.state) and decision.get("lifecycle_finalized_id"):
-            _finalized_id = decision.get("lifecycle_finalized_id")
-            _task_name = (
-                _lifecycle_task_name(sid, mgr.state, _finalized_id)
-                or "(no description)"
-            )
-            # Ordered-list identification: the completion line names the task
-            # by its position in the list the user is reading, not by the row
-            # id (a replace-mode write renumbers ids, so the id is not a
-            # position a human can follow).
-            _position, _total = 0, 0
-            _plan_ref = ""
-            _store = None
-            try:
-                from hermes_cli.tasks import load_todo
-                from agent.task_manager import task_plan_ref, task_position
-
-                _store = load_todo(sid)
-                if _store is not None:
-                    _position, _total = task_position(_store, _finalized_id)
-                    _plan_ref = task_plan_ref(_store, _finalized_id)
-            except Exception as _pos_exc:
-                logger.debug("task-lifecycle position lookup failed: %s", _pos_exc)
-            if _position:
-                msg = f"✅ Task {_position} of {_total} complete: {_task_name}"
-            else:
-                msg = f"✅ Task completed: {_task_name}"
-            # Plan-completion signal: when the finalized task's plan has no
-            # remaining non-terminal row, tell the user the whole plan is
-            # done. Without it a plan that finishes looks identical to one
-            # still running, and the next turn's work is unattributable.
-            # Best-effort — a signal failure must never suppress the
-            # completion line above.
-            try:
-                from agent.task_manager import plan_is_complete, plan_task_total
-
-                if _plan_ref and _store is not None and plan_is_complete(_store, _plan_ref):
-                    _plan_msg = (
-                        f"🏁 Plan complete: all {plan_task_total(_store, _plan_ref)} "
-                        f"tasks done ({_plan_ref})"
+            _notice_store = load_todo(sid)
+            if _notice_store is not None:
+                _notice_lines = [
+                    _line
+                    for _line in (
+                        format_notice(_notice, _notice_store)
+                        for _notice in _notice_store.drain_notices()
                     )
-            except Exception as _plan_exc:
-                logger.debug("task-lifecycle plan signal failed: %s", _plan_exc)
-            # Suppress the final response ONLY on a synthetic goal-
-            # continuation turn whose judge already said done on the
-            # PRECEDING real user turn (_prev_verdict == "done"): the
-            # wrap-up prose there is a SECOND conclusion — the
-            # conversation prose already shipped on the real user
-            # turn — so the deferred ✅ line is the only completion
-            # message. A continuation whose done is the FIRST done
-            # (judge said continue on the real user turn) ships its
-            # prose — that is the only completion prose. A real user
-            # turn's prose always ships.
-            if not user_initiated and _prev_verdict == "done":
-                _suppress_final_response = True
+                    if _line
+                ]
+                if _notice_lines:
+                    msg = "\n".join(_notice_lines)
+                # Persist after draining so the notices do not re-emit next
+                # turn. Best-effort — a failure keeps them (a duplicate line
+                # beats a lost one).
+                try:
+                    save_todo(sid, _notice_store)
+                except Exception as _save_exc:
+                    logger.debug("task-lifecycle notice persist failed: %s", _save_exc)
+        except Exception as _notice_exc:
+            logger.debug("task-lifecycle notice emission failed: %s", _notice_exc)
+
+        # The judge's verdict nudge is gone with the judge — the completion
+        # line above now comes from the store's recorded notices. Bound to
+        # None so the native continuation/enqueue path below runs unchanged.
+        _verdict_nudge = None
 
         # Defer the status line until after the adapter has delivered the
         # agent's visible final response. The judge runs after the response is
@@ -15083,11 +14993,6 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         # without reversing the user-visible ordering.
         if msg and source is not None:
             await self._defer_goal_status_notice_after_delivery(source, msg)
-        # The plan-completion line registers second so it ships after the
-        # task-completed line (chained callbacks fire in registration order),
-        # which is the order the spec requires.
-        if _plan_msg and source is not None:
-            await self._defer_goal_status_notice_after_delivery(source, _plan_msg)
 
         if not decision.get("should_continue"):
             # The loop is stopping (done/paused/cleared). Lifecycle
@@ -20413,10 +20318,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     else:
                         msg = f"{emoji} Working on {_started_content}"
                 else:
-                    # Task-stop notification: a todo call that moved an item
-                    # out of in_progress/closing into cancelled/escalated
-                    # renders "Task cancelled/escalated" instead of the
-                    # generic todo bubble. The stopped item arrives via the
+                    # Task-stop notification: a todo call that cancelled the
+                    # item renders "Task cancelled" instead of the generic
+                    # todo bubble. The stopped item arrives via the
                     # stopped_task kwarg (see _detect_todo_task_stop).
                     _stopped_task = kwargs.get("stopped_task")
                     if (
@@ -20429,11 +20333,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                             _stopped_content = _stopped_content[:_cap - 3] + "..."
                         from agent.display import task_position_label
                         _stopped_position = task_position_label(_stopped_task)
-                        _stopped_outcome = (
-                            "cancelled"
-                            if str(_stopped_task.get("status", "")).strip() == "cancelled"
-                            else "escalated"
-                        )
+                        _stopped_outcome = "cancelled"
                         if _stopped_position:
                             msg = f"{emoji} Task {_stopped_position} {_stopped_outcome}: {_stopped_content}"
                         else:

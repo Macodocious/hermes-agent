@@ -9687,29 +9687,31 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         if msg:
             _cprint(f"  {msg}")
 
-        # Task-lifecycle two-key close (P1/P2): observe the judge's verdict
-        # against the live agent's todo store — a closing task finalizes on
-        # done, a premature close returns to in_progress, and a done
-        # verdict on an open task finalizes it with a nudge.
-        _verdict_nudge = ""
+        # Task-lifecycle notices are agent-owned: the store recorded one per
+        # start/complete/cancel transition this turn. Print them
+        # deterministically — no judge verdict. Best-effort: a missing store
+        # or a bad notice yields nothing rather than an error.
         if _agent is not None:
             try:
-                from agent.task_manager import observe_verdict
+                from tools.todo_tool import format_notice
 
-                _verdict_nudge = str(observe_verdict(_agent, decision) or "")
-            except Exception as _verdict_exc:
-                logging.debug("task-lifecycle verdict observation failed: %s", _verdict_exc)
+                _store = getattr(_agent, "_todo_store", None)
+                if _store is not None:
+                    for _notice in _store.drain_notices():
+                        _line = format_notice(_notice, _store)
+                        if _line:
+                            _cprint(f"  {_line}")
+            except Exception as _notice_exc:
+                logging.debug("task-lifecycle notice emission failed: %s", _notice_exc)
 
         if decision.get("should_continue"):
             prompt = decision.get("continuation_prompt")
-            if prompt or _lifecycle_nudge or _verdict_nudge:
+            if prompt or _lifecycle_nudge:
                 try:
                     # The lifecycle pull-back nudge goes first — it
                     # outranks the goal continuation.
                     if _lifecycle_nudge:
                         self._pending_input.put(_lifecycle_nudge)
-                    if _verdict_nudge:
-                        self._pending_input.put(_verdict_nudge)
                     if prompt:
                         self._pending_input.put(prompt)
                 except Exception as exc:
@@ -10889,9 +10891,8 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                 else:
                     label = f"Working on {str(_started_task['content']).strip()}"
             else:
-                # Task-stop notification: a todo call that moved an item
-                # out of in_progress/closing into cancelled/escalated shows
-                # "Task cancelled/escalated" in the spinner instead of the
+                # Task-stop notification: a todo call that cancelled the
+                # item shows "Task cancelled" in the spinner instead of the
                 # generic todo preview (stopped_task kwarg comes from
                 # agent.tool_executor._detect_todo_task_stop).
                 _stopped_task = kwargs.get("stopped_task")
@@ -10902,11 +10903,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                 ):
                     from agent.display import task_position_label
                     _stopped_position = task_position_label(_stopped_task)
-                    _stopped_outcome = (
-                        "cancelled"
-                        if str(_stopped_task.get("status", "")).strip() == "cancelled"
-                        else "escalated"
-                    )
+                    _stopped_outcome = "cancelled"
                     if _stopped_position:
                         label = f"Task {_stopped_position} {_stopped_outcome}: {str(_stopped_task['content']).strip()}"
                     else:
