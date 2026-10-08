@@ -258,6 +258,23 @@ class ToolCallGuardrailController:
         self._read_coverage: dict[str, list[tuple[int, int]]] = {}
         self._halt_decision: ToolGuardrailDecision | None = None
 
+    def reset_read_coverage(self) -> None:
+        """Drop read coverage and read-repeat counts, keeping failure state.
+
+        Context compaction summarises read content out of the window, so the
+        guardrail's deny premise — that the content is already in context —
+        becomes false and a re-read must be allowed. Called from the
+        compaction path beside the file-tools dedup reset. The failure and
+        no-progress counters are deliberately untouched: compaction does not
+        invalidate them.
+        """
+        self._read_coverage = {}
+        self._repeat_counts = {
+            key: count
+            for key, count in self._repeat_counts.items()
+            if key[0] != READ_FILE_TOOL
+        }
+
     @property
     def halt_decision(self) -> ToolGuardrailDecision | None:
         return self._halt_decision

@@ -392,3 +392,38 @@ def test_coarse_repeat_state_is_cleared_by_reset_for_turn():
     controller.reset_for_turn()
 
     assert controller.before_call("read_file", {"path": "/tmp/run.py", "offset": 1, "limit": 500}).action == "allow"
+
+
+def test_compaction_reset_clears_read_coverage_so_reread_is_allowed():
+    # Context compaction summarises read content out of the window, but the
+    # guardrail's own reset runs only at turn start. A mid-turn compaction must
+    # clear read coverage so the model can re-read what it no longer holds.
+    controller = _coarse_controller()
+    for args in _varying_read_calls("/tmp/compacted.py", 8):
+        controller.before_call("read_file", args)
+        controller.after_call("read_file", args, "body", failed=False)
+    assert controller.before_call(
+        "read_file", {"path": "/tmp/compacted.py", "offset": 1, "limit": 500}
+    ).action == "deny"
+
+    controller.reset_read_coverage()
+
+    assert controller.before_call(
+        "read_file", {"path": "/tmp/compacted.py", "offset": 1, "limit": 500}
+    ).action == "allow"
+
+
+def test_compaction_reset_keeps_search_repeat_counts():
+    # The reset is read-scoped: compaction does not invalidate search repeats,
+    # so their counts must survive it.
+    controller = _coarse_controller()
+    base = {"pattern": "transform_llm_output", "path": "/usr/local/lib/hermes-agent", "target": "content"}
+    calls = [{**base, "limit": 50 - i} for i in range(8)]
+    for args in calls:
+        controller.before_call("search_files", args)
+        controller.after_call("search_files", args, "body", failed=False)
+    assert controller.before_call("search_files", base).action == "deny"
+
+    controller.reset_read_coverage()
+
+    assert controller.before_call("search_files", base).action == "deny"
