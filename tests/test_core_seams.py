@@ -136,3 +136,110 @@ def test_pre_batch_dispatch_absent_dispatches_normally(monkeypatch):
             fake_self, SimpleNamespace(tool_calls=calls), messages, "task", 0
         )
     assert messages == []
+
+
+# ── presentation spec validator ─────────────────────────────────────────────
+
+def test_spec_validator_drops_malformed_and_fills_defaults():
+    from hermes_cli.approval_presentation import validate_presentation_spec
+    spec = validate_presentation_spec({
+        "title": "T",
+        "color": "red",                       # wrong type → dropped
+        "fields": [{"name": "A"}, {"value": "no-name"}, "x"],
+        "attachments": ["/a", "", 5],
+        "actions": [{"id": "revoke", "style": "chartreuse"}, {"label": "no-id"}],
+        "timeout": 0,                         # not > 0 → dropped
+    })
+    assert spec["title"] == "T"
+    assert "color" not in spec
+    assert spec["fields"] == [{"name": "A", "inline": False}]
+    assert spec["attachments"] == ["/a"]
+    assert spec["actions"] == [{"id": "revoke", "style": "grey"}]
+    assert "timeout" not in spec
+
+
+def test_spec_validator_none_on_garbage():
+    from hermes_cli.approval_presentation import validate_presentation_spec
+    assert validate_presentation_spec(None) is None
+    assert validate_presentation_spec("x") is None
+    assert validate_presentation_spec({}) is None
+    assert validate_presentation_spec({"unknown": 1}) is None
+
+
+def test_spec_validator_keeps_wellformed_spec():
+    from hermes_cli.approval_presentation import validate_presentation_spec
+    spec = validate_presentation_spec({
+        "title": "Approve changes?",
+        "description": "batch",
+        "fields": [{"name": "Files", "value": "`a`, `b`", "inline": True}],
+        "attachments": ["/tmp/a.diff"],
+        "pre_prompt": {"text": "diffs:", "attachments": ["/tmp/a.diff"]},
+        "actions": [{"id": "once", "label": "Approve", "style": "green"}],
+        "timeout": 45,
+    })
+    assert spec["title"] == "Approve changes?"
+    assert spec["pre_prompt"]["text"] == "diffs:"
+    assert spec["actions"][0]["label"] == "Approve"
+    assert spec["timeout"] == 45
+
+
+# ── approval_action hook ────────────────────────────────────────────────────
+
+def test_approval_action_registered():
+    from hermes_cli.plugins import VALID_HOOKS
+    assert "approval_action" in VALID_HOOKS
+
+
+def test_approval_action_handled(monkeypatch):
+    import tools.approval as am
+    monkeypatch.setattr("hermes_cli.plugins.has_hook", lambda name: True)
+    monkeypatch.setattr(
+        "hermes_cli.plugins.invoke_hook", lambda name, **kw: [{"handled": True}]
+    )
+    assert am._invoke_approval_action("revoke", "s", "u") is True
+
+
+def test_approval_action_absent_and_malformed(monkeypatch):
+    import tools.approval as am
+    monkeypatch.setattr("hermes_cli.plugins.has_hook", lambda name: False)
+    assert am._invoke_approval_action("revoke", "s", "u") is False
+    monkeypatch.setattr("hermes_cli.plugins.has_hook", lambda name: True)
+    monkeypatch.setattr(
+        "hermes_cli.plugins.invoke_hook",
+        lambda name, **kw: [None, "x", {"handled": "yes"}],
+    )
+    assert am._invoke_approval_action("revoke", "s", "u") is False
+
+
+# ── CLI prompt uses the plugin reason ───────────────────────────────────────
+
+def test_cli_prompt_uses_plugin_reason(monkeypatch):
+    import tools.approval as am
+    monkeypatch.setattr("hermes_cli.plugins.has_hook", lambda name: True)
+    monkeypatch.setattr(
+        "hermes_cli.plugins.invoke_hook",
+        lambda name, **kw: [{"reason": "Purpose: read a log file"}] if name == "approval_presentation" else [],
+    )
+    seen = {}
+
+    def _cb(command, description, **kw):
+        seen["description"] = description
+        return "once"
+
+    result = am.prompt_dangerous_approval("cat x", "native desc", approval_callback=_cb)
+    assert result == "once"
+    assert seen["description"] == "Purpose: read a log file"
+
+
+def test_cli_prompt_keeps_native_description_without_hook(monkeypatch):
+    import tools.approval as am
+    monkeypatch.setattr("hermes_cli.plugins.has_hook", lambda name: False)
+    seen = {}
+
+    def _cb(command, description, **kw):
+        seen["description"] = description
+        return "deny"
+
+    result = am.prompt_dangerous_approval("cat x", "native desc", approval_callback=_cb)
+    assert result == "deny"
+    assert seen["description"] == "native desc"

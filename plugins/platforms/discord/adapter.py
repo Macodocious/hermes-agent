@@ -6591,6 +6591,9 @@ class DiscordAdapter(BasePlatformAdapter):
             # (embed fields, button labels, timeout) without patching this
             # adapter. Absent hook → the default embed above is used unchanged.
             _view_timeout = None
+            _spec_actions = None
+            _spec_attachments = None
+            _spec_pre_prompt = None
             try:
                 from tools.approval import _invoke_approval_presentation
                 _spec = _invoke_approval_presentation(
@@ -6620,6 +6623,9 @@ class DiscordAdapter(BasePlatformAdapter):
                             )
                 if isinstance(_spec.get("timeout"), int) and _spec["timeout"] > 0:
                     _view_timeout = _spec["timeout"]
+                _spec_actions = _spec.get("actions")
+                _spec_attachments = _spec.get("attachments")
+                _spec_pre_prompt = _spec.get("pre_prompt")
 
             require_admin, admin_user_ids = _resolve_exec_approval_admin_gate(
                 getattr(self.config, "extra", None)
@@ -6632,6 +6638,7 @@ class DiscordAdapter(BasePlatformAdapter):
                 admin_user_ids=admin_user_ids,
                 allow_permanent=allow_permanent,
                 smart_denied=smart_denied,
+                actions=_spec_actions,
             )
             if _view_timeout is not None:
                 view.timeout = _view_timeout
@@ -6646,6 +6653,30 @@ class DiscordAdapter(BasePlatformAdapter):
                         everyone=False,
                         replied_user=False,
                     )
+            # Plugin presentation seam: a pre-prompt message (e.g. a batch's
+            # diffs) is delivered before the approval prompt, and a spec's
+            # attachments ride the approval message itself. A missing file is
+            # skipped rather than aborting the prompt.
+            if isinstance(_spec_pre_prompt, dict):
+                _pre_text = _spec_pre_prompt.get("text") or ""
+                _pre_files = [
+                    _p for _p in (_spec_pre_prompt.get("attachments") or [])
+                    if isinstance(_p, str) and os.path.isfile(_p)
+                ]
+                try:
+                    await channel.send(
+                        content=str(_pre_text),
+                        files=([discord.File(_p) for _p in _pre_files] or None),
+                    )
+                except Exception:
+                    pass
+            if isinstance(_spec_attachments, list):
+                _attached_files = [
+                    discord.File(_p) for _p in _spec_attachments
+                    if isinstance(_p, str) and os.path.isfile(_p)
+                ]
+                if _attached_files:
+                    send_kwargs["files"] = _attached_files
             msg = await channel.send(**send_kwargs)
             view._message = msg  # store for on_timeout expiration editing
             return SendResult(success=True, message_id=str(msg.id))
@@ -8005,6 +8036,20 @@ def _define_discord_view_classes() -> None:
     """
     global ExecApprovalView, SlashConfirmView, UpdatePromptView, ModelPickerView, ClarifyChoiceView, ChoicePickerView
 
+    def _presentation_button_style(name: Optional[str]):
+        """Map a presentation spec's style name to a discord.ButtonStyle.
+
+        Returns None for an unknown or absent name so the caller keeps its own
+        default style rather than losing the control.
+        """
+        mapping = {
+            "green": discord.ButtonStyle.green,
+            "grey": discord.ButtonStyle.grey,
+            "blurple": discord.ButtonStyle.blurple,
+            "red": discord.ButtonStyle.red,
+        }
+        return mapping.get(str(name or "").strip().lower())
+
     class ExecApprovalView(discord.ui.View):
         """
         Interactive button view for exec approval of dangerous commands.
@@ -8024,11 +8069,16 @@ def _define_discord_view_classes() -> None:
             admin_user_ids: Optional[set] = None,
             allow_permanent: bool = True,
             smart_denied: bool = False,
+            actions: Optional[list] = None,
         ):
             super().__init__(timeout=_read_discord_prompt_timeout())
             self.session_key = session_key
             self.allowed_user_ids = allowed_user_ids
             self.allowed_role_ids = allowed_role_ids or set()
+            # Apply controls a plugin presentation spec declared. Run before the
+            # smart_denied / allow_permanent button removal below so core's own
+            # removals still win over a spec that tried to keep a removed one.
+            self._apply_declared_actions(actions)
             # Opt-in admin gate for exec approval (default off → user-scope,
             # the v0.16-restored behavior). When on, the clicker must be in
             # ``admin_user_ids`` on top of passing the base admission check.
@@ -8042,6 +8092,84 @@ def _define_discord_view_classes() -> None:
                 self.remove_item(self.allow_always)
             elif not allow_permanent:
                 self.remove_item(self.allow_always)
+
+        def _apply_declared_actions(self, actions: Optional[list]) -> None:
+            """Apply a plugin presentation spec's controls to this view.
+
+            A declared action whose id names a built-in (or whose label matches
+            one) relabels that button in place, so a spec can rename "Allow
+            Once" to "Approve" without adding a button. Any other id adds a new
+            button whose click dispatches through the approval_action hook.
+            Core's four buttons otherwise remain: a spec that only relabels a
+            button never removes one.
+            """
+            if not isinstance(actions, list) or not actions:
+                return
+            builtin_by_key: Dict[str, Any] = {}
+            for button in (self.allow_once, self.allow_session,
+                           self.allow_always, self.deny):
+                if button.custom_id:
+                    builtin_by_key[button.custom_id] = button
+                if button.label:
+                    builtin_by_key[button.label.strip().lower()] = button
+            for action in actions:
+                if not isinstance(action, dict):
+                    continue
+                action_id = str(action.get("id") or "").strip()
+                if not action_id:
+                    continue
+                label = str(action.get("label") or "").strip()
+                style = _presentation_button_style(action.get("style"))
+                target = builtin_by_key.get(action_id)
+                if target is None and label:
+                    target = builtin_by_key.get(label.lower())
+                if target is not None:
+                    if label:
+                        target.label = label
+                    if style is not None:
+                        target.style = style
+                    continue
+                button = discord.ui.Button(
+                    label=label or action_id,
+                    style=style or discord.ButtonStyle.grey,
+                )
+                button.callback = self._make_action_callback(action_id, button)
+                button._view = self
+                self.add_item(button)
+
+        def _make_action_callback(self, action_id: str, button) -> Callable:
+            async def _on_custom_action(interaction: discord.Interaction) -> None:
+                await self._dispatch_action(interaction, action_id, button)
+            return _on_custom_action
+
+        async def _dispatch_action(
+            self, interaction: discord.Interaction, action_id: str, button,
+        ) -> None:
+            """Route a non-built-in control click to the approval_action hook.
+
+            The prompt stays decidable — only the clicked control disables — so
+            a plugin control (e.g. an inline revoke) never resolves or denies
+            the pending approval.
+            """
+            if not self._check_auth(interaction):
+                await interaction.response.send_message(
+                    "You're not authorized to use this control~", ephemeral=True
+                )
+                return
+            try:
+                from tools.approval import _invoke_approval_action
+                _invoke_approval_action(
+                    action_id,
+                    self.session_key,
+                    getattr(getattr(interaction, "user", None), "display_name", "") or "",
+                )
+            except Exception:
+                pass
+            button.disabled = True
+            try:
+                await interaction.response.edit_message(view=self)
+            except Exception:
+                pass
 
         def _check_auth(self, interaction: discord.Interaction) -> bool:
             """Verify the user clicking is authorized.
@@ -8094,6 +8222,20 @@ def _define_discord_view_classes() -> None:
                 return
 
             self.resolved = True
+
+            # Let a plugin observe the resolve click — e.g. to capture who
+            # granted a session-wide approval, so later auto-approved prompts in
+            # this thread render the same "by <name>" footer. Non-blocking: the
+            # resolve proceeds regardless of the hook's outcome.
+            try:
+                from tools.approval import _invoke_approval_action
+                _invoke_approval_action(
+                    choice,
+                    self.session_key,
+                    getattr(getattr(interaction, "user", None), "display_name", "") or "",
+                )
+            except Exception:
+                pass
 
             # Unblock the waiting agent thread FIRST, then render the outcome.
             # A click that lands after the approval wait timed out (count == 0)

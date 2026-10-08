@@ -263,6 +263,14 @@ VALID_HOOKS: Set[str] = {
     # default presentation.
     # Kwargs: tool_name: str, args: dict, reason: str, session_key: str.
     "approval_presentation",
+    # Approval-action hook. Fired when an approval control is clicked: a
+    # built-in resolve click (once/session/always/deny) so a plugin can observe
+    # decisions, or a control the presentation spec declared (a non-built-in id)
+    # so a plugin-defined control — e.g. a "Revoke Session" button — reaches the
+    # plugin. A callback returns {"handled": True} once it has taken the action;
+    # None falls through to core's own handling.
+    # Kwargs: action_id: str, session_key: str, user: str.
+    "approval_action",
 }
 
 ENTRY_POINTS_GROUP = "hermes_agent.plugins"
