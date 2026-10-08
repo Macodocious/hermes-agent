@@ -1515,6 +1515,16 @@ def compress_context(
         except Exception:
             pass
 
+        # Clear the read-dedup guardrail's read coverage too.  It denies a
+        # re-read on the premise that the content is already in context — a
+        # premise compression just invalidated.  The guardrail's own reset runs
+        # only at turn start, and a mid-turn compaction has no fresh turn to
+        # rely on, so it must be cleared here beside the file-tools reset.
+        try:
+            agent._tool_guardrails.reset_read_coverage()
+        except Exception:
+            pass
+
         logger.info(
             "context compression done: session=%s messages=%d->%d rough_tokens=~%s awaiting_real_usage=true",
             agent.session_id or "none", _pre_msg_count, len(compressed),
@@ -1635,6 +1645,13 @@ def _compress_context_via_codex_app_server(
         from tools.file_tools import reset_file_dedup
 
         reset_file_dedup(task_id)
+    except Exception:
+        pass
+
+    # Mirror the standard compaction path: clear the read-dedup guardrail's
+    # read coverage so a re-read after compression is allowed.
+    try:
+        agent._tool_guardrails.reset_read_coverage()
     except Exception:
         pass
 
