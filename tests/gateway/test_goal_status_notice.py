@@ -145,3 +145,50 @@ def test_clear_goal_pending_continuations_removes_slot_and_overflow_only():
     assert removed == 2
     assert adapter._pending_messages.get(session_key) is None
     assert runner._queued_events[session_key] == [normal_event]
+
+
+@pytest.mark.asyncio
+async def test_lifecycle_notices_drain_without_an_active_goal(monkeypatch):
+    """Regression: a lifecycle turn arms no goal, so the notice drain must run
+    at the turn boundary — not only inside the active-goal path. Otherwise a
+    start/complete/plan-complete notice sits in the store and flushes late
+    (a start line surfacing after the plan is complete).
+    """
+    import hermes_cli.tasks as tasks_mod
+    from tools.todo_tool import TodoStore
+
+    runner = GatewayRunner.__new__(GatewayRunner)
+    adapter = FakeAdapter()
+    runner.adapters = {Platform.DISCORD: adapter}
+    runner.config = SimpleNamespace(group_sessions_per_user=True, thread_sessions_per_user=False)
+
+    source = SessionSource(
+        platform=Platform.DISCORD,
+        chat_id="parent-channel",
+        thread_id="thread-123",
+        user_id="user-1",
+    )
+    session_entry = SimpleNamespace(session_id="sess-lifecycle-notice")
+
+    store = TodoStore()
+    store.write([{"id": "1", "content": "ship the fix", "status": "pending"}])
+    store.transition("begin", "1")
+
+    monkeypatch.setattr(tasks_mod, "load_todo", lambda sid: store)
+    monkeypatch.setattr(tasks_mod, "save_todo", lambda sid, s: None)
+
+    await runner._post_turn_goal_continuation(
+        session_entry=session_entry,
+        source=source,
+        final_response="done",
+    )
+
+    assert store.drain_notices() == []  # drained on the turn, not left to flush late
+    assert len(adapter.callbacks) == 1  # deferred until after the visible reply
+
+    _, callback = next(iter(adapter.callbacks.values()))
+    result = callback()
+    if hasattr(result, "__await__"):
+        await result
+
+    assert adapter.calls[0]["content"] == "▶️ Working on: ship the fix"

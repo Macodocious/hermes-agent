@@ -14798,6 +14798,42 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         max_turns = self._goal_max_turns_from_config()
 
         mgr = GoalManager(session_id=sid, default_max_turns=max_turns)
+
+        # Task-lifecycle notices are agent-owned and must ship on the turn the
+        # transition happened. The lifecycle arms no goal loop, so the drain
+        # below (inside the goal path) is unreachable for a lifecycle session —
+        # notices then sit in the store, persist, and flush late (a start line
+        # surfacing after the plan is complete). Drain here, at the turn
+        # boundary, before the no-goal early return, and emit through the
+        # post-delivery callback so the lines land after the agent's response.
+        try:
+            from hermes_cli.tasks import load_todo as _load_todo, save_todo as _save_todo
+            from tools.todo_tool import format_notice as _format_notice
+
+            _notice_store = _load_todo(sid)
+            if _notice_store is not None:
+                _notice_lines = [
+                    _line
+                    for _line in (
+                        _format_notice(_notice, _notice_store)
+                        for _notice in _notice_store.drain_notices()
+                    )
+                    if _line
+                ]
+                if _notice_lines and source is not None:
+                    await self._defer_goal_status_notice_after_delivery(
+                        source, "\n".join(_notice_lines)
+                    )
+                # Persist after draining so the notices do not re-emit next
+                # turn. Best-effort — a failure keeps them (a duplicate line
+                # beats a lost one).
+                try:
+                    _save_todo(sid, _notice_store)
+                except Exception as _save_exc:
+                    logger.debug("task-lifecycle notice persist failed: %s", _save_exc)
+        except Exception as _notice_exc:
+            logger.debug("task-lifecycle notice emission failed: %s", _notice_exc)
+
         if not mgr.is_active():
             # No goal loop running. The lifecycle nudge still applies —
             # the audit fired because work happened with no open task.
@@ -14950,35 +14986,8 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             if _verdict in ("continue", "wait") and str(decision.get("status") or "") == "active":
                 msg = ""  # per-turn progress noise — suppress
 
-        # Task-lifecycle completion is agent-owned: the store recorded a
-        # notice for each start/complete/cancel transition this turn. Emit
-        # them deterministically — derived from the store, never from a judge
-        # verdict. A missing or degraded store yields nothing, not an error.
-        try:
-            from hermes_cli.tasks import load_todo, save_todo
-            from tools.todo_tool import format_notice
-
-            _notice_store = load_todo(sid)
-            if _notice_store is not None:
-                _notice_lines = [
-                    _line
-                    for _line in (
-                        format_notice(_notice, _notice_store)
-                        for _notice in _notice_store.drain_notices()
-                    )
-                    if _line
-                ]
-                if _notice_lines:
-                    msg = "\n".join(_notice_lines)
-                # Persist after draining so the notices do not re-emit next
-                # turn. Best-effort — a failure keeps them (a duplicate line
-                # beats a lost one).
-                try:
-                    save_todo(sid, _notice_store)
-                except Exception as _save_exc:
-                    logger.debug("task-lifecycle notice persist failed: %s", _save_exc)
-        except Exception as _notice_exc:
-            logger.debug("task-lifecycle notice emission failed: %s", _notice_exc)
+        # Task-lifecycle notices are drained at the turn boundary above, before
+        # the no-goal early return, so nothing is emitted here.
 
         # The judge's verdict nudge is gone with the judge — the completion
         # line above now comes from the store's recorded notices. Bound to
