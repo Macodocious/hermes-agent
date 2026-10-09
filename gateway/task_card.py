@@ -44,6 +44,7 @@ from typing import Any, Dict, List, Optional, Sequence
 from hermes_constants import (
     TASK_CARD_BAR_EMPTY,
     TASK_CARD_BAR_FILLED,
+    TASK_CARD_BAR_MIN_SEGMENTS,
     TASK_CARD_FADE_PREFIX,
     TASK_CARD_FOOTER_CODE_FENCE,
     TASK_CARD_FOOTER_SEPARATOR,
@@ -177,8 +178,12 @@ def _footer_text(filled: int, total: int, elapsed_label: str) -> str:
     The percentage is deliberately absent: the bar already encodes the same
     proportion segment-for-segment.  The bar is wrapped in backticks so the
     segments keep their even glyph column, exactly as the approved card shows.
+    The track is floored at twelve segments so a short list still draws a
+    readable bar; the fill scales to that width to keep the proportion.
     """
-    bar = TASK_CARD_BAR_FILLED * filled + TASK_CARD_BAR_EMPTY * max(0, total - filled)
+    track = max(total, TASK_CARD_BAR_MIN_SEGMENTS)
+    filled_segments = round(filled * track / total) if total else 0
+    bar = TASK_CARD_BAR_FILLED * filled_segments + TASK_CARD_BAR_EMPTY * (track - filled_segments)
     return (
         f"{TASK_CARD_FOOTER_SUBTEXT_PREFIX}"
         f"{TASK_CARD_FOOTER_CODE_FENCE}{bar}{TASK_CARD_FOOTER_CODE_FENCE}"
@@ -219,7 +224,10 @@ def build_task_card(
             # the task silently, so it can be corrected.
             logger.debug("Task card: unrecognised task status %r", status)
             section_name = TASK_CARD_SECTION_UP_NEXT
-        task_text = str(item.get("content", "") or "").strip()
+        # Collapse every whitespace run (newlines included) to a single space:
+        # a row must occupy exactly one line, or a multi-line item's tail lands
+        # on its own line and reads as a section label.
+        task_text = " ".join(str(item.get("content", "") or "").split())
         if not task_text:
             continue
         sections[section_name].append(task_text)
