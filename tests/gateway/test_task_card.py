@@ -181,7 +181,10 @@ def test_active_and_queued_rows_are_not_faded_or_bolded():
 
 def test_footer_has_bar_ratio_and_elapsed_but_no_percentage():
     card = build_task_card(_make_store().read(), "3h 12m elapsed")
-    assert card["footer"] == "-# `\u2588\u2591\u2591`   1 / 3 \u00b7 3h 12m elapsed"
+    # 1 of 3 completed, on the twelve-segment floor: four filled segments.
+    assert card["footer"] == (
+        "-# `" + "\u2588" * 4 + "\u2591" * 8 + "`   1 / 3 \u00b7 3h 12m elapsed"
+    )
     assert "%" not in card["footer"]
 
 
@@ -192,9 +195,26 @@ def test_bar_and_ratio_share_one_source():
     ]
     card = build_task_card(items, "1m elapsed")
     bar = card["footer"].split("`")[1]
-    assert bar.count("\u2588") == 5
-    assert len(bar) == 8
+    # The bar is floored at twelve segments; the fill tracks the ratio.
+    assert len(bar) == 12
+    assert abs(bar.count("\u2588") / len(bar) - 5 / 8) <= 1 / 12
     assert "5 / 8" in card["footer"]
+
+
+def test_multi_line_content_renders_as_one_row():
+    """A row occupies one line; a multi-line item's tail must not leak."""
+    items = [{"content": "First line.\n\nInvestigate both.", "status": "completed"}]
+    card = build_task_card(items, "1m elapsed")
+    assert _row_lines(card, "Done") == ["> \u2713  First line. Investigate both."]
+
+
+def test_short_list_still_draws_the_twelve_segment_floor():
+    items = [{"content": f"task {i}", "status": "completed"} for i in range(4)]
+    card = build_task_card(items, "1m elapsed")
+    bar = card["footer"].split("`")[1]
+    assert len(bar) == 12
+    assert bar.count("\u2588") == 12
+    assert "4 / 4" in card["footer"]
 
 
 def test_cancelled_tasks_leave_the_denominator_and_the_rows():
