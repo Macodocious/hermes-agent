@@ -460,3 +460,37 @@ async def test_send_task_card_rejects_an_empty_card():
     result = await adapter.send_task_card("4242", {"sections": []})
 
     assert result.success is False
+
+
+def test_task_card_elapsed_anchors_to_the_thread_creation():
+    """Regression: the footer's elapsed figure is the thread's age, not the
+    session's.
+
+    Thread 1557992610646462515 was created 2026-10-09T05:46:24; the session
+    that hosted it was created 2026-10-09T01:46:26, so measuring from the
+    session over-reported the age by ~4h.
+    """
+    from datetime import timezone
+
+    from gateway.slash_commands import (
+        GatewaySlashCommandsMixin,
+        _discord_snowflake_created_at,
+    )
+
+    thread_created = datetime(2026, 10, 9, 5, 46, 24, tzinfo=timezone.utc).timestamp()
+    assert abs(_discord_snowflake_created_at("1557992610646462515") - thread_created) < 1.0
+    assert _discord_snowflake_created_at("not-a-snowflake") is None
+
+    entry = SimpleNamespace(created_at="2026-10-09T01:46:26+00:00")
+    thread_source = SessionSource(
+        platform=Platform.DISCORD,
+        chat_id="1557992610646462515",
+        thread_id="1557992610646462515",
+        chat_type="thread",
+    )
+
+    thread_label = GatewaySlashCommandsMixin._task_card_elapsed_label(entry, thread_source)
+    session_label = GatewaySlashCommandsMixin._task_card_elapsed_label(entry, None)
+
+    assert thread_label and session_label
+    assert thread_label != session_label

@@ -55,6 +55,19 @@ logger = logging.getLogger("gateway.run")
 # its worker thread. (#35994)
 _RESET_CLEANUP_TIMEOUT_S = 30.0
 
+# Discord snowflakes encode their creation time in the high 42 bits: the id
+# shifted right by 22 is milliseconds since the Discord epoch. The /tasks
+# footer uses this to measure a thread's own age rather than the session's.
+_DISCORD_EPOCH_MS = 1420070400000
+
+
+def _discord_snowflake_created_at(snowflake: Any) -> Optional[float]:
+    """POSIX seconds a Discord snowflake was created, or None if unusable."""
+    try:
+        return ((int(snowflake) >> 22) + _DISCORD_EPOCH_MS) / 1000
+    except (TypeError, ValueError):
+        return None
+
 
 def _model_switch_skew_guard() -> Optional[str]:
     """Refuse a model switch when the gateway is running stale code.
@@ -1140,7 +1153,7 @@ class GatewaySlashCommandsMixin:
         included — falls through to the plain-text renderer.
         """
         source = event.source
-        elapsed_label = self._task_card_elapsed_label(session_entry)
+        elapsed_label = self._task_card_elapsed_label(session_entry, source)
 
         try:
             from gateway.task_card import build_task_card
@@ -1174,11 +1187,18 @@ class GatewaySlashCommandsMixin:
             return False
 
     @staticmethod
-    def _task_card_elapsed_label(session_entry: Any) -> str:
-        """Elapsed time since the session began, for the card footer."""
+    def _task_card_elapsed_label(session_entry: Any, source: Any = None) -> str:
+        """Elapsed time since the thread (or session) began, for the card footer."""
         from datetime import timezone
 
         from gateway.task_card import format_elapsed
+
+        # A thread is created after its session, so the footer measures the
+        # thread's own age when the command arrived in one.
+        if getattr(source, "platform", None) == Platform.DISCORD:
+            thread_start = _discord_snowflake_created_at(getattr(source, "thread_id", None))
+            if thread_start is not None:
+                return format_elapsed(time.time() - thread_start)
 
         started_at = getattr(session_entry, "created_at", None)
         if not started_at:
