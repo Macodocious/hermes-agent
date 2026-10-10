@@ -126,3 +126,33 @@ class TestDetectTaskStart:
         ])
         assert started is not None
         assert len(started["content"]) <= MAX_TODO_CONTENT_CHARS
+
+    def test_renumbered_reassertion_is_not_a_start(self):
+        """A replace-mode write renumbers ids 1..N, so the id-keyed lookup can
+        land on a different logical task. The row that is already running must
+        not be reported as a start just because its id moved."""
+        store = TodoStore()
+        store.write([
+            {"id": "1", "content": "task one", "status": "completed"},
+            {"id": "2", "content": "task two", "status": "in_progress"},
+            {"id": "3", "content": "task three", "status": "pending"},
+        ])
+        started = store.detect_task_start([
+            {"id": "1", "content": "task one", "status": "completed"},
+            {"id": "2", "content": "task two", "status": "completed"},
+            {"id": "3", "content": "task two", "status": "in_progress"},
+        ])
+        assert started is None
+
+    def test_genuinely_new_task_still_fires_after_renumber(self):
+        """The renumber guard must not swallow a real start."""
+        store = TodoStore()
+        store.write([
+            {"id": "1", "content": "task one", "status": "in_progress"},
+        ])
+        started = store.detect_task_start([
+            {"id": "1", "content": "task one", "status": "completed"},
+            {"id": "2", "content": "task two", "status": "in_progress"},
+        ])
+        assert started is not None
+        assert started["id"] == "2"

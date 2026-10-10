@@ -147,6 +147,12 @@ def _merge_todo_stores(memory: Any, persisted: Any) -> Any:
             merged_items.append(mem)
     merged = TodoStore()
     merged.write(merged_items, merge=False)
+    # The merge reconciles ITEMS; it is not a lifecycle transition, so it must
+    # neither create nor destroy a notice. `write` on a fresh store records a
+    # start for the in-progress row, and the pending notices live only on the
+    # in-memory store — carry them across so the turn-end drain still sees the
+    # transitions this turn produced.
+    merged.adopt_notices(memory.pending_notices())
     return merged
 
 
