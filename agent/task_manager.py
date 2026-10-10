@@ -174,6 +174,25 @@ def plan_is_complete(store: Any, plan_ref: str) -> bool:
     )
 
 
+def plan_final_row_id(store: Any, plan_ref: str) -> str:
+    """The id of the last row (list order) carrying ``plan_ref``, or ''.
+
+    The plan-completion line belongs to the plan's final task, not to every
+    task that closes. ``format_notice`` renders it for this row alone, so a
+    batch of completions yields one line, at the plan's end, instead of one
+    per completing task.
+    """
+    ref = str(plan_ref or "").strip()
+    if not ref:
+        return ""
+    rows = [
+        item
+        for item in store.read()
+        if str(item.get("plan") or "").strip() == ref
+    ]
+    return str(rows[-1].get("id") or "") if rows else ""
+
+
 def task_position(store: Any, item_id: Any) -> tuple:
     """Return the 1-based ``(position, total)`` of a task in the ordered list.
 
