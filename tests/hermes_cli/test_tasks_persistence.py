@@ -270,3 +270,48 @@ class TestMergeTodoStores:
         assert loaded.read()[0]["status"] == "completed"
         # The agent's store now reflects the DB truth.
         assert agent._todo_store.read()[0]["status"] == "completed"
+
+    def test_merge_preserves_pending_notices(self, hermes_home):
+        """The merge reconciles items; it must not destroy the transitions the
+        turn produced, or the turn-end drain finds nothing to emit."""
+        from hermes_cli.tasks import _merge_todo_stores
+        from tools.todo_tool import TodoStore
+
+        memory = TodoStore()
+        memory.write([
+            {"id": "1", "content": "task one", "status": "in_progress"},
+            {"id": "2", "content": "task two", "status": "pending"},
+        ])
+        memory.transition("complete", "1")
+        pending = memory.pending_notices()
+        assert [n["kind"] for n in pending] == ["completed", "started"]
+
+        persisted = TodoStore()
+        persisted.write([{"id": "1", "content": "task one", "status": "in_progress"}])
+
+        merged = _merge_todo_stores(memory, persisted)
+        assert merged.pending_notices() == pending
+
+    def test_persist_keeps_notices_for_the_turn_drain(self, hermes_home):
+        """End-to-end: after a write-through the persisted row still carries
+        the pending notices, so the gateway's turn-end drain can emit them."""
+        from hermes_cli.tasks import load_todo, persist_todo_store, save_todo
+        from tools.todo_tool import TodoStore
+
+        persisted = TodoStore()
+        persisted.write([{"id": "1", "content": "task one", "status": "in_progress"}])
+        save_todo("sess-notice-1", persisted)
+
+        agent = _StubAgent(session_id="sess-notice-1")
+        assert agent._todo_store is not None
+        agent._todo_store.write([
+            {"id": "1", "content": "task one", "status": "in_progress"},
+            {"id": "2", "content": "task two", "status": "pending"},
+        ])
+        agent._todo_store.transition("complete", "1")
+
+        persist_todo_store(agent)
+
+        loaded = load_todo("sess-notice-1")
+        assert loaded is not None
+        assert [n["kind"] for n in loaded.pending_notices()] == ["completed", "started"]

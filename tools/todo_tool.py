@@ -478,6 +478,16 @@ class TodoStore:
                 content = prev_item["content"]
             if not content:
                 content = "(no description)"
+            # A replace-mode write renumbers ids 1..N, so the id-keyed lookup
+            # above can land on a different logical task and report a start for
+            # the task that is already running. If the row's content already
+            # names the current task, this is a re-assertion, not a start.
+            if any(
+                p["status"] == "in_progress"
+                and str(p.get("content", "")).strip() == content
+                for p in previous.values()
+            ):
+                continue
             return {
                 "id": item_id,
                 "content": self._cap_content(content),
@@ -642,6 +652,24 @@ class TodoStore:
         notices = self._notices
         self._notices = []
         return notices
+
+    def pending_notices(self) -> List[Dict[str, Any]]:
+        """The undrained lifecycle notices, without clearing them.
+
+        Read-only counterpart to ``drain_notices`` for callers that must
+        preserve the queue — the write-through merge reconciles items and is
+        not a transition, so it must neither create nor destroy a notice.
+        """
+        return list(self._notices)
+
+    def adopt_notices(self, notices: List[Dict[str, Any]]) -> None:
+        """Replace the pending notices with ``notices``.
+
+        The write-through merge rebuilds a store from items alone, so the
+        pending transitions must be carried across explicitly or the turn-end
+        drain finds nothing to emit.
+        """
+        self._notices = list(notices)
 
     def format_for_injection(self) -> Optional[str]:
         """
