@@ -146,3 +146,55 @@ class TestTaskPositionLabel:
     @pytest.mark.parametrize("position,total", [(3, 0), (0, 3)])
     def test_incomplete_pair_renders_no_label(self, position, total):
         assert task_position_label({"position": position, "total": total}) == ""
+
+
+class TestPlanCompleteNotice:
+    """The plan-completion line belongs to the plan's final task, once.
+
+    ``format_notice`` consults the store when it renders, so a batch of
+    completions used to render the plan line for every ref-carrying row — one
+    per completing task, the first of them mid-plan.
+    """
+
+    @staticmethod
+    def _drained_lines(store):
+        from tools.todo_tool import format_notice
+
+        return [
+            line
+            for line in (format_notice(n, store) for n in store.drain_notices())
+            if line
+        ]
+
+    def test_a_batch_of_completions_yields_one_plan_line(self):
+        store = _store([
+            {"id": "1", "content": "seed", "status": "pending"},
+            {"id": "2", "content": "a", "status": "pending", "plan": "p"},
+            {"id": "3", "content": "b", "status": "pending", "plan": "p"},
+        ])
+        for item_id in ("1", "2", "3"):
+            store.transition("begin", item_id)
+            store.transition("complete", item_id)
+
+        lines = self._drained_lines(store)
+
+        assert [line for line in lines if line.startswith("🏁")] == [
+            "🏁 Plan complete: all 2 tasks done (p)"
+        ]
+        # The plan's non-final task reports itself, not the plan.
+        assert "✅ Task 2 of 3 complete: a" in lines
+        # The un-tagged seed row still reports its own position.
+        assert "✅ Task 1 of 3 complete: seed" in lines
+
+    def test_plan_line_waits_for_the_final_task(self):
+        store = _store([
+            {"id": "1", "content": "a", "status": "pending", "plan": "p"},
+            {"id": "2", "content": "b", "status": "pending", "plan": "p"},
+        ])
+        store.transition("begin", "1")
+        store.transition("complete", "1")
+
+        lines = self._drained_lines(store)
+
+        assert not [line for line in lines if line.startswith("🏁")]
+        assert "✅ Task 1 of 2 complete: a" in lines

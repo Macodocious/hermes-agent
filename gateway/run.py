@@ -11903,6 +11903,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
         try:
             _agent_result = await self._handle_message_with_agent(event, source, _quick_key, _run_generation)
+            # Task-lifecycle notices ship on the turn that produced them,
+            # whether or not this turn ended with prose. The goal judge below
+            # is skipped on an empty response; the lifecycle must not be.
+            await self._emit_task_lifecycle_notices(source)
             # Goal continuation: after the agent returns a final response
             # for this turn, check any standing /goal — the judge will
             # either mark it done, pause it (budget), or enqueue a
@@ -14686,6 +14690,54 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
         await _deliver()
 
+    async def _emit_task_lifecycle_notices(self, source: Any) -> None:
+        """Drain the session's task-lifecycle notices and deliver them.
+
+        Called at the turn boundary on every turn, not only turns that end
+        with prose: the goal judge is skipped on an empty response, and the
+        lifecycle must not be skipped with it, or notices accrue in the store
+        and flush as one late block. Never drains without a delivery target —
+        draining and then failing to emit would drop the notices, since the
+        store is persisted after the drain.
+        """
+        if source is None:
+            return
+        try:
+            session_entry = await self.async_session_store.get_or_create_session(source)
+        except Exception:
+            session_entry = None
+        sid = getattr(session_entry, "session_id", None) or ""
+        if not sid:
+            return
+        try:
+            from hermes_cli.tasks import load_todo as _load_todo, save_todo as _save_todo
+            from tools.todo_tool import format_notice as _format_notice
+
+            _notice_store = _load_todo(sid)
+            if _notice_store is None:
+                return
+            _notice_lines = [
+                _line
+                for _line in (
+                    _format_notice(_notice, _notice_store)
+                    for _notice in _notice_store.drain_notices()
+                )
+                if _line
+            ]
+            if _notice_lines:
+                await self._defer_goal_status_notice_after_delivery(
+                    source, "\n".join(_notice_lines)
+                )
+            # Persist after draining so the notices do not re-emit next turn.
+            # Best-effort — a failure keeps them (a duplicate line beats a
+            # lost one).
+            try:
+                _save_todo(sid, _notice_store)
+            except Exception as _save_exc:
+                logger.debug("task-lifecycle notice persist failed: %s", _save_exc)
+        except Exception as _notice_exc:
+            logger.debug("task-lifecycle notice emission failed: %s", _notice_exc)
+
     async def _post_turn_goal_continuation(
         self,
         *,
@@ -14799,40 +14851,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
         mgr = GoalManager(session_id=sid, default_max_turns=max_turns)
 
-        # Task-lifecycle notices are agent-owned and must ship on the turn the
-        # transition happened. The lifecycle arms no goal loop, so the drain
-        # below (inside the goal path) is unreachable for a lifecycle session —
-        # notices then sit in the store, persist, and flush late (a start line
-        # surfacing after the plan is complete). Drain here, at the turn
-        # boundary, before the no-goal early return, and emit through the
-        # post-delivery callback so the lines land after the agent's response.
-        try:
-            from hermes_cli.tasks import load_todo as _load_todo, save_todo as _save_todo
-            from tools.todo_tool import format_notice as _format_notice
-
-            _notice_store = _load_todo(sid)
-            if _notice_store is not None:
-                _notice_lines = [
-                    _line
-                    for _line in (
-                        _format_notice(_notice, _notice_store)
-                        for _notice in _notice_store.drain_notices()
-                    )
-                    if _line
-                ]
-                if _notice_lines and source is not None:
-                    await self._defer_goal_status_notice_after_delivery(
-                        source, "\n".join(_notice_lines)
-                    )
-                # Persist after draining so the notices do not re-emit next
-                # turn. Best-effort — a failure keeps them (a duplicate line
-                # beats a lost one).
-                try:
-                    _save_todo(sid, _notice_store)
-                except Exception as _save_exc:
-                    logger.debug("task-lifecycle notice persist failed: %s", _save_exc)
-        except Exception as _notice_exc:
-            logger.debug("task-lifecycle notice emission failed: %s", _notice_exc)
+        # Task-lifecycle notices are drained at the turn boundary by
+        # ``_emit_task_lifecycle_notices`` (called from ``_handle_message``),
+        # not here: the lifecycle arms no goal loop, and this method is
+        # skipped entirely on a turn that ends without prose.
 
         if not mgr.is_active():
             # No goal loop running. The lifecycle nudge still applies —

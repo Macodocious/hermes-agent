@@ -96,13 +96,19 @@ def format_notice(notice: Dict[str, Any], store: "TodoStore") -> str:
     if kind == NOTICE_COMPLETED:
         try:
             from agent.task_manager import (
+                plan_final_row_id,
                 plan_is_complete,
                 plan_task_total,
                 task_position,
             )
 
             plan_ref = str(notice.get("plan") or "").strip()
-            if plan_ref and plan_is_complete(store, plan_ref):
+            if (
+                plan_ref
+                and plan_is_complete(store, plan_ref)
+                and str(notice.get("id") or "").strip()
+                == plan_final_row_id(store, plan_ref)
+            ):
                 return (
                     f"🏁 Plan complete: all {plan_task_total(store, plan_ref)} "
                     f"tasks done ({plan_ref})"

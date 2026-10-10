@@ -170,6 +170,17 @@ async def test_lifecycle_notices_drain_without_an_active_goal(monkeypatch):
     )
     session_entry = SimpleNamespace(session_id="sess-lifecycle-notice")
 
+    async def _get_session(_source):
+        return session_entry
+
+    # ``async_session_store`` is a read-only property that rebuilds the facade
+    # unless its backing store matches, so stub the property itself.
+    monkeypatch.setattr(
+        GatewayRunner,
+        "async_session_store",
+        property(lambda self: SimpleNamespace(get_or_create_session=_get_session)),
+    )
+
     store = TodoStore()
     store.write([{"id": "1", "content": "ship the fix", "status": "pending"}])
     store.transition("begin", "1")
@@ -177,11 +188,7 @@ async def test_lifecycle_notices_drain_without_an_active_goal(monkeypatch):
     monkeypatch.setattr(tasks_mod, "load_todo", lambda sid: store)
     monkeypatch.setattr(tasks_mod, "save_todo", lambda sid, s: None)
 
-    await runner._post_turn_goal_continuation(
-        session_entry=session_entry,
-        source=source,
-        final_response="done",
-    )
+    await runner._emit_task_lifecycle_notices(source)
 
     assert store.drain_notices() == []  # drained on the turn, not left to flush late
     assert len(adapter.callbacks) == 1  # deferred until after the visible reply
@@ -192,3 +199,27 @@ async def test_lifecycle_notices_drain_without_an_active_goal(monkeypatch):
         await result
 
     assert adapter.calls[0]["content"] == "▶️ Working on: ship the fix"
+
+
+@pytest.mark.asyncio
+async def test_lifecycle_notices_are_not_drained_without_a_delivery_target(monkeypatch):
+    """A turn with no source must not drain: the store is persisted after the
+    drain, so draining without emitting would drop the notices outright.
+    """
+    import hermes_cli.tasks as tasks_mod
+    from tools.todo_tool import TodoStore
+
+    runner = GatewayRunner.__new__(GatewayRunner)
+    runner.adapters = {Platform.DISCORD: FakeAdapter()}
+    runner.config = SimpleNamespace(group_sessions_per_user=True, thread_sessions_per_user=False)
+
+    store = TodoStore()
+    store.write([{"id": "1", "content": "ship the fix", "status": "pending"}])
+    store.transition("begin", "1")
+
+    monkeypatch.setattr(tasks_mod, "load_todo", lambda sid: store)
+    monkeypatch.setattr(tasks_mod, "save_todo", lambda sid, s: None)
+
+    await runner._emit_task_lifecycle_notices(None)
+
+    assert [n["kind"] for n in store.drain_notices()] == ["started"]
