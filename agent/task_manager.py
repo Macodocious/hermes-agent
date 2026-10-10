@@ -20,10 +20,26 @@ deterministic code — no LLM calls, no model discretion.
 
 from __future__ import annotations
 
+import json
 import logging
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Plan completion mark
+# ---------------------------------------------------------------------------
+# When every task carrying a plan ref is terminal AND at least one is
+# ``completed``, core records the instant in the plan's state.json. The mark is
+# what code-review selects on. The plan store itself is owned by the write-plan
+# plugin, so only its path and the two keys of its document are named here.
+PLAN_STORE_DIR = Path("/root/.hermes/cache/plans")
+PLAN_STATE_FILENAME = "state.json"
+PLAN_HALF_KEY = "plan"
+COMPLETED_AT_KEY = "completed_at"
+PLAN_COMPLETED_STATUS = "completed"
 
 # The one continuation nudge the lifecycle still emits: the "you did work with
 # no open task" pull-back. Task completion no longer needs a nudge (the
@@ -200,6 +216,101 @@ def plan_task_total(store: Any, plan_ref: str) -> int:
     )
 
 
+def _now_iso() -> str:
+    """The current instant as an ISO 8601 string."""
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _has_completed_task(store: Any, plan_ref: str) -> bool:
+    """True iff at least one task carrying ``plan_ref`` is ``completed``.
+
+    The guard that keeps an all-cancelled plan from being marked complete: the
+    terminal set counts ``cancelled``, but a plan nobody implemented must not be
+    reported as implemented.
+    """
+    ref = str(plan_ref or "").strip()
+    return any(
+        str(item.get("plan") or "").strip() == ref
+        and str(item.get("status") or "").strip() == PLAN_COMPLETED_STATUS
+        for item in store.read()
+    )
+
+
+def _plan_state_path(plan_ref: str) -> Optional[Path]:
+    """The plan's state.json, resolved from a todo row's plan ref.
+
+    A task's plan ref is the plan document path (``<plan_dir>/plan.md``); the
+    state file sits beside it. A ref that resolves to no plan directory or no
+    state file returns None, so the caller reports and writes nothing.
+    """
+    ref = str(plan_ref or "").strip()
+    if not ref:
+        return None
+    candidate = Path(ref)
+    plan_dir = candidate.parent if candidate.name else candidate
+    state_path = plan_dir / PLAN_STATE_FILENAME
+    return state_path if state_path.is_file() else None
+
+
+def _stamp_plan_completed_at(plan_ref: str) -> None:
+    """Write ``completed_at`` into the plan's state.json, once.
+
+    Fail-closed and idempotent: an unresolvable plan ref, an unreadable or
+    malformed state, an absent plan half, or an already-marked plan all leave
+    the file untouched and report. Never raises.
+    """
+    state_path = _plan_state_path(plan_ref)
+    if state_path is None:
+        logger.warning("task_manager: plan ref %r resolves to no state file", plan_ref)
+        return
+    try:
+        document = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("task_manager: plan state unreadable at %s: %s", state_path, exc)
+        return
+    if not isinstance(document, dict):
+        return
+    plan_state = document.get(PLAN_HALF_KEY)
+    if not isinstance(plan_state, dict):
+        logger.warning("task_manager: no %r half at %s", PLAN_HALF_KEY, state_path)
+        return
+    if plan_state.get(COMPLETED_AT_KEY):
+        return
+    plan_state[COMPLETED_AT_KEY] = _now_iso()
+    try:
+        state_path.write_text(json.dumps(document, indent=2), encoding="utf-8")
+    except OSError as exc:
+        logger.warning("task_manager: could not write plan state at %s: %s", state_path, exc)
+        return
+    logger.info("task_manager: marked plan complete: %s", state_path.parent.name)
+
+
+def _write_plan_completion_mark(store: Any) -> None:
+    """Mark every complete plan complete. Fail-closed; never raises.
+
+    Runs after every todo transition. For each plan ref the store carries: when
+    ``plan_is_complete`` holds and at least one task is ``completed``, record the
+    instant in that plan's state.json. Core writes no other plan field and never
+    rewrites plan.md.
+    """
+    try:
+        refs = {str(item.get("plan") or "").strip() for item in store.read()}
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.debug("task_manager: plan mark read failed: %s", exc)
+        return
+    for ref in refs:
+        if not ref:
+            continue
+        try:
+            if not plan_is_complete(store, ref):
+                continue
+            if not _has_completed_task(store, ref):
+                continue
+            _stamp_plan_completed_at(ref)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("task_manager: plan completion mark for %r failed: %s", ref, exc)
+
+
 def on_todo_write(agent: Any, args: Dict[str, Any]) -> None:
     """Post-write lifecycle hook for the todo dispatch point.
 
@@ -219,6 +330,7 @@ def on_todo_write(agent: Any, args: Dict[str, Any]) -> None:
     if args.get("action") is not None:
         agent._task_lifecycle_action_issued = True
     _persist(agent)
+    _write_plan_completion_mark(store)
 
 
 def audit_turn_end(
