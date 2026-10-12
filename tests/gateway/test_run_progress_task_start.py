@@ -1,10 +1,10 @@
-"""Gateway end-to-end test: task-started notification bubble.
+"""Gateway end-to-end test: a todo call renders no lifecycle line.
 
 Drives the real gateway ``progress_callback`` path (via ``_run_agent`` with a
-fake agent, mirroring ``test_run_progress_topics.py``) and asserts that a
-todo ``tool.started`` event carrying ``started_task`` renders a
-"📋 Working on <task>" bubble, while a plain todo update renders the
-standalone "📋 Updating 2 tasks" preview.
+fake agent, mirroring ``test_run_progress_topics.py``) and asserts that a todo
+``tool.started`` event renders the standalone preview the tool computed
+("📋 Updating 1 task"), never a "📋 Working on <task>" line: the store's notice
+is the sole producer of a lifecycle notification.
 """
 
 import importlib
@@ -174,10 +174,10 @@ async def test_run_agent_working_on_bubble_when_task_starts(monkeypatch, tmp_pat
     )
 
     assert result["final_response"] == "done"
-    assert any(
+    assert not any(
         "Working on ship the feature" in call["content"]
         for call in adapter.sent
-    ), f"expected working-on bubble in {adapter.sent}"
+    ), f"the card must not compose a lifecycle line: {adapter.sent}"
 
 
 @pytest.mark.asyncio

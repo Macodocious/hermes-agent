@@ -79,9 +79,11 @@ def render_task_board_with_ids(items: List[Dict[str, Any]]) -> List[str]:
 def format_notice(notice: Dict[str, Any], store: "TodoStore") -> str:
     """Render one store lifecycle notice as a user-facing line.
 
-    The store records a notice per start/complete/cancel transition; both the
-    gateway and the CLI render it through here so the wording cannot drift
-    between surfaces. Plan completion is derived from the store once the
+    The store is the sole producer of a lifecycle notification: it records a
+    notice per start/complete/cancel transition, and the emitter delivers each
+    through here. The gateway's task card and the CLI's spinner describe what a
+    call is doing, not which transition it caused, so a lifecycle line is
+    composed in one place. Plan completion is derived from the store once the
     plan's last task is terminal — the completion line then reports the plan,
     not a list position. Returns "" for an unknown notice kind.
     """
@@ -98,7 +100,17 @@ def format_notice(notice: Dict[str, Any], store: "TodoStore") -> str:
             return f"▶️ Working on task {position} of {total}: {content}"
         return f"▶️ Working on: {content}"
     if kind == NOTICE_CANCELLED:
-        line = f"🚫 Cancelled: {content}"
+        try:
+            from agent.task_manager import task_position
+
+            position, total = task_position(store, notice.get("id"))
+        except Exception:  # pragma: no cover - defensive
+            position, total = 0, 0
+        line = (
+            f"🚫 Cancelled task {position} of {total}: {content}"
+            if position
+            else f"🚫 Cancelled: {content}"
+        )
         reason = str(notice.get("reason") or "").strip()
         return f"{line}\n  reason: {reason}" if reason else line
     if kind == NOTICE_COMPLETED:

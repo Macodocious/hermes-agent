@@ -1,138 +1,65 @@
-"""Tests for the task-stopped notification: executor helper + CLI spinner.
+"""The store is the single producer of a task's cancellation line.
 
-Covers ``_detect_todo_task_stop`` (the pre-call transition hook wired into
-both ``tool.started`` emitter sites) and the CLI spinner override that
-renders "Task cancelled/escalated" instead of the generic todo label.
+The task card and the CLI spinner used to compose ``Task N of M cancelled``
+for the same transition the store recorded a notice for. Neither surface
+composes a lifecycle line now. The store's notice carries the cancelled task's
+ordered position and the reason it was cancelled.
 """
 
-from types import SimpleNamespace
-
-from agent.tool_executor import _detect_todo_task_stop
-from tools.todo_tool import TodoStore
+from tools.todo_tool import NOTICE_CANCELLED, TodoStore, format_notice
 
 
-def _agent_with_store(items=None):
+def _store_with(items):
     store = TodoStore()
-    if items:
-        store.write(items)
-    return SimpleNamespace(_todo_store=store), store
+    store.write(items)
+    return store
 
 
-class TestDetectTodoTaskStop:
-    """Helper-level transition detection (gateway- and CLI-facing)."""
-
-    def test_non_todo_tool_returns_none(self):
-        agent, _ = _agent_with_store()
-        assert _detect_todo_task_stop(agent, "terminal", {"command": "ls"}) is None
-
-    def test_read_call_returns_none(self):
-        agent, _ = _agent_with_store([
-            {"id": "1", "content": "task one", "status": "in_progress"},
+class TestStoreIsTheCancelProducer:
+    def test_cancel_records_one_notice_with_position_and_reason(self):
+        store = _store_with([
+            {"id": "1", "content": "done one", "status": "completed"},
+            {"id": "2", "content": "done two", "status": "completed"},
+            {"id": "3", "content": "ship the feature", "status": "in_progress"},
         ])
-        assert _detect_todo_task_stop(agent, "todo", {}) is None
-
-    def test_cancel_transition_detected(self):
-        agent, _ = _agent_with_store([
-            {"id": "1", "content": "task one", "status": "in_progress"},
-        ])
-        stopped = _detect_todo_task_stop(
-            agent, "todo", {"todos": [{"id": "1", "content": "task one", "status": "cancelled"}]}
+        assert store.transition("cancel", "3", "superseded")["ok"] is True
+        notices = [n for n in store.pending_notices() if n["kind"] == NOTICE_CANCELLED]
+        assert len(notices) == 1
+        assert format_notice(notices[0], store) == (
+            "🚫 Cancelled task 3 of 3: ship the feature\n  reason: superseded"
         )
-        assert stopped is not None
-        assert stopped["id"] == "1"
-        assert stopped["content"] == "task one"
-        assert stopped["status"] == "cancelled"
 
-    def test_action_cancel_detected(self):
-        """The action path (action=cancel + item_id) is detected like a list write."""
-        agent, _ = _agent_with_store([
-            {"id": "1", "content": "task one", "status": "in_progress"},
-        ])
-        stopped = _detect_todo_task_stop(
-            agent, "todo", {"action": "cancel", "item_id": "1"}
+    def test_cancel_without_a_reason_is_refused_and_records_nothing(self):
+        store = _store_with([{"id": "1", "content": "task one", "status": "in_progress"}])
+        assert store.transition("cancel", "1")["ok"] is False
+        assert [n for n in store.pending_notices() if n["kind"] == NOTICE_CANCELLED] == []
+
+    def test_cancel_line_falls_back_without_a_position(self):
+        store = _store_with([{"id": "1", "content": "task one", "status": "in_progress"}])
+        stale = {
+            "kind": NOTICE_CANCELLED,
+            "id": "gone",
+            "content": "task one",
+            "reason": "superseded",
+        }
+        assert format_notice(stale, store) == (
+            "🚫 Cancelled: task one\n  reason: superseded"
         )
-        assert stopped is not None
-        assert stopped["id"] == "1"
-        assert stopped["status"] == "cancelled"
-
-    def test_pending_to_cancelled_returns_none(self):
-        # A task that was never active cannot "stop".
-        agent, _ = _agent_with_store([
-            {"id": "1", "content": "task one", "status": "pending"},
-        ])
-        stopped = _detect_todo_task_stop(
-            agent, "todo", {"todos": [{"id": "1", "content": "task one", "status": "cancelled"}]}
-        )
-        assert stopped is None
-
-    def test_reassert_returns_none(self):
-        agent, _ = _agent_with_store([
-            {"id": "1", "content": "task one", "status": "cancelled"},
-        ])
-        stopped = _detect_todo_task_stop(
-            agent, "todo", {"todos": [{"id": "1", "content": "task one", "status": "cancelled"}]}
-        )
-        assert stopped is None
-
-    def test_agent_without_store_returns_none(self):
-        agent = SimpleNamespace()
-        stopped = _detect_todo_task_stop(
-            agent, "todo", {"todos": [{"id": "1", "content": "task one", "status": "cancelled"}]}
-        )
-        assert stopped is None
-
-    def test_malformed_args_returns_none(self):
-        agent, _ = _agent_with_store()
-        assert _detect_todo_task_stop(agent, "todo", {"todos": "not json"}) is None
-        assert _detect_todo_task_stop(agent, "todo", None) is None
 
 
-class TestCliSpinnerTaskStop:
-    """CLI _on_tool_progress renders the stopped label for stopped tasks."""
+class TestSpinnerComposesNoLifecycleLine:
+    """A todo call shows its own preview, never a lifecycle line."""
 
     def _make_cli(self):
         import importlib
         mod = importlib.import_module("cli")
         return mod.HermesCLI(verbose=False), mod
 
-    def test_cancelled_label_replaces_generic(self):
+    def test_stopped_task_kwarg_does_not_change_the_label(self):
         cli, _ = self._make_cli()
         cli._on_tool_progress(
             "tool.started", "todo", "Updating 1 task",
             {"todos": [{"id": "1", "content": "ship the feature", "status": "cancelled"}]},
             stopped_task={"id": "1", "content": "ship the feature", "status": "cancelled"},
         )
-        assert cli._spinner_text == "📋 Task cancelled: ship the feature"
-
-    def test_cancelled_label_names_ordered_position(self):
-        cli, _ = self._make_cli()
-        cli._on_tool_progress(
-            "tool.started", "todo", "Updating 1 task",
-            {"todos": [{"id": "4", "content": "ship the feature", "status": "cancelled"}]},
-            stopped_task={
-                "id": "4", "content": "ship the feature", "status": "cancelled",
-                "position": 4, "total": 6,
-            },
-        )
-        assert cli._spinner_text == "📋 Task 4 of 6 cancelled: ship the feature"
-
-    def test_generic_label_when_no_stopped_task(self):
-        cli, _ = self._make_cli()
-        cli._on_tool_progress(
-            "tool.started", "todo", "Reading the task list", {},
-        )
-        assert cli._spinner_text == "📋 Reading the task list"
-
-    def test_stopped_label_truncates_long_content(self, monkeypatch):
-        import agent.display
-        monkeypatch.setattr(agent.display, "get_tool_preview_max_len", lambda: 40)
-        cli, _ = self._make_cli()
-        long_content = "x" * 200
-        cli._on_tool_progress(
-            "tool.started", "todo", "Updating 1 task",
-            {"todos": [{"id": "1", "content": long_content, "status": "cancelled"}]},
-            stopped_task={"id": "1", "content": long_content, "status": "cancelled"},
-        )
-        assert cli._spinner_text.startswith("📋 Task ")
-        assert cli._spinner_text.endswith("...")
-        assert len(cli._spinner_text) < 60
+        assert cli._spinner_text == "📋 Updating 1 task"
