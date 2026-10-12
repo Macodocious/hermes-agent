@@ -217,7 +217,7 @@ class TestPostWriteNoticeEmission:
 
         _emit_pending_notices(self._Agent(store, sent.append))
 
-        assert sent == ["▶️ Working on: ship it"]
+        assert sent == ["▶️ Working on task 1 of 1: ship it"]
         assert store.pending_notices() == []
 
     def test_no_callback_leaves_the_notices_for_the_turn_drain(self):
@@ -229,6 +229,19 @@ class TestPostWriteNoticeEmission:
         _emit_pending_notices(self._Agent(store, None))
 
         assert [notice["kind"] for notice in store.pending_notices()] == ["started"]
+
+    def test_start_line_carries_the_list_position(self):
+        from tools.todo_tool import format_notice
+
+        store = _store([
+            {"id": "1", "content": "a", "status": "pending"},
+            {"id": "2", "content": "b", "status": "pending"},
+        ])
+        store.transition("begin", "2")
+
+        lines = [format_notice(notice, store) for notice in store.drain_notices()]
+
+        assert "▶️ Working on task 2 of 2: b" in lines
 
     def test_a_raising_callback_keeps_the_notices(self):
         from agent.task_manager import _emit_pending_notices
