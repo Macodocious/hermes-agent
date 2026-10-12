@@ -146,8 +146,13 @@ def _import_sounddevice():
 
 
 def _import_kittentts():
-    """Lazy import KittenTTS. Returns the class or raises ImportError."""
-    from kittentts import KittenTTS
+    """Lazy import KittenTTS. Returns the class or raises ImportError.
+
+    ``kittenml`` is the vendor's current package (it supersedes the older
+    ``kittentts`` wheel). Its ``KittenTTS`` constructor resolves a repo's
+    config to either a KittenTTS 2 or a legacy ONNX model.
+    """
+    from kittenml import KittenTTS
     return KittenTTS
 
 
@@ -1962,10 +1967,10 @@ def _check_neutts_available() -> bool:
 
 
 def _check_kittentts_available() -> bool:
-    """Check if the kittentts engine is importable (installed locally)."""
+    """Check if the kittenml engine is importable (installed locally)."""
     try:
         import importlib.util
-        return importlib.util.find_spec("kittentts") is not None
+        return importlib.util.find_spec("kittenml") is not None
     except Exception:
         return False
 
@@ -2224,10 +2229,13 @@ _kittentts_model_cache: Dict[str, Any] = {}
 
 
 def _generate_kittentts(text: str, output_path: str, tts_config: Dict[str, Any]) -> str:
-    """Generate speech using KittenTTS local ONNX model.
+    """Generate speech using a local KittenTTS model.
 
-    KittenTTS is a lightweight TTS engine (25-80MB models) that runs
-    entirely on CPU without requiring a GPU or API key.
+    ``kittenml`` serves two model families behind one constructor: the
+    legacy ONNX models (nano/micro/mini, 25-80MB) and KittenTTS 2 (a 1.7B
+    speech LM). Both run entirely on CPU without a GPU or API key. The
+    families differ in their ``generate`` signature, so the call is
+    branched on the returned object's class.
 
     Args:
         text: Text to convert to speech.
@@ -2253,8 +2261,15 @@ def _generate_kittentts(text: str, output_path: str, tts_config: Dict[str, Any])
 
     model = _kittentts_model_cache[model_name]
 
-    # Generate audio (returns numpy array at 24kHz)
-    audio = model.generate(text, voice=voice, speed=speed, clean_text=clean_text)
+    # KittenTTS 2 has no ``speed``/``clean_text`` knobs — it takes
+    # ``normalize`` instead and reports its own sample rate. The legacy
+    # ONNX models keep the original signature and a fixed 24kHz output.
+    if type(model).__name__ == "KittenTTS2":
+        audio = model.generate(text, voice=voice, normalize=clean_text)
+        sample_rate = int(model.sample_rate)
+    else:
+        audio = model.generate(text, voice=voice, speed=speed, clean_text=clean_text)
+        sample_rate = 24000
 
     # Save as WAV
     import soundfile as sf
@@ -2262,7 +2277,7 @@ def _generate_kittentts(text: str, output_path: str, tts_config: Dict[str, Any])
     if not output_path.endswith(".wav"):
         wav_path = output_path.rsplit(".", 1)[0] + ".wav"
 
-    sf.write(wav_path, audio, 24000)
+    sf.write(wav_path, audio, sample_rate)
 
     # Convert to desired format if needed
     if wav_path != output_path:
@@ -2476,11 +2491,11 @@ def text_to_speech_tool(
             except ImportError:
                 return json.dumps({
                     "success": False,
-                    "error": "KittenTTS provider selected but 'kittentts' package not installed. "
+                    "error": "KittenTTS provider selected but 'kittenml' package not installed. "
                              "Run 'hermes setup tts' and choose KittenTTS, or install manually: "
-                             "pip install https://github.com/KittenML/KittenTTS/releases/download/0.8.1/kittentts-0.8.1-py3-none-any.whl"
+                             "pip install kittenml"
                 }, ensure_ascii=False)
-            logger.info("Generating speech with KittenTTS (local, ~25MB)...")
+            logger.info("Generating speech with KittenTTS (local)...")
             _generate_kittentts(text, file_str, tts_config)
 
         elif provider == "piper":

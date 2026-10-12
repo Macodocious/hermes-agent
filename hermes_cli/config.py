@@ -2241,7 +2241,9 @@ DEFAULT_CONFIG = {
             "voice_id": "English_expressive_narrator",
         },
         "kittentts": {
-            "model": "KittenML/kitten-tts-nano-0.8-int8",  # nano 25MB; micro 41MB; mini 80MB
+            # nano 25MB; micro 41MB; mini 80MB. KittenTTS 2 (1.7B speech LM)
+            # is opt-in: "KittenML/kitten-tts-2".
+            "model": "KittenML/kitten-tts-nano-0.8-int8",
             "voice": "Jasper",
         },
         "neutts": {
