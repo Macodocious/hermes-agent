@@ -567,8 +567,9 @@ class TodoStore:
         - ``begin``    pending     -> in_progress
         - ``pause``    in_progress -> paused
         - ``resume``   paused      -> in_progress
-        - ``complete`` in_progress -> completed  (then the first ``pending``
-          task becomes ``in_progress``, so the plan advances mechanically)
+        - ``complete`` in_progress -> completed  (the next task is begun by
+          the agent, so its start is a real transition rather than a side
+          effect of this one)
         - ``cancel``   pending | in_progress -> cancelled  (requires a reason,
           stored on the row and rendered beneath the struck-through item)
 
@@ -629,15 +630,13 @@ class TodoStore:
             item["reason"] = self._cap_content(reason)
             self._record_notice(NOTICE_CANCELLED, item)
             return {"ok": True, "item": item.copy()}
-        # action == "complete": finalize the task, then advance the plan — the
-        # first pending task becomes the active one, so the agent always has a
-        # current task to work without a separate begin call.
+        # action == "complete": finalize the task. The next task is NOT
+        # promoted. A promotion records a start notice at this task's
+        # completion, so the next task's ``▶️ Working on:`` line fires at the
+        # wrong moment and rides out welded to this ``✅`` line. The agent
+        # begins the next task itself, which makes its start a real transition.
         item["status"] = "completed"
         self._record_notice(NOTICE_COMPLETED, item)
-        nxt = next((i for i in self._items if i["status"] == "pending"), None)
-        if nxt is not None:
-            nxt["status"] = "in_progress"
-            self._record_notice(NOTICE_STARTED, nxt)
         return {"ok": True, "item": item.copy()}
 
     def _record_notice(self, kind: str, item: Dict[str, Any]) -> None:
