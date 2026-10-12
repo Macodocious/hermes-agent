@@ -360,7 +360,7 @@ TOOL_CATEGORIES = {
             {
                 "name": "KittenTTS",
                 "badge": "local · free",
-                "tag": "Lightweight local ONNX TTS (~25MB), no API key",
+                "tag": "Lightweight local TTS (ONNX nano/micro/mini, or KittenTTS 2), no API key",
                 "env_vars": [],
                 "tts_provider": "kittentts",
                 "post_setup": "kittentts",
@@ -1369,29 +1369,25 @@ def _run_post_setup(post_setup_key: str):
 
     elif post_setup_key == "kittentts":
         try:
-            __import__("kittentts")
-            _print_success("    kittentts is already installed")
+            __import__("kittenml")
+            _print_success("    kittenml is already installed")
             return
         except ImportError:
             pass
-        _print_info("    Installing kittentts (~25-80MB model, CPU-only)...")
-        wheel_url = (
-            "https://github.com/KittenML/KittenTTS/releases/download/"
-            "0.8.1/kittentts-0.8.1-py3-none-any.whl"
-        )
+        _print_info("    Installing kittenml (~25-80MB model, CPU-only)...")
         try:
-            result = _pip_install(["-U", wheel_url, "soundfile", "--quiet"], timeout=300)
+            result = _pip_install(["-U", "kittenml", "soundfile", "--quiet"], timeout=300)
             if result.returncode == 0:
-                _print_success("    kittentts installed")
+                _print_success("    kittenml installed")
                 _print_info("    Voices: Jasper, Bella, Luna, Bruno, Rosie, Hugo, Kiki, Leo")
-                _print_info("    Models: KittenML/kitten-tts-nano-0.8-int8 (25MB), micro (41MB), mini (80MB)")
+                _print_info("    Models: KittenML/kitten-tts-nano-0.8-int8 (25MB), micro (41MB), mini (80MB), kitten-tts-2 (KittenTTS 2)")
             else:
-                _print_warning("    kittentts install failed:")
+                _print_warning("    kittenml install failed:")
                 _print_info(f"      {(result.stderr or '').strip()[:300]}")
-                _print_info(f"    Run manually: uv pip install -U '{wheel_url}' soundfile")
+                _print_info("    Run manually: uv pip install -U kittenml soundfile")
         except subprocess.TimeoutExpired:
-            _print_warning("    kittentts install timed out (>5min)")
-            _print_info(f"    Run manually: uv pip install -U '{wheel_url}' soundfile")
+            _print_warning("    kittenml install timed out (>5min)")
+            _print_info("    Run manually: uv pip install -U kittenml soundfile")
 
     elif post_setup_key == "piper":
         try:

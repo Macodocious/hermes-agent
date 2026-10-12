@@ -82,10 +82,10 @@ tts:
     model: neuphonic/neutts-air-q4-gguf
     device: cpu
   kittentts:
-    model: KittenML/kitten-tts-nano-0.8-int8   # 25MB int8; also: kitten-tts-micro-0.8 (41MB), kitten-tts-mini-0.8 (80MB)
+    model: KittenML/kitten-tts-nano-0.8-int8   # 25MB int8; also: kitten-tts-micro-0.8 (41MB), kitten-tts-mini-0.8 (80MB), kitten-tts-2 (KittenTTS 2)
     voice: Jasper                               # Jasper, Bella, Luna, Bruno, Rosie, Hugo, Kiki, Leo
-    speed: 1.0                                  # 0.5 - 2.0
-    clean_text: true                            # Expand numbers, currencies, units
+    speed: 1.0                                  # 0.5 - 2.0 (legacy ONNX models only)
+    clean_text: true                            # Expand numbers, currencies, units (legacy ONNX models only)
   piper:
     voice: en_US-lessac-medium                  # voice name (auto-downloaded) OR absolute path to .onnx
     # voices_dir: ''                            # default: ~/.hermes/cache/piper-voices/
@@ -96,6 +96,8 @@ tts:
     # volume: 1.0                               # 0.5 = half as loud
     # normalize_audio: true
 ```
+
+**KittenTTS models.** The `kittentts` provider runs locally on CPU via the `kittenml` package and serves two model families. The default is the lightweight legacy ONNX family (`kitten-tts-nano-0.8-int8`, 25MB). Set `tts.kittentts.model: KittenML/kitten-tts-2` to opt into KittenTTS 2, a 1.7B speech LM with 47 voices — it ignores `speed` and `clean_text` (it takes a `normalize` flag instead) and downloads ~1GB on first use.
 
 **Speed control**: The global `tts.speed` value applies to all providers by default. Each provider can override it with its own `speed` setting (e.g., `tts.openai.speed: 1.5`). Provider-specific speed takes precedence over the global value. Default is `1.0` (normal speed).
 

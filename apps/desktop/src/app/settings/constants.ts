@@ -326,9 +326,12 @@ export const ENUM_OPTIONS: Record<string, string[]> = {
   'tts.kittentts.model': [
     'KittenML/kitten-tts-nano-0.8-int8',
     'KittenML/kitten-tts-micro-0.8-int8',
-    'KittenML/kitten-tts-mini-0.8-int8'
+    'KittenML/kitten-tts-mini-0.8-int8',
+    // KittenTTS 2 (1.7B speech LM) — opt-in; the legacy nano stays the default.
+    'KittenML/kitten-tts-2'
   ],
-  'tts.kittentts.voice': ['Jasper'],
+  // The eight voice names shared by both families (legacy ONNX and KittenTTS 2).
+  'tts.kittentts.voice': ['Jasper', 'Bella', 'Luna', 'Bruno', 'Rosie', 'Hugo', 'Kiki', 'Leo'],
   'tts.piper.voice': ['en_US-lessac-medium', 'en_US-amy-medium', 'en_US-ryan-high', 'en_GB-alan-medium'],
   'tts.neutts.model': ['neuphonic/neutts-air-q4-gguf', 'neuphonic/neutts-air-q8-gguf', 'neuphonic/neutts-air'],
   // Text-to-speech backends — kept in sync with the built-in source of truth

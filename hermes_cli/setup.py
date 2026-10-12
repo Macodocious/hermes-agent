@@ -854,28 +854,24 @@ def _install_kittentts_deps() -> bool:
     import subprocess
     import sys
 
-    wheel_url = (
-        "https://github.com/KittenML/KittenTTS/releases/download/"
-        "0.8.1/kittentts-0.8.1-py3-none-any.whl"
-    )
     print()
-    print_info("Installing kittentts Python package (~25-80MB model downloaded on first use)...")
+    print_info("Installing kittenml Python package (~25-80MB model downloaded on first use)...")
     print()
 
     from hermes_cli.tools_config import _pip_install
 
     try:
-        result = _pip_install(["-U", wheel_url, "soundfile", "--quiet"], timeout=300)
+        result = _pip_install(["-U", "kittenml", "soundfile", "--quiet"], timeout=300)
     except Exception as e:
-        print_error(f"Failed to install kittentts: {e}")
-        print_info(f"Try manually: uv pip install -U '{wheel_url}' soundfile")
+        print_error(f"Failed to install kittenml: {e}")
+        print_info("Try manually: uv pip install -U kittenml soundfile")
         return False
     if result.returncode == 0:
-        print_success("kittentts installed successfully")
+        print_success("kittenml installed successfully")
         return True
     err = (result.stderr or "").strip()
-    print_error(f"Failed to install kittentts: {err[:300] if err else 'install failed'}")
-    print_info(f"Try manually: uv pip install -U '{wheel_url}' soundfile")
+    print_error(f"Failed to install kittenml: {err[:300] if err else 'install failed'}")
+    print_info("Try manually: uv pip install -U kittenml soundfile")
     return False
 
 
@@ -1141,7 +1137,7 @@ def _setup_tts_provider(config: dict):
     elif selected == "kittentts":
         # Check if already installed
         try:
-            already_installed = importlib.util.find_spec("kittentts") is not None
+            already_installed = importlib.util.find_spec("kittenml") is not None
         except Exception:
             already_installed = False
 

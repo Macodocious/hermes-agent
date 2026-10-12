@@ -47,6 +47,10 @@ describe('voice field option coverage', () => {
     }
   })
 
+  it('offers KittenTTS 2 alongside the legacy KittenTTS models', () => {
+    expect(ENUM_OPTIONS['tts.kittentts.model']).toContain('KittenML/kitten-tts-2')
+  })
+
   it('keeps voice/model name fields free-input so custom IDs are typeable', () => {
     for (const key of [
       'tts.openai.voice',
