@@ -330,6 +330,41 @@ def _write_plan_completion_mark(store: Any) -> None:
             logger.warning("task_manager: plan completion mark for %r failed: %s", ref, exc)
 
 
+def _emit_pending_notices(agent: Any) -> None:
+    """Hand the store's pending lifecycle notices to the delivery callback.
+
+    The turn-end drain is too late for a start line: a task begun and finished
+    inside one turn would report its start next to its completion. This runs
+    right after the write that produced the transition, so the line ships at
+    the transition itself. The queue is drained only once the callback has
+    taken the text — a callback that raises leaves the notices for the
+    turn-end drain rather than losing them.
+    """
+    callback = getattr(agent, "todo_notice_callback", None)
+    if callback is None:
+        return
+    store = getattr(agent, "_todo_store", None)
+    if store is None:
+        return
+    try:
+        from tools.todo_tool import format_notice
+
+        lines = [
+            line
+            for line in (
+                format_notice(notice, store) for notice in store.pending_notices()
+            )
+            if line
+        ]
+        if not lines:
+            return
+        callback("\n".join(lines))
+    except Exception as exc:
+        logger.debug("task_manager: lifecycle notice emission failed: %s", exc)
+        return
+    store.drain_notices()
+
+
 def on_todo_write(agent: Any, args: Dict[str, Any]) -> None:
     """Post-write lifecycle hook for the todo dispatch point.
 
@@ -350,6 +385,7 @@ def on_todo_write(agent: Any, args: Dict[str, Any]) -> None:
         agent._task_lifecycle_action_issued = True
     _persist(agent)
     _write_plan_completion_mark(store)
+    _emit_pending_notices(agent)
 
 
 def audit_turn_end(
