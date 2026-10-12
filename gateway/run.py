@@ -21435,6 +21435,22 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
             agent.notice_callback = _notice_callback_sync
             agent.notice_clear_callback = None
+            # Task-lifecycle notices (▶️ Working on / ✅ Task N of M complete).
+            # The store records one per transition; the turn-end drain is too
+            # late for a start line, so the post-write hook hands them here and
+            # they ship at the transition itself. Fires from the agent's tool
+            # worker thread, so hop onto the gateway loop.
+            def _todo_notice_callback_sync(message: str) -> None:
+                if not _run_still_current():
+                    return
+                safe_schedule_threadsafe(
+                    self._deliver_platform_notice(source, message),
+                    _loop_for_step,
+                    logger=logger,
+                    log_message="todo_notice_callback delivery scheduling error",
+                )
+
+            agent.todo_notice_callback = _todo_notice_callback_sync
             agent.event_callback = _event_callback_sync
             agent.reasoning_config = reasoning_config
             agent.service_tier = self._service_tier

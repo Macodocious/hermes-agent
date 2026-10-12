@@ -198,3 +198,47 @@ class TestPlanCompleteNotice:
 
         assert not [line for line in lines if line.startswith("🏁")]
         assert "✅ Task 1 of 2 complete: a" in lines
+
+
+class TestPostWriteNoticeEmission:
+    """The post-write hook ships a transition's notice at the transition."""
+
+    class _Agent:
+        def __init__(self, store, callback):
+            self._todo_store = store
+            self.todo_notice_callback = callback
+
+    def test_emits_and_drains_the_pending_notices(self):
+        from agent.task_manager import _emit_pending_notices
+
+        store = _store([{"id": "1", "content": "ship it", "status": "pending"}])
+        store.transition("begin", "1")
+        sent = []
+
+        _emit_pending_notices(self._Agent(store, sent.append))
+
+        assert sent == ["▶️ Working on: ship it"]
+        assert store.pending_notices() == []
+
+    def test_no_callback_leaves_the_notices_for_the_turn_drain(self):
+        from agent.task_manager import _emit_pending_notices
+
+        store = _store([{"id": "1", "content": "ship it", "status": "pending"}])
+        store.transition("begin", "1")
+
+        _emit_pending_notices(self._Agent(store, None))
+
+        assert [notice["kind"] for notice in store.pending_notices()] == ["started"]
+
+    def test_a_raising_callback_keeps_the_notices(self):
+        from agent.task_manager import _emit_pending_notices
+
+        store = _store([{"id": "1", "content": "ship it", "status": "pending"}])
+        store.transition("begin", "1")
+
+        def _boom(_message):
+            raise RuntimeError("no delivery rail")
+
+        _emit_pending_notices(self._Agent(store, _boom))
+
+        assert [notice["kind"] for notice in store.pending_notices()] == ["started"]
