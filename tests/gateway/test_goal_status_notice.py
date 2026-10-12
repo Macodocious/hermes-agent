@@ -198,7 +198,7 @@ async def test_lifecycle_notices_drain_without_an_active_goal(monkeypatch):
     if hasattr(result, "__await__"):
         await result
 
-    assert adapter.calls[0]["content"] == "▶️ Working on: ship the fix"
+    assert adapter.calls[0]["content"] == "▶️ Working on task 1 of 1: ship the fix"
 
 
 @pytest.mark.asyncio

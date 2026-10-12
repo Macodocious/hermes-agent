@@ -88,6 +88,14 @@ def format_notice(notice: Dict[str, Any], store: "TodoStore") -> str:
     kind = str(notice.get("kind") or "")
     content = str(notice.get("content") or "(no description)")
     if kind == NOTICE_STARTED:
+        try:
+            from agent.task_manager import task_position
+
+            position, total = task_position(store, notice.get("id"))
+        except Exception:  # pragma: no cover - defensive
+            position, total = 0, 0
+        if position:
+            return f"▶️ Working on task {position} of {total}: {content}"
         return f"▶️ Working on: {content}"
     if kind == NOTICE_CANCELLED:
         line = f"🚫 Cancelled: {content}"
