@@ -79,9 +79,11 @@ def render_task_board_with_ids(items: List[Dict[str, Any]]) -> List[str]:
 def format_notice(notice: Dict[str, Any], store: "TodoStore") -> str:
     """Render one store lifecycle notice as a user-facing line.
 
-    The store records a notice per start/complete/cancel transition; both the
-    gateway and the CLI render it through here so the wording cannot drift
-    between surfaces. Plan completion is derived from the store once the
+    The store is the sole producer of a lifecycle notification: it records a
+    notice per start/complete/cancel transition, and the emitter delivers each
+    through here. The gateway's task card and the CLI's spinner describe what a
+    call is doing, not which transition it caused, so a lifecycle line is
+    composed in one place. Plan completion is derived from the store once the
     plan's last task is terminal — the completion line then reports the plan,
     not a list position. Returns "" for an unknown notice kind.
     """
@@ -98,7 +100,17 @@ def format_notice(notice: Dict[str, Any], store: "TodoStore") -> str:
             return f"▶️ Working on task {position} of {total}: {content}"
         return f"▶️ Working on: {content}"
     if kind == NOTICE_CANCELLED:
-        line = f"🚫 Cancelled: {content}"
+        try:
+            from agent.task_manager import task_position
+
+            position, total = task_position(store, notice.get("id"))
+        except Exception:  # pragma: no cover - defensive
+            position, total = 0, 0
+        line = (
+            f"🚫 Cancelled task {position} of {total}: {content}"
+            if position
+            else f"🚫 Cancelled: {content}"
+        )
         reason = str(notice.get("reason") or "").strip()
         return f"{line}\n  reason: {reason}" if reason else line
     if kind == NOTICE_COMPLETED:
@@ -567,8 +579,9 @@ class TodoStore:
         - ``begin``    pending     -> in_progress
         - ``pause``    in_progress -> paused
         - ``resume``   paused      -> in_progress
-        - ``complete`` in_progress -> completed  (then the first ``pending``
-          task becomes ``in_progress``, so the plan advances mechanically)
+        - ``complete`` in_progress -> completed  (the next task is begun by
+          the agent, so its start is a real transition rather than a side
+          effect of this one)
         - ``cancel``   pending | in_progress -> cancelled  (requires a reason,
           stored on the row and rendered beneath the struck-through item)
 
@@ -629,15 +642,13 @@ class TodoStore:
             item["reason"] = self._cap_content(reason)
             self._record_notice(NOTICE_CANCELLED, item)
             return {"ok": True, "item": item.copy()}
-        # action == "complete": finalize the task, then advance the plan — the
-        # first pending task becomes the active one, so the agent always has a
-        # current task to work without a separate begin call.
+        # action == "complete": finalize the task. The next task is NOT
+        # promoted. A promotion records a start notice at this task's
+        # completion, so the next task's ``▶️ Working on:`` line fires at the
+        # wrong moment and rides out welded to this ``✅`` line. The agent
+        # begins the next task itself, which makes its start a real transition.
         item["status"] = "completed"
         self._record_notice(NOTICE_COMPLETED, item)
-        nxt = next((i for i in self._items if i["status"] == "pending"), None)
-        if nxt is not None:
-            nxt["status"] = "in_progress"
-            self._record_notice(NOTICE_STARTED, nxt)
         return {"ok": True, "item": item.copy()}
 
     def _record_notice(self, kind: str, item: Dict[str, Any]) -> None:

@@ -10874,42 +10874,11 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             emoji = get_tool_emoji(function_name)
             from agent.display import get_tool_preview_max_len
             _pl = get_tool_preview_max_len()
-            # Task-start notification: a todo call that moved an item to
-            # in_progress shows "Working on <task>" in the spinner instead
-            # of the generic todo preview (started_task kwarg comes
-            # from agent.tool_executor._detect_todo_task_start).
-            _started_task = kwargs.get("started_task")
-            if (
-                function_name == "todo"
-                and isinstance(_started_task, dict)
-                and str(_started_task.get("content", "")).strip()
-            ):
-                from agent.display import task_position_label
-                _started_position = task_position_label(_started_task)
-                if _started_position:
-                    label = f"Working on task {_started_position}: {str(_started_task['content']).strip()}"
-                else:
-                    label = f"Working on {str(_started_task['content']).strip()}"
-            else:
-                # Task-stop notification: a todo call that cancelled the
-                # item shows "Task cancelled" in the spinner instead of the
-                # generic todo preview (stopped_task kwarg comes from
-                # agent.tool_executor._detect_todo_task_stop).
-                _stopped_task = kwargs.get("stopped_task")
-                if (
-                    function_name == "todo"
-                    and isinstance(_stopped_task, dict)
-                    and str(_stopped_task.get("content", "")).strip()
-                ):
-                    from agent.display import task_position_label
-                    _stopped_position = task_position_label(_stopped_task)
-                    _stopped_outcome = "cancelled"
-                    if _stopped_position:
-                        label = f"Task {_stopped_position} {_stopped_outcome}: {str(_stopped_task['content']).strip()}"
-                    else:
-                        label = f"Task {_stopped_outcome}: {str(_stopped_task['content']).strip()}"
-                else:
-                    label = preview or function_name
+            # A todo call gets no lifecycle line from this surface: the store
+            # records one notice per transition and the emitter renders it
+            # through `tools.todo_tool.format_notice`. Composing the sentence
+            # here as well would put two producers on one event.
+            label = preview or function_name
             if _pl > 0 and len(label) > _pl:
                 label = label[:_pl - 3] + "..."
             self._spinner_text = f"{emoji} {label}"

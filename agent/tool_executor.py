@@ -80,114 +80,6 @@ def _extract_assistant_reasoning(assistant_message) -> str:
     return text if isinstance(text, str) else ""
 
 
-def _enrich_todo_transition(store, detected):
-    """Add the ordered-list position, list total, and plan reference to a
-    detected task transition (start or stop).
-
-    The store detectors know the task's id and content but not where it sits
-    in the list, and the notification must name the task the way a human
-    reads it — "task 3 of 6" — rather than by an id that a replace-mode write
-    renumbers. Position is read before the tool executes (pre-call state), so
-    it is the position the in_progress/cancelled row held when the user saw
-    it. Best-effort: any failure leaves the detected dict usable.
-    """
-    if detected is None:
-        return None
-    try:
-        from agent.task_manager import task_plan_ref, task_position
-
-        position, total = task_position(store, detected.get("id"))
-        detected["position"] = position
-        detected["total"] = total
-        detected["plan"] = task_plan_ref(store, detected.get("id"))
-    except Exception:
-        logging.debug("Todo transition enrichment failed", exc_info=True)
-    return detected
-
-
-def _resolved_todo_todos(store, args: dict):
-    """The write-shaped ``todos`` list a todo call will act on.
-
-    The action path (``action=begin``/``cancel`` with ``item_id``) mutates by
-    action, not by a list payload, so ``args["todos"]`` is absent. Reconstruct
-    the single-item write that action implies against the current store, so the
-    write-path detectors see the transition in the same shape a list write
-    carries. Returns None for a plain read or an action with no list effect.
-    """
-    todos = args.get("todos")
-    if todos is not None:
-        return todos
-    item_id = args.get("item_id")
-    if item_id is None:
-        return None
-    status = {"begin": "in_progress", "cancel": "cancelled"}.get(
-        str(args.get("action") or "").strip().lower()
-    )
-    if status is None:
-        return None
-    return [{"id": item_id, "status": status}]
-
-
-def _detect_todo_task_start(agent, tool_name: str, args: dict) -> Optional[Dict[str, str]]:
-    """Detect a task-start transition in a pending todo call (task notification).
-
-    Called on ``tool.started`` — before the tool executes — so the store still
-    holds pre-call state. When the call moves an item to ``in_progress`` (a
-    list write, or an ``action=begin``), returns that item so the UI can render
-    a "working on" bubble instead of the generic "updating tasks" line. Returns
-    None for every other call (reads, non-todo tools, agents without a todo
-    store).
-    """
-    if tool_name != "todo":
-        return None
-    store = getattr(agent, "_todo_store", None)
-    if store is None:
-        return None
-    try:
-        from tools.todo_tool import TodoStore
-        if not isinstance(store, TodoStore):
-            return None
-        return _enrich_todo_transition(
-            store,
-            store.detect_task_start(
-                _resolved_todo_todos(store, args), bool(args.get("merge", False))
-            ),
-        )
-    except Exception:
-        logging.debug("Todo task-start detection failed", exc_info=True)
-        return None
-
-
-def _detect_todo_task_stop(agent, tool_name: str, args: dict) -> Optional[Dict[str, str]]:
-    """Detect a task-stop transition in a pending todo call (task notification).
-
-    Called on ``tool.started`` — before the tool executes — so the store still
-    holds pre-call state. When the call moves an item from ``in_progress`` to
-    ``cancelled`` (a list write, or an ``action=cancel``), returns that item so
-    the UI can render a "task cancelled" bubble instead of the generic
-    "updating tasks" line. Returns None for every other call (reads, non-todo
-    tools, agents without a todo store).
-    """
-    if tool_name != "todo":
-        return None
-    store = getattr(agent, "_todo_store", None)
-    if store is None:
-        return None
-    try:
-        from tools.todo_tool import TodoStore
-        if not isinstance(store, TodoStore):
-            return None
-        return _enrich_todo_transition(
-            store,
-            store.detect_task_stop(
-                _resolved_todo_todos(store, args), bool(args.get("merge", False))
-            ),
-        )
-    except Exception:
-        logging.debug("Todo task-stop detection failed", exc_info=True)
-        return None
-
-
 def _ensure_file_checkpoint(
     agent,
     function_name: str,
@@ -704,12 +596,8 @@ def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effe
             try:
                 display_args = _redact_tool_args_for_display(name, args) or args
                 preview = _build_tool_preview(name, display_args)
-                started_task = _detect_todo_task_start(agent, name, display_args)
-                stopped_task = _detect_todo_task_stop(agent, name, display_args)
                 agent.tool_progress_callback(
                     "tool.started", name, preview, display_args,
-                    started_task=started_task,
-                    stopped_task=stopped_task,
                 )
             except Exception as cb_err:
                 logging.debug(f"Tool progress callback error: {cb_err}")
@@ -1341,12 +1229,8 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
             try:
                 display_args = _redact_tool_args_for_display(function_name, function_args) or function_args
                 preview = _build_tool_preview(function_name, display_args)
-                started_task = _detect_todo_task_start(agent, function_name, display_args)
-                stopped_task = _detect_todo_task_stop(agent, function_name, display_args)
                 agent.tool_progress_callback(
                     "tool.started", function_name, preview, display_args,
-                    started_task=started_task,
-                    stopped_task=stopped_task,
                 )
             except Exception as cb_err:
                 logging.debug(f"Tool progress callback error: {cb_err}")

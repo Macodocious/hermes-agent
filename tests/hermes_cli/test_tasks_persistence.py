@@ -284,7 +284,7 @@ class TestMergeTodoStores:
         ])
         memory.transition("complete", "1")
         pending = memory.pending_notices()
-        assert [n["kind"] for n in pending] == ["completed", "started"]
+        assert [n["kind"] for n in pending] == ["completed"]
 
         persisted = TodoStore()
         persisted.write([{"id": "1", "content": "task one", "status": "in_progress"}])
@@ -314,4 +314,4 @@ class TestMergeTodoStores:
 
         loaded = load_todo("sess-notice-1")
         assert loaded is not None
-        assert [n["kind"] for n in loaded.pending_notices()] == ["completed", "started"]
+        assert [n["kind"] for n in loaded.pending_notices()] == ["completed"]

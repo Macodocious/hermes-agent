@@ -20329,75 +20329,39 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 _cap = _pl if _pl > 0 else 40
                 if len(preview) > _cap:
                     preview = preview[:_cap - 3] + "..."
-                # Task-start notification: a todo call that moved an item to
-                # in_progress renders "Working on <task>" instead of the
-                # generic todo bubble. The started item arrives via the
-                # started_task kwarg (see _detect_todo_task_start).
-                _started_task = kwargs.get("started_task")
-                if (
-                    tool_name == "todo"
-                    and isinstance(_started_task, dict)
-                    and str(_started_task.get("content", "")).strip()
-                ):
-                    _started_content = str(_started_task["content"]).strip()
-                    if len(_started_content) > _cap:
-                        _started_content = _started_content[:_cap - 3] + "..."
-                    from agent.display import task_position_label
-                    _started_position = task_position_label(_started_task)
-                    if _started_position:
-                        msg = f"{emoji} Working on task {_started_position}: {_started_content}"
-                    else:
-                        msg = f"{emoji} Working on {_started_content}"
+                # A todo call gets no lifecycle line from this surface. The
+                # store records one notice per transition and the emitter
+                # renders it through `tools.todo_tool.format_notice`; composing
+                # the sentence here as well would put two producers on one
+                # event.
+                if tool_name == "todo":
+                    # todo's preview is a complete capitalized phrase
+                    # ("Reading the task list") — render it standalone
+                    # instead of the quoted "todo: …" legacy form.
+                    msg = f"{emoji} {preview}"
                 else:
-                    # Task-stop notification: a todo call that cancelled the
-                    # item renders "Task cancelled" instead of the generic
-                    # todo bubble. The stopped item arrives via the
-                    # stopped_task kwarg (see _detect_todo_task_stop).
-                    _stopped_task = kwargs.get("stopped_task")
-                    if (
-                        tool_name == "todo"
-                        and isinstance(_stopped_task, dict)
-                        and str(_stopped_task.get("content", "")).strip()
-                    ):
-                        _stopped_content = str(_stopped_task["content"]).strip()
-                        if len(_stopped_content) > _cap:
-                            _stopped_content = _stopped_content[:_cap - 3] + "..."
-                        from agent.display import task_position_label
-                        _stopped_position = task_position_label(_stopped_task)
-                        _stopped_outcome = "cancelled"
-                        if _stopped_position:
-                            msg = f"{emoji} Task {_stopped_position} {_stopped_outcome}: {_stopped_content}"
-                        else:
-                            msg = f"{emoji} Task {_stopped_outcome}: {_stopped_content}"
+                    # Action-driven tools (cronjob/skill_manage/memory)
+                    # render their complete standalone phrase ("⏰ Reading
+                    # scheduled jobs") — a fixed verb + raw action noun
+                    # ("Scheduling list") would misstate what the call
+                    # does.
+                    _action_phrase = get_tool_action_phrase(tool_name, args)
+                    if _action_phrase:
+                        msg = f"{emoji} {_action_phrase}"
                     else:
-                        # todo's preview is a complete capitalized phrase
-                        # ("Reading the task list") — render it standalone
-                        # instead of the quoted "todo: …" legacy form.
-                        if tool_name == "todo":
-                            msg = f"{emoji} {preview}"
-                        else:
-                            # Action-driven tools (cronjob/skill_manage/memory)
-                            # render their complete standalone phrase ("⏰ Reading
-                            # scheduled jobs") — a fixed verb + raw action noun
-                            # ("Scheduling list") would misstate what the call
-                            # does.
-                            _action_phrase = get_tool_action_phrase(tool_name, args)
-                            if _action_phrase:
-                                msg = f"{emoji} {_action_phrase}"
+                        # Friendly labels: render a human-phrased line for built-in
+                        # tools ("🔍 Searching the web for ...") by prefixing the verb
+                        # onto the preview the callback already computed (so the
+                        # command/url/query is preserved).  Custom/plugin/MCP tools
+                        # have no verb and fall back to the raw "tool_name: ..." form.
+                        _verb = get_tool_verb(tool_name)
+                        if _verb:
+                            if verb_drops_preview(tool_name):
+                                msg = f"{emoji} {_verb}"
                             else:
-                                # Friendly labels: render a human-phrased line for built-in
-                                # tools ("🔍 Searching the web for ...") by prefixing the verb
-                                # onto the preview the callback already computed (so the
-                                # command/url/query is preserved).  Custom/plugin/MCP tools
-                                # have no verb and fall back to the raw "tool_name: ..." form.
-                                _verb = get_tool_verb(tool_name)
-                                if _verb:
-                                    if verb_drops_preview(tool_name):
-                                        msg = f"{emoji} {_verb}"
-                                    else:
-                                        msg = f"{emoji} {_verb}{tool_verb_connector(tool_name)}{preview}"
-                                else:
-                                    msg = f"{emoji} {tool_name}: \"{preview}\""
+                                msg = f"{emoji} {_verb}{tool_verb_connector(tool_name)}{preview}"
+                        else:
+                            msg = f"{emoji} {tool_name}: \"{preview}\""
                 last_was_terminal_block[0] = False
             else:
                 msg = f"{emoji} {tool_name}..."

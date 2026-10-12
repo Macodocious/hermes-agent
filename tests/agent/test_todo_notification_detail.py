@@ -1,18 +1,14 @@
 """Tests for ordered-list identification in task-lifecycle notifications.
 
-Covers the three new pieces that make a lifecycle notice name the task the
-way a human reads it, and that announce plan completion:
+Covers the pieces that make a lifecycle notice name the task the way a human
+reads it, and that announce plan completion:
 
-- ``_enrich_todo_transition`` — attaches ``position``/``total``/``plan`` to a
-  detected transition before the UI renders it.
-- ``task_position_prefix`` — the shared "<position> of <total>: " prefix the
-  gateway bubbles and the CLI spinner both build.
+- ``task_position_label`` — the shared "<position> of <total>" label.
 - ``task_position`` / ``task_plan_ref`` / ``plan_task_total`` /
   ``plan_is_complete`` — the ordered-list and plan-aggregate helpers the
   completion line and the plan-completion signal consume.
+- the post-write emitter — one message per notice, at the transition.
 """
-
-from types import SimpleNamespace
 
 import pytest
 
@@ -23,7 +19,6 @@ from agent.task_manager import (
     task_plan_ref,
     task_position,
 )
-from agent.tool_executor import _detect_todo_task_start, _detect_todo_task_stop
 from tools.todo_tool import TodoStore
 
 
@@ -31,11 +26,6 @@ def _store(items):
     store = TodoStore()
     store.write(items)
     return store
-
-
-def _agent_with_store(items):
-    store = _store(items)
-    return SimpleNamespace(_todo_store=store), store
 
 
 class TestTaskPosition:
@@ -102,37 +92,6 @@ class TestPlanIsComplete:
         store = _store([{"id": "1", "content": "a", "status": "completed"}])
         assert plan_is_complete(store, "") is False
         assert plan_is_complete(store, "unknown") is False
-
-
-class TestEnrichedTransitions:
-    def test_start_carries_position_total_and_plan(self):
-        agent, _ = _agent_with_store([
-            {"id": "1", "content": "a", "status": "completed", "plan": "p"},
-            {"id": "2", "content": "b", "status": "pending", "plan": "p"},
-        ])
-        started = _detect_todo_task_start(
-            agent, "todo",
-            {"todos": [{"id": "2", "content": "b", "status": "in_progress"}]},
-        )
-        assert started is not None
-        assert started["position"] == 2
-        assert started["total"] == 2
-        assert started["plan"] == "p"
-
-    def test_stop_carries_position_total_and_plan(self):
-        agent, _ = _agent_with_store([
-            {"id": "1", "content": "a", "status": "in_progress", "plan": "p"},
-            {"id": "2", "content": "b", "status": "pending", "plan": "p"},
-        ])
-        stopped = _detect_todo_task_stop(
-            agent, "todo",
-            {"todos": [{"id": "1", "content": "a", "status": "cancelled"}]},
-        )
-        assert stopped is not None
-        assert stopped["position"] == 1
-        assert stopped["total"] == 2
-        assert stopped["plan"] == "p"
-        assert stopped["status"] == "cancelled"
 
 
 class TestTaskPositionLabel:
@@ -255,3 +214,24 @@ class TestPostWriteNoticeEmission:
         _emit_pending_notices(self._Agent(store, _boom))
 
         assert [notice["kind"] for notice in store.pending_notices()] == ["started"]
+
+    def test_each_notice_is_its_own_message(self):
+        """One notice, one message — never one joined block.
+
+        Two transitions in one write used to arrive welded together, a start
+        line under the completion that produced it, because the emitter joined
+        the lines with a newline before the callback saw them.
+        """
+        from agent.task_manager import _emit_pending_notices
+
+        store = _store([{"id": "1", "content": "ship it", "status": "pending"}])
+        store.transition("begin", "1")
+        store.transition("complete", "1")
+        sent = []
+
+        _emit_pending_notices(self._Agent(store, sent.append))
+
+        assert sent == [
+            "▶️ Working on task 1 of 1: ship it",
+            "✅ Task 1 of 1 complete: ship it",
+        ]

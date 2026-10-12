@@ -358,7 +358,11 @@ def _emit_pending_notices(agent: Any) -> None:
         ]
         if not lines:
             return
-        callback("\n".join(lines))
+        # One notice, one message. Joining them welds a start line under the
+        # completion that produced it, and delivers a whole turn's backlog as
+        # one block instead of at the transitions themselves.
+        for line in lines:
+            callback(line)
     except Exception as exc:
         logger.debug("task_manager: lifecycle notice emission failed: %s", exc)
         return
@@ -383,9 +387,9 @@ def on_todo_write(agent: Any, args: Dict[str, Any]) -> None:
         return
     if args.get("action") is not None:
         agent._task_lifecycle_action_issued = True
-    _persist(agent)
     _write_plan_completion_mark(store)
     _emit_pending_notices(agent)
+    _persist(agent)
 
 
 def audit_turn_end(
