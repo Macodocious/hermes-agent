@@ -336,9 +336,13 @@ def _emit_pending_notices(agent: Any) -> None:
     The turn-end drain is too late for a start line: a task begun and finished
     inside one turn would report its start next to its completion. This runs
     right after the write that produced the transition, so the line ships at
-    the transition itself. The queue is drained only once the callback has
-    taken the text — a callback that raises leaves the notices for the
-    turn-end drain rather than losing them.
+    the transition itself.
+
+    Only the notices the callback actually took are drained. A callback that
+    raises, or that reports a refusal by returning ``False``, leaves that
+    notice and everything behind it queued for the turn-end drain — the
+    callback's own staleness guard must not be able to destroy a transition
+    the store has already recorded.
     """
     callback = getattr(agent, "todo_notice_callback", None)
     if callback is None:
@@ -346,27 +350,24 @@ def _emit_pending_notices(agent: Any) -> None:
     store = getattr(agent, "_todo_store", None)
     if store is None:
         return
+    delivered = 0
     try:
         from tools.todo_tool import format_notice
 
-        lines = [
-            line
-            for line in (
-                format_notice(notice, store) for notice in store.pending_notices()
-            )
-            if line
-        ]
-        if not lines:
-            return
         # One notice, one message. Joining them welds a start line under the
         # completion that produced it, and delivers a whole turn's backlog as
         # one block instead of at the transitions themselves.
-        for line in lines:
-            callback(line)
+        for notice in store.pending_notices():
+            line = format_notice(notice, store)
+            # A notice that renders to nothing has nothing to deliver, so it
+            # is spent rather than left to block the queue behind it.
+            if line and callback(line) is False:
+                break
+            delivered += 1
     except Exception as exc:
         logger.debug("task_manager: lifecycle notice emission failed: %s", exc)
-        return
-    store.drain_notices()
+    if delivered:
+        store.drain_notices(delivered)
 
 
 def on_todo_write(agent: Any, args: Dict[str, Any]) -> None:

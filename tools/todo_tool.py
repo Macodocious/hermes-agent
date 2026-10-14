@@ -668,14 +668,21 @@ class TodoStore:
         if len(self._notices) > MAX_TODO_NOTICES:
             self._notices = self._notices[-MAX_TODO_NOTICES:]
 
-    def drain_notices(self) -> List[Dict[str, Any]]:
+    def drain_notices(self, count: Optional[int] = None) -> List[Dict[str, Any]]:
         """Return the pending lifecycle notices and clear them.
 
         The caller emits them to the user; clearing here guarantees a
-        transition is never reported twice.
+        transition is never reported twice. ``count`` clears only that many
+        from the head, so an emitter that could not hand a line over leaves
+        the rest queued for the next drain instead of destroying them.
         """
-        notices = self._notices
-        self._notices = []
+        if count is None:
+            notices = self._notices
+            self._notices = []
+            return notices
+        count = max(0, count)
+        notices = self._notices[:count]
+        del self._notices[:count]
         return notices
 
     def pending_notices(self) -> List[Dict[str, Any]]:

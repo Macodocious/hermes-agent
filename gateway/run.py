@@ -21404,15 +21404,18 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             # late for a start line, so the post-write hook hands them here and
             # they ship at the transition itself. Fires from the agent's tool
             # worker thread, so hop onto the gateway loop.
-            def _todo_notice_callback_sync(message: str) -> None:
+            def _todo_notice_callback_sync(message: str) -> bool:
+                # False means the line was NOT handed over, so the emitter
+                # keeps it queued for the turn-end drain. A superseded run
+                # must not destroy a transition the store already recorded.
                 if not _run_still_current():
-                    return
-                safe_schedule_threadsafe(
+                    return False
+                return safe_schedule_threadsafe(
                     self._deliver_platform_notice(source, message),
                     _loop_for_step,
                     logger=logger,
                     log_message="todo_notice_callback delivery scheduling error",
-                )
+                ) is not None
 
             agent.todo_notice_callback = _todo_notice_callback_sync
             agent.event_callback = _event_callback_sync
