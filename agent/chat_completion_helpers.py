@@ -27,7 +27,14 @@ from types import SimpleNamespace
 from typing import Any, Dict, Optional
 
 from hermes_cli.timeouts import get_provider_request_timeout, get_provider_stale_timeout
-from hermes_constants import PARTIAL_STREAM_STUB_ID, FINISH_REASON_LENGTH
+from hermes_constants import (
+    PARTIAL_STREAM_STUB_ID,
+    FINISH_REASON_LENGTH,
+    REASONING_LOOP_ABORT_ATTR,
+    REASONING_LOOP_CYCLE_MAX_PERIOD,
+    REASONING_LOOP_CYCLE_TAIL_CHARS,
+    REASONING_LOOP_SPAN_CHARS,
+)
 from agent.error_classifier import FailoverReason
 from agent.errors import EmptyStreamError
 from agent.turn_context import substitute_api_content
@@ -2329,6 +2336,34 @@ def _build_partial_stream_stub(
     )
 
 
+def _reasoning_loop_test(reasoning_text: str):
+    """Name the test that confirms a reasoning repetition loop, else None.
+
+    Two mechanical tests over the reasoning text accumulated so far in the
+    current stream.  Neither interprets the text; both measure byte-level
+    repetition, so a legitimate turn that restates a short phrase is not
+    affected.
+
+    ``span``  — a REASONING_LOOP_SPAN_CHARS window of the tail already appeared
+                earlier in this same stream.
+    ``cycle`` — the trailing REASONING_LOOP_CYCLE_TAIL_CHARS characters are
+                periodic with a period of at most
+                REASONING_LOOP_CYCLE_MAX_PERIOD characters (the degenerate
+                ``hmm: hmm, `` collapse).
+    """
+    length = len(reasoning_text)
+    if length >= REASONING_LOOP_SPAN_CHARS * 2:
+        window = reasoning_text[-REASONING_LOOP_SPAN_CHARS:]
+        if reasoning_text.find(window, 0, length - REASONING_LOOP_SPAN_CHARS) != -1:
+            return "span"
+    if length >= REASONING_LOOP_CYCLE_TAIL_CHARS:
+        tail = reasoning_text[-REASONING_LOOP_CYCLE_TAIL_CHARS:]
+        for period in range(1, REASONING_LOOP_CYCLE_MAX_PERIOD + 1):
+            if tail[:REASONING_LOOP_CYCLE_TAIL_CHARS - period] == tail[period:]:
+                return "cycle"
+    return None
+
+
 def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=None):
     """Streaming variant of _interruptible_api_call for real-time token delivery.
 
@@ -2853,6 +2888,12 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
         role = "assistant"
         reasoning_parts: list = []
         usage_obj = None
+        # Reasoning repetition-loop guard.  The accumulated reasoning is tested
+        # at most once per span-sized growth, so the hot path pays one bounded
+        # scan per REASONING_LOOP_SPAN_CHARS of reasoning, not one per chunk.
+        _reasoning_chars = 0
+        _loop_check_at = REASONING_LOOP_SPAN_CHARS
+        reasoning_loop_aborted = None
         for chunk in stream:
             # Stop the moment a newer attempt has claimed the delta sink
             # (#65991): this attempt has been superseded, so it must neither
@@ -2910,8 +2951,30 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
             reasoning_text = getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)
             if reasoning_text:
                 reasoning_parts.append(reasoning_text)
+                _reasoning_chars += len(reasoning_text)
                 _fire_first_delta()
                 agent._fire_reasoning_delta(reasoning_text)
+                # Cut a repetition loop short.  Once the reasoning repeats
+                # itself the rest of the output budget is spent repeating it,
+                # so stop consuming the stream here instead of paying for the
+                # remainder.  PERF_NOTE: the join is O(accumulated reasoning)
+                # and runs once per span-sized growth, so a whole stream costs
+                # O(n^2 / span) — bounded, and far below the cost of the tokens
+                # it saves.
+                if _reasoning_chars >= _loop_check_at:
+                    _loop_test = _reasoning_loop_test("".join(reasoning_parts))
+                    if _loop_test:
+                        reasoning_loop_aborted = _loop_test
+                        logger.warning(
+                            "Reasoning repetition loop detected (%s test) after "
+                            "%d chars of reasoning — aborting the stream early "
+                            "(model=%s).",
+                            _loop_test,
+                            _reasoning_chars,
+                            api_kwargs.get("model", "unknown"),
+                        )
+                        break
+                    _loop_check_at = _reasoning_chars + REASONING_LOOP_SPAN_CHARS
 
             # Accumulate text content — fire callback only when no tool calls
             if delta and delta.content:
@@ -3136,6 +3199,12 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
                 model_name, usage_obj,
             )
 
+        if reasoning_loop_aborted:
+            # The stream was cut short on purpose.  Stamp it as a length
+            # truncation so the recovery loop handles it rather than accepting
+            # an empty turn as complete.
+            finish_reason = FINISH_REASON_LENGTH
+
         effective_finish_reason = finish_reason or "stop"
         if has_truncated_tool_args:
             effective_finish_reason = "length"
@@ -3152,12 +3221,17 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
             message=mock_message,
             finish_reason=effective_finish_reason,
         )
-        return SimpleNamespace(
+        _stream_response = SimpleNamespace(
             id="stream-" + str(uuid.uuid4()),
             model=model_name,
             choices=[mock_choice],
             usage=usage_obj,
         )
+        if reasoning_loop_aborted:
+            # Carry the test that fired so the recovery loop can tell a loop
+            # abort apart from a genuine output-cap truncation.
+            setattr(_stream_response, REASONING_LOOP_ABORT_ATTR, reasoning_loop_aborted)
+        return _stream_response
 
     def _call_anthropic(request_client):
         """Stream an Anthropic Messages API response.

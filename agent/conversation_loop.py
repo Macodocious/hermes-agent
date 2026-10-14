@@ -71,7 +71,11 @@ from agent.retry_utils import (
 )
 from agent.trajectory import has_incomplete_scratchpad
 from agent.usage_pricing import estimate_usage_cost, normalize_usage
-from hermes_constants import PARTIAL_STREAM_STUB_ID
+from hermes_constants import (
+    PARTIAL_STREAM_STUB_ID,
+    REASONING_LOOP_ABORT_ATTR,
+    REASONING_LOOP_REISSUE_MAX,
+)
 from hermes_logging import set_session_context
 from tools.skill_provenance import set_current_write_origin
 from utils import base_url_host_matches, env_var_enabled
@@ -760,6 +764,7 @@ def run_conversation(
     codex_ack_continuations = 0
     length_continue_retries = 0
     truncated_tool_call_retries = 0
+    reasoning_loop_reissues = 0
     truncated_response_parts: List[str] = []
     compression_attempts = 0
     _turn_exit_reason = "unknown"  # Diagnostic: why the loop ended
@@ -2095,6 +2100,60 @@ def run_conversation(
 
                     if agent.api_mode in {"chat_completions", "bedrock_converse", "anthropic_messages"}:
                         assistant_message = _trunc_msg
+                        # ── Reasoning repetition loop → reissue ──
+                        # The streaming call aborted itself because the model's
+                        # reasoning repeated (see _reasoning_loop_test).  The
+                        # loop regenerates byte for byte, so continuing from it
+                        # — the prefill and continuation paths below — just
+                        # reproduces it.  Discard the aborted generation and
+                        # reissue the turn from the current message state, the
+                        # same way a truncated tool call is reissued.
+                        _loop_abort_test = getattr(
+                            response, REASONING_LOOP_ABORT_ATTR, None
+                        )
+                        if _loop_abort_test:
+                            if reasoning_loop_reissues < REASONING_LOOP_REISSUE_MAX:
+                                reasoning_loop_reissues += 1
+                                agent._vprint(
+                                    f"{agent.log_prefix}↻ Reasoning repetition loop "
+                                    f"detected ({_loop_abort_test} test) — reissuing "
+                                    f"the turn "
+                                    f"({reasoning_loop_reissues}/{REASONING_LOOP_REISSUE_MAX})...",
+                                    force=True,
+                                )
+                                # Nothing was appended for the aborted attempt;
+                                # roll back only if an earlier recovery pass in
+                                # this turn left an assistant message behind.
+                                if messages and messages[-1].get("role") == "assistant":
+                                    messages = agent._get_messages_up_to_last_assistant(messages)
+                                agent._session_messages = messages
+                                continue
+                            _loop_giveup = (
+                                "⚠️ **Reasoning Loop**\n\n"
+                                "The model's reasoning repeated itself and the "
+                                f"turn was reissued {REASONING_LOOP_REISSUE_MAX} "
+                                "times without producing a response.\n\n"
+                                "Try again, or switch model with `/model`."
+                            )
+                            agent._vprint(
+                                f"{agent.log_prefix}⚠️  Reasoning repetition loop "
+                                f"persisted after {REASONING_LOOP_REISSUE_MAX} "
+                                f"reissues — giving up on this turn.",
+                                force=True,
+                            )
+                            agent._cleanup_task_resources(effective_task_id)
+                            agent._persist_session(messages, conversation_history)
+                            return {
+                                "final_response": _loop_giveup,
+                                "messages": messages,
+                                "api_calls": api_call_count,
+                                "completed": False,
+                                "partial": True,
+                                "error": (
+                                    "Reasoning repetition loop persisted after "
+                                    f"{REASONING_LOOP_REISSUE_MAX} reissues"
+                                ),
+                            }
                         # ── Content-filter stream stall → fallback (#32421) ──
                         # When the provider's output-layer safety filter (e.g.
                         # MiniMax "output new_sensitive (1027)", Azure
