@@ -5154,12 +5154,62 @@ class DiscordAdapter(BasePlatformAdapter):
         # hermes_cli/commands.py automatically appear as Discord slash
         # commands without needing a manual entry here.
         def _build_auto_slash_command(_name: str, _description: str, _args_hint: str = ""):
-            """Build a discord.app_commands.Command that proxies to _run_simple_slash."""
+            """Build a discord.app_commands.Command that proxies to _run_simple_slash.
+
+            Multi-param ``_args_hint`` (e.g. ``<repo> <description>``) creates
+            separate Discord slash fields, each with a proper type annotation so
+            discord.py can introspect them. Single-param or plain-text hints fall
+            back to a single ``args`` field.
+            """
+            import inspect as _inspect
+
             discord_name = _name.lower()[:32]
             desc = (_description or f"Run /{_name}")[:100]
             has_args = bool(_args_hint)
 
-            if has_args:
+            if not has_args:
+                def _make_simple_handler(__name: str):
+                    async def _handler(interaction: discord.Interaction):
+                        await self._run_simple_slash(interaction, f"/{__name}")
+                    _handler.__name__ = f"auto_slash_{__name.replace('-', '_')}"
+                    return _handler
+                return discord.app_commands.Command(
+                    name=discord_name, description=desc, callback=_make_simple_handler(_name)
+                )
+
+            # Extract parameter names from <angle> brackets.
+            import re as _re
+            _param_names = _re.findall(r"<([a-zA-Z0-9_]+)>", _args_hint)
+
+            if _param_names:
+                def _make_typed_handler(__hname: str, __hparam_names: list[str]):
+                    async def _handler(interaction: discord.Interaction, **_kwargs):
+                        parts = [_kwargs.get(p, "") for p in __hparam_names]
+                        combined = " ".join(str(p) for p in parts if p)
+                        await self._run_simple_slash(
+                            interaction, f"/{__hname} {combined}".strip()
+                        )
+                    _handler.__name__ = f"auto_slash_{__hname.replace('-', '_')}"
+                    _handler.__qualname__ = _handler.__name__
+                    params = [
+                        _inspect.Parameter(
+                            "interaction", _inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                            annotation=discord.Interaction,
+                        ),
+                    ]
+                    for pname in __hparam_names:
+                        params.append(
+                            _inspect.Parameter(
+                                pname, _inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                                annotation=str, default="",
+                            )
+                        )
+                    _handler.__signature__ = _inspect.Signature(params)
+                    _descriptions = {pname: f"{pname} parameter" for pname in __hparam_names}
+                    return discord.app_commands.describe(**_descriptions)(_handler)
+
+                handler = _make_typed_handler(_name, _param_names)
+            else:
                 def _make_args_handler(__name: str, __hint: str):
                     @discord.app_commands.describe(args=f"Arguments: {__hint}"[:100])
                     async def _handler(interaction: discord.Interaction, args: str = ""):
@@ -5168,21 +5218,10 @@ class DiscordAdapter(BasePlatformAdapter):
                         )
                     _handler.__name__ = f"auto_slash_{__name.replace('-', '_')}"
                     return _handler
-
                 handler = _make_args_handler(_name, _args_hint)
-            else:
-                def _make_simple_handler(__name: str):
-                    async def _handler(interaction: discord.Interaction):
-                        await self._run_simple_slash(interaction, f"/{__name}")
-                    _handler.__name__ = f"auto_slash_{__name.replace('-', '_')}"
-                    return _handler
-
-                handler = _make_simple_handler(_name)
 
             return discord.app_commands.Command(
-                name=discord_name,
-                description=desc,
-                callback=handler,
+                name=discord_name, description=desc, callback=handler,
             )
 
         already_registered: set[str] = set()
