@@ -1376,6 +1376,27 @@ PARTIAL_STREAM_STUB_ID = "partial-stream-stub"
 
 FINISH_REASON_LENGTH = "length"
 
+# ─── Reasoning repetition-loop detection ─────────────────────────────────────
+# A reasoning model can fall into a repetition loop and spend the whole output
+# budget on it: finish_reason="length", no visible content, tens of thousands
+# of characters of repeated reasoning.  Two mechanical tests over the reasoning
+# text accumulated in the current stream catch it while it is still streaming,
+# so the call can be aborted instead of paid for.
+#
+# Thresholds measured against the stored truncated reasonings in state.db
+# (548 turns with finish_reason="length" and >= 4096 chars of reasoning): the
+# span test fires on 74% of them, the cycle test on 27%, and neither fires on a
+# clean reasoning turn except one long code-writing turn in 303.
+REASONING_LOOP_SPAN_CHARS = 2048
+REASONING_LOOP_CYCLE_TAIL_CHARS = 256
+REASONING_LOOP_CYCLE_MAX_PERIOD = 32
+# Reissues allowed after a loop abort before the turn is given up on.
+REASONING_LOOP_REISSUE_MAX = 4
+# Attribute carrying the name of the test that fired, set on the aborted
+# response so the recovery loop can tell a loop abort apart from an ordinary
+# output-cap truncation.
+REASONING_LOOP_ABORT_ATTR = "reasoning_loop_aborted"
+
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 OPENROUTER_MODELS_URL = f"{OPENROUTER_BASE_URL}/models"
