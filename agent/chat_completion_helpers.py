@@ -33,6 +33,8 @@ from hermes_constants import (
     REASONING_LOOP_ABORT_ATTR,
     REASONING_LOOP_CYCLE_MAX_PERIOD,
     REASONING_LOOP_CYCLE_TAIL_CHARS,
+    REASONING_LOOP_REISSUE_ATTR,
+    REASONING_LOOP_REISSUE_TEMPERATURE_DELTA,
     REASONING_LOOP_SPAN_CHARS,
 )
 from agent.error_classifier import FailoverReason
@@ -988,6 +990,22 @@ def interruptible_api_call(agent, api_kwargs: dict):
 
 
 
+def _effective_call_temperature(agent) -> Optional[float]:
+    """The temperature for this call: the resolved value, plus the reissue delta.
+
+    A reissued call is sampled at ``n + 0.1``, where ``n`` is the temperature
+    the current context resolves.  At the resolved temperature the model is
+    deterministic, so an identical request regenerates the identical loop.
+    The mark is consumed here, so only the reissued call is affected.
+    """
+    resolved = _resolve_effective_temperature(agent)
+    if not getattr(agent, REASONING_LOOP_REISSUE_ATTR, False):
+        return resolved
+    setattr(agent, REASONING_LOOP_REISSUE_ATTR, False)
+    base = resolved if resolved is not None else 0.0
+    return base + REASONING_LOOP_REISSUE_TEMPERATURE_DELTA
+
+
 def _resolve_effective_temperature(agent) -> Optional[float]:
     """Resolve the temperature to send for this API call.
 
@@ -1245,7 +1263,7 @@ def build_api_kwargs(agent, api_messages: list) -> dict:
             anthropic_max_output=_ant_max,
             supports_reasoning=agent._supports_reasoning_extra_body(),
             qwen_session_metadata=_qwen_meta,
-            temperature=_resolve_effective_temperature(agent),
+            temperature=_effective_call_temperature(agent),
         )
 
     # ── Legacy flag path ────────────────────────────────────────────
@@ -1288,7 +1306,7 @@ def build_api_kwargs(agent, api_messages: list) -> dict:
         qwen_session_metadata=_qwen_meta,
         fixed_temperature=_fixed_temp,
         omit_temperature=_omit_temp,
-        temperature=_resolve_effective_temperature(agent),
+        temperature=_effective_call_temperature(agent),
         supports_reasoning=agent._supports_reasoning_extra_body(),
         github_reasoning_extra=agent._github_models_reasoning_extra_body() if _is_gh else None,
         lmstudio_reasoning_options=agent._lmstudio_reasoning_options_cached() if _is_lmstudio else None,

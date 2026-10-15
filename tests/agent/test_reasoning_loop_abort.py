@@ -17,9 +17,15 @@ from unittest.mock import MagicMock, patch
 from hermes_constants import (
     FINISH_REASON_LENGTH,
     REASONING_LOOP_ABORT_ATTR,
+    REASONING_LOOP_REISSUE_ATTR,
+    REASONING_LOOP_REISSUE_TEMPERATURE_DELTA,
     REASONING_LOOP_SPAN_CHARS,
 )
-from agent.chat_completion_helpers import _reasoning_loop_test
+from agent.chat_completion_helpers import (
+    _effective_call_temperature,
+    _reasoning_loop_test,
+    _resolve_effective_temperature,
+)
 
 
 def _make_reasoning_chunk(reasoning=None, content=None, finish_reason=None):
@@ -186,3 +192,21 @@ class TestReissueAfterAbort:
                 "the aborted generation must not be appended to the conversation"
             )
             assert LOOP_TEXT not in str(msg.get("reasoning") or "")
+
+
+class TestReissueSampling:
+    def test_a_reissued_call_is_sampled_at_n_plus_point_one(self):
+        """The reissue must not repeat the deterministic call that looped."""
+        agent = _make_agent()
+        setattr(agent, "temperature", 0.0)
+        assert _resolve_effective_temperature(agent) == 0.0
+        setattr(agent, REASONING_LOOP_REISSUE_ATTR, True)
+        assert _effective_call_temperature(agent) == (
+            0.0 + REASONING_LOOP_REISSUE_TEMPERATURE_DELTA
+        )
+        assert _resolve_effective_temperature(agent) == 0.0, (
+            "the configured temperature is untouched"
+        )
+        assert _effective_call_temperature(agent) == 0.0, (
+            "the reissue mark is consumed by the call it marks"
+        )
