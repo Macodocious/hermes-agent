@@ -74,6 +74,7 @@ from agent.usage_pricing import estimate_usage_cost, normalize_usage
 from hermes_constants import (
     PARTIAL_STREAM_STUB_ID,
     REASONING_LOOP_ABORT_ATTR,
+    REASONING_LOOP_REISSUE_ATTR,
     REASONING_LOOP_REISSUE_MAX,
 )
 from hermes_logging import set_session_context
@@ -2127,6 +2128,10 @@ def run_conversation(
                                 if messages and messages[-1].get("role") == "assistant":
                                     messages = agent._get_messages_up_to_last_assistant(messages)
                                 agent._session_messages = messages
+                                # Mark the call that follows: the reissue is
+                                # sampled at n + 0.1, not at the deterministic
+                                # temperature that reproduced the loop.
+                                setattr(agent, REASONING_LOOP_REISSUE_ATTR, True)
                                 continue
                         # ── Content-filter stream stall → fallback (#32421) ──
                         # When the provider's output-layer safety filter (e.g.
