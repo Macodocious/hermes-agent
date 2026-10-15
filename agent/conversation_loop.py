@@ -2128,32 +2128,6 @@ def run_conversation(
                                     messages = agent._get_messages_up_to_last_assistant(messages)
                                 agent._session_messages = messages
                                 continue
-                            _loop_giveup = (
-                                "⚠️ **Reasoning Loop**\n\n"
-                                "The model's reasoning repeated itself and the "
-                                f"turn was reissued {REASONING_LOOP_REISSUE_MAX} "
-                                "times without producing a response.\n\n"
-                                "Try again, or switch model with `/model`."
-                            )
-                            agent._vprint(
-                                f"{agent.log_prefix}⚠️  Reasoning repetition loop "
-                                f"persisted after {REASONING_LOOP_REISSUE_MAX} "
-                                f"reissues — giving up on this turn.",
-                                force=True,
-                            )
-                            agent._cleanup_task_resources(effective_task_id)
-                            agent._persist_session(messages, conversation_history)
-                            return {
-                                "final_response": _loop_giveup,
-                                "messages": messages,
-                                "api_calls": api_call_count,
-                                "completed": False,
-                                "partial": True,
-                                "error": (
-                                    "Reasoning repetition loop persisted after "
-                                    f"{REASONING_LOOP_REISSUE_MAX} reissues"
-                                ),
-                            }
                         # ── Content-filter stream stall → fallback (#32421) ──
                         # When the provider's output-layer safety filter (e.g.
                         # MiniMax "output new_sensitive (1027)", Azure
