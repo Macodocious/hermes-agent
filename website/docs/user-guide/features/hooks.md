@@ -718,6 +718,51 @@ For standing guidance that should shape the built-in missing-evidence nudge, use
 
 ---
 
+### `pre_delivery`
+
+Fires **once per turn end, on every turn** — not only a turn that edited files — just before the candidate answer is delivered. This is the gate for a claim check: a callback can hold the turn (verify a claim, read the source it cited) instead of letting an unverified answer reach the user.
+
+Unlike `pre_verify`, this hook is not gated on the turn having mutated files, so it fires on a prose-only answer with no tool call. Core holds on a boolean and a string from the plugin — it never reads the text, runs a classifier, or decides whether a claim is true.
+
+**Callback signature:**
+
+```python
+def my_callback(session_id: str, platform: str, model: str, coding: bool,
+                attempt: int, final_response: str, changed_paths: list,
+                candidate_surfaced: bool, **kwargs):
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `session_id` | `str` | Unique identifier for the current session |
+| `platform` | `str` | Where the session is running (`"cli"`, `"telegram"`, …) |
+| `model` | `str` | The model identifier |
+| `coding` | `bool` | Whether the turn is in the coding posture (in a code workspace) |
+| `attempt` | `int` | How many times this turn has already been held (0 on the first) — self-throttle on this |
+| `final_response` | `str` | The answer the agent is about to deliver |
+| `changed_paths` | `list` | Files the agent edited this turn (sorted; empty on a prose-only turn) |
+| `candidate_surfaced` | `bool` | Whether the candidate was already streamed to the user — decline to hold a draft the user has already read |
+
+**Fires:** In `agent/conversation_loop.py`, at the point the agent would accept a final answer, after the verify-on-stop and `pre_verify` checks and before the kanban stop guard — but only when at least one `pre_delivery` hook is registered.
+
+**Return value — hold the turn:**
+
+```python
+return {"action": "continue", "message": "You cited a file — read it and confirm the claim before answering."}
+```
+
+The `message` is appended as a synthetic user turn and the loop runs again. The Claude-Code Stop shape (`{"decision": "block", "reason": "..."}`, where blocking the stop means *keep going*) is accepted too. A directive with no message — or any other return — lets the turn finish.
+
+**Bounded:** consecutive holds in one turn are capped by `agent.max_pre_delivery_nudges` (default 2), so a hook that always says continue can never trap the loop. A raising hook releases the turn.
+
+**Withheld, not persisted:** the held candidate is not written to the durable transcript — it stays in the live context so the model sees what it wrote, and is emitted as an interim message. Both the candidate and the nudge are stripped from the resumed transcript.
+
+**Make it idempotent:** the hook re-fires after each hold, so gate on `attempt` (`if attempt: return None`) — otherwise it just holds until the bound is hit.
+
+**Use cases:** require a source read before a factual claim, block an answer that cites a file the turn never opened, run a project-specific claim checklist.
+
+---
+
 ### `on_session_start`
 
 Fires **once** when a brand-new session is created. Does **not** fire on session continuation (when the user sends a second message in an existing session).

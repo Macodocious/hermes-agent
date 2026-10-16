@@ -751,6 +751,11 @@ agent:
   # Default 3.
   # max_verify_nudges: 3
 
+  # A `pre_delivery` hook can hold ANY turn end — not only a turn that edited
+  # files — before the answer is delivered. This caps how many times one turn
+  # may be held, so a hook can't trap the loop. Default 2.
+  # max_pre_delivery_nudges: 2
+
   # Enable verbose logging
   verbose: false
   

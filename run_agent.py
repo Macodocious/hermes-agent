@@ -240,6 +240,10 @@ _EPHEMERAL_SCAFFOLDING_FLAGS = (
     # persisted and emitted as an interim message (#65919).
     "_verification_stop_synthetic",
     "_pre_verify_synthetic",
+    # pre_delivery hold: the withheld candidate and its nudge are both
+    # scaffolding — the candidate is not delivered history, so neither may
+    # be persisted.
+    "_pre_delivery_synthetic",
     # kanban worker stop-guard: narrated exit without kanban_complete/block
     "_kanban_stop_synthetic",
 )
