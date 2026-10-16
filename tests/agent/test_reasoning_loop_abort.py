@@ -18,12 +18,14 @@ from hermes_constants import (
     FINISH_REASON_LENGTH,
     REASONING_LOOP_ABORT_ATTR,
     REASONING_LOOP_REISSUE_ATTR,
+    REASONING_LOOP_REISSUE_TEMPERATURE_CAP,
     REASONING_LOOP_REISSUE_TEMPERATURE_DELTA,
     REASONING_LOOP_SPAN_CHARS,
 )
 from agent.chat_completion_helpers import (
     _effective_call_temperature,
     _reasoning_loop_test,
+    _reissue_climb_is_spent,
     _resolve_effective_temperature,
 )
 
@@ -195,18 +197,47 @@ class TestReissueAfterAbort:
 
 
 class TestReissueSampling:
-    def test_a_reissued_call_is_sampled_at_n_plus_point_one(self):
-        """The reissue must not repeat the deterministic call that looped."""
+    def test_each_failure_adds_another_delta(self):
+        """The reissue walks up: 0.1 on the first failure, 0.2 on the second."""
         agent = _make_agent()
         setattr(agent, "temperature", 0.0)
         assert _resolve_effective_temperature(agent) == 0.0
-        setattr(agent, REASONING_LOOP_REISSUE_ATTR, True)
-        assert _effective_call_temperature(agent) == (
-            0.0 + REASONING_LOOP_REISSUE_TEMPERATURE_DELTA
+        for reissues, expected in ((1, 0.2), (2, 0.4), (3, 0.6), (4, 0.8), (5, 1.0)):
+            setattr(agent, REASONING_LOOP_REISSUE_ATTR, reissues)
+            got = _effective_call_temperature(agent)
+            assert got is not None and abs(got - expected) < 1e-9, (reissues, got)
+
+    def test_the_temperature_stops_at_the_cap(self):
+        """Past the cap a further failure does not raise it any further."""
+        agent = _make_agent()
+        setattr(agent, "temperature", 0.0)
+        setattr(agent, REASONING_LOOP_REISSUE_ATTR, 20)
+        assert _effective_call_temperature(agent) == REASONING_LOOP_REISSUE_TEMPERATURE_CAP
+        setattr(agent, "temperature", 1.0)
+        setattr(agent, REASONING_LOOP_REISSUE_ATTR, 1)
+        assert _effective_call_temperature(agent) == REASONING_LOOP_REISSUE_TEMPERATURE_CAP
+
+    def test_the_climb_is_spent_only_at_the_cap(self):
+        """A failure keeps reissuing while it can still raise the temperature;
+        at the cap the truncation recovery — and its count — begins."""
+        agent = _make_agent()
+        setattr(agent, "temperature", 0.0)
+        assert not _reissue_climb_is_spent(agent, 4), (
+            "the fifth reissue is still a climb below the cap"
         )
-        assert _resolve_effective_temperature(agent) == 0.0, (
-            "the configured temperature is untouched"
+        assert _reissue_climb_is_spent(agent, 5)
+        setattr(agent, "temperature", 1.0)
+        assert _reissue_climb_is_spent(agent, 0), (
+            "a call already at the cap has nothing to climb"
         )
+
+    def test_the_configured_temperature_is_untouched(self):
+        """Only the marked call moves; the resolved value stays put."""
+        agent = _make_agent()
+        setattr(agent, "temperature", 0.0)
+        setattr(agent, REASONING_LOOP_REISSUE_ATTR, 2)
+        _effective_call_temperature(agent)
+        assert _resolve_effective_temperature(agent) == 0.0
         assert _effective_call_temperature(agent) == 0.0, (
-            "the reissue mark is consumed by the call it marks"
+            "the count is consumed by the call it marks"
         )

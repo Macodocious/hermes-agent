@@ -34,6 +34,7 @@ from hermes_constants import (
     REASONING_LOOP_CYCLE_MAX_PERIOD,
     REASONING_LOOP_CYCLE_TAIL_CHARS,
     REASONING_LOOP_REISSUE_ATTR,
+    REASONING_LOOP_REISSUE_TEMPERATURE_CAP,
     REASONING_LOOP_REISSUE_TEMPERATURE_DELTA,
     REASONING_LOOP_SPAN_CHARS,
 )
@@ -993,17 +994,40 @@ def interruptible_api_call(agent, api_kwargs: dict):
 def _effective_call_temperature(agent) -> Optional[float]:
     """The temperature for this call: the resolved value, plus the reissue delta.
 
-    A reissued call is sampled at ``n + 0.1``, where ``n`` is the temperature
-    the current context resolves.  At the resolved temperature the model is
-    deterministic, so an identical request regenerates the identical loop.
-    The mark is consumed here, so only the reissued call is affected.
+    A reissued call is sampled at ``n + 0.2`` per failure — the first failure
+    is ``n + 0.2``, the second ``n + 0.4``, and so on — capped at
+    ``REASONING_LOOP_REISSUE_TEMPERATURE_CAP``.  At the resolved temperature
+    the model is deterministic, so an identical request regenerates the
+    identical loop; walking the temperature up is what gives each further
+    reissue a chance to land off the loop.  The count is consumed here, so no
+    other call is affected.
     """
     resolved = _resolve_effective_temperature(agent)
-    if not getattr(agent, REASONING_LOOP_REISSUE_ATTR, False):
+    reissues = getattr(agent, REASONING_LOOP_REISSUE_ATTR, 0)
+    if not reissues:
         return resolved
-    setattr(agent, REASONING_LOOP_REISSUE_ATTR, False)
+    setattr(agent, REASONING_LOOP_REISSUE_ATTR, 0)
     base = resolved if resolved is not None else 0.0
-    return base + REASONING_LOOP_REISSUE_TEMPERATURE_DELTA
+    return min(
+        base + REASONING_LOOP_REISSUE_TEMPERATURE_DELTA * reissues,
+        REASONING_LOOP_REISSUE_TEMPERATURE_CAP,
+    )
+
+
+def _reissue_climb_is_spent(agent, reissues: int) -> bool:
+    """Whether the compounded reissue temperature has reached its cap.
+
+    The reissue keeps going while another failure would still raise the
+    temperature.  The truncated-response recovery — and the stop notice it can
+    print — belongs to the capped call, so it is reached only once this is
+    true.
+    """
+    resolved = _resolve_effective_temperature(agent)
+    base = resolved if resolved is not None else 0.0
+    return (
+        base + REASONING_LOOP_REISSUE_TEMPERATURE_DELTA * reissues
+        >= REASONING_LOOP_REISSUE_TEMPERATURE_CAP
+    )
 
 
 def _resolve_effective_temperature(agent) -> Optional[float]:
