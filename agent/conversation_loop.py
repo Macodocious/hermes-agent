@@ -61,6 +61,7 @@ from agent.model_metadata import (
     parse_available_output_tokens_from_error,
     save_context_length,
 )
+from agent.chat_completion_helpers import _reissue_climb_is_spent
 from agent.process_bootstrap import _install_safe_stdio
 from agent.prompt_caching import apply_anthropic_cache_control
 from agent.retry_utils import (
@@ -75,7 +76,6 @@ from hermes_constants import (
     PARTIAL_STREAM_STUB_ID,
     REASONING_LOOP_ABORT_ATTR,
     REASONING_LOOP_REISSUE_ATTR,
-    REASONING_LOOP_REISSUE_MAX,
 )
 from hermes_logging import set_session_context
 from tools.skill_provenance import set_current_write_origin
@@ -2112,27 +2112,36 @@ def run_conversation(
                         _loop_abort_test = getattr(
                             response, REASONING_LOOP_ABORT_ATTR, None
                         )
-                        if _loop_abort_test:
-                            if reasoning_loop_reissues < REASONING_LOOP_REISSUE_MAX:
-                                reasoning_loop_reissues += 1
-                                agent._vprint(
-                                    f"{agent.log_prefix}↻ Reasoning repetition loop "
-                                    f"detected ({_loop_abort_test} test) — reissuing "
-                                    f"the turn "
-                                    f"({reasoning_loop_reissues}/{REASONING_LOOP_REISSUE_MAX})...",
-                                    force=True,
-                                )
-                                # Nothing was appended for the aborted attempt;
-                                # roll back only if an earlier recovery pass in
-                                # this turn left an assistant message behind.
-                                if messages and messages[-1].get("role") == "assistant":
-                                    messages = agent._get_messages_up_to_last_assistant(messages)
-                                agent._session_messages = messages
-                                # Mark the call that follows: the reissue is
-                                # sampled at n + 0.1, not at the deterministic
-                                # temperature that reproduced the loop.
-                                setattr(agent, REASONING_LOOP_REISSUE_ATTR, True)
-                                continue
+                        # Reissue while another failure would still raise the
+                        # sampling temperature; the truncation recovery below —
+                        # and the stop notice it can print — belongs to the
+                        # capped call, so it is reached only at the cap.
+                        if _loop_abort_test and not _reissue_climb_is_spent(
+                            agent, reasoning_loop_reissues
+                        ):
+                            reasoning_loop_reissues += 1
+                            agent._vprint(
+                                f"{agent.log_prefix}↻ Reasoning repetition loop "
+                                f"detected ({_loop_abort_test} test) — reissuing "
+                                f"the turn "
+                                f"({reasoning_loop_reissues})...",
+                                force=True,
+                            )
+                            # Nothing was appended for the aborted attempt;
+                            # roll back only if an earlier recovery pass in
+                            # this turn left an assistant message behind.
+                            if messages and messages[-1].get("role") == "assistant":
+                                messages = agent._get_messages_up_to_last_assistant(messages)
+                            agent._session_messages = messages
+                            # Mark the call that follows with how many reissues
+                            # the turn has made: it is sampled one delta per
+                            # failure, not at the temperature that looped.
+                            setattr(
+                                agent,
+                                REASONING_LOOP_REISSUE_ATTR,
+                                reasoning_loop_reissues,
+                            )
+                            continue
                         # ── Content-filter stream stall → fallback (#32421) ──
                         # When the provider's output-layer safety filter (e.g.
                         # MiniMax "output new_sensitive (1027)", Azure

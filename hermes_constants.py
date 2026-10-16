@@ -1390,14 +1390,18 @@ FINISH_REASON_LENGTH = "length"
 REASONING_LOOP_SPAN_CHARS = 2048
 REASONING_LOOP_CYCLE_TAIL_CHARS = 256
 REASONING_LOOP_CYCLE_MAX_PERIOD = 32
-# Reissues allowed after a loop abort.
-REASONING_LOOP_REISSUE_MAX = 4
 # Temperature a reissued call is sampled at, above the temperature the current
-# context resolves: n + 0.1.  At the resolved temperature the model is
-# deterministic and a reissue regenerates the loop byte for byte.
-REASONING_LOOP_REISSUE_TEMPERATURE_DELTA = 0.1
-# Agent attribute marking the next call as a reissue, consumed by
-# _effective_call_temperature.
+# context resolves: + 0.2 for the first failure, + 0.2 again for each further
+# one.  At the resolved temperature the model is deterministic and a reissue
+# regenerates the loop byte for byte, so the walk up is what gives each further
+# reissue a chance to land off the loop.
+REASONING_LOOP_REISSUE_TEMPERATURE_DELTA = 0.2
+# Ceiling on the reissued call's temperature.  The delta compounds per failure;
+# this is where it stops.
+REASONING_LOOP_REISSUE_TEMPERATURE_CAP = 1.0
+# Agent attribute carrying how many reissues the turn has made, consumed by
+# _effective_call_temperature and cleared there.  Absent or zero means the next
+# call is not a reissue.
 REASONING_LOOP_REISSUE_ATTR = "_reasoning_loop_reissue"
 # Attribute carrying the name of the test that fired, set on the aborted
 # response so the recovery loop can tell a loop abort apart from an ordinary
