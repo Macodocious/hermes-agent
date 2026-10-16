@@ -417,6 +417,17 @@ class CLIAgentSetupMixin:
             # Route agent status output through prompt_toolkit so ANSI escape
             # sequences aren't garbled by patch_stdout's StdoutProxy (#2262).
             self.agent._print_fn = _cprint
+            # Task-lifecycle notices (▶️ Working on / ✅ Task N of M complete).
+            # The store records one per transition; the live post-write emitter
+            # hands them here and they print at the transition itself. This is
+            # the CLI's single emitter — the turn-end drain that used to print
+            # them is gone.
+            def _todo_notice_callback_sync(message: str) -> bool:
+                if message:
+                    _cprint(f"  {message}")
+                return True
+
+            self.agent.todo_notice_callback = _todo_notice_callback_sync
             # Hydrate credits notices at session OPEN (parity with the TUI), so a
             # depletion / usage-band warning shows before the first message. The
             # notice_callback is bound above → _on_notice renders the line. Idempotent

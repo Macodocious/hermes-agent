@@ -126,9 +126,31 @@ def test_audit_clean_when_task_in_progress() -> None:
     store.transition("begin", "1")
 
     nudge = task_manager.audit_turn_end(
-        agent, final_response="Done.", interrupted=False, tool_call_count=3
+        agent,
+        final_response="Done.",
+        interrupted=False,
+        tool_call_count=3,
+        tool_names=["todo"],
     )
     assert nudge is None
+
+
+def test_audit_pulls_back_when_the_open_task_is_not_advanced() -> None:
+    """An open task is no longer a blanket exemption: the turn must advance it."""
+    store = TodoStore()
+    _seed(store, "1", "Build the thing")
+    agent = _make_agent(store)
+    store.transition("begin", "1")
+
+    nudge = task_manager.audit_turn_end(
+        agent,
+        final_response="I did something else entirely.",
+        interrupted=False,
+        tool_call_count=3,
+        tool_names=["web_search"],
+    )
+    assert nudge is not None
+    assert "begin" in nudge
 
 
 def test_audit_pulls_back_after_work_with_no_open_task() -> None:

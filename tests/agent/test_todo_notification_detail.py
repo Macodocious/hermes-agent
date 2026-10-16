@@ -140,8 +140,9 @@ class TestPlanCompleteNotice:
         assert [line for line in lines if line.startswith("🏁")] == [
             "🏁 Plan complete: all 2 tasks done (p)"
         ]
-        # The plan's non-final task reports itself, not the plan.
-        assert "✅ Task 2 of 3 complete: a" in lines
+        # The plan's non-final task reports itself, numbered within the plan
+        # so its total matches the plan line's count.
+        assert "✅ Task 1 of 2 complete: a" in lines
         # The un-tagged seed row still reports its own position.
         assert "✅ Task 1 of 3 complete: seed" in lines
 

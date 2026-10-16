@@ -190,15 +190,12 @@ async def test_lifecycle_notices_drain_without_an_active_goal(monkeypatch):
 
     await runner._emit_task_lifecycle_notices(source)
 
-    assert store.drain_notices() == []  # drained on the turn, not left to flush late
-    assert len(adapter.callbacks) == 1  # deferred until after the visible reply
-
-    _, callback = next(iter(adapter.callbacks.values()))
-    result = callback()
-    if hasattr(result, "__await__"):
-        await result
-
-    assert adapter.calls[0]["content"] == "▶️ Working on task 1 of 1: ship the fix"
+    # The turn-end drain is retired: the live post-write emitter owns the
+    # notices, so this call must leave the queue untouched rather than
+    # weld it into one late message.
+    assert [n["kind"] for n in store.pending_notices()] == ["started"]
+    assert adapter.callbacks == {}  # nothing deferred — no second emitter
+    assert adapter.calls == []
 
 
 @pytest.mark.asyncio
