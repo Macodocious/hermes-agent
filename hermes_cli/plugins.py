@@ -154,6 +154,17 @@ VALID_HOOKS: Set[str] = {
     # verification-stop nudge; this hook is for user/plugin policy and is
     # bounded by agent.max_verify_nudges.
     "pre_verify",
+    # Pre-delivery gate. Fired once per turn end, before the candidate answer
+    # is delivered — on EVERY turn, not only a turn that edited files. A
+    # callback may hold the turn (verify a claim, read the source it cited)
+    # instead of letting it finish by returning:
+    #   {"action": "continue", "message": "<follow-up instruction>"}
+    # The Claude-Code Stop shape {"decision": "block", "reason": "..."} (block
+    # the stop == keep going) is accepted too. Anything else lets the turn
+    # finish. Core holds on a boolean and a string from the plugin — it never
+    # reads the text or decides whether a claim is true — and the hold is
+    # bounded by agent.max_pre_delivery_nudges.
+    "pre_delivery",
     "pre_api_request",
     "post_api_request",
     "api_request_error",
@@ -2430,6 +2441,59 @@ def get_pre_verify_continue_message(
         attempt=attempt,
         final_response=final_response,
         changed_paths=list(changed_paths or []),
+    )
+
+    for result in hook_results:
+        if not isinstance(result, dict):
+            continue
+        action = str(result.get("action") or result.get("decision") or "").strip().lower()
+        if action not in ("continue", "block"):
+            continue
+        message = result.get("message") or result.get("reason")
+        if isinstance(message, str) and message.strip():
+            return message.strip()
+
+    return None
+
+
+def get_pre_delivery_continue_message(
+    *,
+    session_id: str = "",
+    platform: str = "",
+    model: str = "",
+    coding: bool = False,
+    attempt: int = 0,
+    final_response: str = "",
+    changed_paths: Optional[List[str]] = None,
+    candidate_surfaced: bool = False,
+) -> Optional[str]:
+    """Check user ``pre_delivery`` hooks for a directive to hold the turn end.
+
+    Fired once per turn end, before the candidate answer is delivered — on
+    every turn, not only a turn that edited files. A hook holds the turn
+    (verify a claim, read the source it cited) by returning::
+
+        {"action": "continue", "message": "<follow-up for the model>"}
+
+    The Claude-Code Stop shape ``{"decision": "block", "reason": "..."}`` (block
+    the stop == keep going) is accepted too. The first directive carrying a
+    non-empty message wins; any other return lets the turn finish. Mirrors
+    :func:`get_pre_verify_continue_message` — the call site stays a one-liner.
+
+    ``candidate_surfaced`` tells the hook whether the candidate was already
+    streamed to the user, so a hook on a streaming surface can decline to hold
+    a draft the user has already read.
+    """
+    hook_results = invoke_hook(
+        "pre_delivery",
+        session_id=session_id,
+        platform=platform,
+        model=model,
+        coding=coding,
+        attempt=attempt,
+        final_response=final_response,
+        changed_paths=list(changed_paths or []),
+        candidate_surfaced=candidate_surfaced,
     )
 
     for result in hook_results:

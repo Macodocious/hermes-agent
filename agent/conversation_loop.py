@@ -5851,6 +5851,67 @@ def run_conversation(
                     final_response = None
                     continue
 
+                # Pre-delivery gate: let a registered `pre_delivery` hook
+                # (plugin/shell) hold the turn end on ANY turn — not only a turn
+                # that mutated files — before the candidate is delivered. Core
+                # holds on a boolean and a string from the plugin; it never reads
+                # the text or decides whether a claim is true. Bounded by
+                # agent.max_pre_delivery_nudges.
+                _delivery_nudge = None
+                _delivery_attempt = getattr(agent, "_pre_delivery_nudges", 0)
+                try:
+                    from agent.verify_hooks import max_pre_delivery_nudges
+                    from hermes_cli.plugins import get_pre_delivery_continue_message, has_hook
+
+                    if has_hook("pre_delivery") and _delivery_attempt < max_pre_delivery_nudges():
+                        # Posture is fixed for the session — resolve once + cache.
+                        coding = getattr(agent, "_resolved_is_coding", None)
+                        if coding is None:
+                            from agent.coding_context import is_coding_context
+                            coding = bool(is_coding_context(platform=getattr(agent, "platform", "") or ""))
+                            agent._resolved_is_coding = coding
+                        _delivery_nudge = get_pre_delivery_continue_message(
+                            session_id=getattr(agent, "session_id", None) or "",
+                            platform=getattr(agent, "platform", "") or "",
+                            model=getattr(agent, "model", "") or "",
+                            coding=coding,
+                            attempt=_delivery_attempt,
+                            final_response=final_response,
+                            changed_paths=_edited,
+                            candidate_surfaced=agent._interim_content_was_streamed(
+                                final_response or ""
+                            ),
+                        )
+                except Exception:
+                    logger.debug("pre_delivery hook check failed", exc_info=True)
+                    _delivery_nudge = None
+
+                if _delivery_nudge:
+                    agent._pre_delivery_nudges = _delivery_attempt + 1
+                    final_msg["finish_reason"] = "pre_delivery_hold"
+                    # The candidate is withheld: it is NOT persisted as delivered
+                    # history. It stays in the live context so the model sees what
+                    # it wrote, and is emitted as an interim message. Both the
+                    # candidate and the nudge carry the scaffolding flag, so the
+                    # durable transcript never replays them.
+                    final_msg["_pre_delivery_synthetic"] = True
+                    agent._emit_interim_assistant_message(final_msg)
+                    messages.append(final_msg)
+                    messages.append({
+                        "role": "user",
+                        "content": _delivery_nudge,
+                        "_pre_delivery_synthetic": True,
+                    })
+                    agent._session_messages = messages
+                    logger.debug("pre_delivery hold issued (attempt %d)",
+                                 agent._pre_delivery_nudges)
+                    _pending_verification_response = final_response
+                    _pending_verification_response_previewed = (
+                        agent._interim_content_was_streamed(final_response or "")
+                    )
+                    final_response = None
+                    continue
+
                 # ── Kanban worker terminal-tool stop guard ─────────────
                 # Workers must end with kanban_complete / kanban_block.
                 # Models sometimes narrate the next step ("Let me write the

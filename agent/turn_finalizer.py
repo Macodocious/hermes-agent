@@ -120,6 +120,7 @@ def _is_pure_tool_call_tail(msg: dict) -> bool:
 _VERIFICATION_CONTINUATION_FLAGS = (
     "_verification_stop_synthetic",
     "_pre_verify_synthetic",
+    "_pre_delivery_synthetic",
 )
 
 
