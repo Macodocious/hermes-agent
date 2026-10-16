@@ -11903,10 +11903,11 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
         try:
             _agent_result = await self._handle_message_with_agent(event, source, _quick_key, _run_generation)
-            # Task-lifecycle notices ship on the turn that produced them,
-            # whether or not this turn ended with prose. The goal judge below
-            # is skipped on an empty response; the lifecycle must not be.
-            await self._emit_task_lifecycle_notices(source)
+            # Task-lifecycle notices are NOT drained here. The live post-write
+            # emitter (``_emit_pending_notices``, run from ``on_todo_write``)
+            # ships one message per transition at the transition itself. A
+            # turn-end drain beside it would be a second emitter, and it is
+            # the only code that welds several notices into one message.
             # Goal continuation: after the agent returns a final response
             # for this turn, check any standing /goal — the judge will
             # either mark it done, pause it (budget), or enqueue a
@@ -14691,52 +14692,16 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         await _deliver()
 
     async def _emit_task_lifecycle_notices(self, source: Any) -> None:
-        """Drain the session's task-lifecycle notices and deliver them.
+        """Retired: the turn-end drain is gone.
 
-        Called at the turn boundary on every turn, not only turns that end
-        with prose: the goal judge is skipped on an empty response, and the
-        lifecycle must not be skipped with it, or notices accrue in the store
-        and flush as one late block. Never drains without a delivery target —
-        draining and then failing to emit would drop the notices, since the
-        store is persisted after the drain.
+        The live post-write emitter (``_emit_pending_notices``, run from
+        ``on_todo_write``) is the single emitter of task-lifecycle notices.
+        It ships one message per transition at the transition itself, so a
+        turn-end drain beside it was a second emitter — and the only code
+        that welded several notices into one message. Kept as a no-op so an
+        out-of-tree caller cannot resurrect the weld.
         """
-        if source is None:
-            return
-        try:
-            session_entry = await self.async_session_store.get_or_create_session(source)
-        except Exception:
-            session_entry = None
-        sid = getattr(session_entry, "session_id", None) or ""
-        if not sid:
-            return
-        try:
-            from hermes_cli.tasks import load_todo as _load_todo, save_todo as _save_todo
-            from tools.todo_tool import format_notice as _format_notice
-
-            _notice_store = _load_todo(sid)
-            if _notice_store is None:
-                return
-            _notice_lines = [
-                _line
-                for _line in (
-                    _format_notice(_notice, _notice_store)
-                    for _notice in _notice_store.drain_notices()
-                )
-                if _line
-            ]
-            if _notice_lines:
-                await self._defer_goal_status_notice_after_delivery(
-                    source, "\n".join(_notice_lines)
-                )
-            # Persist after draining so the notices do not re-emit next turn.
-            # Best-effort — a failure keeps them (a duplicate line beats a
-            # lost one).
-            try:
-                _save_todo(sid, _notice_store)
-            except Exception as _save_exc:
-                logger.debug("task-lifecycle notice persist failed: %s", _save_exc)
-        except Exception as _notice_exc:
-            logger.debug("task-lifecycle notice emission failed: %s", _notice_exc)
+        return
 
     async def _post_turn_goal_continuation(
         self,
@@ -14851,10 +14816,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
         mgr = GoalManager(session_id=sid, default_max_turns=max_turns)
 
-        # Task-lifecycle notices are drained at the turn boundary by
-        # ``_emit_task_lifecycle_notices`` (called from ``_handle_message``),
-        # not here: the lifecycle arms no goal loop, and this method is
-        # skipped entirely on a turn that ends without prose.
+        # Task-lifecycle notices are emitted by the live post-write emitter
+        # (``_emit_pending_notices``, run from ``on_todo_write``) at each
+        # transition, not here: the lifecycle arms no goal loop, and this
+        # method is skipped entirely on a turn that ends without prose.
 
         if not mgr.is_active():
             # No goal loop running. The lifecycle nudge still applies —

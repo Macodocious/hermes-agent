@@ -201,9 +201,21 @@ def task_position(store: Any, item_id: Any) -> tuple:
     a position a human reader can follow. Returns ``(0, total)`` when the row
     is absent, so a caller renders a line without a position rather than
     failing — the completion line must still ship on a degraded store.
+
+    A row carrying a plan ref is numbered within its plan's rows, so the
+    ``N of M`` a notice prints and the ``all M tasks done`` the plan line
+    prints are the same M. Numbering across every row let a plan row whose
+    ref was missing read as ``task 4 of 4`` while the plan line said ``all 3``.
     """
     rows = store.read()
     target = str(item_id or "").strip()
+    ref = ""
+    for item in rows:
+        if str(item.get("id") or "") == target:
+            ref = str(item.get("plan") or "").strip()
+            break
+    if ref:
+        rows = [i for i in rows if str(i.get("plan") or "").strip() == ref]
     for position, item in enumerate(rows, start=1):
         if str(item.get("id") or "") == target:
             return position, len(rows)
@@ -420,7 +432,12 @@ def audit_turn_end(
     if getattr(agent, "_task_lifecycle_action_issued", False):
         # The turn ended with a legitimate transition (begin/complete/
         # cancel/pause/resume) — the lifecycle is in control, not a silent
-        # stop.
+        # stop. The exemption is narrow: it covers the turn that made the
+        # transition, not every turn that merely touched the todo tool. A
+        # turn that issued a transition and then did unrelated work still
+        # has to leave the list current, so the flag is cleared as it is
+        # read — the next turn must earn its own exemption.
+        agent._task_lifecycle_action_issued = False
         return None
     # R1: an open task is no longer a blanket exemption. The plan is the
     # work contract — when the open task carries a plan, a substantive
@@ -428,11 +445,14 @@ def audit_turn_end(
     # nudgeable (kills the D1 hole: audit silent while any task is open).
     # Without a plan ref there is no contract yet to drift from, so the
     # single-item exemption stands (simple tasks run unchanged).
+    #
+    # R2: the open task must be the one the turn advanced. A turn that
+    # works while a *different* task is open — or that leaves the open task
+    # untouched — is the end-of-plan burst in miniature: the list is not
+    # current, so the turn does not end cleanly.
     current = _current_item(agent)
     if current is not None:
-        if str(current.get("plan") or "").strip() and not _advances_open_plan(
-            tool_names or []
-        ):
+        if not _advances_open_plan(tool_names or []):
             return LIFECYCLE_AUDIT_NUDGE
         return None
     store = getattr(agent, "_todo_store", None)

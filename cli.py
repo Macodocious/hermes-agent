@@ -9688,21 +9688,10 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             _cprint(f"  {msg}")
 
         # Task-lifecycle notices are agent-owned: the store recorded one per
-        # start/complete/cancel transition this turn. Print them
-        # deterministically — no judge verdict. Best-effort: a missing store
-        # or a bad notice yields nothing rather than an error.
-        if _agent is not None:
-            try:
-                from tools.todo_tool import format_notice
-
-                _store = getattr(_agent, "_todo_store", None)
-                if _store is not None:
-                    for _notice in _store.drain_notices():
-                        _line = format_notice(_notice, _store)
-                        if _line:
-                            _cprint(f"  {_line}")
-            except Exception as _notice_exc:
-                logging.debug("task-lifecycle notice emission failed: %s", _notice_exc)
+        # start/complete/cancel transition, and the live post-write emitter
+        # (``_emit_pending_notices``, run from ``on_todo_write``) already
+        # shipped each one at its transition. Nothing is drained here — a
+        # turn-end drain beside the live emitter would be a second emitter.
 
         if decision.get("should_continue"):
             prompt = decision.get("continuation_prompt")
