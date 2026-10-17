@@ -26,6 +26,7 @@ from agent.chat_completion_helpers import (
     _effective_call_temperature,
     _reasoning_loop_test,
     _reissue_climb_is_spent,
+    _reissues_to_reach_cap,
     _resolve_effective_temperature,
 )
 
@@ -240,4 +241,79 @@ class TestReissueSampling:
         assert _resolve_effective_temperature(agent) == 0.0
         assert _effective_call_temperature(agent) == 0.0, (
             "the count is consumed by the call it marks"
+        )
+
+
+class TestRecoverySampling:
+    """The four attempts before the stop notice are sampled at the cap."""
+
+    def test_the_count_reaches_the_cap_from_any_context(self):
+        """The count the recovery is marked with saturates the cap."""
+        agent = _make_agent()
+        setattr(agent, "temperature", 0.0)
+        assert _reissues_to_reach_cap(agent) == 5
+        setattr(agent, "temperature", 0.4)
+        assert _reissues_to_reach_cap(agent) == 3
+        setattr(agent, "temperature", 1.0)
+        assert _reissues_to_reach_cap(agent) == 0, (
+            "a context already at the cap has nothing to climb"
+        )
+
+    @patch("run_agent.AIAgent._build_system_prompt")
+    @patch("run_agent.AIAgent._interruptible_streaming_api_call")
+    @patch("run_agent.AIAgent._interruptible_api_call")
+    def test_the_continuation_attempts_are_marked_at_the_cap(
+        self, mock_api, mock_stream, mock_sys
+    ):
+        """A length-truncated turn marks its continuation attempts at the cap."""
+        from run_agent import AIAgent
+
+        mock_sys.return_value = "system prompt"
+
+        def _truncated():
+            choice = MagicMock()
+            choice.message.content = "partial text"
+            choice.message.tool_calls = None
+            choice.message.refusal = None
+            choice.message.reasoning_content = None
+            choice.message.reasoning = None
+            choice.message.reasoning_details = None
+            choice.finish_reason = FINISH_REASON_LENGTH
+            response = MagicMock()
+            response.choices = [choice]
+            response.usage = MagicMock(
+                prompt_tokens=10, completion_tokens=5, total_tokens=15
+            )
+            response.model = "test-model"
+            response.id = "test-id"
+            response.reasoning_loop_aborted = None
+            return response
+
+        seen = []
+
+        def _record(request, *args, **kwargs):
+            # The loop builds the request kwargs — temperature included — before
+            # it calls the request function, so the spy reads what was sent.
+            seen.append(request.get("temperature"))
+            return _truncated()
+
+        mock_stream.side_effect = _record
+        mock_api.side_effect = _record
+
+        agent = AIAgent(
+            model="test/model",
+            api_key="test-key",
+            base_url="http://localhost:1234/v1",
+            quiet_mode=True,
+            skip_memory=True,
+            skip_context_files=True,
+        )
+        agent.client = MagicMock()
+        setattr(agent, "temperature", 0.0)
+
+        agent.run_conversation(user_message="do the thing", conversation_history=[])
+
+        assert seen[0] == 0.0, "the first request samples the context value"
+        assert seen[1] == REASONING_LOOP_REISSUE_TEMPERATURE_CAP, (
+            "the attempt after the continuation branch must sample the cap"
         )
