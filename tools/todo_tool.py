@@ -85,9 +85,10 @@ def format_notice(notice: Dict[str, Any], store: "TodoStore") -> str:
     call is doing, not which transition it caused, so a lifecycle line is
     composed in one place. Plan completion is derived from the store once the
     plan's last task is terminal — the completion line then reports the plan,
-    not a list position. The start line's position form belongs to a plan's
-    rows alone: a row carrying no plan ref is not in a plan's sequence, so it
-    keeps the plain form rather than being numbered against the whole list.
+    not a list position. The position form belongs to a plan's rows alone, on
+    every lifecycle line: a row carrying no plan ref is not in a plan's
+    sequence, so it keeps the plain form rather than being numbered against
+    the whole list.
     Returns "" for an unknown notice kind.
     """
     kind = str(notice.get("kind") or "")
@@ -111,9 +112,16 @@ def format_notice(notice: Dict[str, Any], store: "TodoStore") -> str:
         return f"▶️ Working on: {content}"
     if kind == NOTICE_CANCELLED:
         try:
-            from agent.task_manager import task_position
+            from agent.task_manager import task_plan_ref, task_position
 
-            position, total = task_position(store, notice.get("id"))
+            # The position form belongs to a plan's rows alone, exactly as on
+            # the start line: a row carrying no plan ref is not in a plan's
+            # sequence, so it keeps the plain form rather than being numbered
+            # against the whole list.
+            if task_plan_ref(store, notice.get("id")):
+                position, total = task_position(store, notice.get("id"))
+            else:
+                position, total = 0, 0
         except Exception:  # pragma: no cover - defensive
             position, total = 0, 0
         line = (
@@ -129,6 +137,7 @@ def format_notice(notice: Dict[str, Any], store: "TodoStore") -> str:
                 plan_final_row_id,
                 plan_is_complete,
                 plan_task_total,
+                task_plan_ref,
                 task_position,
             )
 
@@ -143,7 +152,14 @@ def format_notice(notice: Dict[str, Any], store: "TodoStore") -> str:
                     f"🏁 Plan complete: all {plan_task_total(store, plan_ref)} "
                     f"tasks done ({plan_ref})"
                 )
-            position, total = task_position(store, notice.get("id"))
+            # The position form belongs to a plan's rows alone, exactly as on
+            # the start line: a row carrying no plan ref is not in a plan's
+            # sequence, so it keeps the plain form rather than being numbered
+            # against the whole list.
+            if task_plan_ref(store, notice.get("id")):
+                position, total = task_position(store, notice.get("id"))
+            else:
+                position, total = 0, 0
         except Exception:  # pragma: no cover - defensive
             position, total = 0, 0
         if position:
