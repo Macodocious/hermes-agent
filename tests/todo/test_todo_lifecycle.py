@@ -88,17 +88,17 @@ def test_complete_finalizes_the_task(store: TodoStore) -> None:
     assert store.read()[0]["status"] == "completed"
 
 
-def test_complete_leaves_the_next_task_pending(store: TodoStore) -> None:
-    """Completing a task does not promote the next one.
+def test_complete_promotes_the_next_task(store: TodoStore) -> None:
+    """Completing a task begins the next one from the store.
 
-    A promotion would record a start notice at this task's completion, so the
-    next task's ``▶️ Working on:`` line would fire at the wrong moment. The
-    agent begins the next task itself.
+    The promotion records the next task's start at this completion, so its
+    ``▶️ Working on:`` line fires at its real beginning instead of waiting on
+    an agent ``begin`` that arrives after the work is already done.
     """
     store.transition("begin", "1")
     store.transition("complete", "1")
     statuses = {i["id"]: i["status"] for i in store.read()}
-    assert statuses == {"1": "completed", "2": "pending"}
+    assert statuses == {"1": "completed", "2": "in_progress"}
 
 
 def test_complete_with_no_pending_sibling_activates_nothing() -> None:
