@@ -50,17 +50,19 @@ def test_three_item_plan_reaches_all_terminal() -> None:
     assert statuses == {"1": "completed", "2": "completed", "3": "completed"}
 
 
-def test_next_sibling_stays_pending_on_complete() -> None:
-    """A completion does not promote the next sibling.
+def test_complete_promotes_the_next_sibling() -> None:
+    """A completion promotes the next sibling and records its start there.
 
-    A promotion would record a start notice at this task's completion, so the
-    next task's ``▶️ Working on:`` line would fire at the wrong moment.
+    The promotion is what anchors a start line to the task's real beginning:
+    the store knows which task is current the moment this one ends, so the
+    next task's ``▶️ Working on:`` line fires at that transition instead of
+    waiting on an agent ``begin`` that arrives after the work is already done.
     """
     store = TodoStore()
     _seed_plan(store)
     store.transition("begin", "1")
     store.transition("complete", "1")
-    assert _statuses(store)["2"] == "pending"
+    assert _statuses(store)["2"] == "in_progress"
 
 
 def test_plan_is_complete_reports_when_all_terminal() -> None:

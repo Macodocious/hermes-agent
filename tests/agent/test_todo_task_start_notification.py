@@ -25,15 +25,29 @@ class TestStoreIsTheStartProducer:
 
     def test_start_line_names_the_ordered_position(self):
         store = _store_with([
-            {"id": "1", "content": "done one", "status": "completed"},
-            {"id": "2", "content": "done two", "status": "completed"},
-            {"id": "3", "content": "ship the feature", "status": "pending"},
+            {"id": "1", "content": "done one", "status": "completed", "plan": "p"},
+            {"id": "2", "content": "done two", "status": "completed", "plan": "p"},
+            {"id": "3", "content": "ship the feature", "status": "pending", "plan": "p"},
         ])
         assert store.transition("begin", "3")["ok"] is True
         notice = [n for n in store.pending_notices() if n["kind"] == NOTICE_STARTED][-1]
         assert format_notice(notice, store) == (
             "▶️ Working on task 3 of 3: ship the feature"
         )
+
+    def test_start_line_leaves_a_row_outside_a_plan_unnumbered(self):
+        """A row carrying no plan ref is not in a plan's sequence.
+
+        Numbering the whole list made the store's seed of the opening message
+        read as a plan task, and its total disagreed with the plan line's.
+        """
+        store = _store_with([
+            {"id": "1", "content": "the opening request", "status": "pending"},
+            {"id": "2", "content": "ship the feature", "status": "pending", "plan": "p"},
+        ])
+        assert store.transition("begin", "1")["ok"] is True
+        notice = [n for n in store.pending_notices() if n["kind"] == NOTICE_STARTED][-1]
+        assert format_notice(notice, store) == "▶️ Working on: the opening request"
 
     def test_start_line_falls_back_without_a_position(self):
         # A notice whose row has left the store still renders, bare.
