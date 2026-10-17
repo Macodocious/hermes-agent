@@ -1030,6 +1030,25 @@ def _reissue_climb_is_spent(agent, reissues: int) -> bool:
     )
 
 
+def _reissues_to_reach_cap(agent) -> int:
+    """The reissue count whose compounded temperature reaches the cap.
+
+    The truncation-recovery attempts are sampled at the cap, so each is marked
+    with this count — the same value the climb is spent at, whatever the context
+    resolves to.  A context already at or above the cap needs no climb, so the
+    count is zero and the call samples the resolved value.
+    """
+    resolved = _resolve_effective_temperature(agent)
+    base = resolved if resolved is not None else 0.0
+    return max(
+        0,
+        math.ceil(
+            (REASONING_LOOP_REISSUE_TEMPERATURE_CAP - base)
+            / REASONING_LOOP_REISSUE_TEMPERATURE_DELTA
+        ),
+    )
+
+
 def _resolve_effective_temperature(agent) -> Optional[float]:
     """Resolve the temperature to send for this API call.
 

@@ -61,7 +61,7 @@ from agent.model_metadata import (
     parse_available_output_tokens_from_error,
     save_context_length,
 )
-from agent.chat_completion_helpers import _reissue_climb_is_spent
+from agent.chat_completion_helpers import _reissue_climb_is_spent, _reissues_to_reach_cap
 from agent.process_bootstrap import _install_safe_stdio
 from agent.prompt_caching import apply_anthropic_cache_control
 from agent.retry_utils import (
@@ -2296,6 +2296,16 @@ def run_conversation(
                                 }
                                 messages.append(continue_msg)
                                 agent._session_messages = messages
+                                # The four attempts before the stop notice are
+                                # sampled at the cap: the recovery is the capped
+                                # call's continuation, so it must not fall back to
+                                # the temperature that produced the loop.  The
+                                # mark is consumed by this attempt's request.
+                                setattr(
+                                    agent,
+                                    REASONING_LOOP_REISSUE_ATTR,
+                                    _reissues_to_reach_cap(agent),
+                                )
                                 _retry.restart_with_length_continuation = True
                                 break
 
