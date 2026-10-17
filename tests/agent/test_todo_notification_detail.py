@@ -143,8 +143,10 @@ class TestPlanCompleteNotice:
         # The plan's non-final task reports itself, numbered within the plan
         # so its total matches the plan line's count.
         assert "✅ Task 1 of 2 complete: a" in lines
-        # The un-tagged seed row still reports its own position.
-        assert "✅ Task 1 of 3 complete: seed" in lines
+        # The un-tagged seed row is not in the plan's sequence, so it reports
+        # itself without a position rather than being numbered against the
+        # whole list.
+        assert "✅ Task completed: seed" in lines
 
     def test_plan_line_waits_for_the_final_task(self):
         store = _store([
@@ -243,5 +245,47 @@ class TestPostWriteNoticeEmission:
 
         assert sent == [
             "▶️ Working on: ship it",
-            "✅ Task 1 of 1 complete: ship it",
+            "✅ Task completed: ship it",
         ]
+
+
+class TestCancelledNoticePosition:
+    """The cancelled line's position belongs to a plan's rows alone.
+
+    A row carrying no plan ref is not in a plan's sequence, so it reports
+    itself without a position rather than being numbered against the whole
+    list — the same rule the start and completion lines follow.
+    """
+
+    @staticmethod
+    def _cancelled_line(store, item_id):
+        from tools.todo_tool import format_notice
+
+        store.transition("cancel", item_id, "not needed")
+        return [
+            line
+            for line in (format_notice(n, store) for n in store.drain_notices())
+            if line
+        ][-1]
+
+    def test_a_row_without_a_plan_ref_reports_no_position(self):
+        store = _store([
+            {"id": "1", "content": "seed", "status": "pending"},
+            {"id": "2", "content": "a", "status": "pending", "plan": "p"},
+        ])
+        store.transition("begin", "1")
+
+        assert self._cancelled_line(store, "1") == (
+            "🚫 Cancelled: seed\n  reason: not needed"
+        )
+
+    def test_a_plan_row_is_numbered_within_its_plan(self):
+        store = _store([
+            {"id": "1", "content": "a", "status": "pending", "plan": "p"},
+            {"id": "2", "content": "b", "status": "pending", "plan": "p"},
+        ])
+        store.transition("begin", "1")
+
+        assert self._cancelled_line(store, "1") == (
+            "🚫 Cancelled task 1 of 2: a\n  reason: not needed"
+        )
