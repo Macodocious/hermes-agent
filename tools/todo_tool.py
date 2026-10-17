@@ -384,6 +384,14 @@ class TodoStore:
                         status = str(t["status"]).strip().lower()
                         if status in VALID_STATUSES:
                             existing[item_id]["status"] = status
+                    # The plan and spec references are model-authorable (see
+                    # _validate), so a merge update carries them too. The plan's
+                    # first task adopts the row the store seeded from the user's
+                    # opening message by gaining these references, and a merge
+                    # that dropped them would leave the adopted row unbound.
+                    for reference in ("plan", "spec"):
+                        if isinstance(t.get(reference), str) and str(t[reference]).strip():
+                            existing[item_id][reference] = str(t[reference]).strip()
                 else:
                     # New item -- validate fully, assign the next sequential
                     # id (merge mode keeps existing ids stable so merge-by-id
