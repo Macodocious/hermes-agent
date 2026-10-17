@@ -99,6 +99,35 @@ class TestMergeMode:
         items = store.read()
         assert len(items) == 2
 
+    def test_merge_carries_the_plan_and_spec_references(self):
+        """A merge update carries the plan and spec references.
+
+        The plan's first task adopts the row the store seeded from the user's
+        opening message by gaining these references, so a merge that dropped
+        them would leave the adopted row unbound from its plan.
+        """
+        store = TodoStore()
+        store.write([{"id": "1", "content": "Ship the thing", "status": "pending"}])
+        store.write(
+            [{"id": "1", "plan": "/plans/p/plan.md", "spec": "/plans/p/alpha.md"}],
+            merge=True,
+        )
+        items = store.read()
+        assert len(items) == 1
+        assert items[0]["plan"] == "/plans/p/plan.md"
+        assert items[0]["spec"] == "/plans/p/alpha.md"
+        # The fields the merge already carried are untouched.
+        assert items[0]["content"] == "Ship the thing"
+
+    def test_merge_leaves_an_absent_reference_alone(self):
+        """A merge update that names no reference does not clear one."""
+        store = TodoStore()
+        store.write([
+            {"id": "1", "content": "Ship the thing", "status": "pending", "plan": "/plans/p/plan.md"},
+        ])
+        store.write([{"id": "1", "status": "completed"}], merge=True)
+        assert store.read()[0]["plan"] == "/plans/p/plan.md"
+
 
 class TestTodoToolFunction:
     def test_read_mode(self):
