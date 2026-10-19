@@ -739,8 +739,15 @@ class TodoStore:
                         "(it renders beneath the cancelled item)"
                     ),
                 }
+            was_current = item["status"] == "in_progress"
             item["status"] = "cancelled"
             item["reason"] = self._cap_content(reason)
+            if was_current:
+                # Cancelling the current task is a terminal move like
+                # completing it: the next open row becomes current in the same
+                # commit, so the lifecycle never leaves the agent with no task
+                # to work on. Cancelling a later row moves nothing.
+                self._promote_successor(item)
             return {"ok": True, "item": item.copy()}
         # action == "complete": only the head may close, and its successor —
         # the next row that is neither completed nor cancelled — becomes
@@ -758,6 +765,17 @@ class TodoStore:
                 ),
             }
         item["status"] = "completed"
+        self._promote_successor(item)
+        return {"ok": True, "item": item.copy()}
+
+    def _promote_successor(self, item: Dict[str, Any]) -> None:
+        """Make the next open row current — the successor rule, in one place.
+
+        A successor is the next row after ``item`` that is neither completed
+        nor cancelled: a paused row becomes current rather than being
+        stranded, and a closed row is skipped. The list is a sequence, so
+        there is at most one candidate.
+        """
         position = self._items.index(item)
         nxt = next(
             (
@@ -769,7 +787,6 @@ class TodoStore:
         )
         if nxt is not None:
             nxt["status"] = "in_progress"
-        return {"ok": True, "item": item.copy()}
 
     def _record_notice(
         self,

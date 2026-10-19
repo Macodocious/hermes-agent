@@ -48,10 +48,10 @@ PLAN_COMPLETED_STATUS = "completed"
 # finalize and plan-next nudges are gone.
 LIFECYCLE_AUDIT_NUDGE = (
     "[You did work this turn, but no task is open]\n"
-    "Every task must be started with todo action=begin before work, and "
-    "ended with action=complete (or action=cancel with a reason) when you "
-    "stop. Begin the task you were working on, or explain why no task "
-    "applies."
+    "Start the task with todo action=begin before the work, and close it with "
+    "action=complete (or action=cancel with a reason) when the work is done. "
+    "Completing or cancelling the current task makes the next one current by "
+    "itself — there is nothing to ask."
 )
 
 # Task-status grouping for the one status-query owner (_items_with_status).
@@ -472,21 +472,13 @@ def audit_turn_end(
         # read — the next turn must earn its own exemption.
         agent._task_lifecycle_action_issued = False
         return None
-    # R1: an open task is no longer a blanket exemption. The plan is the
-    # work contract — when the open task carries a plan, a substantive
-    # turn whose tool calls do not advance that plan is drift and becomes
-    # nudgeable (kills the D1 hole: audit silent while any task is open).
-    # Without a plan ref there is no contract yet to drift from, so the
-    # single-item exemption stands (simple tasks run unchanged).
-    #
-    # R2: the open task must be the one the turn advanced. A turn that
-    # works while a *different* task is open — or that leaves the open task
-    # untouched — is the end-of-plan burst in miniature: the list is not
-    # current, so the turn does not end cleanly.
-    current = _current_item(agent)
-    if current is not None:
-        if not _advances_open_plan(tool_names or []):
-            return LIFECYCLE_AUDIT_NUDGE
+    # An open task is the lifecycle being in control: the current task is set,
+    # so the turn is working on it by definition. The audit exists for the
+    # other case — substantive work with nothing open — and it must not fire
+    # here. Which tool a turn used says nothing about whether it advanced the
+    # current task, and a registry lookup that returns None for an unimported
+    # tool made genuine work count as none.
+    if _current_item(agent) is not None:
         return None
     store = getattr(agent, "_todo_store", None)
     if store is None or not store.has_items():
@@ -500,26 +492,3 @@ def audit_turn_end(
         # task work — leave it alone.
         return None
     return LIFECYCLE_AUDIT_NUDGE
-
-
-# Toolsets that count as advancing the open task's plan: the lifecycle lever
-# (todo transitions) and plan authoring. A substantive turn whose tool calls
-# contain none of these — while an open task carries a plan — is work outside
-# the plan and gets nudged.
-#
-# Membership is resolved by TOOLSET through the registry, not by tool name.
-# The plan-authoring tools are owned by the write_plan plugin and get renamed
-# as that surface evolves; the earlier name-set + `plan_` prefix could not
-# track a rename and silently stopped matching every plan tool at once, which
-# fired the out-of-plan nudge on genuine plan work. A toolset is the stable
-# contract.
-_ADVANCE_TOOLSETS = frozenset({"todo", "write_plan", "file", "terminal"})
-
-def _advances_open_plan(tool_names: Optional[list]) -> bool:
-    """True when the turn's tool calls show work on the open task's plan."""
-    from tools.registry import registry
-
-    return any(
-        registry.get_toolset_for_tool(name) in _ADVANCE_TOOLSETS
-        for name in tool_names or []
-    )
