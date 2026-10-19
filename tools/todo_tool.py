@@ -15,10 +15,13 @@ Design:
 """
 
 import json
+import logging
 import re
 import threading
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
+
+logger = logging.getLogger(__name__)
 
 
 # Valid status values for todo items. The agent owns every state end to
@@ -752,7 +755,15 @@ class TodoStore:
             "plan": str(item.get("plan", "")),
         })
         if len(self._notices) > MAX_TODO_NOTICES:
+            dropped = len(self._notices) - MAX_TODO_NOTICES
             self._notices = self._notices[-MAX_TODO_NOTICES:]
+            # A dropped line is a transition the user never sees. The cap only
+            # bites when nothing is draining, so say so rather than lose it.
+            logger.warning(
+                "todo: dropped %d lifecycle notice(s) at the %d cap",
+                dropped,
+                MAX_TODO_NOTICES,
+            )
 
     def drain_notices(self, count: Optional[int] = None) -> List[Dict[str, Any]]:
         """Return the pending lifecycle notices and clear them.

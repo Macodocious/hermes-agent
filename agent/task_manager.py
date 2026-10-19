@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -342,44 +343,76 @@ def _write_plan_completion_mark(store: Any) -> None:
             logger.warning("task_manager: plan completion mark for %r failed: %s", ref, exc)
 
 
-def _emit_pending_notices(agent: Any) -> None:
-    """Hand the store's pending lifecycle notices to the delivery callback.
+# One drain at a time. Two tool threads can finish a transition at the same
+# moment; the queue is ordered, so the consumer that empties it must be single
+# or two sends race into the transport and the order the store committed is
+# lost at the last step.
+_NOTICE_DRAIN_LOCK = threading.Lock()
 
-    The turn-end drain is too late for a start line: a task begun and finished
-    inside one turn would report its start next to its completion. This runs
-    right after the write that produced the transition, so the line ships at
-    the transition itself.
 
-    Only the notices the callback actually took are drained. A callback that
-    raises, or that reports a refusal by returning ``False``, leaves that
-    notice and everything behind it queued for the turn-end drain — the
-    callback's own staleness guard must not be able to destroy a transition
-    the store has already recorded.
+def _await_delivery(result: Any) -> bool:
+    """True when the callback's return value says the line was delivered.
+
+    The contract: a boolean is honoured as-is, and anything carrying
+    ``result()`` is a send handed to another thread that must finish before the
+    next line is issued. Scheduling is not delivery — the gateway callback used
+    to return True on the handoff, which is how two lines from one commit
+    arrived inverted.
     """
-    callback = getattr(agent, "todo_notice_callback", None)
-    if callback is None:
-        return
+    if result is False:
+        return False
+    waiter = getattr(result, "result", None)
+    if waiter is None:
+        return True
+    waiter()
+    return True
+
+
+def _emit_pending_notices(agent: Any) -> None:
+    """Deliver the store's pending lifecycle notices, one at a time.
+
+    This is the single consumer of the notice queue. It runs right after the
+    write that produced the transition, so a line ships at the transition
+    itself rather than at the end of the turn.
+
+    Each line is delivered before the next is issued, and a notice leaves the
+    queue only once its send has resolved. A send that fails, or a callback
+    that reports a refusal by returning ``False``, stops the drain and leaves
+    that notice and everything behind it queued — a transition the store has
+    already recorded is never destroyed by a delivery failure.
+    """
     store = getattr(agent, "_todo_store", None)
     if store is None:
         return
-    delivered = 0
-    try:
-        from tools.todo_tool import format_notice
+    callback = getattr(agent, "todo_notice_callback", None)
+    if callback is None:
+        # No consumer is a fault, not a queue: a notice held here would ship
+        # later as a burst, which is the grouping this path exists to prevent.
+        pending = store.pending_notices()
+        if pending:
+            logger.warning(
+                "task_manager: %d lifecycle notice(s) with no consumer attached",
+                len(pending),
+            )
+        return
+    with _NOTICE_DRAIN_LOCK:
+        delivered = 0
+        try:
+            from tools.todo_tool import format_notice
 
-        # One notice, one message. Joining them welds a start line under the
-        # completion that produced it, and delivers a whole turn's backlog as
-        # one block instead of at the transitions themselves.
-        for notice in store.pending_notices():
-            line = format_notice(notice, store)
-            # A notice that renders to nothing has nothing to deliver, so it
-            # is spent rather than left to block the queue behind it.
-            if line and callback(line) is False:
-                break
-            delivered += 1
-    except Exception as exc:
-        logger.debug("task_manager: lifecycle notice emission failed: %s", exc)
-    if delivered:
-        store.drain_notices(delivered)
+            # One notice, one message. Joining them welds a start line under
+            # the completion that produced it.
+            for notice in store.pending_notices():
+                line = format_notice(notice, store)
+                # A notice that renders to nothing has nothing to deliver, so
+                # it is spent rather than left to block the queue behind it.
+                if line and not _await_delivery(callback(line)):
+                    break
+                delivered += 1
+        except Exception as exc:
+            logger.warning("task_manager: lifecycle notice delivery failed: %s", exc)
+        if delivered:
+            store.drain_notices(delivered)
 
 
 def on_todo_write(agent: Any, args: Dict[str, Any]) -> None:
