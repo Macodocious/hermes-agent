@@ -80,6 +80,19 @@ def render_task_board_with_ids(items: List[Dict[str, Any]]) -> List[str]:
     ]
 
 
+def _frozen_position(notice: Dict[str, Any]):
+    """The position frozen at commit, or None when this notice predates it.
+
+    None means "ask the store", which only a notice queued by an older build
+    can produce; every notice recorded now carries its own label.
+    """
+    if "in_plan" not in notice:
+        return None
+    if not notice.get("in_plan"):
+        return 0, 0
+    return int(notice.get("position") or 0), int(notice.get("total") or 0)
+
+
 def format_notice(notice: Dict[str, Any], store: "TodoStore") -> str:
     """Render one store lifecycle notice as a user-facing line.
 
@@ -98,36 +111,44 @@ def format_notice(notice: Dict[str, Any], store: "TodoStore") -> str:
     kind = str(notice.get("kind") or "")
     content = str(notice.get("content") or "(no description)")
     if kind == NOTICE_STARTED:
-        try:
-            from agent.task_manager import task_plan_ref, task_position
+        frozen = _frozen_position(notice)
+        if frozen is not None:
+            position, total = frozen
+        else:
+            try:
+                from agent.task_manager import task_plan_ref, task_position
 
-            # Numbering the whole list made the store's seed of the opening
-            # message read as a plan task — "task 1 of 2" where the plan line
-            # said "all 1" — so the position is emitted only where a plan ref
-            # anchors it, and every other row keeps the plain form.
-            if task_plan_ref(store, notice.get("id")):
-                position, total = task_position(store, notice.get("id"))
-            else:
+                # Numbering the whole list made the store's seed of the opening
+                # message read as a plan task — "task 1 of 2" where the plan line
+                # said "all 1" — so the position is emitted only where a plan ref
+                # anchors it, and every other row keeps the plain form.
+                if task_plan_ref(store, notice.get("id")):
+                    position, total = task_position(store, notice.get("id"))
+                else:
+                    position, total = 0, 0
+            except Exception:  # pragma: no cover - defensive
                 position, total = 0, 0
-        except Exception:  # pragma: no cover - defensive
-            position, total = 0, 0
         if position:
             return f"▶️ Working on task {position} of {total}: {content}"
         return f"▶️ Working on: {content}"
     if kind == NOTICE_CANCELLED:
-        try:
-            from agent.task_manager import task_plan_ref, task_position
+        frozen = _frozen_position(notice)
+        if frozen is not None:
+            position, total = frozen
+        else:
+            try:
+                from agent.task_manager import task_plan_ref, task_position
 
-            # The position form belongs to a plan's rows alone, exactly as on
-            # the start line: a row carrying no plan ref is not in a plan's
-            # sequence, so it keeps the plain form rather than being numbered
-            # against the whole list.
-            if task_plan_ref(store, notice.get("id")):
-                position, total = task_position(store, notice.get("id"))
-            else:
+                # The position form belongs to a plan's rows alone, exactly as on
+                # the start line: a row carrying no plan ref is not in a plan's
+                # sequence, so it keeps the plain form rather than being numbered
+                # against the whole list.
+                if task_plan_ref(store, notice.get("id")):
+                    position, total = task_position(store, notice.get("id"))
+                else:
+                    position, total = 0, 0
+            except Exception:  # pragma: no cover - defensive
                 position, total = 0, 0
-        except Exception:  # pragma: no cover - defensive
-            position, total = 0, 0
         line = (
             f"🚫 Cancelled task {position} of {total}: {content}"
             if position
@@ -160,7 +181,10 @@ def format_notice(notice: Dict[str, Any], store: "TodoStore") -> str:
             # the start line: a row carrying no plan ref is not in a plan's
             # sequence, so it keeps the plain form rather than being numbered
             # against the whole list.
-            if task_plan_ref(store, notice.get("id")):
+            frozen = _frozen_position(notice)
+            if frozen is not None:
+                position, total = frozen
+            elif task_plan_ref(store, notice.get("id")):
                 position, total = task_position(store, notice.get("id"))
             else:
                 position, total = 0, 0
@@ -591,10 +615,17 @@ class TodoStore:
             kind = _NOTICE_FOR_STATUS.get(status)
             if kind is None:
                 continue
-            transitions.append((_NOTICE_RANK.get(kind, 2), position, kind, item))
+            transitions.append(
+                (_NOTICE_RANK.get(kind, 2), position, kind, item, prior_status)
+            )
         transitions.sort(key=lambda entry: (entry[0], entry[1]))
-        for _rank, _position, kind, item in transitions:
-            self._record_notice(kind, item)
+        for _rank, _position, kind, item, prior_status in transitions:
+            self._record_notice(
+                kind,
+                item,
+                from_status=prior_status,
+                to_status=str(item.get("status", "")),
+            )
 
     def transition(self, action: str, item_id: Any, reason: str = "") -> Dict[str, Any]:
         """Apply a lifecycle action to one task.
@@ -740,19 +771,53 @@ class TodoStore:
             nxt["status"] = "in_progress"
         return {"ok": True, "item": item.copy()}
 
-    def _record_notice(self, kind: str, item: Dict[str, Any]) -> None:
+    def _record_notice(
+        self,
+        kind: str,
+        item: Dict[str, Any],
+        *,
+        from_status: str = "",
+        to_status: str = "",
+    ) -> None:
         """Record a user-facing lifecycle notice for the emitter to drain.
+
+        The label is frozen here, at commit: the row's position, the plan's
+        total, and the status pair are what the transition meant when it
+        happened. Rendering reads these instead of the live list, so a
+        replace-mode write or a merge that renumbers rows afterwards cannot
+        make the line describe a different row.
+
+        Numbering is plan-scoped, matching what the renderer has always
+        printed: a row carrying no plan ref is not in a plan's sequence, so it
+        carries no position.
 
         Bounded to MAX_TODO_NOTICES keeping the most recent: the emitter
         drains every turn, so the cap only bites when notices are never
         emitted (a headless run), and the newest transition must survive.
         """
+        ref = str(item.get("plan", "")).strip()
+        position, total = 0, 0
+        if ref:
+            plan_rows = [
+                row
+                for row in self._items
+                if str(row.get("plan", "")).strip() == ref
+            ]
+            for offset, row in enumerate(plan_rows, start=1):
+                if str(row.get("id", "")) == str(item.get("id", "")):
+                    position, total = offset, len(plan_rows)
+                    break
         self._notices.append({
             "kind": kind,
             "id": str(item.get("id", "")),
             "content": str(item.get("content", "")),
             "reason": str(item.get("reason", "")),
             "plan": str(item.get("plan", "")),
+            "position": position,
+            "total": total,
+            "from": str(from_status),
+            "to": str(to_status),
+            "in_plan": bool(ref),
         })
         if len(self._notices) > MAX_TODO_NOTICES:
             dropped = len(self._notices) - MAX_TODO_NOTICES

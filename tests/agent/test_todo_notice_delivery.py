@@ -8,7 +8,7 @@ failed send leaving the queue intact from that line onward.
 import logging
 
 from agent import task_manager
-from tools.todo_tool import TodoStore
+from tools.todo_tool import TodoStore, format_notice
 
 
 class _Send:
@@ -129,3 +129,32 @@ def test_a_refused_line_stays_queued():
     task_manager._emit_pending_notices(_agent(store, lambda line: False))
 
     assert len(store.pending_notices()) == 1
+
+
+def test_the_label_is_frozen_at_commit():
+    """A later rewrite of the list cannot change what a notice describes."""
+    store = TodoStore()
+    store.write(
+        [
+            {"id": "1", "content": "First", "status": "completed", "plan": "p.md"},
+            {"id": "2", "content": "Second", "status": "in_progress", "plan": "p.md"},
+            {"id": "3", "content": "Third", "status": "pending", "plan": "p.md"},
+        ]
+    )
+    store.drain_notices()
+    store.transition("complete", "2")
+    notice = next(n for n in store.pending_notices() if n["kind"] == "completed")
+    rendered = format_notice(notice, store)
+
+    # Drop a row and renumber: the completed row is now first of two.
+    store.write(
+        [
+            {"id": "9", "content": "Second", "status": "completed", "plan": "p.md"},
+            {"id": "8", "content": "Third", "status": "in_progress", "plan": "p.md"},
+        ]
+    )
+
+    assert notice["position"] == 2
+    assert notice["total"] == 3
+    assert format_notice(notice, store) == rendered
+    assert "Task 2 of 3" in rendered
