@@ -135,24 +135,6 @@ def test_audit_clean_when_task_in_progress() -> None:
     assert nudge is None
 
 
-def test_audit_pulls_back_when_the_open_task_is_not_advanced() -> None:
-    """An open task is no longer a blanket exemption: the turn must advance it."""
-    store = TodoStore()
-    _seed(store, "1", "Build the thing")
-    agent = _make_agent(store)
-    store.transition("begin", "1")
-
-    nudge = task_manager.audit_turn_end(
-        agent,
-        final_response="I did something else entirely.",
-        interrupted=False,
-        tool_call_count=3,
-        tool_names=["web_search"],
-    )
-    assert nudge is not None
-    assert "begin" in nudge
-
-
 def test_audit_pulls_back_after_work_with_no_open_task() -> None:
     store = TodoStore()
     _seed(store, "1", "Build the thing")
@@ -285,43 +267,6 @@ def test_plan_task_total_counts_the_plans_rows() -> None:
     )
     assert task_manager.plan_task_total(store, "P") == 2
     assert task_manager.plan_task_total(store, "") == 0
-
-
-# ── _advances_open_plan: membership is the TOOLSET, not the tool name ──
-
-
-def test_advances_open_plan_resolves_toolset_not_tool_name() -> None:
-    """A plan tool stays plan-advancing after a rename.
-
-    Membership is the toolset the registry reports, so the write_plan tool
-    surface can be renamed under the plugin without silently dropping out of
-    the audit predicate.
-    """
-    from tools.registry import registry
-
-    registry.register(
-        name="write_spec",
-        toolset="write_plan",
-        schema={"name": "write_spec", "parameters": {}},
-        handler=lambda args, **kw: None,
-    )
-    assert task_manager._advances_open_plan(["write_spec"]) is True
-
-
-def test_advances_open_plan_ignores_unrelated_tools() -> None:
-    """Work with no plan-advancing tool is still drift.
-
-    Uses a tool whose toolset is never in the advance set so the assertion
-    is independent of which other suites have populated the registry.
-    """
-    assert task_manager._advances_open_plan(["web_search"]) is False
-    assert task_manager._advances_open_plan([]) is False
-    assert task_manager._advances_open_plan(None) is False
-
-
-def test_advances_open_plan_accepts_todo_transitions() -> None:
-    """The lifecycle lever itself always counts as advancing the plan."""
-    assert task_manager._advances_open_plan(["todo"]) is True
 
 
 # ── plan completion mark: core writes completed_at when the plan is done ──

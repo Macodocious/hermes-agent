@@ -217,3 +217,38 @@ def test_complete_records_start_and_complete_notices() -> None:
     s.transition("complete", "1")
     assert [n["kind"] for n in s.drain_notices()] == ["started", "completed"]
     assert s.drain_notices() == []
+
+
+def test_cancelling_the_current_task_makes_the_next_one_current() -> None:
+    """Cancel is terminal like complete: the sequence keeps moving."""
+    s = TodoStore()
+    s.write(
+        [
+            {"id": "1", "content": "A", "status": "pending"},
+            {"id": "2", "content": "B", "status": "pending"},
+        ]
+    )
+    s.transition("begin", "1")
+
+    s.transition("cancel", "1", "not needed after all")
+
+    statuses = {i["id"]: i["status"] for i in s.read()}
+    assert statuses == {"1": "cancelled", "2": "in_progress"}
+
+
+def test_cancelling_a_later_task_moves_nothing() -> None:
+    """Only the current task's cancellation promotes; dropping a later row is local."""
+    s = TodoStore()
+    s.write(
+        [
+            {"id": "1", "content": "A", "status": "pending"},
+            {"id": "2", "content": "B", "status": "pending"},
+            {"id": "3", "content": "C", "status": "pending"},
+        ]
+    )
+    s.transition("begin", "1")
+
+    s.transition("cancel", "3", "dropped from the plan")
+
+    statuses = {i["id"]: i["status"] for i in s.read()}
+    assert statuses == {"1": "in_progress", "2": "pending", "3": "cancelled"}
