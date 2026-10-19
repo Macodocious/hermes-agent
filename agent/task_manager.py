@@ -405,43 +405,6 @@ def on_todo_write(agent: Any, args: Dict[str, Any]) -> None:
     _persist(agent)
 
 
-def on_tool_call(agent: Any, tool_name: str) -> None:
-    """Begin the current task the moment work on it starts.
-
-    The store already knows which task is current the moment the previous one
-    ends (the ``complete`` promotion). This is the same fact at the other end
-    of the turn: work is what begins a task, so the start is taken from it
-    rather than waiting on an agent ``begin`` that arrives after the work is
-    done — which is how a turn that defers every transition to its end emits
-    the whole lifecycle as one burst, with the start line beside the
-    completion instead of at the task's real begin.
-
-    One task executes at a time: while a task is ``in_progress`` this is a
-    no-op, and the store refuses a second ``begin`` regardless. The transition
-    is the store's own door, so the notice, the ordering and the persistence
-    are the ones every other transition already goes through. When
-    ``tasks.lifecycle.enabled`` is false the hook is a no-op.
-    """
-    if not _lifecycle_enabled():
-        return
-    store = getattr(agent, "_todo_store", None)
-    if store is None:
-        return
-    from tools.registry import registry
-
-    if registry.get_toolset_for_tool(tool_name) not in _WORK_TOOLSETS:
-        return
-    if _current_item(agent) is not None:
-        return
-    pending = _items_with_status(store, ("pending",))
-    if not pending:
-        return
-    store.transition("begin", pending[0]["id"])
-    _write_plan_completion_mark(store)
-    _emit_pending_notices(agent)
-    _persist(agent)
-
-
 def audit_turn_end(
     agent: Any,
     *,
@@ -518,14 +481,6 @@ def audit_turn_end(
 # fired the out-of-plan nudge on genuine plan work. A toolset is the stable
 # contract.
 _ADVANCE_TOOLSETS = frozenset({"todo", "write_plan", "file", "terminal"})
-
-# Toolsets whose calls are work on the machine, so a call in one of them is the
-# moment the current task begins. ``todo`` and ``write_plan`` are excluded: the
-# transitions themselves and the plan authoring that precedes them are
-# bookkeeping, not work on a task. Resolved by toolset through the registry for
-# the same reason _ADVANCE_TOOLSETS is — a toolset is the stable contract.
-_WORK_TOOLSETS = frozenset({"file", "terminal"})
-
 
 def _advances_open_plan(tool_names: Optional[list]) -> bool:
     """True when the turn's tool calls show work on the open task's plan."""
