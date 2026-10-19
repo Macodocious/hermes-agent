@@ -262,11 +262,13 @@ class TestCancelledNoticePosition:
         from tools.todo_tool import format_notice
 
         store.transition("cancel", item_id, "not needed")
-        return [
-            line
-            for line in (format_notice(n, store) for n in store.drain_notices())
-            if line
-        ][-1]
+        # Cancelling the current task also starts its successor, so the line
+        # under test is selected by kind rather than by being last.
+        return next(
+            format_notice(notice, store)
+            for notice in store.drain_notices()
+            if notice["kind"] == "cancelled"
+        )
 
     def test_a_row_without_a_plan_ref_reports_no_position(self):
         store = _store([
