@@ -51,34 +51,67 @@ def test_pause_then_resume(store: TodoStore) -> None:
     assert resumed["item"]["status"] == "in_progress"
 
 
-def test_pause_opens_the_slot_for_another_task(store: TodoStore) -> None:
+def test_pause_does_not_open_the_slot_for_a_later_task(store: TodoStore) -> None:
+    """Pausing the head keeps it open, so a later task cannot start in front.
+
+    Pause is not a way to skip a task. The head stays the head until it is
+    completed or cancelled, so a later row is refused exactly as it is while
+    the head is in progress.
+    """
     store.transition("begin", "1")
     store.transition("pause", "1")
     result = store.transition("begin", "2")
-    assert result["ok"] is True
-    assert result["item"]["status"] == "in_progress"
+    assert result["ok"] is False
+    assert "task 1" in result["error"]
+    statuses = {i["id"]: i["status"] for i in store.read()}
+    assert statuses == {"1": "paused", "2": "pending"}
 
 
-def test_resume_refused_while_another_task_is_in_progress(store: TodoStore) -> None:
-    store.transition("begin", "2")
-    store.transition("pause", "2")
-    store.transition("begin", "1")
+def test_complete_refused_while_an_earlier_task_is_open() -> None:
+    """Only the head may close. A later row closing first is refused.
+
+    The list is a sequence: a row cannot be finished while the row in front of
+    it is still open, because that is exactly the jump that produced the
+    completion-then-start-before-it notices.
+    """
+    store = TodoStore()
+    store.write(
+        [
+            {"id": "1", "content": "First task", "status": "pending"},
+            {"id": "2", "content": "Second task", "status": "in_progress"},
+        ]
+    )
     before = store.read()
-    result = store.transition("resume", "2")
+    result = store.transition("complete", "2")
     assert result["ok"] is False
     assert "task 1" in result["error"]
     assert store.read() == before
 
 
-def test_resume_allowed_after_the_running_task_is_paused(store: TodoStore) -> None:
-    store.transition("begin", "2")
-    store.transition("pause", "2")
+def test_complete_promotes_the_immediate_successor(store: TodoStore) -> None:
+    """Finishing the head starts the row after it, not the first pending row."""
     store.transition("begin", "1")
-    store.transition("pause", "1")
-    result = store.transition("resume", "2")
-    assert result["ok"] is True
+    assert store.transition("complete", "1")["ok"] is True
     statuses = {i["id"]: i["status"] for i in store.read()}
-    assert statuses == {"1": "paused", "2": "in_progress"}
+    assert statuses == {"1": "completed", "2": "in_progress"}
+
+
+def test_complete_promotes_a_paused_successor() -> None:
+    """A paused row after the head becomes current when the head completes.
+
+    Refusing this instead would deadlock: the paused row cannot resume while
+    the head is open, and the head could not complete while the row is paused.
+    """
+    store = TodoStore()
+    store.write(
+        [
+            {"id": "1", "content": "First task", "status": "in_progress"},
+            {"id": "2", "content": "Second task", "status": "paused"},
+        ]
+    )
+    assert store.transition("complete", "1")["ok"] is True
+    statuses = {i["id"]: i["status"] for i in store.read()}
+    assert statuses == {"1": "completed", "2": "in_progress"}
 
 
 def test_complete_finalizes_the_task(store: TodoStore) -> None:

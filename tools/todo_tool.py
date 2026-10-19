@@ -234,6 +234,13 @@ _NOTICE_FOR_STATUS = {
     "cancelled": NOTICE_CANCELLED,
 }
 _NOTICE_RANK = {NOTICE_COMPLETED: 0, NOTICE_CANCELLED: 0, NOTICE_STARTED: 1}
+# Rows that are still to be worked or are being worked. The head is the first
+# of these, and it is the only row allowed to be in_progress: the list is a
+# sequence, so nothing after the head may start while the head is open.
+_OPEN_STATUSES = frozenset({"pending", "in_progress", "paused"})
+# Terminal rows. A completion never promotes one, and never looks past the
+# first non-terminal row to find something else to start.
+_CLOSED_STATUSES = frozenset({"completed", "cancelled"})
 
 # ---------------------------------------------------------------------------
 # User-message scaffold stripping (P5)
@@ -602,8 +609,12 @@ class TodoStore:
           stored on the row and rendered beneath the struck-through item)
 
         ``begin`` and ``resume`` — the two doors into ``in_progress`` — are
-        each refused while another task is ``in_progress``: one task executes
-        at a time. Anything not listed is refused with an error dict.
+        refused while any earlier row is still open: the in-progress row is
+        always the earliest open row, so the list advances in order. A
+        ``complete`` likewise closes only the head, and promotes the next row
+        that is neither completed nor cancelled — a paused successor becomes
+        current rather than being stranded. Anything not listed is refused
+        with an error dict.
 
         Returns ``{"ok": True, "item": {...}}`` on success or
         ``{"ok": False, "error": "..."}`` on refusal. Never raises.
@@ -614,6 +625,20 @@ class TodoStore:
             if result.get("ok"):
                 self._commit(before)
             return result
+
+    def _earlier_open(self, item_id: str) -> Optional[Dict[str, Any]]:
+        """The first row before ``item_id`` that is still open.
+
+        This is the invariant in one function: the in-progress row is always
+        the earliest open row, so no later row may start, resume, or close
+        while something in front of it is unfinished.
+        """
+        for other in self._items:
+            if other["id"] == item_id:
+                return None
+            if other["status"] in _OPEN_STATUSES:
+                return other
+        return None
 
     def _transition_locked(
         self, action: str, item_id: Any, reason: str
@@ -642,6 +667,16 @@ class TodoStore:
                 ),
             }
         if action in ("begin", "resume"):
+            earlier = self._earlier_open(item_id)
+            if earlier is not None:
+                return {
+                    "ok": False,
+                    "error": (
+                        f"cannot {action} task {item_id}: task {earlier['id']} "
+                        f"is still open ('{earlier['status']}') — complete it, "
+                        f"cancel it with a reason, or move task {item_id} above it"
+                    ),
+                }
             # One task executes at a time: another in_progress task is the
             # one being worked. Refuse, naming it, before mutating.
             for other in self._items:
@@ -673,12 +708,31 @@ class TodoStore:
             item["status"] = "cancelled"
             item["reason"] = self._cap_content(reason)
             return {"ok": True, "item": item.copy()}
-        # action == "complete": finalize the task, then promote the next
-        # pending task. Both status changes are committed together, and
-        # ``_commit`` orders the completion ahead of the start it unlocks, so
-        # the pair can never be announced backwards.
+        # action == "complete": only the head may close, and its successor —
+        # the next row that is neither completed nor cancelled — becomes
+        # current in the same commit. Selecting "the first pending row
+        # anywhere" instead made a completion jump backwards over a paused
+        # row and stranded it; the successor rule has no such case.
+        earlier = self._earlier_open(item_id)
+        if earlier is not None:
+            return {
+                "ok": False,
+                "error": (
+                    f"cannot complete task {item_id}: task {earlier['id']} is "
+                    f"still open ('{earlier['status']}') — complete it, cancel "
+                    f"it with a reason, or move task {item_id} above it"
+                ),
+            }
         item["status"] = "completed"
-        nxt = next((i for i in self._items if i["status"] == "pending"), None)
+        position = self._items.index(item)
+        nxt = next(
+            (
+                other
+                for other in self._items[position + 1:]
+                if other["status"] not in _CLOSED_STATUSES
+            ),
+            None,
+        )
         if nxt is not None:
             nxt["status"] = "in_progress"
         return {"ok": True, "item": item.copy()}
@@ -1237,10 +1291,12 @@ TODO_SCHEMA = {
         "with 3+ steps or when the user provides multiple tasks. "
         "Call with no parameters to read the current list.\n\n"
         "Lifecycle (task state machine):\n"
-        "- begin: start a pending task (it becomes in_progress). Refused "
-        "while another task is in_progress — complete or cancel it first.\n"
+        "- begin: start the earliest unfinished task (it becomes "
+        "in_progress). Refused while any earlier task is still open — "
+        "complete it, cancel it with a reason, or move this task above it.\n"
         "- complete: finish the current task (it becomes completed); the "
-        "next pending task then becomes in_progress automatically.\n"
+        "task after it then becomes in_progress automatically, whether it "
+        "was pending or paused.\n"
         "- cancel: set a task aside (it becomes cancelled). Requires a "
         "reason, which is shown beneath the item. Works on a pending or "
         "in_progress task.\n"
@@ -1266,9 +1322,9 @@ TODO_SCHEMA = {
         "and read back the assigned id.\n"
         "Items tagged source=user are the user's own tasks: you may mark "
         "them completed/cancelled but never silently drop them.\n"
-        "List order is priority. Only ONE item in_progress at a time — "
-        "the store enforces this: starting a new task automatically demotes "
-        "the previous current task to pending.\n"
+        "List order is priority. Only ONE item in_progress at a time, and "
+        "it must be the earliest unfinished task — the store refuses a "
+        "start on any later task while an earlier one is open.\n"
         "Mark items completed immediately when done. If something fails, "
         "cancel it and add a revised item.\n\n"
         "Captured requests: when the response includes 'captures', "

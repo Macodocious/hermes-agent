@@ -2483,18 +2483,6 @@ def invoke_tool(agent, function_name: str, function_args: dict, effective_task_i
             pass
         return result
 
-    # Lifecycle: work begins the task it covers. This dispatch point sees every
-    # call before the tool runs, so a turn that never issues its own ``begin``
-    # still starts the current task at the task's real beginning rather than at
-    # the end of the turn, where the deferred transitions used to land.
-    try:
-        from agent.task_manager import on_tool_call
-        on_tool_call(agent, function_name)
-    except Exception as exc:
-        logger.error(
-            "lifecycle hook on_tool_call failed (tool=%s): %s", function_name, exc
-        )
-
     if function_name == "todo":
         def _execute(next_args: dict) -> Any:
             from tools.todo_tool import todo_tool as _todo_tool
