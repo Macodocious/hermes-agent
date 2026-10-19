@@ -16,6 +16,7 @@ Design:
 
 import json
 import re
+import threading
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 
@@ -222,6 +223,17 @@ NOTICE_CANCELLED = "cancelled"
 # are never emitted (e.g. a headless run); keep the most recent so the newest
 # transition is never lost.
 MAX_TODO_NOTICES = 32
+# The notice a status change produces, and the rank that orders notices
+# within one commit. A completion or cancellation is the cause of the start
+# it unlocks, so it sorts ahead of that start regardless of list position —
+# position is a label, not a sequence. Statuses absent here (pending, paused)
+# produce no notice.
+_NOTICE_FOR_STATUS = {
+    "in_progress": NOTICE_STARTED,
+    "completed": NOTICE_COMPLETED,
+    "cancelled": NOTICE_CANCELLED,
+}
+_NOTICE_RANK = {NOTICE_COMPLETED: 0, NOTICE_CANCELLED: 0, NOTICE_STARTED: 1}
 
 # ---------------------------------------------------------------------------
 # User-message scaffold stripping (P5)
@@ -328,6 +340,13 @@ class TodoStore:
         # cancel transition, drained by the emitter (see drain_notices). The
         # store records them because the store owns the transition.
         self._notices: List[Dict[str, Any]] = []
+        # Serializes every mutation and the notice append that follows it.
+        # Multi-call assistant messages run their tool calls on a thread pool
+        # (agent/tool_executor.py), so two todo calls can reach this store at
+        # once. The lock is what makes queue order equal commit order; it is
+        # not an optimization. Re-entrant because transition() commits from
+        # inside the same critical section it mutates in.
+        self._lock = threading.RLock()
 
     def seed_from_user_message(self, text: Any, origin: str = "") -> Optional[Dict[str, str]]:
         """Seed an empty store with the user's opening message (P5).
@@ -341,17 +360,18 @@ class TodoStore:
         conversation, not a file). Returns the seeded item, or None when
         the text is empty after stripping or the store already has items.
         """
-        if self.has_items():
-            return None
-        content = strip_user_scaffold(text)
-        if not content:
-            return None
-        self._seeded = True
-        item = {"id": "1", "content": self._cap_content(content), "status": "pending", "source": USER_SOURCE}
-        if origin:
-            item["origin"] = origin
-        self._items = [item]
-        return self._items[0].copy()
+        with self._lock:
+            if self.has_items():
+                return None
+            content = strip_user_scaffold(text)
+            if not content:
+                return None
+            self._seeded = True
+            item = {"id": "1", "content": self._cap_content(content), "status": "pending", "source": USER_SOURCE}
+            if origin:
+                item["origin"] = origin
+            self._items = [item]
+            return self._items[0].copy()
 
     def write(self, todos: List[Dict[str, Any]], merge: bool = False) -> List[Dict[str, str]]:
         """
@@ -362,9 +382,12 @@ class TodoStore:
             merge: if False, replace the entire list. If True, update
                    existing items by id and append new ones.
         """
-        # Detect which task (if any) this write starts before mutating the
-        # list, so the invariant enforcement can keep it current.
-        started = self.detect_task_start(todos, merge=merge)
+        with self._lock:
+            return self._write_locked(todos, merge=merge)
+
+    def _write_locked(self, todos: List[Dict[str, Any]], merge: bool) -> List[Dict[str, str]]:
+        """``write`` under the store lock: mutate, derive, commit."""
+        before = self._snapshot()
         # Any model write means the plan is now model-owned: the seeded
         # placeholder (if any) is no longer the only item, so the rename
         # nudge stops rendering.
@@ -416,10 +439,6 @@ class TodoStore:
                     validated["id"] = self._next_item_id()
                     existing[validated["id"]] = validated
                     self._items.append(validated)
-                    # The write-started placeholder resolves to the assigned
-                    # id so the invariant keeps THIS task current.
-                    if started is not None and started["id"] == item_id:
-                        started["id"] = validated["id"]
             # Rebuild _items preserving order for existing items
             seen = set()
             rebuilt = []
@@ -438,9 +457,10 @@ class TodoStore:
         # _enforce_invariants). The started task (if any) is the one that
         # stays current. Replace mode then renumbers to sequential ids;
         # merge mode keeps existing ids stable (merge-by-id stays safe).
-        self._enforce_invariants(started_id=(started or {}).get("id"))
+        self._enforce_invariants(started_id=self._started_id(before))
         if not merge:
             self._renumber_items(self._items)
+        self._commit(before)
         return self.read()
 
     def read(self) -> List[Dict[str, str]]:
@@ -456,7 +476,7 @@ class TodoStore:
 
         At most one item may be ``in_progress``.
         The kept item is the task this write started (``started_id``,
-        the same transition ``detect_task_start`` detects) when it is
+        derived from the before/after state by ``_started_id``) when it is
         present and ``in_progress``; otherwise the first ``in_progress``
         in list order (list order is priority). Any others demote to
         ``pending``. This makes two ``[>]`` rows impossible at the data
@@ -496,114 +516,75 @@ class TodoStore:
         numeric_ids = [int(item["id"]) for item in self._items if item["id"].isdigit()]
         return str(max(numeric_ids, default=0) + 1)
 
-    def detect_task_start(
-        self, todos: Optional[List[Dict[str, Any]]], merge: bool = False
-    ) -> Optional[Dict[str, str]]:
-        """Detect which task (if any) a pending write transitions to in_progress.
+    def _snapshot(self) -> List[Dict[str, str]]:
+        """The ordered state a commit diffs against.
 
-        A task "starts" when an item that was not ``in_progress`` before the
-        call becomes ``in_progress``: either an existing item moving from
-        another status, or a brand-new item created directly as
-        ``in_progress``. Re-asserting the same item as ``in_progress`` is not
-        a start. Returns the first started item (list order is priority), or
-        None when no item starts. Mirrors the write pipeline's normalization
-        (string payloads, list shape, content fallback) so the detection
-        matches what ``write`` will actually store.
+        Captured before a mutation and compared with the list afterwards, so
+        the notices describe what actually changed rather than what the
+        caller said it intended.
         """
-        if todos is None:
-            return None
-        if isinstance(todos, str):
-            try:
-                todos = json.loads(todos)
-            except (json.JSONDecodeError, TypeError):
-                return None
-        if not isinstance(todos, list):
-            return None
-
-        previous = {item["id"]: item for item in self._items}
-        for t in todos:
-            if not isinstance(t, dict):
-                continue
-            item_id = str(t.get("id", "")).strip()
-            if not item_id:
-                continue
-            status = str(t.get("status", "")).strip().lower()
-            if status != "in_progress":
-                continue
-            prev_item = previous.get(item_id)
-            if prev_item is not None and prev_item["status"] == "in_progress":
-                continue  # Re-asserting the current task is not a start
-            content = str(t.get("content", "")).strip()
-            if not content and prev_item is not None:
-                content = prev_item["content"]
-            if not content:
-                content = "(no description)"
-            # A replace-mode write renumbers ids 1..N, so the id-keyed lookup
-            # above can land on a different logical task and report a start for
-            # the task that is already running. If the row's content already
-            # names the current task, this is a re-assertion, not a start.
-            if any(
-                p["status"] == "in_progress"
-                and str(p.get("content", "")).strip() == content
-                for p in previous.values()
-            ):
-                continue
-            return {
-                "id": item_id,
-                "content": self._cap_content(content),
-                "status": "in_progress",
+        return [
+            {
+                "id": str(item.get("id", "")),
+                "status": str(item.get("status", "")),
+                "content": str(item.get("content", "")),
+                "reason": str(item.get("reason", "")),
+                "plan": str(item.get("plan", "")),
             }
+            for item in self._items
+        ]
+
+    def _started_id(self, before: List[Dict[str, str]]) -> Optional[str]:
+        """The first row this mutation moved into ``in_progress``.
+
+        Replaces the request-inspecting start detector: the invariant keeps
+        the row the state change actually started, not the row the payload
+        claimed to start.
+        """
+        previous = {row["id"]: row for row in before}
+        for item in self._items:
+            if item.get("status") != "in_progress":
+                continue
+            prior = previous.get(str(item.get("id", "")))
+            if prior is not None and prior["status"] == "in_progress":
+                continue
+            return str(item.get("id", ""))
         return None
 
-    def detect_task_stop(
-        self, todos: Optional[List[Dict[str, Any]]], merge: bool = False
-    ) -> Optional[Dict[str, str]]:
-        """Detect which task (if any) a pending write moves to a stop status.
+    def _commit(self, before: List[Dict[str, str]]) -> None:
+        """Append the notices for the transitions between ``before`` and now.
 
-        A task "stops" when an item that was ``in_progress`` before the call
-        becomes ``cancelled``. Re-asserting the same terminal status is not
-        a stop. Returns the first stopped item (list order is priority), or
-        None when no item stops. Mirrors
-        the write pipeline's normalization (string payloads, list shape,
-        content fallback) so the detection matches what ``write`` will
-        actually store.
+        Called inside the caller's critical section, so append order is commit
+        order. Notices are ordered by cause first — a completion or
+        cancellation precedes the start it unlocks — and by list position
+        second, so a promotion can never be announced before the completion
+        that caused it.
         """
-        if todos is None:
-            return None
-        if isinstance(todos, str):
-            try:
-                todos = json.loads(todos)
-            except (json.JSONDecodeError, TypeError):
-                return None
-        if not isinstance(todos, list):
-            return None
-
-        previous = {item["id"]: item for item in self._items}
-        for t in todos:
-            if not isinstance(t, dict):
+        previous = {row["id"]: row for row in before}
+        transitions: List[Any] = []
+        for position, item in enumerate(self._items, start=1):
+            item_id = str(item.get("id", ""))
+            content = str(item.get("content", ""))
+            prior = previous.get(item_id)
+            if prior is None or prior["content"] != content:
+                # Replace mode renumbers ids 1..N, so an id can point at a
+                # different logical row than it did before. Match on content
+                # before treating the status change as real, or every renumber
+                # would announce a start.
+                prior = next(
+                    (row for row in before if row["content"] == content), prior
+                )
+            prior_status = prior["status"] if prior else ""
+            status = str(item.get("status", ""))
+            if status == prior_status:
                 continue
-            item_id = str(t.get("id", "")).strip()
-            if not item_id:
+            kind = _NOTICE_FOR_STATUS.get(status)
+            if kind is None:
                 continue
-            status = str(t.get("status", "")).strip().lower()
-            if status != "cancelled":
-                continue
-            prev_item = previous.get(item_id)
-            if prev_item is None:
-                continue  # a net-new terminal item is not a stop
-            if prev_item["status"] != "in_progress":
-                continue  # only an active task can stop
-            content = str(t.get("content", "")).strip()
-            if not content:
-                content = prev_item["content"]
-            if not content:
-                content = "(no description)"
-            return {
-                "id": item_id,
-                "content": self._cap_content(content),
-                "status": status,
-            }
-        return None
+            transitions.append((_NOTICE_RANK.get(kind, 2), position, kind, item))
+        transitions.sort(key=lambda entry: (entry[0], entry[1]))
+        for _rank, _position, kind, item in transitions:
+            self._record_notice(kind, item)
 
     def transition(self, action: str, item_id: Any, reason: str = "") -> Dict[str, Any]:
         """Apply a lifecycle action to one task.
@@ -614,9 +595,9 @@ class TodoStore:
         - ``pause``    in_progress -> paused
         - ``resume``   paused      -> in_progress
         - ``complete`` in_progress -> completed  (the next pending task is
-          promoted to in_progress and its start notice recorded here, so a
-          start line is anchored to a real transition rather than waiting on
-          an agent ``begin`` that arrives after the work is done)
+          promoted to in_progress in the same commit, so a start line is
+          anchored to a real transition rather than waiting on an agent
+          ``begin`` that arrives after the work is done)
         - ``cancel``   pending | in_progress -> cancelled  (requires a reason,
           stored on the row and rendered beneath the struck-through item)
 
@@ -627,6 +608,17 @@ class TodoStore:
         Returns ``{"ok": True, "item": {...}}`` on success or
         ``{"ok": False, "error": "..."}`` on refusal. Never raises.
         """
+        with self._lock:
+            before = self._snapshot()
+            result = self._transition_locked(action, item_id, reason)
+            if result.get("ok"):
+                self._commit(before)
+            return result
+
+    def _transition_locked(
+        self, action: str, item_id: Any, reason: str
+    ) -> Dict[str, Any]:
+        """``transition`` under the store lock: validate, mutate, return."""
         action = str(action or "").strip().lower()
         item_id = str(item_id or "").strip()
         if action not in LIFECYCLE_ACTIONS:
@@ -662,7 +654,6 @@ class TodoStore:
                         ),
                     }
             item["status"] = "in_progress"
-            self._record_notice(NOTICE_STARTED, item)
             return {"ok": True, "item": item.copy()}
         if action == "pause":
             item["status"] = "paused"
@@ -681,23 +672,15 @@ class TodoStore:
                 }
             item["status"] = "cancelled"
             item["reason"] = self._cap_content(reason)
-            self._record_notice(NOTICE_CANCELLED, item)
             return {"ok": True, "item": item.copy()}
         # action == "complete": finalize the task, then promote the next
-        # pending task and record its start here. The promotion is what
-        # anchors a start line to the task's real beginning: the store knows
-        # which task is current the moment this one ends, so the next task's
-        # ``▶️ Working on:`` line fires at that transition instead of waiting
-        # on an agent ``begin`` that arrives after the work is already done.
-        # The line no longer rides out welded to this ``✅`` line — the
-        # turn-end drain that welded them is gone, and the live emitter ships
-        # one notice per message.
+        # pending task. Both status changes are committed together, and
+        # ``_commit`` orders the completion ahead of the start it unlocks, so
+        # the pair can never be announced backwards.
         item["status"] = "completed"
-        self._record_notice(NOTICE_COMPLETED, item)
         nxt = next((i for i in self._items if i["status"] == "pending"), None)
         if nxt is not None:
             nxt["status"] = "in_progress"
-            self._record_notice(NOTICE_STARTED, nxt)
         return {"ok": True, "item": item.copy()}
 
     def _record_notice(self, kind: str, item: Dict[str, Any]) -> None:
@@ -725,14 +708,15 @@ class TodoStore:
         from the head, so an emitter that could not hand a line over leaves
         the rest queued for the next drain instead of destroying them.
         """
-        if count is None:
-            notices = self._notices
-            self._notices = []
+        with self._lock:
+            if count is None:
+                notices = self._notices
+                self._notices = []
+                return notices
+            count = max(0, count)
+            notices = self._notices[:count]
+            del self._notices[:count]
             return notices
-        count = max(0, count)
-        notices = self._notices[:count]
-        del self._notices[:count]
-        return notices
 
     def pending_notices(self) -> List[Dict[str, Any]]:
         """The undrained lifecycle notices, without clearing them.
@@ -741,7 +725,8 @@ class TodoStore:
         preserve the queue — the write-through merge reconciles items and is
         not a transition, so it must neither create nor destroy a notice.
         """
-        return list(self._notices)
+        with self._lock:
+            return list(self._notices)
 
     def adopt_notices(self, notices: List[Dict[str, Any]]) -> None:
         """Replace the pending notices with ``notices``.
@@ -750,7 +735,8 @@ class TodoStore:
         pending transitions must be carried across explicitly or the turn-end
         drain finds nothing to emit.
         """
-        self._notices = list(notices)
+        with self._lock:
+            self._notices = list(notices)
 
     def format_for_injection(self) -> Optional[str]:
         """
