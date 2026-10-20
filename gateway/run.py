@@ -11537,6 +11537,8 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
             if event.get_command() == "tasks":
                 return await self._handle_task_command(event)
+            if event.get_command() in {"context", "ctx"}:
+                return await self._handle_context_command(event)
 
             # Resolve the command once for all early-intercept checks below.
             from hermes_cli.commands import (
@@ -12114,6 +12116,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             from hermes_cli.proxy_cli import format_status_text
 
             return format_status_text()
+
+        if canonical == "context":
+            return await self._handle_context_command(event)
 
         if canonical == "agents":
             return await self._handle_agents_command(event)
