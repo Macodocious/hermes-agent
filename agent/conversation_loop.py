@@ -721,6 +721,10 @@ def run_conversation(
     # ``build_turn_context``.  It mutates ``agent`` exactly as the inline code
     # did and returns the locals the loop below reads back.  See
     # ``agent/turn_context.py``.
+    # One lifecycle reminder per turn: the tool-result reminder is stamped on
+    # the first call that does work with no task current, and must not repeat
+    # on every later call of the same turn.
+    agent._lifecycle_reminder_issued = False
     _ctx = build_turn_context(
         agent,
         user_message,

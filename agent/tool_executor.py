@@ -341,6 +341,22 @@ def _apply_tool_request_middleware_for_agent(
         return function_args, []
 
 
+def _with_lifecycle_reminder(agent, function_name: str, result: Any) -> Any:
+    """Append the lifecycle reminder to a tool result when no task is current.
+
+    Fail-open: a reminder must never break a tool call.
+    """
+    try:
+        from agent.task_manager import tool_result_reminder
+
+        reminder = tool_result_reminder(agent, function_name)
+        if reminder and isinstance(result, str):
+            return f"{result}\n\n{reminder}"
+    except Exception:
+        pass
+    return result
+
+
 def _run_agent_tool_execution_middleware(
     agent,
     *,
@@ -687,6 +703,7 @@ def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effe
             except Exception as tool_error:
                 result = f"Error executing tool '{function_name}': {tool_error}"
                 logger.error("_invoke_tool raised for %s: %s", function_name, tool_error, exc_info=True)
+            result = _with_lifecycle_reminder(agent, function_name, result)
             duration = time.time() - start
             is_error, _ = _detect_tool_failure(function_name, result)
             if is_error:
@@ -1665,6 +1682,11 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
                 function_result = f"Error executing tool '{function_name}': {tool_error}"
                 logger.error("handle_function_call raised for %s: %s", function_name, tool_error, exc_info=True)
             tool_duration = time.time() - tool_start_time
+
+        # Every branch above — inline agent-runtime tools and registry-dispatched
+        # tools alike — lands here with its result. This is the one place the
+        # sequential path can speak to the model about the lifecycle.
+        function_result = _with_lifecycle_reminder(agent, function_name, function_result)
 
         if isinstance(function_result, str):
             result_preview = function_result if agent.verbose_logging else (
