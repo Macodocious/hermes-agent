@@ -930,6 +930,18 @@ def recover_with_credential_pool(
             )
             return False, has_retried_429
 
+    # Capture the current API key before any rotation — needed to
+    # identify which credential actually failed when
+    # mark_exhausted_and_rotate is called.  Without this hint the
+    # pool falls back to current() or _select_unlocked(), which may
+    # return the NEXT (healthy) entry after a prior rotation, marking
+    # the wrong credential as exhausted (#43747).
+    _api_key_hint = getattr(agent, "api_key", None) or None
+    if not _api_key_hint:
+        _cur = pool.current()
+        if _cur:
+            _api_key_hint = getattr(_cur, "runtime_api_key", None)
+
     effective_reason = classified_reason
     if effective_reason is None:
         if status_code == 402:
@@ -960,6 +972,9 @@ def recover_with_credential_pool(
 
     if effective_reason == FailoverReason.billing:
         rotate_status = status_code if status_code is not None else 402
+        # Runtime credentials can be resolved by a separate pool instance,
+        # leaving this recovery pool without ``current_id``. Match the key
+        # that actually failed instead of quarantining a different account.
         next_entry = pool.mark_exhausted_and_rotate(
             status_code=rotate_status,
             error_context=error_context,
