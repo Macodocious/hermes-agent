@@ -371,26 +371,31 @@ def _resolve_mcp_invocation(
             env=_sanitize_subprocess_env(cua_driver_child_env()),
         )
     except Exception:
-        return driver_cmd, _mcp_args_with_overlay_flag(list(_CUA_DRIVER_ARGS))
+        return driver_cmd, _mcp_args_with_overlay_flag(list(_CUA_DRIVER_ARGS), driver_cmd=driver_cmd)
     out = (proc.stdout or "").strip()
     if proc.returncode != 0 or not out:
-        return driver_cmd, _mcp_args_with_overlay_flag(list(_CUA_DRIVER_ARGS))
+        return driver_cmd, _mcp_args_with_overlay_flag(list(_CUA_DRIVER_ARGS), driver_cmd=driver_cmd)
     try:
         manifest = json.loads(out)
     except (ValueError, TypeError):
-        return driver_cmd, _mcp_args_with_overlay_flag(list(_CUA_DRIVER_ARGS))
+        return driver_cmd, _mcp_args_with_overlay_flag(list(_CUA_DRIVER_ARGS), driver_cmd=driver_cmd)
     if not isinstance(manifest, dict):
-        return driver_cmd, _mcp_args_with_overlay_flag(list(_CUA_DRIVER_ARGS))
+        return driver_cmd, _mcp_args_with_overlay_flag(list(_CUA_DRIVER_ARGS), driver_cmd=driver_cmd)
     invocation = manifest.get("mcp_invocation")
     if not isinstance(invocation, dict):
-        return driver_cmd, _mcp_args_with_overlay_flag(list(_CUA_DRIVER_ARGS))
+        return driver_cmd, _mcp_args_with_overlay_flag(list(_CUA_DRIVER_ARGS), driver_cmd=driver_cmd)
     args = invocation.get("args")
     command = invocation.get("command")
     if not isinstance(args, list) or not all(isinstance(a, str) for a in args):
-        return driver_cmd, _mcp_args_with_overlay_flag(list(_CUA_DRIVER_ARGS))
+        return driver_cmd, _mcp_args_with_overlay_flag(list(_CUA_DRIVER_ARGS), driver_cmd=driver_cmd)
     if not isinstance(command, str) or not command:
         # The driver knows the subcommand but didn't surface its own path.
         # Keep our resolved driver_cmd; the args are still authoritative.
+        return driver_cmd, _mcp_args_with_overlay_flag(args, driver_cmd=driver_cmd)
+    if not _has_path_separator(command):
+        # A manifest may legitimately retain the generic ``cua-driver`` name.
+        # Under a GUI's thin PATH that would lose the resolved user-local path
+        # and fail at MCP spawn, so preserve the concrete command we verified.
         return driver_cmd, _mcp_args_with_overlay_flag(args, driver_cmd=driver_cmd)
     # Manifest surfaced a relocated executable — probe THAT binary for
     # `--no-overlay` support rather than the system-resolved one, so a
@@ -401,7 +406,7 @@ def _resolve_mcp_invocation(
 
 def _mcp_args_with_overlay_flag(
     args: List[str],
-    driver_cmd: str = _CUA_DRIVER_CMD,
+    driver_cmd: str = _CUA_DRIVER_DEFAULT_CMD,
 ) -> List[str]:
     """Return *args* with ``--no-overlay`` appended when configured and supported."""
     if _cua_no_overlay() and _cua_driver_supports_no_overlay(driver_cmd):
