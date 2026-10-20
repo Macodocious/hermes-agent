@@ -224,6 +224,11 @@ MAX_TODO_ITEMS = 256
 # before it is parsed and re-injected (see AIAgent._hydrate_todo_store).
 MAX_TODO_RESULT_CHARS = 512_000
 _TRUNCATION_MARKER = "… [truncated]"
+# Persisted as ordinary message content. ContextCompressor uses this stable
+# header to distinguish the synthetic post-compaction row from a real user.
+TODO_INJECTION_HEADER = (
+    "[Your active task list was preserved across context compression]"
+)
 
 # Bounds on the captured-request candidate buffer (P3). The buffer is
 # re-injected every turn alongside the active list, so it is bounded the
@@ -922,7 +927,7 @@ class TodoStore:
             item for item in self._items if item["status"] == "cancelled"
         ]
 
-        lines = ["[Your active task list was preserved across context compression]"]
+        lines = [TODO_INJECTION_HEADER]
         for item in active_items:
             marker = markers.get(item["status"], "[?]")
             lines.append(f"- {marker} {item['content']} ({item['status']})")
