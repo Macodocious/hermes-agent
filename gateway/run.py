@@ -8191,7 +8191,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             adapter.set_fatal_error_handler(self._handle_adapter_fatal_error)
             adapter.set_session_store(self.session_store)
             adapter.set_busy_session_handler(self._handle_active_session_busy_message)
-            adapter.set_reaction_handler(self._handle_reaction_event)
+            _set_reaction = getattr(adapter, "set_reaction_handler", None)
+            if callable(_set_reaction):
+                _set_reaction(self._handle_reaction_event)
             adapter.set_topic_recovery_fn(self._recover_telegram_topic_thread_id)
             adapter.set_authorization_check(self._make_adapter_auth_check(adapter.platform))
             adapter._busy_text_mode = self._busy_text_mode
@@ -9171,7 +9173,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     adapter.set_fatal_error_handler(self._handle_adapter_fatal_error)
                     adapter.set_session_store(self.session_store)
                     adapter.set_busy_session_handler(self._handle_active_session_busy_message)
-                    adapter.set_reaction_handler(self._handle_reaction_event)
+                    _set_reaction = getattr(adapter, "set_reaction_handler", None)
+                    if callable(_set_reaction):
+                        _set_reaction(self._handle_reaction_event)
                     adapter.set_topic_recovery_fn(self._recover_telegram_topic_thread_id)
                     adapter.set_authorization_check(self._make_adapter_auth_check(adapter.platform))
                     adapter._busy_text_mode = self._busy_text_mode
@@ -10130,7 +10134,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         )
         adapter.set_session_store(self.session_store)
         adapter.set_busy_session_handler(self._handle_active_session_busy_message)
-        adapter.set_reaction_handler(self._handle_reaction_event)
+        _set_reaction = getattr(adapter, "set_reaction_handler", None)
+        if callable(_set_reaction):
+            _set_reaction(self._handle_reaction_event)
         adapter.set_topic_recovery_fn(self._recover_telegram_topic_thread_id)
         adapter.set_authorization_check(
             self._make_adapter_auth_check(platform, profile_name=profile_name)
