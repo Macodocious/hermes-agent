@@ -930,12 +930,17 @@ def recover_with_credential_pool(
             )
             return False, has_retried_429
 
-    # Capture the current API key before any rotation — needed to
-    # identify which credential actually failed when
-    # mark_exhausted_and_rotate is called.  Without this hint the
-    # pool falls back to current() or _select_unlocked(), which may
-    # return the NEXT (healthy) entry after a prior rotation, marking
-    # the wrong credential as exhausted (#43747).
+    # Attribute the failure to the API key the agent actually dispatched the
+    # request with, not to pool.current(). The current() pointer is shared,
+    # mutable state — round-robin select() advances it on every call, and
+    # concurrent turns or a second process (gateway/dashboard) reloading the
+    # pool reset it to None — so by the time recovery runs it routinely points
+    # at a DIFFERENT, healthy entry. Marking that entry exhausted copies this
+    # request's error/reset time onto it and can take the whole pool offline
+    # from a single rate-limited key (#43747). ``_swap_credential`` keeps
+    # ``agent.api_key`` in sync with the entry in use, so it identifies the
+    # failing entry exactly; fall back to current()'s key only when the agent
+    # carries no key at all.
     _api_key_hint = getattr(agent, "api_key", None) or None
     if not _api_key_hint:
         _cur = pool.current()
@@ -978,10 +983,7 @@ def recover_with_credential_pool(
         next_entry = pool.mark_exhausted_and_rotate(
             status_code=rotate_status,
             error_context=error_context,
-            # Runtime credentials can be resolved by a separate pool instance,
-            # leaving this recovery pool without ``current_id``. Match the key
-            # that actually failed instead of quarantining a different account.
-            api_key_hint=getattr(agent, "api_key", None),
+            api_key_hint=_api_key_hint,
             model=getattr(agent, "model", None),
         )
         if next_entry is not None:
@@ -999,7 +1001,16 @@ def recover_with_credential_pool(
         # rotate immediately. This prevents the "cancel-between-429s" trap
         # where has_retried_429 (a local var) gets reset on each new prompt,
         # causing the pool to retry the same exhausted credential forever.
-        current_entry = pool.current()
+        # Prefer the entry matching the failing key over the shared current()
+        # pointer, for the same attribution reason as above.
+        current_entry = None
+        if _api_key_hint:
+            current_entry = next(
+                (e for e in pool.entries() if e.runtime_api_key == _api_key_hint),
+                None,
+            )
+        if current_entry is None:
+            current_entry = pool.current()
         current_last_status = getattr(current_entry, "last_status", None) if current_entry else None
         if current_last_status == STATUS_EXHAUSTED:
             _ra().logger.info(
@@ -1011,6 +1022,7 @@ def recover_with_credential_pool(
                 status_code=rotate_status,
                 error_context=error_context,
                 model=getattr(agent, "model", None),
+                api_key_hint=_api_key_hint,
             )
             if next_entry is not None:
                 _ra().logger.info(
@@ -1039,6 +1051,7 @@ def recover_with_credential_pool(
             status_code=rotate_status,
             error_context=error_context,
             model=getattr(agent, "model", None),
+            api_key_hint=_api_key_hint,
         )
         if next_entry is not None:
             _ra().logger.info(
@@ -1143,6 +1156,7 @@ def recover_with_credential_pool(
             status_code=rotate_status,
             error_context=error_context,
             model=getattr(agent, "model", None),
+            api_key_hint=_api_key_hint,
         )
         if next_entry is not None:
             _ra().logger.info(
