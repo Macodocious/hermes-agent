@@ -196,6 +196,8 @@ COMMAND_REGISTRY: list[CommandDef] = [
                "Tools & Skills", cli_only=True, aliases=("generate-pet",), args_hint="[description]"),
     CommandDef("learn", "Learn a reusable skill from anything you describe (dirs, URLs, this chat, notes)",
                "Tools & Skills", args_hint="<what to learn from>"),
+    CommandDef("init", "Generate or update AGENTS.md project instructions from a repo scan",
+               "Tools & Skills", args_hint="[notes]"),
     CommandDef("cron", "Manage scheduled tasks", "Tools & Skills",
                cli_only=True, args_hint="[subcommand]",
                subcommands=("list", "add", "create", "edit", "pause", "resume", "run", "remove")),
@@ -1175,7 +1177,10 @@ _SLACK_PRIORITY_ALIASES = ("btw", "bg")
 #     informational, so it yields its native slot to a canonical command
 #     rather than being silently clamped last off the 50-command cap.
 #   - egress: Docker-only proxy status; reachable as /hermes egress on Slack.
-_SLACK_VIA_HERMES_ONLY = frozenset({"topup", "moa", "debug", "version", "egress"})
+#   - init: repo-scan AGENTS.md bootstrap — a cwd-centric dev command that is
+#     rare from Slack; reachable as /hermes init. Without this entry, adding
+#     /init clamps /version off the native list and breaks Telegram parity.
+_SLACK_VIA_HERMES_ONLY = frozenset({"topup", "moa", "debug", "version", "egress", "init"})
 
 
 def _sanitize_slack_name(raw: str) -> str:
