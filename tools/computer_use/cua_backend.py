@@ -315,6 +315,13 @@ def _resolve_mcp_invocation(
     Falls back to ``(driver_cmd, ["mcp"])`` for older drivers that don't
     expose ``manifest``, or any indeterminate failure — the wrapper must
     not refuse to start just because the discovery hop failed.
+
+    When ``computer_use.no_overlay`` is enabled (or auto-detected on
+    Linux), ``--no-overlay`` is appended to suppress the cursor overlay
+    rendering loop that can consume CPU indefinitely when idle
+    (#28152, #47032).  Older drivers that don't recognise the flag will
+    reject it; callers should fall back to the no-overlay invocation on
+    spawn failure.
     """
     try:
         from tools.environments.local import _sanitize_subprocess_env
@@ -328,23 +335,23 @@ def _resolve_mcp_invocation(
             env=_sanitize_subprocess_env(cua_driver_child_env()),
         )
     except Exception:
-        return driver_cmd, list(_CUA_DRIVER_ARGS)
+        return driver_cmd, _mcp_args_with_overlay_flag(list(_CUA_DRIVER_ARGS))
     out = (proc.stdout or "").strip()
     if proc.returncode != 0 or not out:
-        return driver_cmd, list(_CUA_DRIVER_ARGS)
+        return driver_cmd, _mcp_args_with_overlay_flag(list(_CUA_DRIVER_ARGS))
     try:
         manifest = json.loads(out)
     except (ValueError, TypeError):
-        return driver_cmd, list(_CUA_DRIVER_ARGS)
+        return driver_cmd, _mcp_args_with_overlay_flag(list(_CUA_DRIVER_ARGS))
     if not isinstance(manifest, dict):
-        return driver_cmd, list(_CUA_DRIVER_ARGS)
+        return driver_cmd, _mcp_args_with_overlay_flag(list(_CUA_DRIVER_ARGS))
     invocation = manifest.get("mcp_invocation")
     if not isinstance(invocation, dict):
-        return driver_cmd, list(_CUA_DRIVER_ARGS)
+        return driver_cmd, _mcp_args_with_overlay_flag(list(_CUA_DRIVER_ARGS))
     args = invocation.get("args")
     command = invocation.get("command")
     if not isinstance(args, list) or not all(isinstance(a, str) for a in args):
-        return driver_cmd, list(_CUA_DRIVER_ARGS)
+        return driver_cmd, _mcp_args_with_overlay_flag(list(_CUA_DRIVER_ARGS))
     if not isinstance(command, str) or not command:
         # The driver knows the subcommand but didn't surface its own path.
         # Keep our resolved driver_cmd; the args are still authoritative.

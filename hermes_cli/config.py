@@ -3540,6 +3540,16 @@ DEFAULT_CONFIG = {
         # Mode for capture_after follow-ups: som (screenshot + overlays —
         # default), ax (elements only, no PNG — faster), vision (pixels only).
         "capture_after_mode": "som",
+        # Disable the cursor overlay rendered by cua-driver.  The overlay
+        # shows where agent actions land on screen but can consume
+        # significant CPU when idle (especially on Linux/WSL2 where the
+        # compositor path has no visual benefit).  cua-driver ≥ 0.6.x
+        # supports --no-overlay.
+        #   None  = auto-detect (disable on Linux/headless, enable elsewhere)
+        #   True  = always disable the overlay
+        #   False = always enable the overlay (may cause idle CPU on some
+        #           platforms — see #28152, #47032)
+        "no_overlay": None,
     },
 
     # Hermes Desktop (Electron app) launch options. These only affect
