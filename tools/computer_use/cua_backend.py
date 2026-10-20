@@ -38,6 +38,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import concurrent.futures
+import functools
 import json
 import logging
 import os
@@ -139,6 +140,7 @@ def _action_result_from(
 
 _CUA_DRIVER_CMD_ENV = "HERMES_CUA_DRIVER_CMD"
 _CUA_DRIVER_DEFAULT_CMD = "cua-driver"
+_CUA_DRIVER_CMD = os.environ.get(_CUA_DRIVER_CMD_ENV, _CUA_DRIVER_DEFAULT_CMD)
 _CUA_DRIVER_ARGS = ["mcp"]  # stdio MCP transport (fallback when the
                             # driver doesn't expose `manifest` — see
                             # `_resolve_mcp_invocation` below)
@@ -180,6 +182,37 @@ def _computer_use_cfg() -> Dict[str, Any]:
         return (load_config() or {}).get("computer_use") or {}
     except Exception:
         return {}
+
+
+def _cua_no_overlay() -> bool:
+    """True when Hermes should pass ``--no-overlay`` to cua-driver.
+
+    Reads ``computer_use.no_overlay`` from config.yaml.  Default is
+    ``None`` (auto-detect): disable the overlay on headless Linux / WSL2 /
+    containers where it serves no visual purpose and can consume CPU
+    indefinitely (#28152, #47032).  Explicit ``True`` / ``False`` in config
+    overrides auto-detection.
+    """
+    try:
+        val = _computer_use_cfg().get("no_overlay")
+        if val is not None:
+            return bool(val)
+    except Exception:
+        pass
+    # Auto-detect: disable on headless Linux (no DISPLAY), WSL2, or
+    # containers.  Desktop Linux with a running compositor keeps the
+    # overlay — it's visually useful there.
+    if sys.platform != "linux":
+        return False
+    if not os.environ.get("DISPLAY"):
+        return True
+    try:
+        with open("/proc/version") as f:
+            if "microsoft" in f.read().lower():
+                return True
+    except Exception:
+        pass
+    return False
 
 
 def _cua_telemetry_disabled() -> bool:
@@ -355,13 +388,38 @@ def _resolve_mcp_invocation(
     if not isinstance(command, str) or not command:
         # The driver knows the subcommand but didn't surface its own path.
         # Keep our resolved driver_cmd; the args are still authoritative.
-        return driver_cmd, args
-    if not _has_path_separator(command):
-        # A manifest may legitimately retain the generic ``cua-driver`` name.
-        # Under a GUI's thin PATH that would lose the resolved user-local path
-        # and fail at MCP spawn, so preserve the concrete command we verified.
-        return driver_cmd, args
-    return command, args
+        return driver_cmd, _mcp_args_with_overlay_flag(args)
+    return command, _mcp_args_with_overlay_flag(args)
+
+
+def _mcp_args_with_overlay_flag(
+    args: List[str],
+    driver_cmd: str = _CUA_DRIVER_CMD,
+) -> List[str]:
+    """Return *args* with ``--no-overlay`` appended when configured and supported."""
+    if _cua_no_overlay() and _cua_driver_supports_no_overlay(driver_cmd):
+        return [*args, "--no-overlay"]
+    return list(args)
+
+
+@functools.lru_cache(maxsize=1)
+def _cua_driver_supports_no_overlay(driver_cmd: str) -> bool:
+    """True if the installed cua-driver recognises ``--no-overlay``.
+
+    Probes ``<driver> --help`` once and caches the result.  Older
+    drivers (< 0.6.x) reject unknown flags, so passing ``--no-overlay``
+    would crash the MCP spawn.
+    """
+    try:
+        proc = subprocess.run(
+            [driver_cmd, "--help"],
+            capture_output=True, text=True, timeout=3.0,
+            stdin=subprocess.DEVNULL,
+        )
+        help_text = (proc.stdout or "") + (proc.stderr or "")
+        return "--no-overlay" in help_text
+    except Exception:
+        return False
 
 # Regex to parse element lines from get_window_state AX tree markdown.
 #
