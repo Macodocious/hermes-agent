@@ -188,10 +188,11 @@ def _cua_no_overlay() -> bool:
     """True when Hermes should pass ``--no-overlay`` to cua-driver.
 
     Reads ``computer_use.no_overlay`` from config.yaml.  Default is
-    ``None`` (auto-detect): disable the overlay on headless Linux / WSL2 /
-    containers where it serves no visual purpose and can consume CPU
-    indefinitely (#28152, #47032).  Explicit ``True`` / ``False`` in config
-    overrides auto-detection.
+    ``None`` (auto-detect): disable the overlay where idle CPU burn is a
+    known failure mode — macOS (cursor-overlay vImage redraw loop,
+    #28152/#47032), headless Linux / WSL2 / containers — and keep it on
+    Windows / desktop Linux with a display. Explicit ``True`` / ``False``
+    in config overrides auto-detection.
     """
     try:
         val = _computer_use_cfg().get("no_overlay")
@@ -199,9 +200,11 @@ def _cua_no_overlay() -> bool:
             return bool(val)
     except Exception:
         pass
-    # Auto-detect: disable on headless Linux (no DISPLAY), WSL2, or
-    # containers.  Desktop Linux with a running compositor keeps the
-    # overlay — it's visually useful there.
+    # Auto-detect: macOS overlay can peg a core indefinitely after a
+    # computer_use session (#47032). Prefer off until the driver teardown
+    # is solid; set computer_use.no_overlay: false to keep the cursor.
+    if sys.platform == "darwin":
+        return True
     if sys.platform != "linux":
         return False
     if not os.environ.get("DISPLAY"):
@@ -1589,6 +1592,14 @@ class CuaDriverBackend(ComputerUseBackend):
                 self.set_config(max_image_dimension=max_dim)
             except Exception as e:
                 logger.debug("cua-driver set_config(max_image_dimension) failed: %s", e)
+        # Belt-and-suspenders when --no-overlay is unsupported or ignored:
+        # hide the agent cursor overlay via the session API so macOS idle
+        # redraw loops cannot keep burning CPU after the first action.
+        if _cua_no_overlay():
+            try:
+                self.set_agent_cursor_enabled(False, cursor_id=self._session_id)
+            except Exception as e:
+                logger.debug("cua-driver set_agent_cursor_enabled failed: %s", e)
 
     def stop(self) -> None:
         # Tear the cua-driver session down before disconnecting so the

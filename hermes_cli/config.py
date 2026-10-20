@@ -3540,15 +3540,14 @@ DEFAULT_CONFIG = {
         # Mode for capture_after follow-ups: som (screenshot + overlays —
         # default), ax (elements only, no PNG — faster), vision (pixels only).
         "capture_after_mode": "som",
-        # Disable the cursor overlay rendered by cua-driver.  The overlay
-        # shows where agent actions land on screen but can consume
-        # significant CPU when idle (especially on Linux/WSL2 where the
-        # compositor path has no visual benefit).  cua-driver ≥ 0.6.x
-        # supports --no-overlay.
-        #   None  = auto-detect (disable on Linux/headless, enable elsewhere)
+        # Disable the cursor overlay rendered by cua-driver. The overlay
+        # shows where agent actions land but can peg a core when idle
+        # (macOS vImage redraw loop #47032; Linux/WSL2 idle spin #28152).
+        # cua-driver ≥ 0.6.x supports --no-overlay; Hermes also calls
+        # set_agent_cursor_enabled(false) after start_session when this is on.
+        #   None  = auto-detect (off on macOS + headless/WSL2 Linux; on elsewhere)
         #   True  = always disable the overlay
-        #   False = always enable the overlay (may cause idle CPU on some
-        #           platforms — see #28152, #47032)
+        #   False = always enable the overlay
         "no_overlay": None,
     },
 
