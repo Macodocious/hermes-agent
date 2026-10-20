@@ -187,19 +187,15 @@ def _computer_use_cfg() -> Dict[str, Any]:
 def _cua_no_overlay() -> bool:
     """True when Hermes should pass ``--no-overlay`` to cua-driver.
 
-    Reads ``computer_use.no_overlay`` from config.yaml.  Default is
-    ``None`` (auto-detect): disable the overlay where idle CPU burn is a
-    known failure mode — macOS (cursor-overlay vImage redraw loop,
-    #28152/#47032), headless Linux / WSL2 / containers — and keep it on
-    Windows / desktop Linux with a display. Explicit ``True`` / ``False``
-    in config overrides auto-detection.
+    Reads ``computer_use.no_overlay``. Default ``None`` (auto-detect):
+    disable the overlay where idle CPU burn is a known failure mode —
+    macOS (cursor-overlay vImage redraw loop, #28152/#47032), headless
+    Linux / WSL2 / containers — and keep it on Windows / desktop Linux
+    with a display. Explicit ``True`` / ``False`` overrides auto-detection.
     """
-    try:
-        val = _computer_use_cfg().get("no_overlay")
-        if val is not None:
-            return bool(val)
-    except Exception:
-        pass
+    val = _computer_use_cfg().get("no_overlay")
+    if val is not None:
+        return bool(val)
     # Auto-detect: macOS overlay can peg a core indefinitely after a
     # computer_use session (#47032). Prefer off until the driver teardown
     # is solid; set computer_use.no_overlay: false to keep the cursor.
@@ -1586,27 +1582,26 @@ class CuaDriverBackend(ComputerUseBackend):
         except Exception as e:
             logger.debug("cua-driver start_session failed (continuing anonymous): %s", e)
 
-        # Cap screenshot size early so every later get_window_state / SOM
-        # capture pays less over the daemon socket and in the model turn.
-        # Only when the session handshake actually flipped `_started` —
-        # otherwise call_tool would re-enter session.start() (see
+        # Post-handshake session tuning. Both guard on `_started`: before the
+        # handshake flips it, call_tool would re-enter session.start() (see
         # _LIFECYCLE_CALLS) and tests that stub start() would recurse.
-        max_dim = _computer_use_max_image_dimension()
-        if max_dim and self._session._started:
-            try:
-                self.set_config(max_image_dimension=max_dim)
-            except Exception as e:
-                logger.debug("cua-driver set_config(max_image_dimension) failed: %s", e)
-        # Belt-and-suspenders when --no-overlay is unsupported or ignored:
-        # hide the agent cursor overlay via the session API so macOS idle
-        # redraw loops cannot keep burning CPU after the first action. Only
-        # once the handshake flipped `_started` — otherwise call_tool would
-        # re-enter session.start() (see _LIFECYCLE_CALLS).
-        if _cua_no_overlay() and self._session._started:
-            try:
-                self.set_agent_cursor_enabled(False, cursor_id=self._session_id)
-            except Exception as e:
-                logger.debug("cua-driver set_agent_cursor_enabled failed: %s", e)
+        if self._session._started:
+            # Cap screenshot size so every later get_window_state / SOM
+            # capture pays less over the daemon socket and in the model turn.
+            max_dim = _computer_use_max_image_dimension()
+            if max_dim:
+                try:
+                    self.set_config(max_image_dimension=max_dim)
+                except Exception as e:
+                    logger.debug("cua-driver set_config(max_image_dimension) failed: %s", e)
+            # Belt-and-suspenders when --no-overlay is unsupported or ignored:
+            # hide the agent cursor overlay via the session API so macOS idle
+            # redraw loops cannot keep burning CPU after the first action.
+            if _cua_no_overlay():
+                try:
+                    self.set_agent_cursor_enabled(False, cursor_id=self._session_id)
+                except Exception as e:
+                    logger.debug("cua-driver set_agent_cursor_enabled failed: %s", e)
 
     def stop(self) -> None:
         # Tear the cua-driver session down before disconnecting so the
