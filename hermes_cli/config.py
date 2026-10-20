@@ -945,7 +945,7 @@ DEFAULT_CONFIG = {
     # pressure. Reopening one re-resumes it from disk. 0/null disables.
     "max_live_sessions": 16,
     "agent": {
-        "max_turns": 90,
+        "max_turns": 500,
         # Iteration-budget continuations: when a turn exhausts the
         # iteration budget, the agent summarises its progress, folds that
         # summary into its own context, resets the budget, and keeps
