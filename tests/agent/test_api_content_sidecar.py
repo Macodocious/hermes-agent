@@ -988,7 +988,7 @@ class TestSessionRowExistsBeforePreflightCompaction:
             contents = [m["content"] for m in db.get_messages(sid)]
             assert "[CONTEXT COMPACTION] summary" in contents
             # And the live context is the compacted set.
-            assert ctx.messages[ctx.current_turn_user_idx]["content"] == "hello"
+            assert ctx.messages[ctx.current_turn_user_idx]["content"].startswith("hello")
         finally:
             db.close()
 

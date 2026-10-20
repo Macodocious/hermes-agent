@@ -968,7 +968,7 @@ class TestTodoSnapshotScaffoldingTails:
             for previous, current in zip(compressed, compressed[1:])
         )
 
-    def test_empty_todo_store_injects_nothing(self, tmp_path: Path):
+    def test_completed_only_store_injects_snapshot(self, tmp_path: Path):
         from tools.todo_tool import TODO_INJECTION_HEADER
 
         db = SessionDB(db_path=tmp_path / "state.db")
@@ -991,8 +991,11 @@ class TestTodoSnapshotScaffoldingTails:
             _msgs(), "sys", approx_tokens=120_000
         )
 
-        assert compressed == expected
-        assert not any(
-            TODO_INJECTION_HEADER in str(message.get("content") or "")
-            for message in compressed
-        )
+        assert len(compressed) == len(expected)
+        assert compressed[:-1] == expected[:-1]
+        tail = compressed[-1]
+        assert tail["role"] == "user"
+        assert tail["content"].startswith("tail")
+        assert TODO_INJECTION_HEADER in tail["content"]
+        assert "Completed — do not redo:" in tail["content"]
+        assert "- [x] done thing" in tail["content"]

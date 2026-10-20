@@ -192,7 +192,7 @@ def test_idle_compaction_defers_to_held_compression_lock(tmp_path: Path) -> None
     # doubled semantics.
     assert len(ctx.messages) == len(history) + 1
     assert ctx.current_turn_user_idx == len(ctx.messages) - 1
-    assert ctx.messages[ctx.current_turn_user_idx]["content"] == "hello again"
+    assert "hello again" in ctx.messages[ctx.current_turn_user_idx]["content"]
 
 
 def test_idle_compaction_respects_anti_thrash_breaker(tmp_path: Path) -> None:
