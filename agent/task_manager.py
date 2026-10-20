@@ -108,6 +108,39 @@ def _current_item(agent: Any) -> Optional[Dict[str, Any]]:
     return items[0] if items else None
 
 
+# Appended to a tool result when the call did work with no task in progress.
+# The turn-end audit speaks only after the turn; this speaks at the call that
+# did the work, which is where the transition belongs. It refuses nothing and
+# changes no row — the model still owns the transition.
+LIFECYCLE_TOOL_REMINDER = (
+    "[Task lifecycle] No task is in progress. Start the task you are working on "
+    "with todo action=begin before the next change, and close it with "
+    "action=complete when its work is done."
+)
+
+
+def tool_result_reminder(agent: Any, tool_name: str) -> str:
+    """One line for a tool result when work happens with no current task.
+
+    Empty when the call is the lifecycle tool itself, when the lifecycle is
+    off, when a task is already current, when the session has no task list,
+    or when this turn already carried the reminder.
+    """
+    if tool_name == "todo":
+        return ""
+    if not _lifecycle_enabled():
+        return ""
+    if getattr(agent, "_lifecycle_reminder_issued", False):
+        return ""
+    store = getattr(agent, "_todo_store", None)
+    if store is None or not store.has_items():
+        return ""
+    if _current_item(agent) is not None:
+        return ""
+    agent._lifecycle_reminder_issued = True
+    return LIFECYCLE_TOOL_REMINDER
+
+
 # =============================================================================
 # Completion predicate (no longer drives the lifecycle)
 # =============================================================================
