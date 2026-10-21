@@ -2143,6 +2143,7 @@ def handle_max_iterations(agent, messages: list, api_call_count: int, append_to_
     print(f"⚠️  Reached maximum iterations ({agent.max_iterations}). Requesting summary...")
 
     summary_api_request_id = f"iteration-summary:{uuid.uuid4()}"
+    summary_call_outcome = "failed"
 
     def _managed_summary_call(request, callback, *, retry_count: int):
         from agent import relay_llm
@@ -2160,6 +2161,7 @@ def handle_max_iterations(agent, messages: list, api_call_count: int, append_to_
                 "call_role": "iteration_summary",
                 "retry_count": retry_count,
             },
+            defer_logical_completion=True,
         )
 
     summary_request = (
@@ -2384,6 +2386,7 @@ def handle_max_iterations(agent, messages: list, api_call_count: int, append_to_
             if final_response:
                 if append_to_history:
                     messages.append({"role": "assistant", "content": final_response})
+                summary_call_outcome = "success"
             else:
                 final_response = "I reached the iteration limit and couldn't generate a summary."
         else:
@@ -2441,6 +2444,7 @@ def handle_max_iterations(agent, messages: list, api_call_count: int, append_to_
                 if final_response:
                     if append_to_history:
                         messages.append({"role": "assistant", "content": final_response})
+                    summary_call_outcome = "success"
                 else:
                     final_response = "I reached the iteration limit and couldn't generate a summary."
             else:
@@ -2449,6 +2453,13 @@ def handle_max_iterations(agent, messages: list, api_call_count: int, append_to_
     except Exception as e:
         logger.warning(f"Failed to get summary response: {e}")
         final_response = f"I reached the maximum iterations ({agent.max_iterations}) but couldn't summarize. Error: {str(e)}"
+    finally:
+        from agent import relay_llm
+
+        relay_llm.complete_logical_call(
+            summary_api_request_id,
+            outcome=summary_call_outcome,
+        )
 
     return final_response
 
