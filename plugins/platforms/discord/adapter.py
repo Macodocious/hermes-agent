@@ -1812,21 +1812,26 @@ class DiscordAdapter(BasePlatformAdapter):
         # last attempt. A sync that was interrupted mid-flight leaves a new
         # fingerprint with a stale last_success_at; trusting it would skip
         # the re-sync and permanently miss commands added since the last
-        # completed sync.
+        # completed sync. A zero last_success_at means no sync ever
+        # completed, so the fingerprint cannot be trusted either.
         last_success_at = float(entry.get("last_success_at") or 0)
         last_attempt_at = float(entry.get("last_attempt_at") or 0)
-        if entry.get("fingerprint") == fingerprint and last_success_at >= last_attempt_at:
+        if (
+            entry.get("fingerprint") == fingerprint
+            and last_success_at
+            and last_success_at >= last_attempt_at
+        ):
             return "same slash-command fingerprint already synced"
         return None
 
     def _record_command_sync_attempt(self, app_id: Any, fingerprint: str) -> None:
         state = self._read_command_sync_state()
-        state[self._command_sync_state_key(app_id)] = {
-            **(
-                state.get(self._command_sync_state_key(app_id))
-                if isinstance(state.get(self._command_sync_state_key(app_id)), dict)
-                else {}
-            ),
+        key = self._command_sync_state_key(app_id)
+        entry = state.get(key) if isinstance(state.get(key), dict) else {}
+        entry.pop("last_success_at", None)
+        entry.pop("summary", None)
+        state[key] = {
+            **entry,
             "fingerprint": fingerprint,
             "last_attempt_at": time.time(),
             # A new attempt invalidates any prior success claim: the previous
