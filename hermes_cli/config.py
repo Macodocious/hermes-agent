@@ -3294,7 +3294,7 @@ DEFAULT_CONFIG = {
             "logs_export_interval_seconds": 5,
             "resource_attributes": {
                 "service.name": "hermes-gateway",
-                "deployment.environment": "production",
+                "deployment.environment.name": "production",
             },
         },
         # OTLP destination. headers_env maps header names to ENVIRONMENT
