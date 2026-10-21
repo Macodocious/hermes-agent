@@ -534,10 +534,6 @@ function CommandPaletteBody({ onExited }: { onExited: () => void }) {
   const clientApply = useStore($updateApply)
   const backendStatus = useStore($backendUpdateStatus)
   const backendApply = useStore($backendUpdateApply)
-  // Running a keepOpen row (a toggle) changes state the rows themselves report,
-  // so the groups have to rebuild without the palette closing. A counter keeps
-  // that generic — the palette never learns which stores its contributions read.
-  const [selectTick, setSelectTick] = useState(0)
 
   const updateVersionLabel = useMemo(() => {
     const backend = connection?.mode === 'remote'
@@ -668,6 +664,11 @@ function CommandPaletteBody({ onExited }: { onExited: () => void }) {
     [t.settings.fieldLabels]
   )
 
+  // Running a keepOpen row (a toggle) changes state the rows themselves report,
+  // so the groups have to rebuild without the palette closing. A counter keeps
+  // that generic — the palette never learns which stores its contributions read.
+  const [selectTick, setSelectTick] = useState(0)
+
   const contributedItems = usePaletteContributions()
 
   // The active repo's worktrees → "new conversation in <branch>". This is the
@@ -731,32 +732,8 @@ function CommandPaletteBody({ onExited }: { onExited: () => void }) {
       ]
     }
 
-    // Registry-contributed rows (core features + plugins) — one group, omitted
-    // while nothing contributes.
-    const commandGroup: PaletteGroup[] =
-      contributedItems.length > 0
-        ? [
-            {
-              heading: cc.commands,
-              items: contributedItems.map(item => ({
-                action: item.action,
-                // Read on open and after every select (the deps below), so a
-                // row that reports state can't show the state it just left.
-                detail: item.detail?.(),
-                detailVariant: item.detailVariant,
-                icon: item.icon ?? Zap,
-                id: item.key,
-                keepOpen: item.keepOpen,
-                keywords: item.keywords,
-                label: item.label,
-                run: item.run
-              }))
-            }
-          ]
-        : []
-
     // Group order is the tiebreaker rankGroups falls back on (stable sort), and
-    // exact ties are the common case — "yolo" hits both "Toggle YOLO" and a
+    // exact ties are the common case — "yolo" hits both "Toggle yolo" and a
     // worktree named bb/yolo-* as a whole word. So this order IS the priority:
     // where you're going, then what you can do, then what you can configure.
     return [
@@ -841,7 +818,28 @@ function CommandPaletteBody({ onExited }: { onExited: () => void }) {
       },
       projectGroup,
       ...branchGroup,
-      ...commandGroup,
+      // Registry-contributed rows (core features + plugins) — one group,
+      // omitted while nothing contributes.
+      ...(contributedItems.length > 0
+        ? [
+            {
+              heading: cc.commands,
+              items: contributedItems.map(item => ({
+                action: item.action,
+                // Read on mount and after every select (the deps below), so a
+                // row that reports state can't show the state it just left.
+                detail: item.detail?.(),
+                detailVariant: item.detailVariant,
+                icon: item.icon ?? Zap,
+                id: item.key,
+                keepOpen: item.keepOpen,
+                keywords: item.keywords,
+                label: item.label,
+                run: item.run
+              }))
+            }
+          ]
+        : []),
       {
         heading: cc.commandCenter,
         items: [
@@ -939,11 +937,11 @@ function CommandPaletteBody({ onExited }: { onExited: () => void }) {
         ]
       }
     ]
-    // `open` and `selectTick` are deliberate re-read triggers, not values: rows
-    // report live state through `detail()`, so the groups must rebuild when the
-    // palette opens and after each select — eslint only sees unused deps.
+    // `selectTick` is a deliberate re-read trigger, not a value: rows report
+    // live state through `detail()`, so the groups must rebuild after a select
+    // that kept the palette open — eslint only sees an unused dep.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contributedItems, go, open, projectTree, selectTick, settingsSectionLabel, t, updateVersionLabel])
+  }, [contributedItems, go, projectTree, selectTick, settingsSectionLabel, t, updateVersionLabel])
 
   // The long, granular lists (settings fields, API keys, MCP servers, archived
   // chats) only surface once the user types — otherwise they'd bury the
