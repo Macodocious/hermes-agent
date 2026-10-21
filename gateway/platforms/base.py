@@ -2142,6 +2142,15 @@ def merge_pending_message_event(
     the last queued fragment.
     """
     existing = pending_messages.get(session_key)
+    if existing is not None and bool(getattr(existing, "internal", False)) != bool(
+        getattr(event, "internal", False)
+    ):
+        # A user message must never inherit an internal event's marker — the
+        # drain drops internal events, so merging would drop the user's text.
+        # An internal event must never displace a user's queued message either.
+        if not getattr(event, "internal", False):
+            pending_messages[session_key] = event
+        return
     if existing:
         existing_is_photo = getattr(existing, "message_type", None) == MessageType.PHOTO
         incoming_is_photo = event.message_type == MessageType.PHOTO
@@ -4676,7 +4685,9 @@ class BasePlatformAdapter(ABC):
         command was running — spawns a fresh processing task for it.
         """
         await self._flush_text_debounce_now(session_key)
-        pending_event = self._pending_messages.pop(session_key, None)
+        pending_event = self._drop_internal_pending_event(
+            self._pending_messages.pop(session_key, None), session_key,
+        )
         self._release_session_guard(session_key, guard=command_guard)
         if pending_event is None:
             return
@@ -5426,7 +5437,11 @@ class BasePlatformAdapter(ABC):
 
             # Check if there's a pending message that was queued during our processing
             if session_key in self._pending_messages:
-                pending_event = self._pending_messages.pop(session_key)
+                pending_event = self._drop_internal_pending_event(
+                    self._pending_messages.pop(session_key), session_key,
+                )
+                if pending_event is None:
+                    return
                 logger.debug("[%s] Processing queued follow-up message", self.name)
                 # Keep the _active_sessions entry live across the turn chain
                 # and only CLEAR the interrupt Event — do NOT delete the entry.
@@ -5549,7 +5564,9 @@ class BasePlatformAdapter(ABC):
             # busy-handler path.  Without this block, we would delete the
             # active-session entry and the queued message would be silently
             # dropped (user never gets a reply).
-            late_pending = self._pending_messages.pop(session_key, None)
+            late_pending = self._drop_internal_pending_event(
+                self._pending_messages.pop(session_key, None), session_key,
+            )
             if late_pending is not None:
                 current_task = asyncio.current_task()
                 existing_task = self._session_tasks.get(session_key)
@@ -5689,9 +5706,31 @@ class BasePlatformAdapter(ABC):
         """Check if there's a pending interrupt for a session."""
         return session_key in self._active_sessions and self._active_sessions[session_key].is_set()
     
+    def _drop_internal_pending_event(
+        self, event: Optional[MessageEvent], session_key: str,
+    ) -> Optional[MessageEvent]:
+        """Return None for a queued internal event — it must never start a run.
+
+        An internal event (watch/process notification, picker turn, auto-resume)
+        is queued behind a running turn like any other message.  Running it
+        afterwards produces an extra assistant message after the turn's final
+        one, so it is dropped here, where the queue is consumed: that covers
+        every producer and both drains.
+        """
+        if event is None or not getattr(event, "internal", False):
+            return event
+        logger.warning(
+            "[%s] Dropping queued internal event for session %s — internal "
+            "events never start a run: '%s...'",
+            self.name, session_key, (event.text or "")[:80],
+        )
+        return None
+
     def get_pending_message(self, session_key: str) -> Optional[MessageEvent]:
         """Get and clear any pending message for a session."""
-        return self._pending_messages.pop(session_key, None)
+        return self._drop_internal_pending_event(
+            self._pending_messages.pop(session_key, None), session_key,
+        )
     
     def build_source(
         self,
