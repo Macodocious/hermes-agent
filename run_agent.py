@@ -6972,6 +6972,10 @@ class AIAgent:
                     relay_outcome = "cancelled"
                 elif isinstance(exc, TimeoutError):
                     relay_outcome = "timed_out"
+                relay_runtime.SESSION_COORDINATOR.finish_logical_calls(
+                    relay_turn,
+                    outcome=relay_outcome,
+                )
                 finish_task_run(**task_context, error=exc)
                 raise
             else:
@@ -6982,6 +6986,10 @@ class AIAgent:
                     relay_outcome = "failed"
                 else:
                     relay_outcome = "success"
+                relay_runtime.SESSION_COORDINATOR.finish_logical_calls(
+                    relay_turn,
+                    outcome=relay_outcome,
+                )
                 finish_task_run(**task_context, result=result)
                 return result
             finally:
