@@ -62,7 +62,7 @@ import {
 import { $bindings } from '@/store/keybinds'
 import { openPetGenerate } from '@/store/pet-generate'
 import { $projectTree, goToProject, openFolderAsProject, requestStartWorkSession } from '@/store/projects'
-import { $connection } from '@/store/session'
+import { $connection, $yoloActive } from '@/store/session'
 import { runGatewayRestart } from '@/store/system-actions'
 import {
   $backendUpdateApply,
@@ -522,6 +522,9 @@ function CommandPaletteBody({ onExited }: { onExited: () => void }) {
   const clientApply = useStore($updateApply)
   const backendStatus = useStore($backendUpdateStatus)
   const backendApply = useStore($backendUpdateApply)
+  // Contributed on/off rows check the live half (YOLO on / YOLO off), so the
+  // groups have to rebuild when that state moves under an open palette.
+  const yoloActive = useStore($yoloActive)
 
   const updateVersionLabel = useMemo(() => {
     const backend = connection?.mode === 'remote'
@@ -898,6 +901,9 @@ function CommandPaletteBody({ onExited }: { onExited: () => void }) {
               heading: cc.commands,
               items: contributedItems.map(item => ({
                 action: item.action,
+                // Resolved per palette open (see the `open` dep below) so a
+                // state-describing row can't show a state it left.
+                detail: item.detail?.(),
                 icon: item.icon ?? Zap,
                 id: item.key,
                 keywords: item.keywords,
@@ -908,7 +914,7 @@ function CommandPaletteBody({ onExited }: { onExited: () => void }) {
           ]
         : [])
     ]
-  }, [contributedItems, go, projectTree, settingsSectionLabel, t, updateVersionLabel, worktrees])
+  }, [contributedItems, go, open, projectTree, settingsSectionLabel, t, updateVersionLabel, worktrees, yoloActive])
 
   // The long, granular lists (settings fields, API keys, MCP servers, archived
   // chats) only surface once the user types — otherwise they'd bury the
