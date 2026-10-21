@@ -2732,6 +2732,7 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
                             else "primary"
                         ),
                     },
+                    defer_logical_completion=True,
                 )
                 streamed_response = stream_converse_with_callbacks(
                     {"stream": stream},
@@ -3168,6 +3169,7 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
                     else "primary"
                 ),
             },
+            defer_logical_completion=True,
         )
         # Reasoning repetition-loop guard.  The accumulated reasoning is tested
         # at most once per span-sized growth, so the hot path pays one bounded
@@ -3630,6 +3632,7 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
                     else "primary"
                 ),
             },
+            defer_logical_completion=True,
         )
         try:
             for event in stream:
