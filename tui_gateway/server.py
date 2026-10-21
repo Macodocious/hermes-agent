@@ -18343,16 +18343,6 @@ def _(rid, params: dict) -> dict:
                 if isinstance(duration, (int, float)) and not isinstance(duration, bool)
                 else 3.0
             )
-            # voice.max_recording_seconds — hard cap on a single recording's
-            # length. Same guard as the silence params: non-numeric / bool /
-            # missing falls back to the documented 120 default, while an
-            # explicit numeric value <= 0 disables the cap (0.0).
-            max_rec = voice_cfg.get("max_recording_seconds")
-            safe_max_rec = (
-                (max_rec if max_rec > 0 else 0.0)
-                if isinstance(max_rec, (int, float)) and not isinstance(max_rec, bool)
-                else 120.0
-            )
             # Hand the mic to STT if the wake-word detector holds it; resume
             # once a terminal capture event fires (one-shot transcript / silence
             # limit), so wake-triggered and manual captures both coexist.
@@ -18379,6 +18369,16 @@ def _(rid, params: dict) -> dict:
                 if state == "idle":
                     _resume_voice_wake()
 
+            # voice.max_recording_seconds — hard cap on a single recording's
+            # length. Same guard as the silence params: non-numeric / bool /
+            # missing falls back to the documented 120 default, while an
+            # explicit numeric value <= 0 disables the cap (0.0).
+            max_rec = voice_cfg.get("max_recording_seconds")
+            safe_max_rec = (
+                (max_rec if max_rec > 0 else 0.0)
+                if isinstance(max_rec, (int, float)) and not isinstance(max_rec, bool)
+                else 120.0
+            )
             started = start_continuous(
                 on_transcript=_on_transcript,
                 on_status=_on_status,
