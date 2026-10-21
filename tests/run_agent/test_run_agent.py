@@ -4060,9 +4060,13 @@ class TestAgentRuntimePostHookOwnershipSync:
     def test_post_hook_ownership_contract_lists_exercised_tools(self):
         from agent.agent_runtime_helpers import AGENT_RUNTIME_POST_HOOK_TOOL_NAMES
 
+        # ``declare_task_context`` is the fork's context-engine tool: the
+        # runtime owns its post hook too, but the tool only exists in the
+        # model's list when a context engine is configured, so it has no
+        # generic case in _CASES for the parametrized execution below.
         assert AGENT_RUNTIME_POST_HOOK_TOOL_NAMES == {
             tool_name for tool_name, _ in self._CASES
-        }
+        } | {"declare_task_context"}
 
 
 class TestPathsOverlap:
@@ -7317,7 +7321,13 @@ class TestCredentialPoolRecovery:
                 return []
 
             def mark_exhausted_and_rotate(
-                self, *, status_code, error_context=None, api_key_hint=None
+                self,
+                *,
+                status_code,
+                error_context=None,
+                api_key_hint=None,
+                model=None,
+                credential_id=None,
             ):
                 assert status_code == 429
                 assert error_context is None
@@ -7425,7 +7435,13 @@ class TestCredentialPoolRecovery:
                 return None  # refresh failed
 
             def mark_exhausted_and_rotate(
-                self, *, status_code, error_context=None, api_key_hint=None
+                self,
+                *,
+                status_code,
+                error_context=None,
+                api_key_hint=None,
+                model=None,
+                credential_id=None,
             ):
                 assert status_code == 401
                 assert error_context is None
@@ -7452,7 +7468,13 @@ class TestCredentialPoolRecovery:
                 return None
 
             def mark_exhausted_and_rotate(
-                self, *, status_code, error_context=None, api_key_hint=None
+                self,
+                *,
+                status_code,
+                error_context=None,
+                api_key_hint=None,
+                model=None,
+                credential_id=None,
             ):
                 assert error_context is None
                 return None  # no more credentials
@@ -7534,7 +7556,13 @@ class TestCredentialPoolRecovery:
                 return []
 
             def mark_exhausted_and_rotate(
-                self, *, status_code, error_context=None, api_key_hint=None
+                self,
+                *,
+                status_code,
+                error_context=None,
+                api_key_hint=None,
+                model=None,
+                credential_id=None,
             ):
                 captured["status_code"] = status_code
                 captured["error_context"] = error_context

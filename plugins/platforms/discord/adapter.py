@@ -1831,13 +1831,34 @@ class DiscordAdapter(BasePlatformAdapter):
         # A new attempt invalidates any prior success claim: the previous
         # sync may have been interrupted before completing, so its
         # fingerprint must not be treated as synced.
-        entry.pop("last_success_at", None)
-        entry.pop("summary", None)
         state[key] = {
             **entry,
             "fingerprint": fingerprint,
             "last_attempt_at": time.time(),
+            # Explicit "attempted, no success" marker: the skip guard reads a
+            # zero (or a missing key) as never-synced, so recording the attempt
+            # can never leave a prior fingerprint looking synced.
+            "last_success_at": 0,
+            "summary": None,
         }
+        self._write_command_sync_state(state)
+
+    def _prune_command_sync_success_claim(self, app_id: Any) -> None:
+        """Drop the success fields a timed-out attempt must not claim.
+
+        ``_record_command_sync_attempt`` seeds an explicit zero so in-memory
+        readers see "attempted, no success". The persisted post-connect state
+        instead omits the keys, so key presence alone can never read as a
+        completed sync after the socket died mid-batch.
+        """
+        state = self._read_command_sync_state()
+        key = self._command_sync_state_key(app_id)
+        entry = state.get(key)
+        if not isinstance(entry, dict):
+            return
+        entry.pop("last_success_at", None)
+        entry.pop("summary", None)
+        state[key] = entry
         self._write_command_sync_state(state)
 
     def _record_command_sync_rate_limit(self, app_id: Any, fingerprint: str, retry_after: float) -> None:
@@ -2032,6 +2053,7 @@ class DiscordAdapter(BasePlatformAdapter):
                 "may be saturated; will retry on next reconnect",
                 self.name,
             )
+            self._prune_command_sync_success_claim(app_id)
         except asyncio.CancelledError:
             raise
         except Exception as e:  # pragma: no cover - defensive logging

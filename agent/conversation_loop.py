@@ -1381,6 +1381,20 @@ def run_conversation(
             # as before.
             break
 
+        # Fold an active-turn correction into the transcript before the next
+        # request. This drain is what CONSUMES the pending redirect: without
+        # it the flag survives every iteration, so each response is discarded
+        # as "crossed by a redirect" and the loop re-requests forever.
+        _redirect_text = agent._drain_pending_redirect()
+        if _redirect_text:
+            _apply_active_turn_redirect(agent, messages, _redirect_text)
+            if isinstance(original_user_message, str):
+                original_user_message = (
+                    f"{original_user_message}\n\n"
+                    f"User correction during the turn: {_redirect_text}"
+                )
+            agent._persist_session(messages, conversation_history)
+
         # Reset per-turn checkpoint dedup so each iteration can take one snapshot
         agent._checkpoint_mgr.new_turn()
 
