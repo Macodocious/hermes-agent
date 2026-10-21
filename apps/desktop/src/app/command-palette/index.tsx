@@ -4,7 +4,15 @@ import { Dialog as DialogPrimitive } from 'radix-ui'
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
-import { HUD_HEADING, HUD_ITEM, HUD_POSITION, HUD_SURFACE, HUD_TEXT } from '@/app/floating-hud'
+import {
+  HUD_HEADING,
+  HUD_ITEM,
+  HUD_NOTE,
+  HUD_NOTE_VARIANT,
+  HUD_POSITION,
+  HUD_SURFACE,
+  HUD_TEXT
+} from '@/app/floating-hud'
 import { setTerminalTakeover } from '@/app/right-sidebar/store'
 import { codiconIcon } from '@/components/ui/codicon'
 import { Command, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
@@ -62,7 +70,7 @@ import {
 import { $bindings } from '@/store/keybinds'
 import { openPetGenerate } from '@/store/pet-generate'
 import { $projectTree, goToProject, openFolderAsProject, requestStartWorkSession } from '@/store/projects'
-import { $connection, $yoloActive } from '@/store/session'
+import { $connection } from '@/store/session'
 import { runGatewayRestart } from '@/store/system-actions'
 import {
   $backendUpdateApply,
@@ -106,8 +114,10 @@ interface PaletteItem {
   active?: boolean
   /** Static trailing combo hint for a modifier-variant select (e.g. `mod+enter`). */
   comboHint?: string
-  /** Muted text beside the label — state the row acts on (a version, a count). */
+  /** Short note beside the label — state the row acts on (a version, a count). */
   detail?: string
+  /** `state` when the row will change what `detail` says (a toggle's on/off). */
+  detailVariant?: keyof typeof HUD_NOTE_VARIANT
   icon: IconComponent
   id: string
   /** Keep the palette open after running (live-preview pickers like theme/mode). */
@@ -340,9 +350,9 @@ const PaletteRow = memo(function PaletteRow({
           <HighlightMatches query={search.split(/\s+/)} text={item.label} />
         )}
       </span>
-      {/* Reads as a suffix of the label, so it sits closer than the row's
-          icon-to-label gap-2 — negative margin trims that back to ~4px. */}
-      {item.detail && <span className="-ml-1 truncate text-muted-foreground/80">{item.detail}</span>}
+      {item.detail && (
+        <span className={cn(HUD_NOTE, HUD_NOTE_VARIANT[item.detailVariant ?? 'muted'])}>{item.detail}</span>
+      )}
       {combo && (
         <KbdCombo className={cn('ml-auto', modPreview ? 'opacity-90' : 'opacity-55')} combo={combo} size="sm" />
       )}
@@ -524,9 +534,10 @@ function CommandPaletteBody({ onExited }: { onExited: () => void }) {
   const clientApply = useStore($updateApply)
   const backendStatus = useStore($backendUpdateStatus)
   const backendApply = useStore($backendUpdateApply)
-  // Contributed on/off rows check the live half (YOLO on / YOLO off), so the
-  // groups have to rebuild when that state moves under an open palette.
-  const yoloActive = useStore($yoloActive)
+  // Running a keepOpen row (a toggle) changes state the rows themselves report,
+  // so the groups have to rebuild without the palette closing. A counter keeps
+  // that generic — the palette never learns which stores its contributions read.
+  const [selectTick, setSelectTick] = useState(0)
 
   const updateVersionLabel = useMemo(() => {
     const backend = connection?.mode === 'remote'
@@ -729,11 +740,13 @@ function CommandPaletteBody({ onExited }: { onExited: () => void }) {
               heading: cc.commands,
               items: contributedItems.map(item => ({
                 action: item.action,
-                // Resolved per palette open (see the `open` dep below) so a
-                // state-describing row can't show a state it left.
+                // Read on open and after every select (the deps below), so a
+                // row that reports state can't show the state it just left.
                 detail: item.detail?.(),
+                detailVariant: item.detailVariant,
                 icon: item.icon ?? Zap,
                 id: item.key,
+                keepOpen: item.keepOpen,
                 keywords: item.keywords,
                 label: item.label,
                 run: item.run
@@ -926,7 +939,11 @@ function CommandPaletteBody({ onExited }: { onExited: () => void }) {
         ]
       }
     ]
-  }, [contributedItems, go, open, projectTree, settingsSectionLabel, t, updateVersionLabel, yoloActive])
+    // `open` and `selectTick` are deliberate re-read triggers, not values: rows
+    // report live state through `detail()`, so the groups must rebuild when the
+    // palette opens and after each select — eslint only sees unused deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contributedItems, go, open, projectTree, selectTick, settingsSectionLabel, t, updateVersionLabel])
 
   // The long, granular lists (settings fields, API keys, MCP servers, archived
   // chats) only surface once the user types — otherwise they'd bury the
@@ -1233,7 +1250,13 @@ function CommandPaletteBody({ onExited }: { onExited: () => void }) {
 
     if (!item.keepOpen) {
       closeCommandPalette()
+
+      return
     }
+
+    // Staying open means the rows are still on screen — re-read anything they
+    // report (a toggle's on/off) so the note isn't showing the previous state.
+    setSelectTick(tick => tick + 1)
   }
 
   return (
