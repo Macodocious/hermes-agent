@@ -3083,8 +3083,31 @@ def _normalize_managed_eol(git_cmd, repo_root):
             return None
         return {p for p in out.stdout.split("\0") if p}
 
+    def _real_dirty():
+        # ``--name-only`` does not honour ``--ignore-cr-at-eol`` — git 2.43
+        # still lists a file whose only difference is CRLF vs LF — so the
+        # "clean apart from line endings" set has to come from ``--numstat``,
+        # which does apply the whitespace rules. Without this the probe reads
+        # every text file as a genuine edit and the cleanup never runs.
+        out = subprocess.run(
+            probe + ["diff", "--numstat", "-z", "--ignore-cr-at-eol"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True, encoding="utf-8", errors="replace",
+        )
+        if out.returncode != 0:
+            return None
+        names = set()
+        for record in out.stdout.split("\0"):
+            if not record:
+                continue
+            parts = record.split("\t", 2)
+            if len(parts) == 3 and parts[2]:
+                names.add(parts[2])
+        return names
+
     def _eol_only():
-        all_dirty, real_dirty = _dirty(), _dirty("--ignore-cr-at-eol")
+        all_dirty, real_dirty = _dirty(), _real_dirty()
         if all_dirty is None or real_dirty is None:
             return None
         return all_dirty - real_dirty

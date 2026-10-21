@@ -24,7 +24,7 @@ from tools.environments.base import (
 
 logger = logging.getLogger(__name__)
 
-_SNAPSHOT_STORE = get_hermes_home() / "singularity_snapshots.json"
+_SNAPSHOT_STORE = Path(get_hermes_home()) / "singularity_snapshots.json"
 
 
 def _find_singularity_executable() -> str:

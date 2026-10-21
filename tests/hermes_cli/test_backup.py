@@ -1520,7 +1520,7 @@ class TestQuickSnapshot:
         assert "state.db" in err
         # Other small files may still snapshot
         if snap_id:
-            manifest = (hermes_home / "state-snapshots" / snap_id / "manifest.json")
+            manifest = (hermes_home / "snapshots" / snap_id / "manifest.json")
             assert manifest.exists()
             data = json.loads(manifest.read_text(encoding="utf-8"))
             assert "state.db" not in data.get("files", {})
@@ -1841,7 +1841,7 @@ class TestQuickSnapshot:
         # First snapshot: complete (state.db is small, under any cap)
         first_id = create_quick_snapshot(label="complete", hermes_home=hermes_home)
         assert first_id is not None
-        first_dir = hermes_home / "state-snapshots" / first_id
+        first_dir = hermes_home / "snapshots" / first_id
         assert (first_dir / "state.db").exists()
 
         _t.sleep(1.05)  # ensure distinct timestamp
@@ -1852,7 +1852,7 @@ class TestQuickSnapshot:
             label="oversized", hermes_home=hermes_home, max_file_size=1024, keep=1
         )
         assert second_id is not None
-        second_dir = hermes_home / "state-snapshots" / second_id
+        second_dir = hermes_home / "snapshots" / second_id
         assert not (second_dir / "state.db").exists()
 
         # Manifest must record the oversized skip

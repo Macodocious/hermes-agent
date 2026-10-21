@@ -1828,17 +1828,15 @@ class DiscordAdapter(BasePlatformAdapter):
         state = self._read_command_sync_state()
         key = self._command_sync_state_key(app_id)
         entry = state.get(key) if isinstance(state.get(key), dict) else {}
+        # A new attempt invalidates any prior success claim: the previous
+        # sync may have been interrupted before completing, so its
+        # fingerprint must not be treated as synced.
         entry.pop("last_success_at", None)
         entry.pop("summary", None)
         state[key] = {
             **entry,
             "fingerprint": fingerprint,
             "last_attempt_at": time.time(),
-            # A new attempt invalidates any prior success claim: the previous
-            # sync may have been interrupted before completing, so its
-            # fingerprint must not be treated as synced.
-            "last_success_at": 0,
-            "summary": None,
         }
         self._write_command_sync_state(state)
 

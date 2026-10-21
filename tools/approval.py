@@ -1009,7 +1009,12 @@ def _home_prefix_fold_regex(path: str):
     # ``/home`` does not); for Windows it rejects a bare drive root (``C:\\``)
     # while accepting a real home (``C:\\Users\\alice``).
     if len(components) < 2:
-        return None
+        # A one-component home is real — root's home is ``/root`` — and folding
+        # it is safe: the tail group already requires a separator plus a path
+        # segment after the prefix, so ``/rootfs`` never matches. A bare drive
+        # letter (``C:``) stays rejected: that is a root marker, not a home.
+        if len(components) != 1 or re.fullmatch(r"[A-Za-z]:", components[0]):
+            return None
     body = r"[/\\]+".join(re.escape(c) for c in components)
     # Optional leading root separator (POSIX ``/`` or UNC ``\\``); a Windows
     # drive letter is captured as the first component.

@@ -179,7 +179,7 @@ async def test_runner_goal_hook_enqueues_into_the_key_the_adapter_drains(hermes_
     GoalManager(session_entry.session_id).set("ship it")
     with patch(
         "hermes_cli.goals.judge_goal",
-        return_value=("continue", "still needs work", False, None, False),
+        return_value=("continue", "still needs work", False, None, False, False, False),
     ):
         await runner._post_turn_goal_continuation(
             session_entry=session_entry,

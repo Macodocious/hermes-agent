@@ -4818,6 +4818,46 @@ class TurnRunner:
             if not ctx._status_adapter:
                 return ""
 
+            # Deliver the agent's pre-clarify message as its own chat
+            # message so the prompt is not the only thing the user sees.
+            # The agent captures the visible content of a turn that ends
+            # in tool calls on _last_content_with_tools (see
+            # agent/conversation_loop.py capture site); with interim
+            # assistant messages disabled (e.g. Discord), that content
+            # would otherwise be silently dropped — the user would get
+            # only the bare clarify prompt, with the agent's message
+            # nowhere in the chat.
+            #
+            # Safe against double-delivery: when interim messages are
+            # enabled, the content was already delivered through
+            # _emit_interim_assistant_message, so _interim_text_was_delivered
+            # is True and this block is skipped. Clearing the field also
+            # prevents the post-clarify empty-response fallback
+            # (conversation_loop.py) from re-sending the same text.
+            pending_content = getattr(agent, "_last_content_with_tools", None)
+            if pending_content:
+                from agent.redact import redact_sensitive_text
+
+                visible_pending = agent._strip_think_blocks(pending_content).strip()
+                visible_pending = redact_sensitive_text(visible_pending, force=True)
+                if (
+                    visible_pending
+                    and visible_pending != "(empty)"
+                    and not agent._interim_text_was_delivered(visible_pending)
+                ):
+                    safe_schedule_threadsafe(
+                        ctx._status_adapter.send(
+                            ctx._status_chat_id,
+                            visible_pending,
+                            metadata=ctx._status_thread_metadata,
+                        ),
+                        ctx._loop_for_step,
+                        logger=logger,
+                        log_message="Clarify pending-content send failed to schedule",
+                    )
+                agent._last_content_with_tools = None
+                agent._last_content_tools_all_housekeeping = False
+
             clarify_id = _uuid.uuid4().hex[:10]
             _clarify_mod.register(
                 clarify_id=clarify_id,
@@ -5278,6 +5318,50 @@ class TurnRunner:
         
         # Return final response, or a message if something went wrong
         final_response = result.get("final_response")
+
+        # Deliver captured-but-undelivered content from this run so it is
+        # never lost (mirrors the clarify-path delivery above). With
+        # interim assistant messages disabled (e.g. Discord), assistant
+        # text written in a tool-call turn is captured on
+        # _last_content_with_tools but never transmitted; when the model's
+        # final response is non-empty but different (e.g. "Plan presented
+        # above — awaiting your go-ahead"), that content would otherwise
+        # be silently dropped. Safe against double-delivery: text already
+        # sent through the interim rail is skipped via
+        # _interim_text_was_delivered, and the capture is cleared so the
+        # empty-response fallback cannot re-send it. Interrupted runs are
+        # excluded: a turn killed mid-stream (gate denial, /stop) leaves
+        # partial narration on the capture, and flushing it would surface
+        # text the model never finished.
+        pending_content = getattr(agent, "_last_content_with_tools", None)
+        if pending_content and not result.get("interrupted"):
+            agent._last_content_with_tools = None
+            agent._last_content_tools_all_housekeeping = False
+            if ctx._status_adapter:
+                from agent.redact import redact_sensitive_text
+
+                visible_pending = agent._strip_think_blocks(pending_content).strip()
+                visible_pending = redact_sensitive_text(visible_pending, force=True)
+                # Skip when the final response already carries this text
+                # (the model echoed it, or it is part of the final answer) —
+                # delivering both would duplicate the message.
+                final_visible = agent._strip_think_blocks(final_response or "").strip()
+                if (
+                    visible_pending
+                    and visible_pending != "(empty)"
+                    and not agent._interim_text_was_delivered(visible_pending)
+                    and visible_pending not in final_visible
+                ):
+                    safe_schedule_threadsafe(
+                        ctx._status_adapter.send(
+                            ctx._status_chat_id,
+                            visible_pending,
+                            metadata=ctx._status_thread_metadata,
+                        ),
+                        ctx._loop_for_step,
+                        logger=logger,
+                        log_message="Captured-content delivery failed to schedule",
+                    )
 
         # Extract actual token counts from the agent instance used for this run
         _last_prompt_toks = 0
