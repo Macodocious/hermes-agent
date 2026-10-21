@@ -2592,6 +2592,7 @@ def text_to_speech_tool(
     output_path: Optional[str] = None,
     speed: Optional[float] = None,
     instructions: Optional[str] = None,
+    provider: Optional[str] = None,
 ) -> str:
     """
     Convert text to speech audio.
@@ -2611,6 +2612,14 @@ def text_to_speech_tool(
             accent, whispering). Forwarded to the OpenAI backend
             (gpt-4o-mini-tts and OpenAI-compatible servers). Silently
             ignored by backends that don't support it.
+        provider: Optional TTS provider override. When set, bypasses the
+            configured ``tts.provider`` and uses this provider instead.
+            Accepts built-in names (``edge``, ``openai``, ``elevenlabs``,
+            ``minimax``, ``xai``, ``mistral``, ``gemini``, ``neutts``,
+            ``kittentts``, ``piper``), user-declared command provider names
+            from ``tts.providers.<name>``, or plugin-registered provider
+            names.  When ``None`` (the default), the configured provider
+            from ``tts.provider`` in config.yaml is used.
 
     Returns:
         str: JSON result with success, file_path, and optionally MEDIA tag.
@@ -2634,7 +2643,12 @@ def text_to_speech_tool(
         clamped = max(0.25, min(4.0, float(speed)))
         tts_config = dict(tts_config)  # shallow copy to avoid mutating the cache
         tts_config["speed"] = clamped
-    provider = _get_provider(tts_config)
+
+    # Allow per-call provider override; fall back to the configured default.
+    if provider:
+        provider = provider.lower().strip()
+    else:
+        provider = _get_provider(tts_config)
 
     # User-declared command provider (type: command under tts.providers.<name>)
     # resolves BEFORE the built-in dispatch. Built-in names short-circuit here
@@ -3370,6 +3384,16 @@ TTS_SCHEMA = {
                     "Forwarded to the OpenAI backend (gpt-4o-mini-tts and OpenAI-compatible "
                     "voice-design servers). Silently ignored by backends that don't support it."
                 )
+            },
+            "provider": {
+                "type": "string",
+                "description": (
+                    "Optional TTS provider override. Accepts built-in names "
+                    "(edge, openai, elevenlabs, minimax, xai, mistral, gemini, "
+                    "neutts, kittentts, piper), user-declared command provider "
+                    "names from tts.providers.<name>, or plugin-registered names. "
+                    "When omitted, the configured tts.provider from config.yaml is used."
+                )
             }
         },
         "required": ["text"]
@@ -3384,7 +3408,8 @@ registry.register(
         text=args.get("text", ""),
         output_path=args.get("output_path"),
         speed=args.get("speed"),
-        instructions=args.get("instructions")),
+        instructions=args.get("instructions"),
+        provider=args.get("provider")),
     check_fn=check_tts_requirements,
     emoji="🔊",
 )
