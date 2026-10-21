@@ -4685,7 +4685,9 @@ class BasePlatformAdapter(ABC):
         command was running — spawns a fresh processing task for it.
         """
         await self._flush_text_debounce_now(session_key)
-        pending_event = self._pending_messages.pop(session_key, None)
+        pending_event = self._drop_internal_pending_event(
+            self._pending_messages.pop(session_key, None), session_key,
+        )
         self._release_session_guard(session_key, guard=command_guard)
         if pending_event is None:
             return

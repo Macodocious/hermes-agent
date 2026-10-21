@@ -157,3 +157,51 @@ def test_internal_event_does_not_displace_user_message():
 
     assert pending[sk].text == "user text"
     assert pending[sk].internal is False
+
+
+@pytest.mark.asyncio
+async def test_post_command_drain_drops_internal_event(caplog):
+    """The /stop, /new, /reset follow-up drain must not run an internal event."""
+    adapter = _make_adapter()
+    sk = _sk()
+    runs: list[str] = []
+
+    async def handler(event):
+        runs.append(event.text)
+        return "ok"
+
+    adapter._message_handler = handler
+    adapter._pending_messages[sk] = _make_event(text="notice", internal=True)
+
+    with caplog.at_level(logging.WARNING, logger="gateway.platforms.base"):
+        await adapter._drain_pending_after_session_command(sk, asyncio.Event())
+        await asyncio.sleep(0.05)
+
+    assert runs == [], f"internal event started a run after a session command: {runs!r}"
+    assert any(
+        "Dropping queued internal event" in record.message for record in caplog.records
+    )
+
+
+@pytest.mark.asyncio
+async def test_post_command_drain_still_runs_user_event():
+    """A user message queued behind a session command still runs."""
+    adapter = _make_adapter()
+    sk = _sk()
+    runs: list[str] = []
+
+    async def handler(event):
+        runs.append(event.text)
+        return "ok"
+
+    adapter._message_handler = handler
+    adapter._pending_messages[sk] = _make_event(text="user text")
+
+    await adapter._drain_pending_after_session_command(sk, asyncio.Event())
+    for _ in range(400):
+        if runs:
+            break
+        await asyncio.sleep(0.01)
+    await adapter.cancel_background_tasks()
+
+    assert runs == ["user text"], f"user follow-up did not run: {runs!r}"
