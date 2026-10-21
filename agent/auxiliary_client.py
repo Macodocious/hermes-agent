@@ -54,7 +54,7 @@ import time
 import uuid
 from pathlib import Path  # noqa: F401 — used by test mocks
 from types import SimpleNamespace
-from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
+from typing import Any, Callable, Dict, List, Optional, Tuple, TYPE_CHECKING
 from urllib.parse import urlparse, parse_qs, urlunparse
 
 # NOTE: `from openai import OpenAI` is deliberately NOT at module top — the
@@ -2590,21 +2590,18 @@ def _relay_sync_completion(
     *,
     provider: str | None = None,
     api_mode: str | None = None,
-    execute: Any = None,
+    create: Callable[[dict[str, Any]], Any] | None = None,
 ) -> Any:
+    callback = create or (lambda request: client.chat.completions.create(**request))
     route = _relay_auxiliary_metadata(provider=provider, api_mode=api_mode)
     if route is None:
-        # Callers that need the fork's progress-hooked create pass it in as
-        # ``execute``; the relay transport below owns the request otherwise.
-        if execute is not None:
-            return execute()
-        return client.chat.completions.create(**kwargs)
+        return callback(kwargs)
     provider_name, fallback_model, metadata = route
     from agent import relay_llm
 
     return relay_llm.execute_current(
         kwargs,
-        lambda request: client.chat.completions.create(**request),
+        callback,
         name=provider_name,
         model_name=str(kwargs.get("model") or fallback_model),
         metadata=metadata,
@@ -2618,19 +2615,18 @@ async def _relay_async_completion(
     *,
     provider: str | None = None,
     api_mode: str | None = None,
-    execute: Any = None,
+    create: Callable[[dict[str, Any]], Any] | None = None,
 ) -> Any:
+    callback = create or (lambda request: client.chat.completions.create(**request))
     route = _relay_auxiliary_metadata(provider=provider, api_mode=api_mode)
     if route is None:
-        if execute is not None:
-            return await execute()
-        return await client.chat.completions.create(**kwargs)
+        return await callback(kwargs)
     provider_name, fallback_model, metadata = route
     from agent import relay_llm
 
     return await relay_llm.execute_current_async(
         kwargs,
-        lambda request: client.chat.completions.create(**request),
+        callback,
         name=provider_name,
         model_name=str(kwargs.get("model") or fallback_model),
         metadata=metadata,
@@ -8171,13 +8167,16 @@ def call_llm(
                     kwargs,
                     provider=resolved_provider,
                     api_mode=resolved_api_mode,
-                    execute=lambda: _create_with_progress(
-                        client, kwargs, task,
+                    create=lambda request: _create_with_progress(
+                        client,
+                        request,
+                        task,
                         force_stream=_provider_requires_stream(
                             resolved_provider, _base_info or resolved_base_url,
                         ),
                     ),
-                ), task,
+                ),
+                task,
                 provider=resolved_provider, base_url=_base_info)
         except Exception as transient_err:
             if not _is_transient_transport_error(transient_err):
@@ -8215,13 +8214,17 @@ def call_llm(
                             kwargs,
                             provider=resolved_provider,
                             api_mode=resolved_api_mode,
-                            execute=lambda: _create_with_progress(
-                                client, kwargs, task,
+                            create=lambda request: _create_with_progress(
+                                client,
+                                request,
+                                task,
                                 force_stream=_provider_requires_stream(
-                                    resolved_provider, _base_info or resolved_base_url,
+                                    resolved_provider,
+                                    _base_info or resolved_base_url,
                                 ),
                             ),
-                        ), task)
+                        ),
+                        task)
                 except Exception as retry_transient:
                     if not _is_transient_transport_error(retry_transient):
                         raise
@@ -8858,8 +8861,9 @@ async def async_call_llm(
                     kwargs,
                     provider=resolved_provider,
                     api_mode=resolved_api_mode,
-                    execute=lambda: _acreate(kwargs),
-                ), task,
+                    create=_acreate,
+                ),
+                task,
                 provider=resolved_provider, base_url=_client_base)
         except Exception as transient_err:
             if not _is_transient_transport_error(transient_err):
@@ -8885,8 +8889,9 @@ async def async_call_llm(
                     kwargs,
                     provider=resolved_provider,
                     api_mode=resolved_api_mode,
-                    execute=lambda: _acreate(kwargs),
-                ), task)
+                    create=_acreate,
+                ),
+                task)
     except Exception as first_err:
         if "temperature" in kwargs and _is_unsupported_temperature_error(first_err):
             retry_kwargs = dict(kwargs)

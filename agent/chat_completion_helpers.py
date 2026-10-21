@@ -3232,6 +3232,10 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
         _reasoning_chars = 0
         _loop_check_at = REASONING_LOOP_SPAN_CHARS
         reasoning_loop_aborted = None
+        if agent.provider == "moa":
+            # Hermes interrupts the managed stream; Relay retains sole
+            # ownership of closing the underlying provider stream.
+            _set_request_stream_handle(stream)
         for chunk in stream:
             last_chunk_time["t"] = time.time()
             agent._touch_activity("receiving stream response")
