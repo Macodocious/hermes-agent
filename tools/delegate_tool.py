@@ -1610,7 +1610,7 @@ def _build_child_agent(
             logger.debug("spawn_requested relay failed: %s", exc)
 
     try:
-        from hermes_cli.plugins import invoke_hook as _invoke_hook
+        from hermes_cli.lifecycle import invoke_hook as _invoke_hook
         _invoke_hook(
             "subagent_start",
             parent_session_id=getattr(parent_agent, "session_id", None),
