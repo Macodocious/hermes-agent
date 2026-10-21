@@ -1195,9 +1195,9 @@ def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effe
             tool_duration = 0.0
         else:
             function_name, function_args, function_result, tool_duration, is_error, blocked, middleware_trace = r
-            progress_function_name = function_name
             name = function_name
             args = function_args
+            progress_function_name = function_name
             if blocked:
                 effect_disposition = "none"
 
