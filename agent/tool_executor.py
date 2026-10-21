@@ -357,6 +357,23 @@ def _with_lifecycle_reminder(agent, function_name: str, result: Any) -> Any:
     return result
 
 
+def _mark_work_under_current_task(agent, function_name: str) -> None:
+    """Record that this call counts as work under the current task.
+
+    Work is any call except ``todo``. Fail-open: marking must never break a
+    tool call.
+    """
+    if function_name == "todo":
+        return
+    store = getattr(agent, "_todo_store", None)
+    if store is None:
+        return
+    try:
+        store.mark_work()
+    except Exception as exc:
+        logger.debug("todo work mark failed for %s: %s", function_name, exc)
+
+
 def _run_agent_tool_execution_middleware(
     agent,
     *,
@@ -703,6 +720,7 @@ def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effe
             except Exception as tool_error:
                 result = f"Error executing tool '{function_name}': {tool_error}"
                 logger.error("_invoke_tool raised for %s: %s", function_name, tool_error, exc_info=True)
+            _mark_work_under_current_task(agent, function_name)
             result = _with_lifecycle_reminder(agent, function_name, result)
             duration = time.time() - start
             is_error, _ = _detect_tool_failure(function_name, result)
@@ -1329,6 +1347,7 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
                     action=next_args.get("action"),
                     item_id=next_args.get("item_id"),
                     reason=next_args.get("reason"),
+                    request_id=getattr(agent, "_current_api_request_id", "") or "",
                 )
                 # Write-through (P1): persist after any mutating call so the
                 # state_meta row survives the per-message agent. Reads skip it.
@@ -1686,6 +1705,8 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
         # Every branch above — inline agent-runtime tools and registry-dispatched
         # tools alike — lands here with its result. This is the one place the
         # sequential path can speak to the model about the lifecycle.
+        if not _execution_blocked:
+            _mark_work_under_current_task(agent, function_name)
         function_result = _with_lifecycle_reminder(agent, function_name, function_result)
 
         if isinstance(function_result, str):

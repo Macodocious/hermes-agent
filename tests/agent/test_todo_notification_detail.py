@@ -133,6 +133,7 @@ class TestPlanCompleteNotice:
         ])
         for item_id in ("1", "2", "3"):
             store.transition("begin", item_id)
+            store.mark_work()
             store.transition("complete", item_id)
 
         lines = self._drained_lines(store)
@@ -154,6 +155,7 @@ class TestPlanCompleteNotice:
             {"id": "2", "content": "b", "status": "pending", "plan": "p"},
         ])
         store.transition("begin", "1")
+        store.mark_work()
         store.transition("complete", "1")
 
         lines = self._drained_lines(store)
@@ -200,6 +202,7 @@ class TestPostWriteNoticeEmission:
             {"id": "2", "content": "a", "status": "pending", "plan": "p"},
         ])
         store.transition("begin", "1")
+        store.mark_work()
         store.transition("complete", "1")  # promotes row 2 and records its start
 
         lines = [
@@ -238,6 +241,7 @@ class TestPostWriteNoticeEmission:
 
         store = _store([{"id": "1", "content": "ship it", "status": "pending"}])
         store.transition("begin", "1")
+        store.mark_work()
         store.transition("complete", "1")
         sent = []
 

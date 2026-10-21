@@ -153,6 +153,11 @@ def _merge_todo_stores(memory: Any, persisted: Any) -> Any:
     # in-memory store — carry them across so the turn-end drain still sees the
     # transitions this turn produced.
     merged.adopt_notices(memory.pending_notices())
+    # The close checks ride beside the items, so they must cross the merge too:
+    # otherwise the replace below forgets the work mark the executor just
+    # recorded and forgives a second close in the same assistant message.
+    merged._worked_id = memory._worked_id
+    merged._last_close_request = memory._last_close_request
     return merged
 
 

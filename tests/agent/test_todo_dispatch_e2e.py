@@ -71,6 +71,7 @@ def test_complete_write_finalizes_without_a_verdict(dispatched) -> None:
     """The agent's complete action alone marks the task done."""
     agent, calls = dispatched
     _invoke(agent, "begin", "1")
+    agent._todo_store.mark_work()
     _invoke(agent, "complete", "1")
 
     assert agent._todo_store.read()[0]["status"] == "completed"

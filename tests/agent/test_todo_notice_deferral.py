@@ -20,6 +20,7 @@ def _store_with_two_notices():
     """One start and one completion, in queue order."""
     store = _store_with([{"id": "1", "content": "one", "status": "pending"}])
     store.transition("begin", "1")
+    store.mark_work()
     store.transition("complete", "1")
     return store
 

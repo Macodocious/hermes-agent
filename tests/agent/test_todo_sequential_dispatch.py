@@ -157,6 +157,7 @@ def test_sequential_complete_transitions_to_completed(dispatched) -> None:
     """action=complete must reach the store: in_progress -> completed."""
     agent, seams = dispatched
     _dispatch_sequential(agent, json.dumps({"action": "begin", "item_id": "1"}))
+    agent._todo_store.mark_work()  # a close requires work under the row
     _dispatch_sequential(agent, json.dumps({"action": "complete", "item_id": "1"}))
 
     assert agent._todo_store.read()[0]["status"] == "completed"
