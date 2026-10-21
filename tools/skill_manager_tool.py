@@ -1090,11 +1090,11 @@ def _edit_skill(name: str, content: str) -> Dict[str, Any]:
         "path": str(existing["path"]),
         "_change": {"description": _desc},
     }
-    _add_description_prompt_preview(result, content)
     org_note = _maybe_auto_propose_org_edit(name, existing["path"])
     if org_note:
         result["org_sharing"] = org_note
         result["message"] = f"{result['message']} {org_note}"
+    _add_description_prompt_preview(result, content)
     return result
 
 
