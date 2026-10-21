@@ -137,6 +137,27 @@ class RelayAdapter(BasePlatformAdapter):
     def message_len_fn(self) -> Callable[[str], int]:
         return _LEN_FNS.get(self.descriptor.len_unit, len)
 
+    @property
+    def supports_status_text(self) -> bool:  # type: ignore[override]
+        """Whether the fronted platform renders a TEXT status line.
+
+        Native parity (rich status text): Slack's typing surface is the
+        assistant status line ("Finding answers…" next to the bot name), a
+        text-rendering indicator. When the relay fronts Slack, advertise it so
+        run.py's live-status lane feeds per-tool phrases via
+        ``set_status_text()`` — exactly the wiring the native SlackAdapter
+        gets (``supports_status_text = True``). Other fronted platforms keep
+        textless typing bubbles and must NOT receive phrase traffic.
+
+        Property (not class attr) because ONE RelayAdapter class fronts many
+        platforms; the answer depends on the handshaked descriptor. On a
+        multi-platform relay this scalar reflects the PRIMARY identity's
+        platform (same convention as the scalar ``descriptor``); per-chat
+        egress paths that need chat-accurate capabilities use
+        ``_descriptor_for_chat`` below.
+        """
+        return self.descriptor.platform == Platform.SLACK.value
+
     # ── per-chat capability resolution (Phase 1.5 multi-platform) ─────────
     def _descriptor_for_chat(self, chat_id: str) -> CapabilityDescriptor:
         """The capability descriptor governing a specific chat.
@@ -172,22 +193,6 @@ class RelayAdapter(BasePlatformAdapter):
 
     def message_len_fn_for_chat(self, chat_id: str) -> Callable[[str], int]:
         return _LEN_FNS.get(self._descriptor_for_chat(chat_id).len_unit, len)
-    @property
-    def supports_status_text(self) -> bool:  # type: ignore[override]
-        """Whether the fronted platform renders a TEXT status line.
-
-        Native parity (rich status text): Slack's typing surface is the
-        assistant status line ("Finding answers…" next to the bot name), a
-        text-rendering indicator. When the relay fronts Slack, advertise it so
-        run.py's live-status lane feeds per-tool phrases via
-        ``set_status_text()`` — exactly the wiring the native SlackAdapter
-        gets (``supports_status_text = True``). Other fronted platforms keep
-        textless typing bubbles and must NOT receive phrase traffic.
-
-        Property (not class attr) because ONE RelayAdapter class fronts many
-        platforms; the answer depends on the handshaked descriptor.
-        """
-        return self.descriptor.platform == Platform.SLACK.value
 
     def supports_draft_streaming(
         self,
