@@ -1382,6 +1382,7 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
 
         middleware_trace: list[dict[str, Any]] = []
         _execution_blocked = False
+
         tool_start_time = time.time()
 
         if function_name == "todo":
