@@ -18093,6 +18093,13 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                         continue
                     break
 
+                if agent_notify:
+                    # notify_on_complete means the agent owns this completion:
+                    # it was injected above, or the agent already took it via
+                    # wait/log. Either way it must never be re-posted as
+                    # user-facing chat text.
+                    break
+
                 # --- Normal text-only notification ---
                 # Decide whether to notify based on mode
                 should_notify = (
