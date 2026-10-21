@@ -2637,13 +2637,6 @@ def run_conversation(
                     continue  # Retry the API call
 
                 agent._turn_received_provider_response = True
-                from agent import relay_llm
-
-                relay_llm.complete_logical_call(
-                    api_request_id,
-                    outcome="success",
-                )
-
                 # Check finish_reason before proceeding
                 if agent.api_mode == "codex_responses":
                     status = getattr(response, "status", None)
@@ -3459,6 +3452,12 @@ def run_conversation(
                         clear_nous_rate_limit()
                     except Exception:
                         pass
+                from agent import relay_llm
+
+                relay_llm.complete_logical_call(
+                    api_request_id,
+                    outcome="success",
+                )
                 agent._touch_activity(f"API call #{api_call_count} completed")
                 break  # Success, exit retry loop
 
