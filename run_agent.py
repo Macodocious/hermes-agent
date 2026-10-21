@@ -6901,14 +6901,16 @@ class AIAgent:
             finish_task_run,
             start_task_run,
         )
+        from agent.subagent_lifecycle import bind_subagent_parent
         effective_task_id = task_id or str(uuid.uuid4())
+        session_id = str(getattr(self, "session_id", None) or "")
         task_context = {
-            "session_id": self.session_id or "",
+            "session_id": session_id,
             "task_id": effective_task_id,
             "platform": getattr(self, "platform", None) or "",
         }
         relay_turn_id = (
-            f"{self.session_id or 'session'}:{effective_task_id}:{uuid.uuid4().hex[:8]}"
+            f"{session_id or 'session'}:{effective_task_id}:{uuid.uuid4().hex[:8]}"
         )
         self._relay_pending_turn_id = relay_turn_id
         relay_parent_session_id = (
