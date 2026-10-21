@@ -923,6 +923,19 @@ def get_ticker_success_age() -> Optional[float]:
     return _epoch_file_age(store.cron_dir / "ticker_last_success")
 
 
+def record_catch_up_occurrence() -> None:
+    """Increment the profile-local stale-schedule catch-up counter, best effort."""
+    path = _current_cron_store().cron_dir / "catch_up_occurrences"
+    try:
+        try:
+            value = int(path.read_text(encoding="utf-8").strip())
+        except (OSError, ValueError):
+            value = 0
+        _atomic_write_counter(path, max(0, value) + 1)
+    except Exception:
+        pass
+
+
 def record_ticker_error(message: str) -> None:
     """Persist the most recent tick failure so other processes can surface it.
 
@@ -958,17 +971,13 @@ def record_ticker_error(message: str) -> None:
         pass
 
 
-def record_catch_up_occurrence() -> None:
-    """Increment the profile-local stale-schedule catch-up counter, best effort."""
+def get_catch_up_occurrence_count() -> int:
+    """Return the profile-local stale-schedule catch-up count."""
     path = _current_cron_store().cron_dir / "catch_up_occurrences"
     try:
-        try:
-            value = int(path.read_text(encoding="utf-8").strip())
-        except (OSError, ValueError):
-            value = 0
-        _atomic_write_counter(path, max(0, value) + 1)
-    except Exception:
-        pass
+        return max(0, int(path.read_text(encoding="utf-8").strip()))
+    except (OSError, ValueError):
+        return 0
 
 
 def clear_ticker_error() -> None:
@@ -992,15 +1001,6 @@ def get_ticker_last_error() -> Optional[str]:
         return None
     message = "\n".join(lines[1:]).strip()
     return message or None
-
-
-def get_catch_up_occurrence_count() -> int:
-    """Return the profile-local stale-schedule catch-up count."""
-    path = _current_cron_store().cron_dir / "catch_up_occurrences"
-    try:
-        return max(0, int(path.read_text(encoding="utf-8").strip()))
-    except (OSError, ValueError):
-        return 0
 
 
 # =============================================================================
