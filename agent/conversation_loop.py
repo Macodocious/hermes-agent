@@ -2257,13 +2257,7 @@ def run_conversation(
                             _retry.restart_with_length_continuation = True
                             break
                         if assistant_message is not None and not _trunc_has_tool_calls:
-                            # A reasoning-repetition abort is stamped
-                            # finish_reason="length" with empty content, but it
-                            # is not an output-cap cut. Counting it here spends
-                            # the continuation budget on a loop the guard
-                            # already refused to continue.
-                            if not _loop_abort_test:
-                                length_continue_retries += 1
+                            length_continue_retries += 1
                             interim_msg = agent._build_assistant_message(assistant_message, finish_reason)
                             messages.append(interim_msg)
                             if assistant_message.content:
