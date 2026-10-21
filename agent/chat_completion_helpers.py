@@ -3175,6 +3175,7 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
         _diag = agent._stream_diag_init()
         request_client_holder["diag"] = _diag
         _writer_token = {"value": None}
+        attempt_request_client = {"value": None}
 
         def _open_stream(next_api_kwargs: dict[str, Any]):
             stream_kwargs = {
@@ -3196,6 +3197,7 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
                     api_kwargs=stream_kwargs,
                 )
             )
+            attempt_request_client["value"] = request_client
             last_chunk_time["t"] = time.time()
             agent._touch_activity("waiting for provider response (streaming)")
             return request_client.chat.completions.create(**stream_kwargs)
@@ -3331,9 +3333,12 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
                     # the finally's close really closes the pool instead of
                     # caching it (owner-thread abort: shutdown is safe, and the
                     # FD release still happens in the finally below).
-                    agent._abort_request_openai_client(
-                        request_client, reason="interrupt_stream_close_failed"
-                    )
+                    request_client = attempt_request_client["value"]
+                    if request_client is not None:
+                        agent._abort_request_openai_client(
+                            request_client,
+                            reason="interrupt_stream_close_failed",
+                        )
                 break
 
             if not _stream_attempt_is_active(stream_attempt_id):
