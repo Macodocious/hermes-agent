@@ -6814,7 +6814,7 @@ class AIAgent:
                         "session, or check auxiliary.compression."
                     )
 
-            return run_compress_context_with_progress_timeout(
+            result = run_compress_context_with_progress_timeout(
                 worker=_run,
                 messages=messages,
                 system_prompt_fallback=_fallback_prompt,
@@ -6822,6 +6822,17 @@ class AIAgent:
                 total_ceiling_seconds=total_ceiling,
                 on_timeout=_on_timeout,
             )
+            # compress_context ran on a daemon pool worker thread; the session
+            # id rotation updated hermes_logging._session_context (a
+            # threading.local) on the WORKER thread, not this one. Propagate
+            # the current session_id back so subsequent log lines on this
+            # thread carry the rotated id (#34089).
+            try:
+                from hermes_logging import set_session_context
+                set_session_context(self.session_id)
+            except Exception:
+                pass
+            return result
         finally:
             # Restore whatever the caller had, so a compaction never leaks its
             # tag into the surrounding scope.
