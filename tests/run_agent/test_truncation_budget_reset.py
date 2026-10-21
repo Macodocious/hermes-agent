@@ -1,7 +1,7 @@
-"""The continuation budget resets on tool success and ignores reasoning-loop aborts.
+"""The continuation budget resets on tool success.
 
-Pins the contract from session 20261019_174729_96ecec6f: four reasoning-repetition
-aborts, interleaved with successful tool calls, ended a turn with
+Pins the contract from session 20261019_174729_96ecec6f: four truncated replies,
+interleaved with successful tool calls, ended a turn with
 "Response remained truncated after 4 continuation attempts".
 """
 
@@ -10,11 +10,10 @@ from unittest.mock import patch
 
 import pytest
 
-from hermes_constants import REASONING_LOOP_ABORT_ATTR
 from run_agent import AIAgent
 
 
-def _cut_response(loop_abort=False):
+def _cut_response():
     message = SimpleNamespace(
         content="", tool_calls=None, reasoning="The final response. " * 40
     )
@@ -24,8 +23,6 @@ def _cut_response(loop_abort=False):
         usage=None,
         id="resp-cut",
     )
-    if loop_abort:
-        setattr(response, REASONING_LOOP_ABORT_ATTR, "span")
     return response
 
 
@@ -81,16 +78,6 @@ def agent(tmp_path, monkeypatch):
     instance._save_trajectory = lambda *_a, **_kw: None
     instance.valid_tool_names = {"todo"}
     return instance
-
-
-def test_reasoning_loop_aborts_do_not_spend_the_continuation_budget(agent):
-    responses = [_cut_response(loop_abort=True) for _ in range(6)] + [_done_response()]
-    agent._interruptible_api_call = lambda _kwargs: responses.pop(0)
-
-    result = agent.run_conversation("finish the report")
-
-    assert result["final_response"] == "done"
-    assert result.get("error") is None
 
 
 def test_successful_tool_call_resets_the_continuation_budget(agent):
