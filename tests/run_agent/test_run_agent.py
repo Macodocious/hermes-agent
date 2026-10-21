@@ -1072,6 +1072,10 @@ class TestInit:
             patch("run_agent.check_toolset_requirements", return_value={}),
             patch("run_agent.OpenAI"),
             patch("hermes_cli.config.load_config", return_value={}),
+            patch(
+                "hermes_cli.config.load_config_readonly",
+                return_value={},
+            ),
         ):
             a = AIAgent(
                 api_key="test-k...7890",
@@ -1093,6 +1097,10 @@ class TestInit:
                 "hermes_cli.config.load_config",
                 return_value={"prompt_caching": {"cache_ttl": "1h"}},
             ),
+            patch(
+                "hermes_cli.config.load_config_readonly",
+                return_value={"prompt_caching": {"cache_ttl": "1h"}},
+            ),
         ):
             a = AIAgent(
                 api_key="test-k...7890",
@@ -1112,6 +1120,10 @@ class TestInit:
             patch("run_agent.OpenAI"),
             patch(
                 "hermes_cli.config.load_config",
+                return_value={"model": {"max_tokens": 4096}},
+            ),
+            patch(
+                "hermes_cli.config.load_config_readonly",
                 return_value={"model": {"max_tokens": 4096}},
             ),
         ):
@@ -1140,6 +1152,10 @@ class TestInit:
                 "hermes_cli.config.load_config",
                 return_value={"model": {"max_tokens": 4096}},
             ),
+            patch(
+                "hermes_cli.config.load_config_readonly",
+                return_value={"model": {"max_tokens": 4096}},
+            ),
         ):
             a = AIAgent(
                 api_key="test-k...7890",
@@ -1162,6 +1178,10 @@ class TestInit:
             patch("run_agent.OpenAI"),
             patch(
                 "hermes_cli.config.load_config",
+                return_value={"prompt_caching": {"cache_ttl": "30m"}},
+            ),
+            patch(
+                "hermes_cli.config.load_config_readonly",
                 return_value={"prompt_caching": {"cache_ttl": "30m"}},
             ),
         ):
@@ -1544,6 +1564,10 @@ class TestToolUseEnforcementConfig:
                 "hermes_cli.config.load_config",
                 return_value={"agent": {"tool_use_enforcement": tool_use_enforcement}},
             ),
+            patch(
+                "hermes_cli.config.load_config_readonly",
+                return_value={"agent": {"tool_use_enforcement": tool_use_enforcement}},
+            ),
         ):
             a = AIAgent(
                 model=model,
@@ -1690,6 +1714,10 @@ class TestToolUseEnforcementConfig:
                 "hermes_cli.config.load_config",
                 return_value={"agent": {"tool_use_enforcement": True}},
             ),
+            patch(
+                "hermes_cli.config.load_config_readonly",
+                return_value={"agent": {"tool_use_enforcement": True}},
+            ),
         ):
             a = AIAgent(
                 api_key="test-key-1234567890",
@@ -1725,6 +1753,10 @@ class TestTaskCompletionGuidance:
             patch("run_agent.OpenAI"),
             patch(
                 "hermes_cli.config.load_config",
+                return_value={"agent": agent_cfg},
+            ),
+            patch(
+                "hermes_cli.config.load_config_readonly",
                 return_value={"agent": agent_cfg},
             ),
         ):
@@ -1784,6 +1816,10 @@ class TestTaskCompletionGuidance:
                 "hermes_cli.config.load_config",
                 return_value={"agent": {"task_completion_guidance": True}},
             ),
+            patch(
+                "hermes_cli.config.load_config_readonly",
+                return_value={"agent": {"task_completion_guidance": True}},
+            ),
         ):
             a = AIAgent(
                 api_key="test-key-1234567890",
@@ -1814,6 +1850,10 @@ class TestEnvironmentProbeIntegration:
             patch("run_agent.OpenAI"),
             patch(
                 "hermes_cli.config.load_config",
+                return_value={"agent": {"environment_probe": environment_probe}},
+            ),
+            patch(
+                "hermes_cli.config.load_config_readonly",
                 return_value={"agent": {"environment_probe": environment_probe}},
             ),
         ):
