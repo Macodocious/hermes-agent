@@ -7504,7 +7504,7 @@ def _live_visible_history(session: dict, db, in_memory_fallback: list[dict]) -> 
     key = session.get("session_key")
     if db is not None and key:
         try:
-            display = db.get_messages_as_conversation(key, include_ancestors=True)
+            display = db.get_messages_as_conversation(key, include_ancestors=True, include_row_ids=True)
             return _reconcile_display_with_live(display, in_memory_fallback)
         except Exception:
             logger.debug("live display projection read failed", exc_info=True)
@@ -11710,7 +11710,7 @@ def _format_live_history_output(session: dict) -> str:
     if db is not None and session.get("session_key"):
         try:
             history = db.get_messages_as_conversation(
-                session["session_key"], include_ancestors=True
+                session["session_key"], include_ancestors=True, include_row_ids=True
             )
         except Exception:
             pass
@@ -11750,7 +11750,9 @@ def _format_live_context_output(session: dict) -> str:
     if db is not None and session.get("session_key"):
         try:
             messages = _history_to_messages(
-                db.get_messages_as_conversation(session["session_key"], include_ancestors=True)
+                db.get_messages_as_conversation(
+                    session["session_key"], include_ancestors=True, include_row_ids=True
+                )
             )
         except Exception:
             messages = []
