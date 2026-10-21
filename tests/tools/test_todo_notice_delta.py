@@ -26,6 +26,7 @@ class TestCommitOrdering:
     def test_completion_precedes_the_start_it_unlocks(self):
         store = _store("pending", "pending", "pending")
         store.transition("begin", "1")
+        store.mark_work()
         store.drain_notices()
 
         store.transition("complete", "1")

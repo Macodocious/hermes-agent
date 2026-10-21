@@ -49,6 +49,7 @@ def test_completion_resolves_before_the_promotion_is_issued():
     """One complete produces two lines; the second waits for the first."""
     store = _two_task_store()
     store.transition("begin", "1")
+    store.mark_work()
     store.drain_notices()
     events = []
 
@@ -69,6 +70,7 @@ def test_a_failed_send_stops_the_drain_and_keeps_the_queue():
     """The failed line and the one behind it stay queued; nothing is skipped."""
     store = _two_task_store()
     store.transition("begin", "1")
+    store.mark_work()
     store.drain_notices()
     issued = []
 
@@ -142,6 +144,7 @@ def test_the_label_is_frozen_at_commit():
         ]
     )
     store.drain_notices()
+    store.mark_work()
     store.transition("complete", "2")
     notice = next(n for n in store.pending_notices() if n["kind"] == "completed")
     rendered = format_notice(notice, store)

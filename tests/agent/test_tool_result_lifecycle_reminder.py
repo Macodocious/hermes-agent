@@ -28,6 +28,7 @@ def _store_with(status: str) -> TodoStore:
     if status != "pending":
         store.transition("begin", "1")
     if status == "completed":
+        store.mark_work()
         store.transition("complete", "1")
     return store
 

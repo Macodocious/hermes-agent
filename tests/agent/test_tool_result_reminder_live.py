@@ -96,6 +96,7 @@ def _completed_store() -> TodoStore:
     store = TodoStore()
     store.write([{"id": "1", "content": "Old task", "status": "pending"}])
     store.transition("begin", "1")
+    store.mark_work()
     store.transition("complete", "1")
     return store
 

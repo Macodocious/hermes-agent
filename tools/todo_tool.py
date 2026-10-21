@@ -381,6 +381,15 @@ class TodoStore:
         # not an optimization. Re-entrant because transition() commits from
         # inside the same critical section it mutates in.
         self._lock = threading.RLock()
+        # Work-under-row mark (P7): the id of the row that has seen at least
+        # one non-todo call since it became current. Only one row is current
+        # at a time, so one id is the whole record; it lives beside the items
+        # rather than on a row, so no model write can set it.
+        self._worked_id = ""
+        # Request id of the last successful close (P7): the executor hands the
+        # assistant message's request id in with each todo call, so a second
+        # complete inside the same message is refused.
+        self._last_close_request = ""
 
     def seed_from_user_message(self, text: Any, origin: str = "") -> Optional[Dict[str, str]]:
         """Seed an empty store with the user's opening message (P5).
@@ -627,7 +636,9 @@ class TodoStore:
                 to_status=str(item.get("status", "")),
             )
 
-    def transition(self, action: str, item_id: Any, reason: str = "") -> Dict[str, Any]:
+    def transition(
+        self, action: str, item_id: Any, reason: str = "", request_id: str = ""
+    ) -> Dict[str, Any]:
         """Apply a lifecycle action to one task.
 
         The deterministic state machine the agent owns end to end:
@@ -647,15 +658,17 @@ class TodoStore:
         always the earliest open row, so the list advances in order. A
         ``complete`` likewise closes only the head, and promotes the next row
         that is neither completed nor cancelled — a paused successor becomes
-        current rather than being stranded. Anything not listed is refused
-        with an error dict.
+        current rather than being stranded. It also requires work under the
+        row (a non-``todo`` call made while the row was current) and one close
+        per assistant message, so a list cannot be ticked off in one batch.
+        Anything not listed is refused with an error dict.
 
         Returns ``{"ok": True, "item": {...}}`` on success or
         ``{"ok": False, "error": "..."}`` on refusal. Never raises.
         """
         with self._lock:
             before = self._snapshot()
-            result = self._transition_locked(action, item_id, reason)
+            result = self._transition_locked(action, item_id, reason, request_id)
             if result.get("ok"):
                 self._commit(before)
             return result
@@ -675,7 +688,7 @@ class TodoStore:
         return None
 
     def _transition_locked(
-        self, action: str, item_id: Any, reason: str
+        self, action: str, item_id: Any, reason: str, request_id: str = ""
     ) -> Dict[str, Any]:
         """``transition`` under the store lock: validate, mutate, return."""
         action = str(action or "").strip().lower()
@@ -723,6 +736,7 @@ class TodoStore:
                         ),
                     }
             item["status"] = "in_progress"
+            self._worked_id = ""
             return {"ok": True, "item": item.copy()}
         if action == "pause":
             item["status"] = "paused"
@@ -764,7 +778,31 @@ class TodoStore:
                     f"it with a reason, or move task {item_id} above it"
                 ),
             }
+        # A close the lifecycle did not see happen is refused. The row must
+        # carry work, and a message may close one task: those two checks are
+        # what spread the completion notices along the work instead of letting
+        # a list be ticked off in one batch at the end.
+        if self._worked_id != item_id:
+            return {
+                "ok": False,
+                "error": (
+                    f"cannot complete task {item_id}: no work under it — make a "
+                    f"call other than todo while it is current, or cancel it "
+                    f"with a reason"
+                ),
+            }
+        request_id = str(request_id or "").strip()
+        if request_id and request_id == self._last_close_request:
+            return {
+                "ok": False,
+                "error": (
+                    f"cannot complete task {item_id}: a task was already closed "
+                    f"in this message — tick each task in its own step"
+                ),
+            }
         item["status"] = "completed"
+        self._last_close_request = request_id
+        self._worked_id = ""
         self._promote_successor(item)
         return {"ok": True, "item": item.copy()}
 
@@ -787,6 +825,22 @@ class TodoStore:
         )
         if nxt is not None:
             nxt["status"] = "in_progress"
+            # A promoted row starts a fresh tenure: work done under the row
+            # that just closed is not work under this one.
+            self._worked_id = ""
+
+    def mark_work(self) -> None:
+        """Record that a non-todo call ran under the current row.
+
+        Called by the executor after every tool call. Records nothing when no
+        row is current; the mark is what a close is checked against.
+        """
+        with self._lock:
+            current = next(
+                (i for i in self._items if i["status"] == "in_progress"), None
+            )
+            if current is not None:
+                self._worked_id = str(current["id"])
 
     def _record_notice(
         self,
@@ -1066,6 +1120,8 @@ class TodoStore:
                 "notices": self._notices,
                 "next_capture_id": self._next_capture_id,
                 "seeded": self._seeded,
+                "worked_id": self._worked_id,
+                "last_close_request": self._last_close_request,
             },
             ensure_ascii=False,
         )
@@ -1095,6 +1151,13 @@ class TodoStore:
         # Restore the seeded flag (P5). Old persisted state without the key
         # defaults to False, so pre-existing sessions never render the nudge.
         store._seeded = bool(data.get("seeded", False))
+        # The work mark and the last close's request id ride beside the items:
+        # a reload must not hand back a row that can be ticked without work, or
+        # a message that already closed a task and could close another.
+        store._worked_id = str(data.get("worked_id", "") or "").strip()
+        store._last_close_request = str(
+            data.get("last_close_request", "") or ""
+        ).strip()
 
         # Restore pending lifecycle notices (defensive): only well-formed
         # entries survive, so a replayed store cannot inject a bogus notice.
@@ -1292,6 +1355,7 @@ def todo_tool(
     action: Optional[str] = None,
     item_id: Any = None,
     reason: Optional[str] = None,
+    request_id: str = "",
 ) -> str:
     """
     Single entry point for the todo tool. Reads or writes depending on params.
@@ -1311,6 +1375,9 @@ def todo_tool(
         reason: why the task is cancelled. Required by ``cancel`` (the
             reason is shown beneath the cancelled item); ignored by other
             actions.
+        request_id: the assistant message's request id, handed in by the
+            executor. A close records it, so a second close in the same
+            message is refused.
 
     Returns:
         JSON string with the full current list, pending captured requests,
@@ -1320,7 +1387,7 @@ def todo_tool(
         return tool_error("TodoStore not initialized")
 
     if action is not None:
-        result = store.transition(action, item_id, reason or "")
+        result = store.transition(action, item_id, reason or "", request_id=request_id)
         if not result.get("ok"):
             return tool_error(result.get("error", "lifecycle transition refused"))
         items = store.read()

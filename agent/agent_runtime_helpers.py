@@ -2494,6 +2494,7 @@ def invoke_tool(agent, function_name: str, function_args: dict, effective_task_i
                 action=next_args.get("action"),
                 item_id=next_args.get("item_id"),
                 reason=next_args.get("reason"),
+                request_id=getattr(agent, "_current_api_request_id", "") or "",
             )
             # Write-through (P1): persist after any mutating call so the
             # state_meta row survives the per-message agent. Reads skip it.
