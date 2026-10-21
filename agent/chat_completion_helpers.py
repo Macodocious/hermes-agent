@@ -2355,11 +2355,16 @@ def handle_max_iterations(agent, messages: list, api_call_count: int, append_to_
 
             if agent.api_mode == "anthropic_messages":
                 _tsum = agent._get_transport()
-                _ant_kw = _tsum.build_kwargs(model=agent.model, messages=api_messages, tools=None,
-                               max_tokens=agent.max_tokens, reasoning_config=agent.reasoning_config,
-                               is_oauth=agent._is_anthropic_oauth,
-                               preserve_dots=agent._anthropic_preserve_dots(),
-                               base_url=getattr(agent, "_anthropic_base_url", None))
+                _ant_kw = _tsum.build_kwargs(
+                    model=agent.model,
+                    messages=api_messages,
+                    tools=None,
+                    max_tokens=agent.max_tokens,
+                    reasoning_config=agent.reasoning_config,
+                    is_oauth=agent._is_anthropic_oauth,
+                    preserve_dots=agent._anthropic_preserve_dots(),
+                    base_url=getattr(agent, "_anthropic_base_url", None),
+                )
                 _ant_kw = _merge_nous_portal_messages_extra_body(agent, _ant_kw)
                 summary_response = _managed_summary_call(
                     _ant_kw,
@@ -2400,11 +2405,16 @@ def handle_max_iterations(agent, messages: list, api_call_count: int, append_to_
                 final_response = (_cnr_retry.content or "").strip()
             elif agent.api_mode == "anthropic_messages":
                 _tretry = agent._get_transport()
-                _ant_kw2 = _tretry.build_kwargs(model=agent.model, messages=api_messages, tools=None,
-                                is_oauth=agent._is_anthropic_oauth,
-                                max_tokens=agent.max_tokens, reasoning_config=agent.reasoning_config,
-                                preserve_dots=agent._anthropic_preserve_dots(),
-                                base_url=getattr(agent, "_anthropic_base_url", None))
+                _ant_kw2 = _tretry.build_kwargs(
+                    model=agent.model,
+                    messages=api_messages,
+                    tools=None,
+                    is_oauth=agent._is_anthropic_oauth,
+                    max_tokens=agent.max_tokens,
+                    reasoning_config=agent.reasoning_config,
+                    preserve_dots=agent._anthropic_preserve_dots(),
+                    base_url=getattr(agent, "_anthropic_base_url", None),
+                )
                 _ant_kw2 = _merge_nous_portal_messages_extra_body(agent, _ant_kw2)
                 retry_response = _managed_summary_call(
                     _ant_kw2,
