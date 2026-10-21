@@ -725,12 +725,12 @@ class ToolRegistry:
             name,
             result_type,
         )
-        return json.dumps({
-            "error": f"Tool handler returned unsupported result type: {result_type}",
-            "error_type": "tool_result_contract",
-            "tool": name,
-            "result_type": result_type,
-        }, ensure_ascii=False)
+        return tool_error(
+            f"Tool handler returned unsupported result type: {result_type}",
+            error_type="tool_result_contract",
+            tool=name,
+            result_type=result_type,
+        )
 
     def dispatch(self, name: str, args: dict, **kwargs) -> str | dict:
         """Execute a tool handler by name.
@@ -743,7 +743,7 @@ class ToolRegistry:
         """
         entry = self.get_entry(name)
         if not entry:
-            return json.dumps({"error": f"Unknown tool: {name}"})
+            return tool_error(f"Unknown tool: {name}")
         try:
             if entry.is_async:
                 from model_tools import _run_async
@@ -762,7 +762,7 @@ class ToolRegistry:
                 sanitized = _sanitize_tool_error(raw)
             except Exception:
                 sanitized = raw  # defensive: never let the sanitizer block error propagation
-            return json.dumps({"error": sanitized})
+            return tool_error(sanitized)
 
     # ------------------------------------------------------------------
     # Query helpers  (replace redundant dicts in model_tools.py)
