@@ -263,7 +263,7 @@ def test_nemo_relay_is_a_pinned_core_dependency():
     assert not requirement.marker.evaluate(
         {"sys_platform": "darwin", "platform_machine": "x86_64"}
     )
-    assert "nemo-relay" not in metadata["optional-dependencies"]
+    assert metadata["optional-dependencies"]["nemo-relay"] == []
 
 
 def _uv_lock_version(package: str) -> str:
