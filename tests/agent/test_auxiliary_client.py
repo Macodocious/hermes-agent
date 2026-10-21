@@ -5750,6 +5750,8 @@ class TestAuxiliaryClientPoisonedCacheEviction:
             ), patch(
                 "agent.auxiliary_client._try_payment_fallback",
                 return_value=(None, None, ""),
+            ), patch(
+                "agent.auxiliary_client._TRANSIENT_RETRY_BACKOFF_BASE", 0.0
             ):
                 with pytest.raises(ConnectionError):
                     call_llm(
