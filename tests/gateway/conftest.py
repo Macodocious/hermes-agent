@@ -242,6 +242,17 @@ def _ensure_discord_mock() -> None:
             return [child.to_component_dict() for child in self.children]
         def has_components_v2(self):
             return True
+    # AudioSource: real class so VoiceMixer(discord.AudioSource) can subclass
+    # it cleanly in tests.  MagicMock auto-attributes would make is_opus()
+    # return a Mock instead of False, breaking 9 TestVoiceMixerCore tests.
+    class _FakeAudioSource:
+        def is_opus(self):
+            return False
+        def read(self):
+            return b"\x00" * 3840  # one silent stereo s16 frame
+        def cleanup(self):
+            pass
+    discord_mod.AudioSource = _FakeAudioSource
 
     discord_mod.ui = SimpleNamespace(
         View=_FakeView,
