@@ -20,6 +20,7 @@ import {
   dismissTreePane,
   dockPaneBeside,
   isPaneVisible,
+  markCollapsePane,
   mirrorLayoutTree,
   paneRootSide,
   registerLayoutResetHandler,
@@ -547,8 +548,11 @@ bindToolPaneCollapse(
   () => setTerminalTakeover(false),
   () => setTerminalTakeover(true)
 )
-// ⌘K door onto the same store the keybind and statusbar pill flip — was a
+// ⌘K door onto the same pane the keybind and statusbar pill flip — was a
 // one-way "open" row under Go to, so it never showed on/off and couldn't hide.
+// Reads the TREE like every other pane toggle: `$terminalTakeover` stays true
+// behind a stacked sibling tab or a minimized zone, which would light the row
+// "on" for a terminal that isn't on screen.
 registry.register(
   paletteToggle({
     id: 'view.showTerminal',
@@ -556,8 +560,8 @@ registry.register(
     action: 'view.showTerminal',
     icon: Terminal,
     keywords: ['terminal', 'shell', 'console', 'pty'],
-    get: () => $terminalTakeover.get(),
-    set: setTerminalTakeover
+    get: () => isPaneVisible('terminal'),
+    set: () => togglePaneVisible('terminal')
   })
 )
 
@@ -585,13 +589,14 @@ const syncLogsPane = (open: boolean) => {
       id: 'logs',
       area: 'panes',
       title: 'logs',
-      // Same tool-panel sizing rule as the terminal above. dock: its OWN zone
-      // beside the terminal — never a tab in the terminal's strip.
+      // Same tool-panel sizing rule as the terminal above — no minHeight, so
+      // the sash floors it at COLLAPSED_ZONE_PX and folds the zone to its rail
+      // rather than leaving a sliver. dock: its OWN zone beside the terminal —
+      // never a tab in the terminal's strip.
       data: {
         placement: 'bottom',
         dock: { pane: 'terminal', pos: 'right' },
         height: '20vh',
-        minHeight: '7.5rem',
         maxHeight: '80vh'
       },
       render: () => idle(<LogsPane />)
@@ -629,8 +634,11 @@ registry.register(
     label: 'Toggle logs',
     icon: FileText,
     keywords: ['logs', 'agent log', 'tail', 'debug'],
-    // On-screen, not the store's boolean: logs stacks with the terminal, and
-    // behind its sibling's tab `$logsOpen` stays true while nothing is visible.
+    // On-screen, not the store's boolean. Summon-only keeps the two in step
+    // while logs sits in its own zone, but the user can still drag it into the
+    // terminal's strip or minimize its zone — and then `$logsOpen` reads true
+    // with nothing visible, so the row would show "on" and its press would
+    // spend itself re-asserting a value it already held.
     get: () => isPaneVisible('logs'),
     set: () => togglePaneVisible('logs')
   })
