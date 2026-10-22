@@ -43,6 +43,7 @@ def test_three_item_plan_reaches_all_terminal() -> None:
 
     for item_id, _content in PLAN_ITEMS:
         assert store.transition("begin", item_id)["ok"] is True
+        store.mark_work()
         assert store.transition("complete", item_id)["ok"] is True
 
     statuses = _statuses(store)
@@ -51,16 +52,16 @@ def test_three_item_plan_reaches_all_terminal() -> None:
 
 
 def test_complete_promotes_the_next_sibling() -> None:
-    """A completion promotes the next sibling and records its start there.
+    """A completion promotes the next sibling; its start waits for work.
 
-    The promotion is what anchors a start line to the task's real beginning:
-    the store knows which task is current the moment this one ends, so the
-    next task's ``▶️ Working on:`` line fires at that transition instead of
-    waiting on an agent ``begin`` that arrives after the work is already done.
+    The promotion makes the next row current the moment this one ends. The
+    next task's ``▶️ Working on:`` line is recorded at the first call under
+    it, not at this transition.
     """
     store = TodoStore()
     _seed_plan(store)
     store.transition("begin", "1")
+    store.mark_work()
     store.transition("complete", "1")
     assert _statuses(store)["2"] == "in_progress"
 
@@ -71,5 +72,6 @@ def test_plan_is_complete_reports_when_all_terminal() -> None:
     assert task_manager.plan_is_complete(store, PLAN_REF) is False
     for item_id, _content in PLAN_ITEMS:
         store.transition("begin", item_id)
+        store.mark_work()
         store.transition("complete", item_id)
     assert task_manager.plan_is_complete(store, PLAN_REF) is True

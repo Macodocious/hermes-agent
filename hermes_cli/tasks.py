@@ -158,6 +158,7 @@ def _merge_todo_stores(memory: Any, persisted: Any) -> Any:
     # recorded and forgives a second close in the same assistant message.
     merged._worked_id = memory._worked_id
     merged._last_close_request = memory._last_close_request
+    merged._start_line_sent_id = memory._start_line_sent_id
     return merged
 
 

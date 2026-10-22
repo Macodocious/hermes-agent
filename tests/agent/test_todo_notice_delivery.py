@@ -58,6 +58,7 @@ def test_completion_resolves_before_the_promotion_is_issued():
         return _Send(events, line)
 
     store.transition("complete", "1")
+    store.mark_work()  # the successor's first call records its start line
     task_manager._emit_pending_notices(_agent(store, callback))
 
     assert [kind for kind, _ in events] == ["issued", "resolved", "issued", "resolved"]
@@ -79,6 +80,7 @@ def test_a_failed_send_stops_the_drain_and_keeps_the_queue():
         return _Send([], line, fail=True)
 
     store.transition("complete", "1")
+    store.mark_work()
     task_manager._emit_pending_notices(_agent(store, callback))
 
     assert len(issued) == 1
@@ -89,6 +91,7 @@ def test_no_consumer_is_reported_and_nothing_is_dropped(caplog):
     """A notice with nowhere to go is a fault, not a queue to ship later."""
     store = _two_task_store()
     store.transition("begin", "1")
+    store.mark_work()
 
     with caplog.at_level(logging.WARNING, logger="agent.task_manager"):
         task_manager._emit_pending_notices(_agent(store, None))
@@ -101,6 +104,7 @@ def test_a_synchronous_callback_delivers_and_clears():
     """The CLI prints before it returns, so True is a real delivery."""
     store = _two_task_store()
     store.transition("begin", "1")
+    store.mark_work()
     lines = []
 
     task_manager._emit_pending_notices(
@@ -115,6 +119,7 @@ def test_a_callback_returning_none_counts_as_delivered():
     """A plain sink (list.append) has no failure channel, so it is taken."""
     store = _two_task_store()
     store.transition("begin", "1")
+    store.mark_work()
     lines = []
 
     task_manager._emit_pending_notices(_agent(store, lines.append))
@@ -127,6 +132,7 @@ def test_a_refused_line_stays_queued():
     """False means the line was not handed over, so it is not spent."""
     store = _two_task_store()
     store.transition("begin", "1")
+    store.mark_work()
 
     task_manager._emit_pending_notices(_agent(store, lambda line: False))
 

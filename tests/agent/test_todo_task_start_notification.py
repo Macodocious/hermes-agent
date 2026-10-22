@@ -16,9 +16,11 @@ def _store_with(items):
 
 
 class TestStoreIsTheStartProducer:
-    def test_begin_records_one_start_notice(self):
+    def test_begin_records_no_start_until_work(self):
         store = _store_with([{"id": "1", "content": "task one", "status": "pending"}])
         assert store.transition("begin", "1")["ok"] is True
+        assert [n for n in store.pending_notices() if n["kind"] == NOTICE_STARTED] == []
+        store.mark_work()
         notices = [n for n in store.pending_notices() if n["kind"] == NOTICE_STARTED]
         assert len(notices) == 1
         assert notices[0]["content"] == "task one"
@@ -30,6 +32,7 @@ class TestStoreIsTheStartProducer:
             {"id": "3", "content": "ship the feature", "status": "pending", "plan": "p"},
         ])
         assert store.transition("begin", "3")["ok"] is True
+        store.mark_work()
         notice = [n for n in store.pending_notices() if n["kind"] == NOTICE_STARTED][-1]
         assert format_notice(notice, store) == (
             "▶️ Working on task 3 of 3: ship the feature"
@@ -46,6 +49,7 @@ class TestStoreIsTheStartProducer:
             {"id": "2", "content": "ship the feature", "status": "pending", "plan": "p"},
         ])
         assert store.transition("begin", "1")["ok"] is True
+        store.mark_work()
         notice = [n for n in store.pending_notices() if n["kind"] == NOTICE_STARTED][-1]
         assert format_notice(notice, store) == "▶️ Working on: the opening request"
 

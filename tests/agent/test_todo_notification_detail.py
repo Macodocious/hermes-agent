@@ -177,6 +177,7 @@ class TestPostWriteNoticeEmission:
 
         store = _store([{"id": "1", "content": "ship it", "status": "pending"}])
         store.transition("begin", "1")
+        store.mark_work()
         sent = []
 
         _emit_pending_notices(self._Agent(store, sent.append))
@@ -189,6 +190,7 @@ class TestPostWriteNoticeEmission:
 
         store = _store([{"id": "1", "content": "ship it", "status": "pending"}])
         store.transition("begin", "1")
+        store.mark_work()
 
         _emit_pending_notices(self._Agent(store, None))
 
@@ -203,7 +205,8 @@ class TestPostWriteNoticeEmission:
         ])
         store.transition("begin", "1")
         store.mark_work()
-        store.transition("complete", "1")  # promotes row 2 and records its start
+        store.transition("complete", "1")  # promotes row 2; its start waits for work
+        store.mark_work()  # row 2's first call
 
         lines = [
             line
@@ -222,6 +225,7 @@ class TestPostWriteNoticeEmission:
 
         store = _store([{"id": "1", "content": "ship it", "status": "pending"}])
         store.transition("begin", "1")
+        store.mark_work()
 
         def _boom(_message):
             raise RuntimeError("no delivery rail")
@@ -239,7 +243,10 @@ class TestPostWriteNoticeEmission:
         """
         from agent.task_manager import _emit_pending_notices
 
-        store = _store([{"id": "1", "content": "ship it", "status": "pending"}])
+        store = _store([
+            {"id": "1", "content": "ship it", "status": "pending"},
+            {"id": "2", "content": "next", "status": "pending"},
+        ])
         store.transition("begin", "1")
         store.mark_work()
         store.transition("complete", "1")
