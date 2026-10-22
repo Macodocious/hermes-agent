@@ -1087,19 +1087,22 @@ class TestInit:
             )
             assert a._cache_ttl == "5m"
 
-    def test_prompt_caching_cache_ttl_custom_1h(self):
-        """prompt_caching.cache_ttl 1h is applied when present in config."""
+    @pytest.mark.parametrize(
+        "falsy_value", [False, None, "off", "false", "disabled", "no", "none"],
+    )
+    def test_prompt_caching_disabled_by_falsy_cache_ttl(self, falsy_value):
+        """Falsy cache_ttl values should fully disable prompt caching."""
         with (
             patch("run_agent.get_tool_definitions", return_value=[]),
             patch("run_agent.check_toolset_requirements", return_value={}),
             patch("run_agent.OpenAI"),
             patch(
                 "hermes_cli.config.load_config",
-                return_value={"prompt_caching": {"cache_ttl": "1h"}},
+                return_value={"prompt_caching": {"cache_ttl": falsy_value}},
             ),
             patch(
                 "hermes_cli.config.load_config_readonly",
-                return_value={"prompt_caching": {"cache_ttl": "1h"}},
+                return_value={"prompt_caching": {"cache_ttl": falsy_value}},
             ),
         ):
             a = AIAgent(
@@ -1110,7 +1113,40 @@ class TestInit:
                 skip_context_files=True,
                 skip_memory=True,
             )
-            assert a._cache_ttl == "1h"
+            assert a._use_prompt_caching is False
+            assert a._use_native_cache_layout is False
+            assert a._cache_ttl is None
+
+    def test_prompt_caching_disable_survives_policy_rederivation(self):
+        """The disable must survive anthropic_prompt_cache_policy() re-derivation
+        (called during /model switch and fallback activation)."""
+        with (
+            patch("run_agent.get_tool_definitions", return_value=[]),
+            patch("run_agent.check_toolset_requirements", return_value={}),
+            patch("run_agent.OpenAI"),
+            patch(
+                "hermes_cli.config.load_config",
+                return_value={"prompt_caching": {"cache_ttl": False}},
+            ),
+            patch(
+                "hermes_cli.config.load_config_readonly",
+                return_value={"prompt_caching": {"cache_ttl": False}},
+            ),
+        ):
+            a = AIAgent(
+                api_key="test-k...7890",
+                model="anthropic/claude-sonnet-4-20250514",
+                base_url="https://openrouter.ai/api/v1",
+                quiet_mode=True,
+                skip_context_files=True,
+                skip_memory=True,
+            )
+            assert a._cache_ttl is None
+            # Re-run the policy (simulates /model switch or fallback)
+            should_cache, use_native = a._anthropic_prompt_cache_policy()
+            assert should_cache is False
+            assert use_native is False
+            assert a._use_prompt_caching is False
 
     def test_model_max_tokens_from_config(self):
         """model.max_tokens config populates the chat-completions request cap."""
