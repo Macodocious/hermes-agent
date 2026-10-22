@@ -107,14 +107,12 @@ class TestDelegateRequirements(unittest.TestCase):
         tasks_desc = overrides["parameters"]["properties"]["tasks"]["description"]
         role_desc = overrides["parameters"]["properties"]["role"]["description"]
 
-        # Top-level description names the user's concurrency limit explicitly.
-        self.assertIn(f"up to {max_children}", desc)
-        # Top-level description names the user's spawn-depth limit explicitly.
-        self.assertIn(f"max_spawn_depth={max_depth}", desc)
-        # tasks parameter description repeats the concurrency cap.
+        # After the top-level compaction the limits live in the parameter
+        # descriptions; the model still sees the user's real caps there, and
+        # the top-level text points at them.
         self.assertIn(f"up to {max_children}", tasks_desc)
-        # role parameter description names the spawn-depth limit.
         self.assertIn(f"max_spawn_depth={max_depth}", role_desc)
+        self.assertIn("limits and nesting rules are in the parameter descriptions", desc)
         # The misleading "default 3" / "default 2" wording is gone from
         # every dynamic surface (model-facing).
         for surface in (desc, tasks_desc, role_desc):
@@ -129,14 +127,64 @@ class TestDelegateRequirements(unittest.TestCase):
         defs = registry.get_definitions({"delegate_task"})
         self.assertEqual(len(defs), 1)
         fn = defs[0]["function"]
-        # Description should mention the user's actual limits, not "default 3".
+        # The parameter descriptions carry the user's actual limits, not "default 3".
         from tools.delegate_tool import (
             _get_max_concurrent_children,
             _get_max_spawn_depth,
         )
-        self.assertIn(f"up to {_get_max_concurrent_children()}", fn["description"])
-        self.assertIn(f"max_spawn_depth={_get_max_spawn_depth()}", fn["description"])
+        props = fn["parameters"]["properties"]
+        self.assertIn(f"up to {_get_max_concurrent_children()}", props["tasks"]["description"])
+        self.assertIn(f"max_spawn_depth={_get_max_spawn_depth()}", props["role"]["description"])
 
+    def test_top_level_description_compact_and_complete(self):
+        """The top-level description must stay compact while keeping every
+        contract that exists nowhere else in the schema (keyword-level, not
+        prose-literal, so rewording doesn't break CI)."""
+        from tools.delegate_tool import _build_top_level_description
+
+        desc = _build_top_level_description()
+        # Compaction ceiling: the old description was ~4,000 chars.
+        self.assertLessEqual(len(desc), 2200)
+        # Contracts only the top-level text carries:
+        for keyword in (
+            "background",          # async semantics
+            "wait or poll",        # no-poll rule
+            "execute_code",        # mechanical-work routing
+            "cronjob",             # durable-work routing
+            "/stop",               # non-durability warning
+            "context",             # pass-everything-via-context rule
+            "respond in Chinese",  # language example (weak models regress without it)
+            "SELF-REPORTS",        # verification contract
+            "fetch the URL",       # concrete verification verbs
+            "clarify",             # leaf blocked-tool list
+            "send_message",
+            "delegation.provider", # model inheritance / pinning
+        ):
+            self.assertIn(keyword, desc, f"top-level description lost: {keyword!r}")
+
+    def test_dynamic_limits_moved_to_param_descriptions(self):
+        """Concurrency and nesting ceilings must reach the model through the
+        tasks/role parameter descriptions (the top-level text no longer
+        carries them)."""
+        from tools.delegate_tool import _build_dynamic_schema_overrides
+        from tools.registry import registry
+
+        with (
+            patch("tools.delegate_tool._get_max_concurrent_children", return_value=7),
+            patch("tools.delegate_tool._get_max_spawn_depth", return_value=4),
+            patch("tools.delegate_tool._get_orchestrator_enabled", return_value=True),
+        ):
+            overrides = _build_dynamic_schema_overrides()
+            definition = registry.get_definitions({"delegate_task"})[0]["function"]
+
+        for parameters in (overrides["parameters"], definition["parameters"]):
+            self.assertIn("up to 7", parameters["properties"]["tasks"]["description"])
+            self.assertIn(
+                "max_spawn_depth=4", parameters["properties"]["role"]["description"]
+            )
+        # Static top-level text must not embed stale limits.
+        self.assertNotIn("up to 7", overrides["description"])
+        self.assertNotIn("max_spawn_depth", overrides["description"])
 
 class TestChildSystemPrompt(unittest.TestCase):
     def test_goal_only(self):
