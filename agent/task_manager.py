@@ -405,8 +405,10 @@ def _emit_pending_notices(agent: Any) -> None:
     """Deliver the store's pending lifecycle notices, one at a time.
 
     This is the single consumer of the notice queue. It runs right after the
-    write that produced the transition, so a line ships at the transition
-    itself rather than at the end of the turn.
+    call that produced the notice — the todo write for a completion or a
+    cancellation, the first non-todo call for a start — so a line ships at the
+    event itself rather than at the end of the turn. A held final completion
+    is released by the turn finalizer.
 
     Each line is delivered before the next is issued, and a notice leaves the
     queue only once its send has resolved. A send that fails, or a callback

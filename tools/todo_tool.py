@@ -687,10 +687,9 @@ class TodoStore:
         - ``begin``    pending     -> in_progress
         - ``pause``    in_progress -> paused
         - ``resume``   paused      -> in_progress
-        - ``complete`` in_progress -> completed  (the next pending task is
-          promoted to in_progress in the same commit, so a start line is
-          anchored to a real transition rather than waiting on an agent
-          ``begin`` that arrives after the work is done)
+        - ``complete`` in_progress -> completed  (the next open row is
+          promoted to in_progress in the same commit; its start line is
+          recorded at the first call under it)
         - ``cancel``   pending | in_progress -> cancelled  (requires a reason,
           stored on the row and rendered beneath the struck-through item)
 
