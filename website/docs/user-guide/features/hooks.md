@@ -729,7 +729,7 @@ Unlike `pre_verify`, this hook is not gated on the turn having mutated files, so
 ```python
 def my_callback(session_id: str, platform: str, model: str, coding: bool,
                 attempt: int, final_response: str, changed_paths: list,
-                candidate_surfaced: bool, **kwargs):
+                candidate_surfaced: bool, tool_calls: list, **kwargs):
 ```
 
 | Parameter | Type | Description |
@@ -742,8 +742,9 @@ def my_callback(session_id: str, platform: str, model: str, coding: bool,
 | `final_response` | `str` | The answer the agent is about to deliver |
 | `changed_paths` | `list` | Files the agent edited this turn (sorted; empty on a prose-only turn) |
 | `candidate_surfaced` | `bool` | Whether the candidate was already streamed to the user — decline to hold a draft the user has already read |
+| `tool_calls` | `list` | The turn's tool calls: each call's `name`, its `arguments`, and an `excerpt` of its result — capped at 2,048 characters per result and 16,384 overall, newest excerpts first |
 
-**Fires:** In `agent/conversation_loop.py`, at the point the agent would accept a final answer, after the verify-on-stop and `pre_verify` checks and before the kanban stop guard — but only when at least one `pre_delivery` hook is registered.
+**Fires:** In `agent/conversation_loop.py`, at the point the agent would accept a final answer, after the verify-on-stop and `pre_verify` checks and before the kanban stop guard — but only when at least one `pre_delivery` hook is registered. Once the hold bound is spent, it fires once more at the send site, so the hook gets the last look at the text that actually ships.
 
 **Return value — hold the turn:**
 
@@ -753,11 +754,19 @@ return {"action": "continue", "message": "You cited a file — read it and confi
 
 The `message` is appended as a synthetic user turn and the loop runs again. The Claude-Code Stop shape (`{"decision": "block", "reason": "..."}`, where blocking the stop means *keep going*) is accepted too. A directive with no message — or any other return — lets the turn finish.
 
+**Return value — replace the candidate:**
+
+```python
+return {"action": "replace", "message": "The answer, with the unmeasured sentences removed."}
+```
+
+Core delivers that string instead of the candidate. It does not rewrite it, merge it, or read it to decide whether a claim is true. A candidate already streamed cannot be unsent, so `candidate_surfaced` tells the hook that the user has seen the draft.
+
 **Bounded:** consecutive holds in one turn are capped by `agent.max_pre_delivery_nudges` (default 2), so a hook that always says continue can never trap the loop. A raising hook releases the turn.
 
 **Withheld, not persisted:** the held candidate is not written to the durable transcript — it stays in the live context so the model sees what it wrote, and is emitted as an interim message. Both the candidate and the nudge are stripped from the resumed transcript.
 
-**Make it idempotent:** the hook re-fires after each hold, so gate on `attempt` (`if attempt: return None`) — otherwise it just holds until the bound is hit.
+**Gate on `attempt`, not on existence:** the hook re-fires after each hold and once at the send site, so answer `None` when the turn already measured what it claims. On a later attempt, answer `replace` to fix the text yourself rather than holding again — otherwise it just holds until the bound is hit.
 
 **Use cases:** require a source read before a factual claim, block an answer that cites a file the turn never opened, run a project-specific claim checklist.
 

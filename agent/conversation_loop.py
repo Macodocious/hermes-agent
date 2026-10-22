@@ -5873,19 +5873,24 @@ def run_conversation(
                 # the text or decides whether a claim is true. Bounded by
                 # agent.max_pre_delivery_nudges.
                 _delivery_nudge = None
+                _delivery_replacement = None
+                _delivery_evidence: list[dict[str, Any]] = []
+                _delivery_bound = 0
                 _delivery_attempt = getattr(agent, "_pre_delivery_nudges", 0)
                 try:
-                    from agent.verify_hooks import max_pre_delivery_nudges
-                    from hermes_cli.plugins import get_pre_delivery_continue_message, has_hook
+                    from agent.verify_hooks import build_tool_evidence, max_pre_delivery_nudges
+                    from hermes_cli.plugins import get_pre_delivery_answer, has_hook
 
-                    if has_hook("pre_delivery") and _delivery_attempt < max_pre_delivery_nudges():
+                    _delivery_bound = max_pre_delivery_nudges()
+                    _delivery_evidence = build_tool_evidence(messages)
+                    if has_hook("pre_delivery") and _delivery_attempt < _delivery_bound:
                         # Posture is fixed for the session — resolve once + cache.
                         coding = getattr(agent, "_resolved_is_coding", None)
                         if coding is None:
                             from agent.coding_context import is_coding_context
                             coding = bool(is_coding_context(platform=getattr(agent, "platform", "") or ""))
                             agent._resolved_is_coding = coding
-                        _delivery_nudge = get_pre_delivery_continue_message(
+                        _delivery_answer = get_pre_delivery_answer(
                             session_id=getattr(agent, "session_id", None) or "",
                             platform=getattr(agent, "platform", "") or "",
                             model=getattr(agent, "model", "") or "",
@@ -5896,7 +5901,12 @@ def run_conversation(
                             candidate_surfaced=agent._interim_content_was_streamed(
                                 final_response or ""
                             ),
+                            tool_calls=_delivery_evidence,
                         )
+                        if _delivery_answer and _delivery_answer[0] == "continue":
+                            _delivery_nudge = _delivery_answer[1]
+                        elif _delivery_answer:
+                            _delivery_replacement = _delivery_answer[1]
                 except Exception:
                     logger.debug("pre_delivery hook check failed", exc_info=True)
                     _delivery_nudge = None
@@ -5977,8 +5987,44 @@ def run_conversation(
                     final_response = None
                     continue
 
+                # ── Send-site pass ─────────────────────────────────────
+                # Once the hold loop is spent, the hook still gets the last
+                # look at the text that ships. A "replace" answer is delivered
+                # in place of the candidate; core sends the string and never
+                # reads it.
+                if _delivery_replacement is None and _delivery_attempt >= _delivery_bound:
+                    try:
+                        from hermes_cli.plugins import get_pre_delivery_answer, has_hook
+
+                        if has_hook("pre_delivery"):
+                            _send_answer = get_pre_delivery_answer(
+                                session_id=getattr(agent, "session_id", None) or "",
+                                platform=getattr(agent, "platform", "") or "",
+                                model=getattr(agent, "model", "") or "",
+                                coding=bool(getattr(agent, "_resolved_is_coding", False)),
+                                attempt=_delivery_attempt,
+                                final_response=final_response or "",
+                                changed_paths=_edited,
+                                candidate_surfaced=agent._interim_content_was_streamed(
+                                    final_response or ""
+                                ),
+                                tool_calls=_delivery_evidence,
+                            )
+                            if _send_answer and _send_answer[0] == "replace":
+                                _delivery_replacement = _send_answer[1]
+                    except Exception:
+                        logger.debug("pre_delivery send-site check failed", exc_info=True)
+
+                if _delivery_replacement and isinstance(final_msg.get("content"), str):
+                    final_response = _delivery_replacement
+                    final_msg["content"] = final_response
+                    logger.info(
+                        "pre_delivery replaced the candidate (%d chars)",
+                        len(final_response),
+                    )
+
                 messages.append(final_msg)
-                
+
                 _turn_exit_reason = f"text_response(finish_reason={finish_reason})"
                 if not agent.quiet_mode:
                     agent._safe_print(f"🎉 Conversation completed after {api_call_count} OpenAI-compatible API call(s)")

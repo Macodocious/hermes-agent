@@ -2456,7 +2456,7 @@ def get_pre_verify_continue_message(
     return None
 
 
-def get_pre_delivery_continue_message(
+def get_pre_delivery_answer(
     *,
     session_id: str = "",
     platform: str = "",
@@ -2466,23 +2466,27 @@ def get_pre_delivery_continue_message(
     final_response: str = "",
     changed_paths: Optional[List[str]] = None,
     candidate_surfaced: bool = False,
-) -> Optional[str]:
-    """Check user ``pre_delivery`` hooks for a directive to hold the turn end.
+    tool_calls: Optional[list[dict[str, Any]]] = None,
+) -> Optional[tuple[str, str]]:
+    """Check user ``pre_delivery`` hooks for an answer about the candidate.
 
-    Fired once per turn end, before the candidate answer is delivered — on
-    every turn, not only a turn that edited files. A hook holds the turn
-    (verify a claim, read the source it cited) by returning::
+    Fired on every turn end with the turn's tool calls — each call's name, its
+    arguments, and a capped excerpt of its result — so a hook can tell a
+    measurement made this turn from a recalled fact. A hook answers with one of
+    two shapes::
 
         {"action": "continue", "message": "<follow-up for the model>"}
+        {"action": "replace", "message": "<text to send instead>"}
 
     The Claude-Code Stop shape ``{"decision": "block", "reason": "..."}`` (block
-    the stop == keep going) is accepted too. The first directive carrying a
-    non-empty message wins; any other return lets the turn finish. Mirrors
-    :func:`get_pre_verify_continue_message` — the call site stays a one-liner.
+    the stop == keep going) is accepted too. The first recognised answer with a
+    non-empty message wins; any other return lets the turn finish. Core never
+    reads the text to decide whether a claim is true: it holds on "continue"
+    and sends on "replace".
 
     ``candidate_surfaced`` tells the hook whether the candidate was already
-    streamed to the user, so a hook on a streaming surface can decline to hold
-    a draft the user has already read.
+    streamed to the user, so a hook on a streaming surface can weigh a
+    replacement it cannot unsend.
     """
     hook_results = invoke_hook(
         "pre_delivery",
@@ -2494,17 +2498,18 @@ def get_pre_delivery_continue_message(
         final_response=final_response,
         changed_paths=list(changed_paths or []),
         candidate_surfaced=candidate_surfaced,
+        tool_calls=list(tool_calls or []),
     )
 
     for result in hook_results:
         if not isinstance(result, dict):
             continue
         action = str(result.get("action") or result.get("decision") or "").strip().lower()
-        if action not in ("continue", "block"):
+        if action not in ("continue", "block", "replace"):
             continue
         message = result.get("message") or result.get("reason")
         if isinstance(message, str) and message.strip():
-            return message.strip()
+            return ("replace" if action == "replace" else "continue", message.strip())
 
     return None
 
