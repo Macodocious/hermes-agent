@@ -2207,7 +2207,7 @@ def _run_single_child(
                 _run_goal = frame_forked_goal(goal)
             from agent.delegation_context import delegated_child_context
 
-            with delegated_child_context():
+            with delegated_child_context(str(getattr(child, "session_id", "") or "")):
                 return child.run_conversation(
                     user_message=_run_goal,
                     task_id=child_task_id,
