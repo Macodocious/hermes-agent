@@ -3911,6 +3911,7 @@ class TurnRunner:
             )
             _pl = get_tool_preview_max_len()
             _cap = _pl if _pl > 0 else 40
+            _callback_preview = preview
             _prepared_preview = prepare_tool_preview(
                 tool_name,
                 args,
@@ -3928,9 +3929,16 @@ class TurnRunner:
             # event.
             if tool_name == "todo":
                 # todo's preview is a complete capitalized phrase
-                # ("Reading the task list") — render it standalone
-                # instead of the quoted "todo: …" legacy form.
-                msg = f"{emoji} {preview}"
+                # ("Reading the task list") produced by the todo tool itself.
+                # Re-deriving it from args would replace that phrase with a
+                # generic count ("Planning 1 task"), so render the callback's
+                # text — capped like any other preview — standalone instead of
+                # the quoted "todo: …" legacy form.
+                if len(_callback_preview) > _cap:
+                    _todo_text = _callback_preview[:_cap - 3] + "..."
+                else:
+                    _todo_text = _callback_preview
+                msg = f"{emoji} {_todo_text}"
             else:
                 # Action-driven tools (cronjob/skill_manage/memory)
                 # render their complete standalone phrase ("⏰ Reading
