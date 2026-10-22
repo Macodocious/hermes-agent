@@ -405,8 +405,10 @@ def _emit_pending_notices(agent: Any) -> None:
     """Deliver the store's pending lifecycle notices, one at a time.
 
     This is the single consumer of the notice queue. It runs right after the
-    write that produced the transition, so a line ships at the transition
-    itself rather than at the end of the turn.
+    call that produced the notice — the todo write for a completion or a
+    cancellation, the first non-todo call for a start — so a line ships at the
+    event itself rather than at the end of the turn. A held final completion
+    is released by the turn finalizer.
 
     Each line is delivered before the next is issued, and a notice leaves the
     queue only once its send has resolved. A send that fails, or a callback
@@ -429,23 +431,50 @@ def _emit_pending_notices(agent: Any) -> None:
             )
         return
     with _NOTICE_DRAIN_LOCK:
-        delivered = 0
+        delivered = []
         try:
             from tools.todo_tool import format_notice
 
             # One notice, one message. Joining them welds a start line under
-            # the completion that produced it.
+            # the completion that produced it. A held line is the turn's final
+            # completion: it stays queued while the lines behind it ship, and
+            # the turn finalizer releases it.
             for notice in store.pending_notices():
+                if notice.get("held"):
+                    continue
                 line = format_notice(notice, store)
                 # A notice that renders to nothing has nothing to deliver, so
                 # it is spent rather than left to block the queue behind it.
                 if line and not _await_delivery(callback(line)):
                     break
-                delivered += 1
+                delivered.append(notice)
         except Exception as exc:
             logger.warning("task_manager: lifecycle notice delivery failed: %s", exc)
         if delivered:
-            store.drain_notices(delivered)
+            store.drain_notices(delivered=delivered)
+
+
+def emit_pending_notices(agent: Any) -> None:
+    """Deliver the store's pending lifecycle notices (the single consumer).
+
+    Public entry point for the executor: the first call under a row records
+    the start line, and the line ships as that call returns.
+    """
+    _emit_pending_notices(agent)
+
+
+def release_held_notices(agent: Any) -> None:
+    """Release the turn's held completion lines and deliver them.
+
+    The turn finalizer calls this after the loop, on the normal and
+    interrupted paths: a held line is the turn's last completion, and it ships
+    when the turn ends whether or not the response was delivered.
+    """
+    store = getattr(agent, "_todo_store", None)
+    if store is None:
+        return
+    store.release_held_notices()
+    _emit_pending_notices(agent)
 
 
 def on_todo_write(agent: Any, args: Dict[str, Any]) -> None:

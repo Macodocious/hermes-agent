@@ -648,6 +648,15 @@ def finalize_turn(
             agent._task_lifecycle_nudge = _lifecycle_nudge
     except Exception as _audit_exc:
         logger.debug("task-lifecycle audit failed: %s", _audit_exc)
+    # Release the turn's held completion lines: the final ✅/🏁 is held to the
+    # turn's end, and the end is here — after the loop, after the pre-delivery
+    # gate, on the normal and interrupted paths alike.
+    try:
+        from agent.task_manager import release_held_notices as _release_held_notices
+
+        _release_held_notices(agent)
+    except Exception as _held_exc:
+        logger.warning("held lifecycle notice release failed: %s", _held_exc)
     # Plan-approval user-role delivery: when this turn approved a plan, the
     # gateway relays that approval to the model as a user-role turn (see
     # _detect_plan_approval_nudge). Stamped only on an actual approval, so the

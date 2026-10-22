@@ -157,39 +157,55 @@ def format_notice(notice: Dict[str, Any], store: "TodoStore") -> str:
         reason = str(notice.get("reason") or "").strip()
         return f"{line}\n  reason: {reason}" if reason else line
     if kind == NOTICE_COMPLETED:
-        try:
-            from agent.task_manager import (
-                plan_final_row_id,
-                plan_is_complete,
-                plan_task_total,
-                task_plan_ref,
-                task_position,
-            )
-
-            plan_ref = str(notice.get("plan") or "").strip()
-            if (
-                plan_ref
-                and plan_is_complete(store, plan_ref)
-                and str(notice.get("id") or "").strip()
-                == plan_final_row_id(store, plan_ref)
-            ):
-                return (
-                    f"🏁 Plan complete: all {plan_task_total(store, plan_ref)} "
-                    f"tasks done ({plan_ref})"
+        plan_ref = str(notice.get("plan") or "").strip()
+        frozen_complete = notice.get("plan_complete")
+        if frozen_complete is None:
+            # A notice queued by an older build carries no frozen decision;
+            # derive it from the live store exactly as before.
+            try:
+                from agent.task_manager import (
+                    plan_final_row_id,
+                    plan_is_complete,
+                    plan_task_total,
                 )
-            # The position form belongs to a plan's rows alone, exactly as on
-            # the start line: a row carrying no plan ref is not in a plan's
-            # sequence, so it keeps the plain form rather than being numbered
-            # against the whole list.
-            frozen = _frozen_position(notice)
-            if frozen is not None:
-                position, total = frozen
-            elif task_plan_ref(store, notice.get("id")):
-                position, total = task_position(store, notice.get("id"))
-            else:
+
+                if (
+                    plan_ref
+                    and plan_is_complete(store, plan_ref)
+                    and str(notice.get("id") or "").strip()
+                    == plan_final_row_id(store, plan_ref)
+                ):
+                    return (
+                        f"🏁 Plan complete: all {plan_task_total(store, plan_ref)} "
+                        f"tasks done ({plan_ref})"
+                    )
+            except Exception:  # pragma: no cover - defensive
+                pass
+        elif frozen_complete:
+            # The decision and the count were frozen at the close: a list
+            # write, a merge, or a reload between the close and the turn's
+            # end cannot rewrite the line the turn promised.
+            return (
+                f"🏁 Plan complete: all {int(notice.get('plan_total') or 0)} "
+                f"tasks done ({plan_ref})"
+            )
+        # The position form belongs to a plan's rows alone, exactly as on
+        # the start line: a row carrying no plan ref is not in a plan's
+        # sequence, so it keeps the plain form rather than being numbered
+        # against the whole list.
+        frozen = _frozen_position(notice)
+        if frozen is not None:
+            position, total = frozen
+        else:
+            try:
+                from agent.task_manager import task_plan_ref, task_position
+
+                if task_plan_ref(store, notice.get("id")):
+                    position, total = task_position(store, notice.get("id"))
+                else:
+                    position, total = 0, 0
+            except Exception:  # pragma: no cover - defensive
                 position, total = 0, 0
-        except Exception:  # pragma: no cover - defensive
-            position, total = 0, 0
         if position:
             return f"✅ Task {position} of {total} complete: {content}"
         return f"✅ Task completed: {content}"
@@ -248,19 +264,18 @@ NOTICE_COMPLETED = "completed"
 NOTICE_CANCELLED = "cancelled"
 # Bounded: the emitter drains every turn, so the cap only bites when notices
 # are never emitted (e.g. a headless run); keep the most recent so the newest
-# transition is never lost.
+# transition is never lost. A held line is exempt: the cap drops the oldest
+# line that is not held, so the line the turn promised still ships.
 MAX_TODO_NOTICES = 32
 # The notice a status change produces, and the rank that orders notices
-# within one commit. A completion or cancellation is the cause of the start
-# it unlocks, so it sorts ahead of that start regardless of list position —
-# position is a label, not a sequence. Statuses absent here (pending, paused)
-# produce no notice.
+# within one commit. A start is recorded at the first call under the row, not
+# at the transition, so ``in_progress`` is absent here; statuses absent here
+# (pending, paused, in_progress) produce no notice.
 _NOTICE_FOR_STATUS = {
-    "in_progress": NOTICE_STARTED,
     "completed": NOTICE_COMPLETED,
     "cancelled": NOTICE_CANCELLED,
 }
-_NOTICE_RANK = {NOTICE_COMPLETED: 0, NOTICE_CANCELLED: 0, NOTICE_STARTED: 1}
+_NOTICE_RANK = {NOTICE_COMPLETED: 0, NOTICE_CANCELLED: 0}
 # Rows that are still to be worked or are being worked. The head is the first
 # of these, and it is the only row allowed to be in_progress: the list is a
 # sequence, so nothing after the head may start while the head is open.
@@ -390,6 +405,13 @@ class TodoStore:
         # assistant message's request id in with each todo call, so a second
         # complete inside the same message is refused.
         self._last_close_request = ""
+        # The row whose start line has already gone out (P8). The start line
+        # is recorded at the first non-todo call under a current row, not at
+        # the transition that made it current, so the store must remember
+        # which tenure has already spoken. Cleared at every tenure boundary —
+        # begin, resume, a promotion, and a close — and carried through the
+        # write-through merge and the JSON round-trip beside ``_worked_id``.
+        self._start_line_sent_id = ""
 
     def seed_from_user_message(self, text: Any, origin: str = "") -> Optional[Dict[str, str]]:
         """Seed an empty store with the user's opening message (P5).
@@ -500,7 +522,12 @@ class TodoStore:
         # _enforce_invariants). The started task (if any) is the one that
         # stays current. Replace mode then renumbers to sequential ids;
         # merge mode keeps existing ids stable (merge-by-id stays safe).
-        self._enforce_invariants(started_id=self._started_id(before))
+        started_id = self._started_id(before)
+        self._enforce_invariants(started_id=started_id)
+        if started_id is not None:
+            # A list write that starts the head row opens a fresh tenure: the
+            # start line is recorded at the first call under it, not here.
+            self._start_line_sent_id = ""
         if not merge:
             self._renumber_items(self._items)
         self._commit(before)
@@ -598,10 +625,15 @@ class TodoStore:
         """Append the notices for the transitions between ``before`` and now.
 
         Called inside the caller's critical section, so append order is commit
-        order. Notices are ordered by cause first — a completion or
-        cancellation precedes the start it unlocks — and by list position
-        second, so a promotion can never be announced before the completion
-        that caused it.
+        order. Notices are ordered by list position; a transition records only
+        a completion or a cancellation, so there is no cause to sort ahead of
+        anything.
+
+        A start is not recorded here: the row becoming current is not the
+        work starting, so the start line is recorded by ``mark_work`` at the
+        first non-``todo`` call under the row. A completion whose close leaves
+        no successor is the turn's final completion, and its line is held
+        until the turn ends.
         """
         previous = {row["id"]: row for row in before}
         transitions: List[Any] = []
@@ -628,12 +660,21 @@ class TodoStore:
                 (_NOTICE_RANK.get(kind, 2), position, kind, item, prior_status)
             )
         transitions.sort(key=lambda entry: (entry[0], entry[1]))
-        for _rank, _position, kind, item, prior_status in transitions:
+        for _rank, position, kind, item, prior_status in transitions:
+            held = False
+            if kind == NOTICE_COMPLETED:
+                # The successor rule, read from the committed list: a close
+                # with no later open row is the turn's final completion.
+                held = not any(
+                    row["status"] not in _CLOSED_STATUSES
+                    for row in self._items[position:]
+                )
             self._record_notice(
                 kind,
                 item,
                 from_status=prior_status,
                 to_status=str(item.get("status", "")),
+                held=held,
             )
 
     def transition(
@@ -646,10 +687,9 @@ class TodoStore:
         - ``begin``    pending     -> in_progress
         - ``pause``    in_progress -> paused
         - ``resume``   paused      -> in_progress
-        - ``complete`` in_progress -> completed  (the next pending task is
-          promoted to in_progress in the same commit, so a start line is
-          anchored to a real transition rather than waiting on an agent
-          ``begin`` that arrives after the work is done)
+        - ``complete`` in_progress -> completed  (the next open row is
+          promoted to in_progress in the same commit; its start line is
+          recorded at the first call under it)
         - ``cancel``   pending | in_progress -> cancelled  (requires a reason,
           stored on the row and rendered beneath the struck-through item)
 
@@ -737,6 +777,7 @@ class TodoStore:
                     }
             item["status"] = "in_progress"
             self._worked_id = ""
+            self._start_line_sent_id = ""
             return {"ok": True, "item": item.copy()}
         if action == "pause":
             item["status"] = "paused"
@@ -761,6 +802,7 @@ class TodoStore:
                 # completing it: the next open row becomes current in the same
                 # commit, so the lifecycle never leaves the agent with no task
                 # to work on. Cancelling a later row moves nothing.
+                self._start_line_sent_id = ""
                 self._promote_successor(item)
             return {"ok": True, "item": item.copy()}
         # action == "complete": only the head may close, and its successor —
@@ -803,6 +845,7 @@ class TodoStore:
         item["status"] = "completed"
         self._last_close_request = request_id
         self._worked_id = ""
+        self._start_line_sent_id = ""
         self._promote_successor(item)
         return {"ok": True, "item": item.copy()}
 
@@ -826,21 +869,37 @@ class TodoStore:
         if nxt is not None:
             nxt["status"] = "in_progress"
             # A promoted row starts a fresh tenure: work done under the row
-            # that just closed is not work under this one.
+            # that just closed is not work under this one, and its start line
+            # has not gone out yet.
             self._worked_id = ""
+            self._start_line_sent_id = ""
 
-    def mark_work(self) -> None:
+    def mark_work(self) -> bool:
         """Record that a non-todo call ran under the current row.
 
         Called by the executor after every tool call. Records nothing when no
-        row is current; the mark is what a close is checked against.
+        row is current; the mark is what a close is checked against. The first
+        call under a row also records the start line — the row becoming
+        current is not the work starting, so the line waits for this call.
+        Returns True when a start line was recorded.
         """
         with self._lock:
             current = next(
                 (i for i in self._items if i["status"] == "in_progress"), None
             )
-            if current is not None:
-                self._worked_id = str(current["id"])
+            if current is None:
+                return False
+            self._worked_id = str(current["id"])
+            if self._start_line_sent_id == str(current["id"]):
+                return False
+            self._record_notice(
+                NOTICE_STARTED,
+                current,
+                from_status="",
+                to_status="in_progress",
+            )
+            self._start_line_sent_id = str(current["id"])
+            return True
 
     def _record_notice(
         self,
@@ -849,6 +908,7 @@ class TodoStore:
         *,
         from_status: str = "",
         to_status: str = "",
+        held: bool = False,
     ) -> None:
         """Record a user-facing lifecycle notice for the emitter to drain.
 
@@ -858,26 +918,47 @@ class TodoStore:
         replace-mode write or a merge that renumbers rows afterwards cannot
         make the line describe a different row.
 
+        A completion also freezes whether its close completed the plan and the
+        count the plan-complete line reads. A held line is rendered at the
+        turn's end, after the close, so the decision must be the one the close
+        made — not one derived from a list that may have changed since.
+
         Numbering is plan-scoped, matching what the renderer has always
         printed: a row carrying no plan ref is not in a plan's sequence, so it
         carries no position.
 
-        Bounded to MAX_TODO_NOTICES keeping the most recent: the emitter
-        drains every turn, so the cap only bites when notices are never
-        emitted (a headless run), and the newest transition must survive.
+        Bounded to MAX_TODO_NOTICES. A held line survives the cap: when the
+        queue is full the store drops the oldest line that is not held, so the
+        line the turn promised still ships. Every drop is logged with its
+        count.
         """
         ref = str(item.get("plan", "")).strip()
         position, total = 0, 0
+        plan_complete = False
+        plan_total = 0
         if ref:
             plan_rows = [
                 row
                 for row in self._items
                 if str(row.get("plan", "")).strip() == ref
             ]
+            plan_total = len(plan_rows)
             for offset, row in enumerate(plan_rows, start=1):
                 if str(row.get("id", "")) == str(item.get("id", "")):
                     position, total = offset, len(plan_rows)
                     break
+            if kind == NOTICE_COMPLETED:
+                plan_complete = (
+                    bool(plan_rows)
+                    and all(
+                        row["status"] in _CLOSED_STATUSES for row in plan_rows
+                    )
+                    and any(
+                        row["status"] == "completed" for row in plan_rows
+                    )
+                    and str(plan_rows[-1].get("id", ""))
+                    == str(item.get("id", ""))
+                )
         self._notices.append({
             "kind": kind,
             "id": str(item.get("id", "")),
@@ -889,27 +970,71 @@ class TodoStore:
             "from": str(from_status),
             "to": str(to_status),
             "in_plan": bool(ref),
+            "held": bool(held),
+            "plan_complete": plan_complete,
+            "plan_total": plan_total,
         })
-        if len(self._notices) > MAX_TODO_NOTICES:
-            dropped = len(self._notices) - MAX_TODO_NOTICES
-            self._notices = self._notices[-MAX_TODO_NOTICES:]
-            # A dropped line is a transition the user never sees. The cap only
-            # bites when nothing is draining, so say so rather than lose it.
-            logger.warning(
-                "todo: dropped %d lifecycle notice(s) at the %d cap",
-                dropped,
-                MAX_TODO_NOTICES,
-            )
+        self._trim_notices()
 
-    def drain_notices(self, count: Optional[int] = None) -> List[Dict[str, Any]]:
+    def _trim_notices(self) -> None:
+        """Bound the notice queue, sparing held lines.
+
+        A held line is the turn's promised completion; when the queue is full
+        the oldest line that is not held is dropped instead. When every queued
+        line is held, the newest line is the one that cannot be kept. Every
+        drop is logged with its count.
+        """
+        if len(self._notices) <= MAX_TODO_NOTICES:
+            return
+        dropped = 0
+        for _ in range(len(self._notices) - MAX_TODO_NOTICES):
+            index = next(
+                (
+                    offset
+                    for offset, notice in enumerate(self._notices)
+                    if not notice.get("held")
+                ),
+                None,
+            )
+            if index is None:
+                self._notices.pop()
+            else:
+                self._notices.pop(index)
+            dropped += 1
+        # A dropped line is a transition the user never sees. The cap only
+        # bites when nothing is draining, so say so rather than lose it.
+        logger.warning(
+            "todo: dropped %d lifecycle notice(s) at the %d cap",
+            dropped,
+            MAX_TODO_NOTICES,
+        )
+
+    def drain_notices(
+        self,
+        count: Optional[int] = None,
+        delivered: Optional[List[Dict[str, Any]]] = None,
+    ) -> List[Dict[str, Any]]:
         """Return the pending lifecycle notices and clear them.
 
         The caller emits them to the user; clearing here guarantees a
         transition is never reported twice. ``count`` clears only that many
         from the head, so an emitter that could not hand a line over leaves
         the rest queued for the next drain instead of destroying them.
+
+        ``delivered`` removes exactly the notices the emitter handed over, by
+        identity. A held line sits in the queue while the lines behind it are
+        delivered, so the delivered set is not a head prefix and a count would
+        remove the wrong rows.
         """
         with self._lock:
+            if delivered is not None:
+                removed = {id(notice) for notice in delivered}
+                self._notices = [
+                    notice
+                    for notice in self._notices
+                    if id(notice) not in removed
+                ]
+                return list(delivered)
             if count is None:
                 notices = self._notices
                 self._notices = []
@@ -918,6 +1043,17 @@ class TodoStore:
             notices = self._notices[:count]
             del self._notices[:count]
             return notices
+
+    def release_held_notices(self) -> None:
+        """Clear the hold on every queued notice so the turn-end drain ships it.
+
+        The turn finalizer calls this after the loop, on the normal and
+        interrupted paths: a held line is the turn's last completion, and it
+        ships when the turn ends whether or not the response was delivered.
+        """
+        with self._lock:
+            for notice in self._notices:
+                notice["held"] = False
 
     def pending_notices(self) -> List[Dict[str, Any]]:
         """The undrained lifecycle notices, without clearing them.
@@ -1122,6 +1258,7 @@ class TodoStore:
                 "seeded": self._seeded,
                 "worked_id": self._worked_id,
                 "last_close_request": self._last_close_request,
+                "start_line_sent_id": self._start_line_sent_id,
             },
             ensure_ascii=False,
         )
@@ -1151,16 +1288,23 @@ class TodoStore:
         # Restore the seeded flag (P5). Old persisted state without the key
         # defaults to False, so pre-existing sessions never render the nudge.
         store._seeded = bool(data.get("seeded", False))
-        # The work mark and the last close's request id ride beside the items:
-        # a reload must not hand back a row that can be ticked without work, or
-        # a message that already closed a task and could close another.
+        # The work mark, the last close's request id, and the start-line mark
+        # ride beside the items: a reload must not hand back a row that can be
+        # ticked without work, a message that already closed a task and could
+        # close another, or a row whose start line would be announced twice.
         store._worked_id = str(data.get("worked_id", "") or "").strip()
         store._last_close_request = str(
             data.get("last_close_request", "") or ""
         ).strip()
+        store._start_line_sent_id = str(
+            data.get("start_line_sent_id", "") or ""
+        ).strip()
 
         # Restore pending lifecycle notices (defensive): only well-formed
         # entries survive, so a replayed store cannot inject a bogus notice.
+        # Every field the renderer reads is restored — a held line is rendered
+        # after a reload, and a dropped position or frozen plan decision would
+        # make it describe a different row.
         notices = data.get("notices")
         if isinstance(notices, list):
             for n in notices:
@@ -1169,14 +1313,25 @@ class TodoStore:
                 kind = str(n.get("kind", "")).strip()
                 if kind not in (NOTICE_STARTED, NOTICE_COMPLETED, NOTICE_CANCELLED):
                     continue
-                store._notices.append({
+                notice = {
                     "kind": kind,
                     "id": str(n.get("id", "")).strip(),
                     "content": store._cap_content(str(n.get("content", "")).strip()),
                     "reason": store._cap_content(str(n.get("reason", "")).strip()),
                     "plan": str(n.get("plan", "")).strip(),
-                })
-            store._notices = store._notices[-MAX_TODO_NOTICES:]
+                    "from": str(n.get("from", "")).strip(),
+                    "to": str(n.get("to", "")).strip(),
+                    "held": bool(n.get("held", False)),
+                }
+                if "in_plan" in n:
+                    notice["in_plan"] = bool(n.get("in_plan"))
+                    notice["position"] = int(n.get("position") or 0)
+                    notice["total"] = int(n.get("total") or 0)
+                if "plan_complete" in n:
+                    notice["plan_complete"] = bool(n.get("plan_complete"))
+                    notice["plan_total"] = int(n.get("plan_total") or 0)
+                store._notices.append(notice)
+            store._trim_notices()
 
         captures = data.get("captures")
         if isinstance(captures, list):
@@ -1314,12 +1469,27 @@ def _lifecycle_write_violation(todos: List[Any], store: "TodoStore") -> Optional
     that would CHANGE one of those lifecycle statuses is refused, naming the
     action to use instead (never a judge). No-op echoes of the current state
     are allowed so replace-mode list maintenance keeps working.
+
+    The one exception is the explicit head-row start: a write that sets the
+    head open row to ``in_progress`` makes that row current, and only that
+    row, and only while nothing else is current. The start line is still
+    recorded at the first call under the row, not by this write.
+
     ``completed`` is refused for agent-authored items only — user-sourced
     items (P4) stay markable directly, since the user owns their own tasks.
     A ``cancelled`` write is allowed: setting an item aside is not a state the
     invariant or activation depends on.
     """
-    current = {item["id"]: item for item in store.read()}
+    rows = store.read()
+    current = {item["id"]: item for item in rows}
+    head_open_id = next(
+        (item["id"] for item in rows if item["status"] in _OPEN_STATUSES),
+        "",
+    )
+    current_in_progress = next(
+        (item["id"] for item in rows if item["status"] == "in_progress"),
+        "",
+    )
     for t in todos:
         if not isinstance(t, dict):
             continue
@@ -1333,6 +1503,12 @@ def _lifecycle_write_violation(todos: List[Any], store: "TodoStore") -> Optional
         action = LIFECYCLE_WRITE_ACTION.get(status)
         if action is None:
             continue  # not an action-owned lifecycle status — the write is allowed
+        if (
+            status == "in_progress"
+            and item_id == head_open_id
+            and not current_in_progress
+        ):
+            continue  # the explicit head-row start
         if (
             status == "completed"
             and prev is not None

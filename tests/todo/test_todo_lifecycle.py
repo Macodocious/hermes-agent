@@ -91,6 +91,7 @@ def test_complete_refused_while_an_earlier_task_is_open() -> None:
 def test_complete_promotes_the_immediate_successor(store: TodoStore) -> None:
     """Finishing the head starts the row after it, not the first pending row."""
     store.transition("begin", "1")
+    store.mark_work()
     assert store.transition("complete", "1")["ok"] is True
     statuses = {i["id"]: i["status"] for i in store.read()}
     assert statuses == {"1": "completed", "2": "in_progress"}
@@ -109,6 +110,7 @@ def test_complete_promotes_a_paused_successor() -> None:
             {"id": "2", "content": "Second task", "status": "paused"},
         ]
     )
+    store.mark_work()
     assert store.transition("complete", "1")["ok"] is True
     statuses = {i["id"]: i["status"] for i in store.read()}
     assert statuses == {"1": "completed", "2": "in_progress"}
@@ -116,6 +118,7 @@ def test_complete_promotes_a_paused_successor() -> None:
 
 def test_complete_finalizes_the_task(store: TodoStore) -> None:
     store.transition("begin", "1")
+    store.mark_work()
     result = store.transition("complete", "1")
     assert result["ok"] is True
     assert store.read()[0]["status"] == "completed"
@@ -124,11 +127,11 @@ def test_complete_finalizes_the_task(store: TodoStore) -> None:
 def test_complete_promotes_the_next_task(store: TodoStore) -> None:
     """Completing a task begins the next one from the store.
 
-    The promotion records the next task's start at this completion, so its
-    ``▶️ Working on:`` line fires at its real beginning instead of waiting on
-    an agent ``begin`` that arrives after the work is already done.
+    The promotion makes the next row current; its ``▶️ Working on:`` line is
+    recorded at the first call under it, not at this completion.
     """
     store.transition("begin", "1")
+    store.mark_work()
     store.transition("complete", "1")
     statuses = {i["id"]: i["status"] for i in store.read()}
     assert statuses == {"1": "completed", "2": "in_progress"}
@@ -138,6 +141,7 @@ def test_complete_with_no_pending_sibling_activates_nothing() -> None:
     s = TodoStore()
     s.write([{"id": "1", "content": "Only task", "status": "pending"}])
     s.transition("begin", "1")
+    s.mark_work()
     s.transition("complete", "1")
     assert s.read()[0]["status"] == "completed"
 
@@ -165,6 +169,7 @@ def test_cancel_stores_the_reason(store: TodoStore) -> None:
 
 def test_cancel_of_a_terminal_item_is_refused(store: TodoStore) -> None:
     store.transition("begin", "1")
+    store.mark_work()
     store.transition("complete", "1")
     result = store.transition("cancel", "1", "too late")
     assert result["ok"] is False
@@ -191,6 +196,7 @@ def test_begin_on_missing_item_is_refused(store: TodoStore) -> None:
 
 def test_begin_on_completed_item_is_refused(store: TodoStore) -> None:
     store.transition("begin", "1")
+    store.mark_work()
     store.transition("complete", "1")
     result = store.transition("begin", "1")
     assert result["ok"] is False
@@ -210,12 +216,19 @@ def test_write_demotes_extra_in_progress_to_pending() -> None:
 
 
 def test_complete_records_start_and_complete_notices() -> None:
-    """The store records a notice per start/complete for the emitter."""
+    """The start line waits for work; the final completion line is held."""
     s = TodoStore()
     s.write([{"id": "1", "content": "A", "status": "pending"}])
     s.transition("begin", "1")
+    assert s.drain_notices() == []
+    s.mark_work()
+    assert [n["kind"] for n in s.drain_notices()] == ["started"]
     s.transition("complete", "1")
-    assert [n["kind"] for n in s.drain_notices()] == ["started", "completed"]
+    assert [(n["kind"], n["held"]) for n in s.pending_notices()] == [
+        ("completed", True)
+    ]
+    s.release_held_notices()
+    assert [n["kind"] for n in s.drain_notices()] == ["completed"]
     assert s.drain_notices() == []
 
 

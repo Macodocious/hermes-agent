@@ -184,6 +184,7 @@ async def test_lifecycle_notices_drain_without_an_active_goal(monkeypatch):
     store = TodoStore()
     store.write([{"id": "1", "content": "ship the fix", "status": "pending"}])
     store.transition("begin", "1")
+    store.mark_work()
 
     monkeypatch.setattr(tasks_mod, "load_todo", lambda sid: store)
     monkeypatch.setattr(tasks_mod, "save_todo", lambda sid, s: None)
@@ -213,6 +214,7 @@ async def test_lifecycle_notices_are_not_drained_without_a_delivery_target(monke
     store = TodoStore()
     store.write([{"id": "1", "content": "ship the fix", "status": "pending"}])
     store.transition("begin", "1")
+    store.mark_work()
 
     monkeypatch.setattr(tasks_mod, "load_todo", lambda sid: store)
     monkeypatch.setattr(tasks_mod, "save_todo", lambda sid, s: None)

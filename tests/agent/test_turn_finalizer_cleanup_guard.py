@@ -106,6 +106,7 @@ def _run(
     final_response=None,
     api_call_count=3,
     turn_exit_reason="unknown",
+    interrupted=False,
 ):
     messages = [
         {"role": "user", "content": "do a thing"},
@@ -122,7 +123,7 @@ def _run(
         agent,
         final_response=final_response,
         api_call_count=api_call_count,
-        interrupted=False,
+        interrupted=interrupted,
         failed=False,
         messages=messages,
         conversation_history=None,
@@ -182,3 +183,40 @@ def test_text_response_on_last_allowed_call_is_completed():
     )
     assert result["final_response"] == "final report"
     assert result["completed"] is True
+
+
+def _held_store():
+    from tools.todo_tool import TodoStore
+
+    store = TodoStore()
+    store.write([{"id": "1", "content": "one", "status": "pending"}])
+    store.transition("begin", "1")
+    store.mark_work()
+    store.drain_notices()
+    store.transition("complete", "1")
+    return store
+
+
+def test_held_todo_line_ships_at_turn_end():
+    agent = _StubAgent(raise_in=())
+    store = _held_store()
+    assert [n["held"] for n in store.pending_notices()] == [True]
+    sent = []
+    agent._todo_store = store
+    agent.todo_notice_callback = sent.append
+
+    _run(agent)
+
+    assert sent == ["✅ Task completed: one"]
+
+
+def test_held_todo_line_ships_on_an_interrupted_turn():
+    agent = _StubAgent(raise_in=())
+    store = _held_store()
+    sent = []
+    agent._todo_store = store
+    agent.todo_notice_callback = sent.append
+
+    _run(agent, interrupted=True)
+
+    assert sent == ["✅ Task completed: one"]

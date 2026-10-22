@@ -3,9 +3,11 @@
 The model drives task state through the ``action`` parameter; a direct
 lifecycle status write through the todos list bypasses the transition
 table, so the tool refuses any todos-list write that would CHANGE a
-lifecycle status, naming the action to use instead. ``completed`` and
-``cancelled`` are no longer redirected to a judge-owned close action — the
-agent owns them — but they are still driven by their own actions.
+lifecycle status, naming the action to use instead. The one exception is the
+explicit head-row start: a write that sets the head open row to
+``in_progress`` makes that row current. ``completed`` and ``cancelled`` are
+no longer redirected to a judge-owned close action — the agent owns them —
+but they are still driven by their own actions.
 """
 
 import json
@@ -24,13 +26,23 @@ class TestLifecycleStatusWritesRefused:
         assert "error" in result
         assert "action=begin" in result["error"]
 
-    def test_in_progress_on_existing_pending_item_is_refused(self):
+    def test_in_progress_on_the_head_open_item_is_the_explicit_start(self):
         store = TodoStore()
         store.write([{"id": "1", "content": "Task", "status": "pending"}])
         result = _write(store, [{"id": "1", "status": "in_progress"}], merge=True)
+        assert "error" not in result
+        assert store.read()[0]["status"] == "in_progress"
+
+    def test_in_progress_on_a_later_item_is_refused(self):
+        store = TodoStore()
+        store.write([
+            {"id": "1", "content": "One", "status": "pending"},
+            {"id": "2", "content": "Two", "status": "pending"},
+        ])
+        result = _write(store, [{"id": "2", "status": "in_progress"}], merge=True)
         assert "error" in result
         assert "action=begin" in result["error"]
-        assert store.read()[0]["status"] == "pending"
+        assert store.read()[1]["status"] == "pending"
 
     def test_paused_write_is_refused(self):
         store = TodoStore()
@@ -50,11 +62,14 @@ class TestLifecycleStatusWritesRefused:
 
     def test_refused_write_leaves_store_unchanged(self):
         store = TodoStore()
-        store.write([{"id": "1", "content": "Task", "status": "pending"}])
-        _write(store, [{"id": "1", "status": "in_progress"}], merge=True)
+        store.write([
+            {"id": "1", "content": "One", "status": "pending"},
+            {"id": "2", "content": "Two", "status": "pending"},
+        ])
+        _write(store, [{"id": "2", "status": "in_progress"}], merge=True)
         items = store.read()
-        assert len(items) == 1
-        assert items[0]["status"] == "pending"
+        assert len(items) == 2
+        assert items[1]["status"] == "pending"
 
 
 class TestLifecycleStatusWritesAllowed:

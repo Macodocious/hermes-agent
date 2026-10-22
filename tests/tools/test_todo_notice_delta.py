@@ -23,7 +23,7 @@ def _store(*statuses):
 
 
 class TestCommitOrdering:
-    def test_completion_precedes_the_start_it_unlocks(self):
+    def test_completion_fires_at_the_close_and_the_start_at_the_first_call(self):
         store = _store("pending", "pending", "pending")
         store.transition("begin", "1")
         store.mark_work()
@@ -33,14 +33,19 @@ class TestCommitOrdering:
 
         assert [(n["kind"], n["id"]) for n in store.drain_notices()] == [
             (NOTICE_COMPLETED, "1"),
+        ]
+        store.mark_work()
+        assert [(n["kind"], n["id"]) for n in store.drain_notices()] == [
             (NOTICE_STARTED, "2"),
         ]
 
-    def test_write_path_records_a_start(self):
+    def test_write_path_arms_the_start_without_recording_it(self):
         store = TodoStore()
 
         store.write([{"id": "1", "content": "task 1", "status": "in_progress"}])
 
+        assert store.drain_notices() == []
+        store.mark_work()
         assert [(n["kind"], n["id"]) for n in store.drain_notices()] == [
             (NOTICE_STARTED, "1"),
         ]
@@ -56,12 +61,14 @@ class TestCommitOrdering:
 
         assert store.drain_notices() == []
 
-    def test_idempotent_begin_records_one_notice(self):
+    def test_idempotent_begin_records_no_start_until_work(self):
         store = _store("pending")
 
         store.transition("begin", "1")
         store.transition("begin", "1")
 
+        assert store.drain_notices() == []
+        store.mark_work()
         assert len(store.drain_notices()) == 1
 
     def test_refused_transition_records_nothing(self):
@@ -95,6 +102,8 @@ class TestConcurrentMutation:
             thread.join()
 
         assert sum(1 for result in results if result["ok"]) == 1
+        assert store.drain_notices() == []
+        store.mark_work()
         assert len(store.drain_notices()) == 1
         assert [i["status"] for i in store.read()].count("in_progress") == 1
 

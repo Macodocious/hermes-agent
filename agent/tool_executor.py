@@ -360,7 +360,9 @@ def _with_lifecycle_reminder(agent, function_name: str, result: Any) -> Any:
 def _mark_work_under_current_task(agent, function_name: str) -> None:
     """Record that this call counts as work under the current task.
 
-    Work is any call except ``todo``. Fail-open: marking must never break a
+    Work is any call except ``todo``. The first call under a row also records
+    the start line — the row becoming current is not the work starting — and
+    the line ships as that call returns. Fail-open: marking must never break a
     tool call.
     """
     if function_name == "todo":
@@ -369,9 +371,18 @@ def _mark_work_under_current_task(agent, function_name: str) -> None:
     if store is None:
         return
     try:
-        store.mark_work()
+        started = store.mark_work()
     except Exception as exc:
         logger.debug("todo work mark failed for %s: %s", function_name, exc)
+        return
+    if not started:
+        return
+    try:
+        from agent.task_manager import emit_pending_notices
+
+        emit_pending_notices(agent)
+    except Exception as exc:
+        logger.debug("todo start notice emit failed for %s: %s", function_name, exc)
 
 
 def _run_agent_tool_execution_middleware(

@@ -136,18 +136,30 @@ def test_two_closes_in_one_message_are_refused(agent) -> None:
 
 def test_one_task_per_message_spreads_the_notices(agent) -> None:
     _send(agent, "m1", ("todo", {"action": "begin", "item_id": "1"}))
-    agent._todo_store.drain_notices()  # the begin's own start line
+    # The begin makes the row current; the start line waits for real work.
+    assert agent._todo_store.drain_notices() == []
     _send(agent, "m2", _work())
+    assert [(n["kind"], n["id"]) for n in agent._todo_store.drain_notices()] == [
+        (NOTICE_STARTED, "1"),
+    ]
     _send(agent, "m3", _complete("1"))
     assert [(n["kind"], n["id"]) for n in agent._todo_store.drain_notices()] == [
         (NOTICE_COMPLETED, "1"),
-        (NOTICE_STARTED, "2"),
     ]
 
     _send(agent, "m4", _work())
-    _send(agent, "m5", _complete("2"))
     assert [(n["kind"], n["id"]) for n in agent._todo_store.drain_notices()] == [
-        (NOTICE_COMPLETED, "2")
+        (NOTICE_STARTED, "2"),
+    ]
+    _send(agent, "m5", _complete("2"))
+    # The last close is the turn's final completion: its line is held.
+    assert [
+        (n["kind"], n["id"], n["held"])
+        for n in agent._todo_store.pending_notices()
+    ] == [(NOTICE_COMPLETED, "2", True)]
+    agent._todo_store.release_held_notices()
+    assert [(n["kind"], n["id"]) for n in agent._todo_store.drain_notices()] == [
+        (NOTICE_COMPLETED, "2"),
     ]
     assert agent._todo_store.read()[0]["status"] == "completed"
     assert agent._todo_store.read()[1]["status"] == "completed"
