@@ -2692,6 +2692,13 @@ def compress_context(
             reset_file_dedup(task_id)
         except Exception:
             pass
+        # Same for the skill_view repeat-view dedup: a post-compression
+        # re-view must return the full skill content again.
+        try:
+            from tools.skills_tool import reset_skill_view_dedup
+            reset_skill_view_dedup(task_id)
+        except Exception:
+            pass
 
         # Clear the read-dedup guardrail's read coverage too.  It denies a
         # re-read on the premise that the content is already in context — a
