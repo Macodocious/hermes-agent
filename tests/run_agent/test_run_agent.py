@@ -666,6 +666,25 @@ class TestStripThinkBlocks:
         assert "final answer" in result
 
 
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            (
+                "before <tool_call>{x}</function_call> after",
+                "before <tool_call>{x}after",
+            ),
+            (
+                "before <function_calls>{x}</tool_calls> after",
+                "before <function_calls>{x}after",
+            ),
+        ],
+    )
+    def test_mismatched_generic_tool_tags_preserve_opener_and_payload(
+        self, agent, text, expected
+    ):
+        assert agent._strip_think_blocks(text) == expected
+
+
 class TestExtractReasoning:
     def test_reasoning_field(self, agent):
         msg = _mock_assistant_msg(reasoning="thinking hard")
