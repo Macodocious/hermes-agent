@@ -124,8 +124,8 @@ def test_hold_withholds_candidate_then_delivers_the_next(agent, monkeypatch):
     with (
         patch("hermes_cli.plugins.has_hook", side_effect=lambda name: name == "pre_delivery"),
         patch(
-            "hermes_cli.plugins.get_pre_delivery_continue_message",
-            side_effect=["go verify that claim", None],
+            "hermes_cli.plugins.get_pre_delivery_answer",
+            side_effect=[("continue", "go verify that claim"), None],
         ),
         patch("agent.verify_hooks.max_pre_delivery_nudges", return_value=2),
         patch("hermes_cli.plugins.invoke_hook", return_value=[]),
@@ -162,8 +162,8 @@ def test_bound_stops_at_configured_value(agent, monkeypatch):
     with (
         patch("hermes_cli.plugins.has_hook", side_effect=lambda name: name == "pre_delivery"),
         patch(
-            "hermes_cli.plugins.get_pre_delivery_continue_message",
-            return_value="keep verifying",
+            "hermes_cli.plugins.get_pre_delivery_answer",
+            return_value=("continue", "keep verifying"),
         ),
         patch("agent.verify_hooks.max_pre_delivery_nudges", return_value=2),
         patch("hermes_cli.plugins.invoke_hook", return_value=[]),
@@ -185,7 +185,7 @@ def test_raising_hook_releases_the_turn(agent, monkeypatch):
     with (
         patch("hermes_cli.plugins.has_hook", side_effect=lambda name: name == "pre_delivery"),
         patch(
-            "hermes_cli.plugins.get_pre_delivery_continue_message",
+            "hermes_cli.plugins.get_pre_delivery_answer",
             side_effect=RuntimeError("hook crashed"),
         ),
         patch("hermes_cli.plugins.invoke_hook", return_value=[]),
@@ -195,3 +195,92 @@ def test_raising_hook_releases_the_turn(agent, monkeypatch):
     assert result["final_response"] == "the answer"
     assert result["completed"] is True
     assert agent._pre_delivery_nudges == 0
+
+
+class TestToolEvidence:
+    """The turn's calls reach the hook as name, arguments, and an excerpt."""
+
+    def test_a_call_carries_name_arguments_and_excerpt(self):
+        messages = [
+            {"role": "user", "content": "go"},
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {"id": "c1", "function": {"name": "read_file", "arguments": '{"path":"a"}'}}
+                ],
+            },
+            {"role": "tool", "tool_call_id": "c1", "name": "read_file", "content": "line one"},
+        ]
+        assert verify_hooks.build_tool_evidence(messages) == [
+            {"name": "read_file", "arguments": '{"path":"a"}', "excerpt": "line one"}
+        ]
+
+    def test_an_earlier_turn_is_excluded(self):
+        messages = [
+            {"role": "user", "content": "first"},
+            {"role": "tool", "tool_call_id": "old", "name": "old", "content": "old result"},
+            {"role": "assistant", "content": "done"},
+            {"role": "user", "content": "second"},
+        ]
+        assert verify_hooks.build_tool_evidence(messages) == []
+
+    def test_a_hold_nudge_does_not_move_the_boundary(self):
+        messages = [
+            {"role": "user", "content": "go"},
+            {"role": "tool", "tool_call_id": "c1", "name": "read_file", "content": "x"},
+            {"role": "assistant", "content": "draft", "_pre_delivery_synthetic": True},
+            {"role": "user", "content": "hold", "_pre_delivery_synthetic": True},
+        ]
+        assert len(verify_hooks.build_tool_evidence(messages)) == 1
+
+    def test_an_excerpt_is_capped_head_and_tail(self):
+        messages = [
+            {"role": "user", "content": "go"},
+            {"role": "tool", "tool_call_id": "c1", "name": "t", "content": "a" * 5000},
+        ]
+        excerpt = verify_hooks.build_tool_evidence(messages)[0]["excerpt"]
+        assert len(excerpt) == verify_hooks.TOOL_EXCERPT_CHARS + 3
+        assert excerpt.startswith("a")
+        assert excerpt.endswith("a")
+
+    def test_only_the_newest_calls_fit_the_budget(self):
+        messages = [{"role": "user", "content": "go"}]
+        for index in range(verify_hooks.TOOL_EVIDENCE_CALLS + 5):
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": f"c{index}",
+                    "name": "t",
+                    "content": "x" * 1024,
+                }
+            )
+        evidence = verify_hooks.build_tool_evidence(messages)
+        assert len(evidence) == verify_hooks.TOOL_EVIDENCE_CALLS
+        # Newest excerpt fills first; the oldest ones keep their name only.
+        assert evidence[-1]["excerpt"] == "x" * 1024
+        assert evidence[0]["excerpt"] == ""
+
+
+def test_a_replacement_answer_is_delivered(agent, monkeypatch):
+    """A hook answering with replacement text ships that text, not the draft."""
+    answers = iter([_response("draft with a claim"), _response("second draft")])
+    agent._interruptible_api_call = lambda _kwargs: next(answers)
+    agent._handle_max_iterations = MagicMock(return_value="replacement summary")
+    monkeypatch.setenv("HERMES_VERIFY_ON_STOP", "0")
+
+    with (
+        patch("hermes_cli.plugins.has_hook", side_effect=lambda name: name == "pre_delivery"),
+        patch(
+            "hermes_cli.plugins.get_pre_delivery_answer",
+            side_effect=[("continue", "hold this"), ("replace", "cleaned answer")],
+        ),
+        patch("agent.verify_hooks.max_pre_delivery_nudges", return_value=2),
+        patch("hermes_cli.plugins.invoke_hook", return_value=[]),
+    ):
+        result = agent.run_conversation("answer me")
+
+    assert result["final_response"] == "cleaned answer"
+    assert result["completed"] is True
+    contents = [m.get("content") for m in result["messages"]]
+    assert "cleaned answer" in contents
+    assert "second draft" not in contents
