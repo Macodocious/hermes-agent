@@ -10741,18 +10741,25 @@ def _codex_full_login_worker(session_id: str) -> None:
         if not access_token:
             raise RuntimeError("token exchange did not return access_token")
 
-        if sess.get("cancelled"):
-            _log.info("oauth/device: openai-codex login cancelled before token save (session=%s)", session_id)
-            return
-
         from hermes_cli.auth import _save_codex_tokens
 
-        with _profile_scope(session_profile):
-            _save_codex_tokens({
-                "access_token": access_token,
-                "refresh_token": refresh_token,
-            })
+        # The cancellation check and the save must be one atomic critical
+        # section under the same lock cancel_oauth_session() uses. Checking
+        # "cancelled" and then saving as two separate steps left a window
+        # where DELETE could flip the flag between them and the worker would
+        # still persist tokens after the user believed the login was
+        # aborted. Holding the lock across both closes that window: DELETE
+        # either lands before this section (worker observes cancelled and
+        # returns) or blocks until this section (and the save) is done.
         with _oauth_sessions_lock:
+            if sess.get("cancelled"):
+                _log.info("oauth/device: openai-codex login cancelled before token save (session=%s)", session_id)
+                return
+            with _profile_scope(session_profile):
+                _save_codex_tokens({
+                    "access_token": access_token,
+                    "refresh_token": refresh_token,
+                })
             sess["status"] = "approved"
         _log.info("oauth/device: openai-codex login completed (session=%s)", session_id)
     except Exception as e:
@@ -10860,9 +10867,10 @@ async def cancel_oauth_session(
     """
     _require_token(request)
     with _oauth_sessions_lock:
-        sess = _oauth_sessions.pop(session_id, None)
+        sess = _oauth_sessions.get(session_id)
         if sess is not None:
             sess["cancelled"] = True
+        _oauth_sessions.pop(session_id, None)
     if sess is None:
         return {"ok": False, "message": "session not found"}
     return {"ok": True, "session_id": session_id}

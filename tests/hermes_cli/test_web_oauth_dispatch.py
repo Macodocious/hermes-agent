@@ -224,7 +224,7 @@ def test_codex_dashboard_start_rewords_device_authorization_error(monkeypatch):
 
 
 def test_codex_dashboard_worker_stops_polling_after_cancel(tmp_path, monkeypatch):
-    """DELETE mid-poll must stop the worker before it exchanges/saves tokens.
+    """A real DELETE mid-poll must stop the worker before it exchanges/saves tokens.
 
     Regression for IA-01: cancelling only popped the session dict; the
     background worker kept polling/exchanging/saving regardless, and once
@@ -232,6 +232,11 @@ def test_codex_dashboard_worker_stops_polling_after_cancel(tmp_path, monkeypatch
     caller's current profile scope instead of the one the login started
     in. The fix marks the dict `cancelled` before popping, and the worker
     checks that flag before every remaining step.
+
+    Exercises the actual `DELETE /api/providers/oauth/sessions/{id}`
+    endpoint (rather than mutating the session dict directly) so the
+    endpoint/worker race and the real removal from `_oauth_sessions` are
+    both under test.
     """
     from hermes_cli import auth as auth_mod
     from hermes_cli import web_server as ws
@@ -273,9 +278,10 @@ def test_codex_dashboard_worker_stops_polling_after_cancel(tmp_path, monkeypatch
     sid, _ = ws._new_oauth_session("openai-codex", "device_code", profile="coder")
 
     def fake_sleep(_interval):
-        # Simulate a concurrent DELETE /api/providers/oauth/sessions/{sid}
+        # Simulate a real concurrent DELETE /api/providers/oauth/sessions/{sid}
         # firing while the worker is asleep between polls.
-        ws._oauth_sessions[sid]["cancelled"] = True
+        resp = client.delete(f"/api/providers/oauth/sessions/{sid}", headers=HEADERS)
+        assert resp.status_code == 200, resp.text
 
     monkeypatch.setattr(ws.time, "sleep", fake_sleep)
 
@@ -283,9 +289,111 @@ def test_codex_dashboard_worker_stops_polling_after_cancel(tmp_path, monkeypatch
         ws._codex_full_login_worker(sid)
 
         assert saved == []
-        assert ws._oauth_sessions[sid]["status"] == "pending"
+        assert sid not in ws._oauth_sessions
     finally:
         ws._oauth_sessions.pop(sid, None)
+
+
+def test_codex_worker_final_save_is_atomic_with_cancel_delete(tmp_path, monkeypatch):
+    """The final cancellation check and the token save must be one atomic
+    section under `_oauth_sessions_lock`.
+
+    Regression: checking `cancelled` and calling `_save_codex_tokens()` used
+    to be two separate steps with no lock held across them, so a DELETE
+    landing in that gap flipped the flag too late for the worker to see it
+    and the tokens were saved anyway. This drives a real DELETE from another
+    thread exactly while the worker holds the lock for its check+save, and
+    asserts DELETE stays blocked for the whole critical section instead of
+    slipping in between the check and the save.
+    """
+    import threading
+
+    from hermes_cli import auth as auth_mod
+    from hermes_cli import web_server as ws
+
+    class _Resp:
+        def __init__(self, status_code, payload):
+            self.status_code = status_code
+            self._payload = payload
+
+        def json(self):
+            return self._payload
+
+    class _Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def post(self, url, **kwargs):
+            if url.endswith("/deviceauth/usercode"):
+                return _Resp(200, {
+                    "device_auth_id": "device-auth-id",
+                    "interval": 0,
+                    "user_code": "CODEX-1234",
+                })
+            return _Resp(200, {
+                "authorization_code": "auth-code",
+                "code_verifier": "verifier",
+            })
+
+    class _TokenClient(_Client):
+        def post(self, url, **kwargs):
+            return _Resp(200, {"access_token": "at", "refresh_token": "rt"})
+
+    clients = iter([_Client, _Client, _TokenClient])
+    _make_profile_home(tmp_path, monkeypatch, profile="coder")
+    monkeypatch.setattr(httpx, "Client", lambda *a, **k: next(clients)(*a, **k))
+
+    saved = []
+    delete_threads = []
+    delete_started = threading.Event()
+    delete_finished = threading.Event()
+
+    def fake_save(tokens):
+        # We are inside the worker's critical section right now (holding
+        # _oauth_sessions_lock). Fire a real DELETE from another thread and
+        # prove it cannot complete until this section releases the lock.
+        # Do NOT join the DELETE thread here: it is blocked on the very
+        # lock this section holds, so joining here would deadlock.
+        delete_thread = threading.Thread(target=_fire_delete, daemon=True)
+        delete_threads.append(delete_thread)
+        delete_thread.start()
+        delete_started.wait(timeout=2)
+        still_blocked = not delete_finished.wait(timeout=0.2)
+        saved.append((tokens, still_blocked))
+
+    def _fire_delete():
+        delete_started.set()
+        client.delete(f"/api/providers/oauth/sessions/{sid}", headers=HEADERS)
+        delete_finished.set()
+
+    monkeypatch.setattr(auth_mod, "_save_codex_tokens", fake_save)
+    monkeypatch.setattr(ws.time, "sleep", lambda *_a, **_k: None)
+
+    sid, _ = ws._new_oauth_session("openai-codex", "device_code", profile="coder")
+
+    ws._codex_full_login_worker(sid)
+
+    # The lock is released now (worker returned), so the DELETE thread can
+    # finally complete.
+    delete_threads[0].join(timeout=2)
+
+    assert len(saved) == 1
+    tokens, delete_was_still_blocked_during_save = saved[0]
+    assert tokens == {"access_token": "at", "refresh_token": "rt"}
+    assert delete_was_still_blocked_during_save, (
+        "DELETE must block until the worker's check+save critical section "
+        "finishes, not slip in between the check and the save"
+    )
+    # DELETE arrived after the point of no return (save already committed),
+    # so this is the legitimate too-late-to-cancel outcome: token saved,
+    # session subsequently removed by the now-unblocked DELETE.
+    assert sid not in ws._oauth_sessions
 
 
 def test_cancel_oauth_session_marks_dict_cancelled_before_popping():
