@@ -814,7 +814,6 @@ def test_skill_subscriber_contract_accepts_only_bounded_marks():
     lifecycle.metadata["skill_name"] = "privacy-canary"
     assert skill_counter(lifecycle) is None
 
-
 def test_skill_event_fields_are_bounded_and_reject_malformed_usage():
     assert skill_lifecycle_fields({
         "action": "patched",

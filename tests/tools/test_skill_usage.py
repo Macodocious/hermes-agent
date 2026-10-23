@@ -157,7 +157,6 @@ def test_skill_reuse_and_post_patch_reuse_are_derived_atomically(
     assert record["patch_generation"] == 1
     assert record["last_reused_patch_generation"] == 1
 
-
 def test_skill_state_events_emit_only_for_real_transitions(skills_home, monkeypatch):
     from hermes_cli import lifecycle
     from tools.skill_usage import (
@@ -191,7 +190,6 @@ def test_skill_state_events_emit_only_for_real_transitions(skills_home, monkeypa
         "restored",
     ]
 
-
 def test_skill_event_is_not_emitted_when_usage_state_cannot_commit(
     skills_home,
     monkeypatch,
@@ -211,7 +209,6 @@ def test_skill_event_is_not_emitted_when_usage_state_cannot_commit(
     skill_usage.bump_use("private-skill-name")
 
     assert events == []
-
 
 def test_installed_lifecycle_uses_persisted_provenance_when_hub_lookup_misses(
     skills_home,
@@ -235,7 +232,6 @@ def test_installed_lifecycle_uses_persisted_provenance_when_hub_lookup_misses(
     assert len(events) == 1
     assert events[0]["action"] == "installed"
     assert events[0]["provenance"] == "installed"
-
 
 def test_created_skill_does_not_inherit_stale_identity_or_continuity(
     skills_home,
@@ -277,7 +273,6 @@ def test_created_skill_does_not_inherit_stale_identity_or_continuity(
     assert [event["provenance"] for event in events] == ["local", "local"]
     assert events[-1]["reused"] is False
     assert events[-1]["reuse_after_patch"] is False
-
 
 def test_malformed_usage_counters_recover_without_losing_patch_reuse(
     skills_home,

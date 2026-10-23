@@ -2920,7 +2920,6 @@ def test_skill_lifecycle_flows_through_relay_to_a_privacy_safe_package(
     }
     assert "private-skill-name" not in json.dumps(package)
 
-
 def test_skill_lifecycle_with_only_task_id_uses_unique_task_scope(direct_runtime):
     runtime = relay_shared_metrics._get_runtime()
     assert runtime is not None
@@ -2946,7 +2945,6 @@ def test_skill_lifecycle_with_only_task_id_uses_unique_task_scope(direct_runtime
     ]
     assert mark[2]["handle"] == task.handle
 
-
 def test_skill_task_only_correlation_does_not_guess_across_sessions(direct_runtime):
     runtime = relay_shared_metrics._get_runtime()
     assert runtime is not None
@@ -2971,7 +2969,6 @@ def test_skill_task_only_correlation_does_not_guess_across_sessions(direct_runti
         if event[0] == "scope.event" and event[1] == "hermes.skill.lifecycle"
     ]
     assert "handle" not in mark[2]
-
 
 def test_late_skill_lifecycle_is_not_reemitted_at_the_root(direct_runtime):
     base = {
@@ -3006,7 +3003,6 @@ def test_late_skill_lifecycle_is_not_reemitted_at_the_root(direct_runtime):
         for event in direct_runtime.events
         if event[0] == "scope.event" and event[1] == "hermes.skill.load"
     ] == []
-
 
 def test_skill_lifecycle_does_not_fallback_across_an_explicit_session(
     direct_runtime,
