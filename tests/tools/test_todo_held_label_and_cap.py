@@ -33,6 +33,15 @@ def _close_final(store):
     assert store.transition("complete", "1")["ok"]
     assert store.mark_work()
     assert store.transition("complete", "2")["ok"]
+    # The close itself records nothing; the held-line mechanics are still
+    # exercised directly so the label freeze and the cap stay covered.
+    store._record_notice(
+        NOTICE_COMPLETED,
+        {"id": "2", "content": "b", "plan": "p.md"},
+        from_status="in_progress",
+        to_status="completed",
+        held=True,
+    )
     return next(
         n
         for n in store.pending_notices()
@@ -115,6 +124,13 @@ class TestCapSparesTheHeldLine:
         store.mark_work()
         store.drain_notices()
         assert store.transition("complete", "1")["ok"]
+        store._record_notice(
+            NOTICE_COMPLETED,
+            {"id": "1", "content": "one"},
+            from_status="in_progress",
+            to_status="completed",
+            held=True,
+        )
         held = next(n for n in store.pending_notices() if n["held"])
 
         with caplog.at_level(logging.WARNING, logger="tools.todo_tool"):
