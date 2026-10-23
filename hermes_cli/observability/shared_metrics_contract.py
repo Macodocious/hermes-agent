@@ -234,6 +234,8 @@ def client_architecture(value: Any) -> str:
 def client_install_method(value: Any) -> str:
     """Return an allowlisted Hermes installation method."""
     normalized = str(value or "").strip().lower()
+    if normalized == "nix":
+        return "nixos"
     return normalized if normalized in CLIENT_INSTALL_METHODS else "unknown"
 
 
