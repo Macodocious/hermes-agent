@@ -988,6 +988,49 @@ def test_sync_session_runner_releases_lock_before_callback(direct_runtime):
     assert contender.is_alive() is False
 
 
+def test_concurrent_turn_skips_relay_before_scope_stack_can_interleave(
+    direct_runtime,
+):
+    coordinator = relay_runtime.SESSION_COORDINATOR
+    profile_key = relay_runtime.current_profile_key()
+    lease = coordinator.acquire_conversation(
+        profile_key=profile_key,
+        session_id="shared-session",
+        platform="cli",
+    )
+    first = coordinator.begin_turn(lease, turn_id="first", task_id="first-task")
+    second = coordinator.begin_turn(
+        lease,
+        turn_id="second",
+        task_id="second-task",
+    )
+
+    assert first.relay_enabled is True
+    assert first.handle is not None
+    assert second.relay_enabled is False
+    assert second.handle is None
+    assert relay_runtime.resolve_execution_context("shared-session") == (
+        None,
+        None,
+        None,
+    )
+
+    coordinator.end_turn(first, outcome="success")
+    coordinator.end_turn(second, outcome="success")
+    coordinator.release_conversation(lease)
+    coordinator.finalize_conversation(
+        profile_key=profile_key,
+        session_id="shared-session",
+    )
+
+    turn_closes = [
+        event
+        for event in direct_runtime.events
+        if event[0] == "scope.pop" and event[1] == first.handle
+    ]
+    assert len(turn_closes) == 1
+
+
 
 
 
@@ -1544,7 +1587,6 @@ def test_task_ownership_survives_session_id_rotation(direct_runtime):
     }
     assert task_ends[0][2]["output"]["model_call_count_bucket"] == "1"
     assert task_ends[0][2]["output"]["outcome"] == "success"
-
 
 
 
