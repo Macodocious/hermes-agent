@@ -1148,12 +1148,14 @@ class TestInstallPathSafety:
         )
 
         with patch.object(hub, "SKILLS_DIR", skills_dir), \
-             patch.object(hub, "QUARANTINE_DIR", quarantine_root):
+             patch.object(hub, "QUARANTINE_DIR", quarantine_root), \
+             patch("tools.skill_usage.record_installed") as record_installed:
             with pytest.raises(ValueError, match="symlink"):
                 hub.install_from_quarantine(
                     q_dir, "bad-skill", "", bundle, scan_result,
                 )
 
+        record_installed.assert_not_called()
         assert not (skills_dir / "bad-skill" / "leak.txt").exists()
         assert secret.read_text() == "data exfiltration payload\n"
 
@@ -1260,6 +1262,45 @@ class TestInstallPathSafety:
         # The old directory was replaced by the new one.
         assert installed.exists()
         assert (installed / "SKILL.md").read_text().strip() == "---\nname: my-skill\n---\nnew"
+
+    def test_install_from_quarantine_records_successful_install(self, tmp_path):
+        import tools.skills_hub as hub
+        from tools.skills_guard import ScanResult
+
+        skills_dir = tmp_path / "skills"
+        quarantine_root = skills_dir / ".hub" / "quarantine"
+        q_dir = quarantine_root / "pending"
+        q_dir.mkdir(parents=True)
+        skill_md = "---\nname: good-skill\n---\n\n# Good skill\n"
+        (q_dir / "SKILL.md").write_text(skill_md, encoding="utf-8")
+        bundle = hub.SkillBundle(
+            name="good-skill",
+            files={"SKILL.md": skill_md},
+            source="community",
+            identifier="good/source",
+            trust_level="community",
+        )
+        scan_result = ScanResult(
+            skill_name="good-skill",
+            source="community",
+            trust_level="community",
+            verdict="safe",
+        )
+
+        with patch.object(hub, "SKILLS_DIR", skills_dir), \
+             patch.object(hub, "QUARANTINE_DIR", quarantine_root), \
+             patch("tools.skill_usage.record_installed") as record_installed:
+            installed = hub.install_from_quarantine(
+                q_dir,
+                "good-skill",
+                "",
+                bundle,
+                scan_result,
+            )
+
+        assert installed == skills_dir / "good-skill"
+        assert installed.is_dir()
+        record_installed.assert_called_once_with("good-skill")
 
     def test_install_from_quarantine_allows_empty_category_dir(self, tmp_path):
         """Installing into an existing but empty category directory is allowed

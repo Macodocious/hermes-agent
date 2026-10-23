@@ -304,6 +304,88 @@ class TestSkillsList:
 class TestSkillView:
     def test_view_resolves_by_dir_name_and_frontmatter_name(self, tmp_path):
         with patch("tools.skills_tool.SKILLS_DIR", tmp_path):
+            _make_skill(tmp_path, "my-skill")
+            raw = skill_view("my-skill")
+        result = json.loads(raw)
+        assert result["success"] is True
+        assert result["name"] == "my-skill"
+        assert "Step 1" in result["content"]
+
+    def test_registered_view_tracks_use_with_task_and_session(self, tmp_path):
+        from tools.skills_tool import _skill_view_with_bump
+
+        with (
+            patch("tools.skills_tool.SKILLS_DIR", tmp_path),
+            patch("tools.skill_usage.bump_view") as bump_view,
+            patch("tools.skill_usage.bump_use") as bump_use,
+        ):
+            _make_skill(tmp_path, "my-skill")
+            raw = _skill_view_with_bump(
+                {"name": "my-skill"},
+                task_id="task-view",
+                session_id="session-view",
+            )
+
+        assert json.loads(raw)["success"] is True
+        bump_view.assert_called_once_with("my-skill")
+        bump_use.assert_called_once_with(
+            "my-skill",
+            task_id="task-view",
+            session_id="session-view",
+        )
+
+    def test_view_skill_by_frontmatter_name_when_dir_differs(self, tmp_path):
+        # The on-disk directory ("alias-dir") differs from the skill's
+        # frontmatter name ("real-skill-name"). skills_list() exposes the
+        # frontmatter name, so skill_view(name) must resolve it too.
+        skill_dir = tmp_path / "alias-dir"
+        skill_dir.mkdir(parents=True, exist_ok=True)
+        (skill_dir / "SKILL.md").write_text(
+            "---\n"
+            "name: real-skill-name\n"
+            "description: A skill whose directory name differs from its name.\n"
+            "---\n\n"
+            "# real-skill-name\n\n"
+            "Step 1: Do the thing.\n"
+        )
+        with patch("tools.skills_tool.SKILLS_DIR", tmp_path):
+            raw = skill_view("real-skill-name")
+        result = json.loads(raw)
+        assert result["success"] is True
+        assert "Step 1" in result["content"]
+
+    def test_skill_view_applies_template_vars(self, tmp_path):
+        with (
+            patch("tools.skills_tool.SKILLS_DIR", tmp_path),
+            patch(
+                "agent.skill_preprocessing.load_skills_config",
+                return_value={"template_vars": True, "inline_shell": False},
+            ),
+        ):
+            skill_dir = _make_skill(
+                tmp_path,
+                "templated",
+                body="Run ${HERMES_SKILL_DIR}/scripts/do.sh in ${HERMES_SESSION_ID}",
+            )
+            raw = skill_view("templated", task_id="session-123")
+
+        result = json.loads(raw)
+        assert result["success"] is True
+        assert f"Run {skill_dir}/scripts/do.sh in session-123" in result["content"]
+        assert "${HERMES_SKILL_DIR}" not in result["content"]
+
+    def test_skill_view_applies_inline_shell_when_enabled(self, tmp_path):
+        with (
+            patch("tools.skills_tool.SKILLS_DIR", tmp_path),
+            patch(
+                "agent.skill_preprocessing.load_skills_config",
+                return_value={
+                    "template_vars": True,
+                    "inline_shell": True,
+                    "inline_shell_timeout": 5,
+                },
+            ),
+        ):
             _make_skill(
                 tmp_path,
                 "my-skill",

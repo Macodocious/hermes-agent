@@ -2355,6 +2355,40 @@ def test_pending_tool_uses_the_outer_task_timeout_outcome(direct_runtime):
     assert "private timeout detail" not in repr(direct_runtime.events)
 
 
+def test_late_model_start_does_not_create_an_orphan_after_task_completion(
+    direct_runtime,
+):
+    base = {
+        "session_id": "s1",
+        "task_id": "t1",
+        "turn_id": "turn-1",
+        "platform": "cli",
+    }
+    lifecycle.invoke_hook("pre_llm_call", **base)
+    lifecycle.invoke_hook(
+        "on_session_end",
+        **base,
+        completed=True,
+        failed=False,
+        interrupted=False,
+        turn_exit_reason="text_response(stop)",
+    )
+
+    lifecycle.invoke_hook(
+        "pre_api_request",
+        **base,
+        api_request_id="late-request",
+        provider="nvidia",
+        model="nvidia/nemotron-3-super-120b-a12b",
+    )
+    lifecycle.finalize_session(session_id="s1")
+
+    assert [event for event in direct_runtime.events if event[0] == "llm.call"] == []
+    assert [
+        event for event in direct_runtime.events if event[0] == "llm.call_end"
+    ] == []
+
+
 def test_approval_without_tool_context_is_counted_as_unattributed(direct_runtime):
     base = {
         "session_id": "s1",
@@ -2795,3 +2829,293 @@ def test_task_ownership_survives_session_id_rotation(direct_runtime):
     assert task_ends[0][2]["output"]["outcome"] == "success"
 
 
+def test_gateway_and_delegated_entrypoints_flow_through_relay(direct_runtime):
+    tasks = [
+        {
+            "session_id": "gateway-session",
+            "task_id": "gateway-task",
+            "platform": "whatsapp_cloud",
+        },
+        {
+            "session_id": "child-session",
+            "task_id": "delegated-task",
+            "platform": "cli",
+            "parent_session_id": "private-parent-session",
+        },
+    ]
+    for task in tasks:
+        lifecycle.invoke_hook("pre_llm_call", **task)
+        lifecycle.invoke_hook(
+            "on_session_end",
+            **task,
+            completed=True,
+            failed=False,
+            interrupted=False,
+            turn_exit_reason="text_response(stop)",
+        )
+
+    starts = [
+        event[3]["input"]
+        for event in direct_runtime.events
+        if event[0] == "scope.push" and event[1] == "hermes.task_run"
+    ]
+    assert starts == [
+        {"entrypoint": "gateway_message", "execution_surface": "gateway"},
+        {"entrypoint": "delegated", "execution_surface": "cli"},
+    ]
+    assert "private-parent-session" not in json.dumps(direct_runtime.events)
+
+
+def test_skill_lifecycle_flows_through_relay_to_a_privacy_safe_package(
+    direct_runtime,
+    tmp_path,
+):
+    common = {
+        "skill_name": "private-skill-name",
+        "provenance": "agent_created",
+    }
+    lifecycle.invoke_hook("on_skill_lifecycle", **common, action="created")
+    lifecycle.invoke_hook(
+        "on_skill_lifecycle",
+        **common,
+        action="loaded",
+        use_count=1,
+        reused=False,
+        reuse_after_patch=False,
+    )
+    lifecycle.invoke_hook("on_skill_lifecycle", **common, action="patched")
+    lifecycle.invoke_hook(
+        "on_skill_lifecycle",
+        **common,
+        action="loaded",
+        use_count=2,
+        reused=True,
+        reuse_after_patch=True,
+    )
+
+    runtime = relay_shared_metrics._get_runtime()
+    assert runtime is not None
+    runtime.shutdown()
+
+    marks = [event for event in direct_runtime.events if event[0] == "scope.event"]
+    assert [event[1] for event in marks] == [
+        "hermes.skill.lifecycle",
+        "hermes.skill.load",
+        "hermes.skill.lifecycle",
+        "hermes.skill.load",
+    ]
+    assert "private-skill-name" not in json.dumps(marks)
+
+    outbox = tmp_path / "hermes-home" / "telemetry" / "shared_metrics" / "outbox"
+    [package_path] = list(outbox.glob("*.json"))
+    package = json.loads(package_path.read_text(encoding="utf-8"))
+    skill_metrics = [
+        metric
+        for metric in package["metrics"]
+        if metric["name"].startswith("hermes.skill.")
+    ]
+    assert {metric["name"] for metric in skill_metrics} == {
+        "hermes.skill.lifecycle.count",
+        "hermes.skill.load.count",
+    }
+    assert "private-skill-name" not in json.dumps(package)
+
+
+def test_skill_lifecycle_with_only_task_id_uses_unique_task_scope(direct_runtime):
+    runtime = relay_shared_metrics._get_runtime()
+    assert runtime is not None
+    task = runtime.start_task({
+        "session_id": "session-1",
+        "task_id": "task-1",
+        "platform": "cli",
+    })
+    assert task is not None
+
+    lifecycle.invoke_hook(
+        "on_skill_lifecycle",
+        action="created",
+        skill_name="private-skill-name",
+        provenance="agent_created",
+        task_id="task-1",
+    )
+
+    [mark] = [
+        event
+        for event in direct_runtime.events
+        if event[0] == "scope.event" and event[1] == "hermes.skill.lifecycle"
+    ]
+    assert mark[2]["handle"] == task.handle
+
+
+def test_skill_task_only_correlation_does_not_guess_across_sessions(direct_runtime):
+    runtime = relay_shared_metrics._get_runtime()
+    assert runtime is not None
+    for session_id in ("session-1", "session-2"):
+        assert runtime.start_task({
+            "session_id": session_id,
+            "task_id": "shared-task",
+            "platform": "cli",
+        }) is not None
+
+    lifecycle.invoke_hook(
+        "on_skill_lifecycle",
+        action="created",
+        skill_name="private-skill-name",
+        provenance="agent_created",
+        task_id="shared-task",
+    )
+
+    [mark] = [
+        event
+        for event in direct_runtime.events
+        if event[0] == "scope.event" and event[1] == "hermes.skill.lifecycle"
+    ]
+    assert "handle" not in mark[2]
+
+
+def test_late_skill_lifecycle_is_not_reemitted_at_the_root(direct_runtime):
+    base = {
+        "session_id": "session-1",
+        "task_id": "task-1",
+        "turn_id": "turn-1",
+        "platform": "cli",
+    }
+    lifecycle.invoke_hook("pre_llm_call", **base)
+    lifecycle.invoke_hook(
+        "on_session_end",
+        **base,
+        completed=True,
+        failed=False,
+        interrupted=False,
+        turn_exit_reason="text_response(stop)",
+    )
+
+    lifecycle.invoke_hook(
+        "on_skill_lifecycle",
+        **base,
+        action="loaded",
+        skill_name="private-skill-name",
+        provenance="local",
+        use_count=2,
+        reused=True,
+        reuse_after_patch=False,
+    )
+
+    assert [
+        event
+        for event in direct_runtime.events
+        if event[0] == "scope.event" and event[1] == "hermes.skill.load"
+    ] == []
+
+
+def test_skill_lifecycle_does_not_fallback_across_an_explicit_session(
+    direct_runtime,
+):
+    runtime = relay_shared_metrics._get_runtime()
+    assert runtime is not None
+    assert runtime.start_task({
+        "session_id": "session-1",
+        "task_id": "task-1",
+        "platform": "cli",
+    }) is not None
+
+    lifecycle.invoke_hook(
+        "on_skill_lifecycle",
+        action="created",
+        skill_name="private-skill-name",
+        provenance="local",
+        session_id="wrong-session",
+        task_id="task-1",
+    )
+
+    assert [
+        event
+        for event in direct_runtime.events
+        if event[0] == "scope.event" and event[1] == "hermes.skill.lifecycle"
+    ] == []
+
+
+def test_persistence_failure_does_not_escape_the_hook(
+    direct_runtime,
+    monkeypatch,
+    caplog,
+):
+    runtime = relay_shared_metrics._get_runtime()
+    assert runtime is not None
+
+    def fail_record(*_args: Any, **_kwargs: Any) -> None:
+        raise OSError("store unavailable")
+
+    monkeypatch.setattr(runtime.subscriber.store, "record_counter", fail_record)
+    lifecycle.invoke_hook(
+        "pre_api_request",
+        session_id="s1",
+        task_id="t1",
+        api_request_id="r1",
+        provider="openai",
+        model="gpt-5",
+    )
+    lifecycle.invoke_hook(
+        "post_api_request",
+        session_id="s1",
+        task_id="t1",
+        api_request_id="r1",
+        provider="openai",
+        model="gpt-5",
+    )
+
+    assert "Unable to persist the Hermes shared metric" in caplog.text
+
+
+def test_close_does_not_reopen_a_session_after_scope_start_failure(
+    direct_runtime,
+    monkeypatch,
+):
+    runtime = relay_runtime.get_runtime()
+    assert runtime is not None
+    original_push = direct_runtime.scope.push
+    push_attempts = 0
+
+    def fail_first_push(*args: Any, **kwargs: Any) -> Any:
+        nonlocal push_attempts
+        push_attempts += 1
+        if push_attempts == 1:
+            raise RuntimeError("simulated scope failure")
+        return original_push(*args, **kwargs)
+
+    direct_runtime.scope.push = fail_first_push
+    with pytest.raises(RuntimeError, match="simulated scope failure"):
+        runtime.ensure_session({"session_id": "s1"})
+
+    close_started = threading.Event()
+    allow_close = threading.Event()
+    original_flush = direct_runtime.subscribers.flush
+
+    def block_flush():
+        session = runtime._sessions["s1"]
+        assert session.closing is True
+        close_started.set()
+        assert allow_close.wait(timeout=5)
+        original_flush()
+
+    direct_runtime.subscribers.flush = block_flush
+    close_thread = threading.Thread(
+        target=runtime.close_session,
+        args=({"session_id": "s1"},),
+    )
+    close_thread.start()
+    assert close_started.wait(timeout=5)
+
+    ensure_thread = threading.Thread(
+        target=runtime.ensure_session,
+        args=({"session_id": "s1"},),
+    )
+    ensure_thread.start()
+    allow_close.set()
+    close_thread.join(timeout=5)
+    ensure_thread.join(timeout=5)
+
+    assert not close_thread.is_alive()
+    assert not ensure_thread.is_alive()
+    assert push_attempts == 1
+    assert "s1" not in runtime._sessions
