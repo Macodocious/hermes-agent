@@ -247,7 +247,7 @@ class TestPlanToolBatchSegments:
             assert [tc.id for tc in segments[1][1]] == ["r1"]
 
     def test_v4a_without_path_arg_still_scopes_from_headers(self, tmp_path):
-        """mode=patch with no path= must still parallel-scope from V4A headers."""
+        """mode=patch with no path= must still scope from V4A headers."""
         patch_body = (
             "*** Begin Patch\n"
             "*** Update File: real.py\n"
@@ -261,11 +261,14 @@ class TestPlanToolBatchSegments:
             _tc("read_file", '{"path":"real.py"}', call_id="r1"),
         ]
         segments = _plan_tool_batch_segments(calls, execution_cwd=tmp_path)
-        # p1+w1 are disjoint → can share a parallel run; r1 overlaps real.py → new run.
+        # This fork bars mutating file tools from parallel runs (see
+        # _NEVER_PARALLEL_TOOLS: a parallel patch/write batch would stack N
+        # approval prompts on a single turn), so the disjoint p1+w1 pair
+        # cannot share a parallel segment. The path scoping itself still
+        # holds: the read of real.py stays ordered after the patch touching it.
         assert _flatten_ids(segments) == ["p1", "w1", "r1"]
-        assert [tc.id for tc in segments[0][1]] == ["p1", "w1"]
-        assert segments[0][0] == "parallel"
-        assert [tc.id for tc in segments[1][1]] == ["r1"]
+        assert _kinds(segments) == ["sequential"]
+        assert [tc.id for tc in segments[0][1]] == ["p1", "w1", "r1"]
 
     def test_path_scoped_tool_without_path_is_a_barrier(self):
         calls = [
@@ -358,7 +361,10 @@ class TestReaderWriterPathRoles:
             _tc("search_files", '{"pattern":"foo","path":"docs"}', call_id="s1"),
         ]
         segments = _plan_tool_batch_segments(calls, execution_cwd=tmp_path)
-        assert _kinds(segments) == ["parallel"]
+        # write_file is a barrier tool in this fork, so the batch runs in
+        # order even though the search subtree is disjoint: no path conflict
+        # is required for the ordering guarantee to hold.
+        assert _kinds(segments) == ["sequential"]
         assert [tc.id for tc in segments[0][1]] == ["w1", "s1"]
 
     def test_writer_writer_same_path_still_splits(self, tmp_path, monkeypatch):
