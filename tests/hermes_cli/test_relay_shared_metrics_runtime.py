@@ -258,13 +258,10 @@ def test_direct_runtime_records_without_enabling_a_plugin(direct_runtime, tmp_pa
     assert len(starts) == 1
     assert len(ends) == 1
     assert starts[0][2] == {}
-    assert starts[0][3]["model_name"] == "gpt"
+    assert starts[0][3]["model_name"] == "unknown"
     assert ends[0][2] == {
-        "call_role": "primary",
-        "locality": "remote",
-        "model_family": "claude",
-        "outcome": "success",
-        "provider_family": "direct",
+        "model": "claude-sonnet",
+        "provider": "anthropic",
     }
     serialized_events = json.dumps(direct_runtime.events)
     assert "sensitive-prompt" not in serialized_events
@@ -286,7 +283,10 @@ def test_direct_runtime_records_without_enabling_a_plugin(direct_runtime, tmp_pa
         "hermes.task_run.finished",
         "hermes.task_run.started",
     }
-    assert metrics["hermes.model_call.count"]["dimensions"]["model_family"] == "claude"
+    assert metrics["hermes.model_call.count"]["dimensions"] == {
+        "model": "claude-sonnet",
+        "provider": "anthropic",
+    }
     assert metrics["hermes.model_call.count"]["value"] == 1
     assert metrics["hermes.task_run.started"] == {
         "name": "hermes.task_run.started",
@@ -432,10 +432,13 @@ def test_real_binding_drives_lifecycle_aggregation_export_and_snapshot(
 
     assert len(by_metric["hermes.task_run.started"]) == 1
     assert by_metric["hermes.task_run.started"][0]["value"] == 3
-    assert {
-        counter["dimensions"]["outcome"]
-        for counter in by_metric["hermes.model_call.count"]
-    } == {"success", "failed", "cancelled"}
+    assert len(by_metric["hermes.model_call.count"]) == 1
+    model_counter = by_metric["hermes.model_call.count"][0]
+    assert model_counter["dimensions"] == {
+        "model": model_canary,
+        "provider": "custom",
+    }
+    assert model_counter["value"] == 3
     terminal_by_outcome = {
         counter["dimensions"]["outcome"]: counter
         for counter in by_metric["hermes.task_run.finished"]
@@ -475,10 +478,10 @@ def test_real_binding_drives_lifecycle_aggregation_export_and_snapshot(
         "snapshot": snapshot,
         "packages": package_payloads,
     })
+    assert model_canary in serialized_analytics
     for canary in (
         prompt_canary,
         response_canary,
-        model_canary,
         tool_canary,
         "sensitive-session",
         "sensitive-task",
@@ -693,6 +696,199 @@ def test_managed_config_cannot_override_shared_metrics_consent(
         managed_scope.invalidate_managed_cache()
 
 
+def test_shared_metrics_policy_and_store_are_profile_scoped(tmp_path, monkeypatch):
+    from hermes_constants import (
+        get_hermes_home,
+        reset_hermes_home_override,
+        set_hermes_home_override,
+    )
+
+    fake = _Relay()
+    profile_a = tmp_path / "profile-a"
+    profile_b = tmp_path / "profile-b"
+    monkeypatch.setattr(relay_runtime, "_load_nemo_relay", lambda: fake)
+    _policy = lambda: {
+        "telemetry": {
+            "shared_metrics": {"enabled": get_hermes_home() == profile_a}
+        }
+    }
+    # enabled() takes this fork's read-only config fast path, so the policy
+    # stub must cover both loaders or the real config is read instead.
+    monkeypatch.setattr("hermes_cli.config.read_raw_config", _policy)
+    monkeypatch.setattr("hermes_cli.config.read_raw_config_readonly", _policy)
+    relay_shared_metrics._reset_for_tests()
+    relay_runtime._reset_for_tests()
+
+    token = set_hermes_home_override(profile_a)
+    try:
+        assert relay_shared_metrics.enabled()
+        relay_shared_metrics.start_task_run(
+            session_id="shared",
+            task_id="task-a",
+            platform="cli",
+        )
+        relay_shared_metrics.finish_task_run(
+            session_id="shared",
+            task_id="task-a",
+            platform="cli",
+            result={"completed": True},
+        )
+        relay_shared_metrics._get_runtime().close_session({"session_id": "shared"})
+    finally:
+        reset_hermes_home_override(token)
+
+    token = set_hermes_home_override(profile_b)
+    try:
+        assert not relay_shared_metrics.enabled()
+        relay_shared_metrics.start_task_run(
+            session_id="shared",
+            task_id="task-b",
+            platform="cli",
+        )
+    finally:
+        reset_hermes_home_override(token)
+
+    assert list((profile_a / "telemetry" / "shared_metrics" / "outbox").glob("*.json"))
+    assert not (profile_b / "telemetry").exists()
+    relay_shared_metrics._reset_for_tests()
+    relay_runtime._reset_for_tests()
+
+
+def test_shared_metrics_subscribers_isolate_two_enabled_profiles(tmp_path, monkeypatch):
+    from hermes_constants import (
+        reset_hermes_home_override,
+        set_hermes_home_override,
+    )
+
+    fake = _Relay()
+    profile_a = tmp_path / "profile-a"
+    profile_b = tmp_path / "profile-b"
+    monkeypatch.setattr(relay_runtime, "_load_nemo_relay", lambda: fake)
+    _policy = lambda: {"telemetry": {"shared_metrics": {"enabled": True}}}
+    # enabled() takes this fork's read-only config fast path; stub it too.
+    monkeypatch.setattr("hermes_cli.config.read_raw_config", _policy)
+    monkeypatch.setattr("hermes_cli.config.read_raw_config_readonly", _policy)
+    relay_shared_metrics._reset_for_tests()
+    relay_runtime._reset_for_tests()
+
+    for profile, task_id in ((profile_a, "task-a"), (profile_b, "task-b")):
+        token = set_hermes_home_override(profile)
+        try:
+            relay_shared_metrics.start_task_run(
+                session_id="shared",
+                task_id=task_id,
+                platform="cli",
+            )
+            relay_shared_metrics.finish_task_run(
+                session_id="shared",
+                task_id=task_id,
+                platform="cli",
+                result={"completed": True},
+            )
+            relay_shared_metrics._get_runtime().close_session(
+                {"session_id": "shared"}
+            )
+        finally:
+            reset_hermes_home_override(token)
+
+    for profile in (profile_a, profile_b):
+        packages = list(
+            (profile / "telemetry" / "shared_metrics" / "outbox").glob("*.json")
+        )
+        assert len(packages) == 1
+        package = json.loads(packages[0].read_text(encoding="utf-8"))
+        metrics = {metric["name"]: metric for metric in package["metrics"]}
+        assert metrics["hermes.task_run.started"]["value"] == 1
+        assert metrics["hermes.task_run.finished"]["value"] == 1
+
+    relay_shared_metrics._reset_for_tests()
+    relay_runtime._reset_for_tests()
+
+
+def test_shared_metrics_isolates_same_task_id_across_sessions(direct_runtime):
+    runtime = relay_shared_metrics._get_runtime()
+    assert runtime is not None
+
+    task_a = runtime.start_task({
+        "session_id": "session-a",
+        "task_id": "shared-task",
+        "platform": "cli",
+    })
+    task_b = runtime.start_task({
+        "session_id": "session-b",
+        "task_id": "shared-task",
+        "platform": "gateway",
+    })
+
+    assert task_a is not None
+    assert task_b is not None
+    assert task_a is not task_b
+    assert task_a.handle != task_b.handle
+
+    runtime.finish_task({
+        "session_id": "session-a",
+        "task_id": "shared-task",
+        "platform": "cli",
+        "completed": True,
+    })
+    runtime.finish_task({
+        "session_id": "session-b",
+        "task_id": "shared-task",
+        "platform": "gateway",
+        "completed": True,
+    })
+
+    task_starts = [
+        event
+        for event in direct_runtime.events
+        if event[0] == "scope.push" and event[1] == "hermes.task_run"
+    ]
+    task_ends = [
+        event
+        for event in direct_runtime.events
+        if event[0] == "scope.pop" and event[1][1] == "hermes.task_run"
+    ]
+    assert len(task_starts) == 2
+    assert len(task_ends) == 2
+
+
+def test_shared_metrics_keys_turn_ownership_by_session(direct_runtime):
+    runtime = relay_shared_metrics._get_runtime()
+    assert runtime is not None
+    event_a = {
+        "session_id": "session-a",
+        "task_id": "task-a",
+        "turn_id": "shared-turn",
+        "platform": "cli",
+    }
+    event_b = {
+        "session_id": "session-b",
+        "task_id": "task-b",
+        "turn_id": "shared-turn",
+        "platform": "gateway",
+    }
+    task_a = runtime.start_task(event_a)
+    task_b = runtime.start_task(event_b)
+
+    runtime.start_model_call({
+        **event_a,
+        "api_request_id": "request-a",
+        "provider": "anthropic",
+        "model": "claude-sonnet",
+    })
+
+    session_a = runtime._session(event_a)
+    session_b = runtime._session(event_b)
+    assert task_a is not None
+    assert task_b is not None
+    assert session_a is not None
+    assert session_b is not None
+    assert ("task-a", "request-a") in session_a.model_calls
+    assert ("task-a", "request-a") not in session_b.model_calls
+    [model_start] = [
+        event for event in direct_runtime.events if event[0] == "llm.call"
+    ]
+    assert model_start[3]["handle"] == task_a.handle
 
 
 def test_disabling_shared_metrics_stops_collection_and_shutdown_export(
@@ -896,12 +1092,332 @@ def test_subagent_agent_boundary_closes_its_own_scope(
 
 
 
+def test_terminal_model_error_retains_the_failed_route(direct_runtime):
+    base = {
+        "session_id": "s1",
+        "task_id": "t1",
+        "api_request_id": "r1",
+        "provider": "anthropic",
+        "model": "claude-sonnet",
+    }
+
+    lifecycle.invoke_hook("pre_api_request", **base)
+    lifecycle.invoke_hook(
+        "api_request_error",
+        **base,
+        retryable=False,
+        error={"message": "sensitive-error"},
+    )
+    assert not [event for event in direct_runtime.events if event[0] == "llm.call_end"]
+    runtime = relay_shared_metrics._get_runtime()
+    session = runtime._session(base)
+    assert session is not None
+    [model_call] = session.model_calls.values()
+    assert model_call.fields == {
+        "model": "claude-sonnet",
+        "provider": "anthropic",
+    }
+    lifecycle.finalize_session(session_id="s1")
+
+    [end] = [event for event in direct_runtime.events if event[0] == "llm.call_end"]
+    assert end[2] == {
+        "model": "claude-sonnet",
+        "provider": "anthropic",
+    }
+
+
+def test_nonretryable_provider_error_can_recover_within_one_logical_call(
+    direct_runtime,
+):
+    base = {
+        "session_id": "s1",
+        "task_id": "t1",
+        "api_request_id": "r1",
+        "provider": "anthropic",
+        "model": "claude-sonnet",
+    }
+
+    lifecycle.invoke_hook("pre_api_request", **base, retry_count=0)
+    lifecycle.invoke_hook(
+        "api_request_error",
+        **base,
+        retry_count=0,
+        retryable=False,
+    )
+    fallback = {
+        **base,
+        "provider": "openai-api",
+        "model": "gpt-5",
+    }
+    lifecycle.invoke_hook("pre_api_request", **fallback, retry_count=0)
+    lifecycle.invoke_hook(
+        "post_api_request",
+        **fallback,
+        retry_count=0,
+    )
+    lifecycle.finalize_session(session_id="s1")
+
+    [end] = [event for event in direct_runtime.events if event[0] == "llm.call_end"]
+    [start] = [event for event in direct_runtime.events if event[0] == "llm.call"]
+    assert start[3]["model_name"] == "unknown"
+    assert end[2] == {
+        "model": "gpt-5",
+        "provider": "openai-api",
+    }
+
+
+def test_same_request_id_is_isolated_between_tasks(direct_runtime):
+    common = {
+        "session_id": "s1",
+        "api_request_id": "shared-request",
+        "platform": "cli",
+        "provider": "anthropic",
+        "model": "claude-sonnet",
+    }
+    for task_id in ("t1", "t2"):
+        lifecycle.invoke_hook("pre_llm_call", **common, task_id=task_id)
+        lifecycle.invoke_hook("pre_api_request", **common, task_id=task_id)
+
+    lifecycle.invoke_hook("post_api_request", **common)
+    assert not [event for event in direct_runtime.events if event[0] == "llm.call_end"]
+
+    for task_id in ("t2", "t1"):
+        lifecycle.invoke_hook("post_api_request", **common, task_id=task_id)
+        lifecycle.invoke_hook(
+            "on_session_end",
+            **common,
+            task_id=task_id,
+            completed=True,
+            failed=False,
+            interrupted=False,
+            turn_exit_reason="text_response(stop)",
+        )
+    lifecycle.finalize_session(session_id="s1")
+
+    model_ends = [
+        event for event in direct_runtime.events if event[0] == "llm.call_end"
+    ]
+    assert len(model_ends) == 2
+    task_ends = [
+        event[2]["output"]
+        for event in direct_runtime.events
+        if event[0] == "scope.pop" and event[1][1] == "hermes.task_run"
+    ]
+    assert len(task_ends) == 2
+    assert all(fields["model_call_count_bucket"] == "1" for fields in task_ends)
+    assert all(fields["retry_count_bucket"] == "0" for fields in task_ends)
+
+
+def test_task_terminal_counts_logical_calls_retries_and_unique_tools(direct_runtime):
+    base = {
+        "session_id": "s1",
+        "task_id": "t1",
+        "api_request_id": "r1",
+        "platform": "cli",
+        "provider": "nvidia",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+    }
+
+    lifecycle.invoke_hook("pre_llm_call", **base)
+    lifecycle.invoke_hook("pre_api_request", **base)
+    lifecycle.invoke_hook("api_request_error", **base, retryable=True)
+    lifecycle.invoke_hook("pre_api_request", **base)
+    lifecycle.invoke_hook("api_request_error", **base, retryable=True)
+    lifecycle.invoke_hook("pre_api_request", **base)
+    lifecycle.invoke_hook("api_request_error", **base, retryable=False)
+    for tool_call_id in ("tool-1", "tool-1", "tool-2"):
+        lifecycle.invoke_hook(
+            "post_tool_call",
+            **base,
+            tool_call_id=tool_call_id,
+            tool_name="terminal",
+            result={"output": "private"},
+            status="ok",
+        )
+    lifecycle.invoke_hook(
+        "on_session_end",
+        **base,
+        completed=False,
+        failed=True,
+        interrupted=False,
+        turn_exit_reason="all_retries_exhausted_no_response",
+    )
+    lifecycle.finalize_session(session_id="s1")
+
+    model_starts = [event for event in direct_runtime.events if event[0] == "llm.call"]
+    model_ends = [
+        event for event in direct_runtime.events if event[0] == "llm.call_end"
+    ]
+    assert len(model_starts) == 1
+    assert len(model_ends) == 1
+    assert model_ends[0][2] == {
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "provider": "nvidia",
+    }
+    [task_end] = [
+        event
+        for event in direct_runtime.events
+        if event[0] == "scope.pop" and event[1][1] == "hermes.task_run"
+    ]
+    assert task_end[2]["output"] == {
+        "duration_bucket": task_end[2]["output"]["duration_bucket"],
+        "end_reason": "failed",
+        "entrypoint": "interactive",
+        "execution_surface": "cli",
+        "model_call_count_bucket": "1",
+        "outcome": "failed",
+        "retry_count_bucket": "2",
+        "termination": "none",
+        "tool_call_count_bucket": "2",
+    }
 
 
 
 
+def test_task_retry_count_survives_provider_fallback_ordinal_reset(direct_runtime):
+    base = {
+        "session_id": "s1",
+        "task_id": "t1",
+        "api_request_id": "r1",
+        "platform": "cli",
+        "provider": "nvidia",
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+    }
+
+    lifecycle.invoke_hook("pre_llm_call", **base)
+    lifecycle.invoke_hook("pre_api_request", **base, retry_count=0)
+    lifecycle.invoke_hook(
+        "api_request_error",
+        **base,
+        retry_count=0,
+        retryable=True,
+    )
+    lifecycle.invoke_hook("pre_api_request", **base, retry_count=1)
+    lifecycle.invoke_hook(
+        "api_request_error",
+        **base,
+        retry_count=1,
+        retryable=True,
+    )
+    lifecycle.invoke_hook(
+        "pre_api_request",
+        **{**base, "provider": "openai", "model": "gpt-5"},
+        retry_count=0,
+    )
+    lifecycle.invoke_hook(
+        "post_api_request",
+        **{**base, "provider": "openai", "model": "gpt-5"},
+        retry_count=0,
+    )
+    lifecycle.invoke_hook(
+        "on_session_end",
+        **base,
+        completed=True,
+        failed=False,
+        interrupted=False,
+        turn_exit_reason="text_response(stop)",
+    )
+    lifecycle.finalize_session(session_id="s1")
+
+    [model_end] = [
+        event for event in direct_runtime.events if event[0] == "llm.call_end"
+    ]
+    assert model_end[2] == {
+        "model": "gpt-5",
+        "provider": "openai",
+    }
+    [task_end] = [
+        event
+        for event in direct_runtime.events
+        if event[0] == "scope.pop" and event[1][1] == "hermes.task_run"
+    ]
+    assert task_end[2]["output"]["retry_count_bucket"] == "2"
 
 
+def test_outer_agent_boundary_closes_early_returns_and_exceptions(
+    direct_runtime,
+    monkeypatch,
+):
+    from run_agent import AIAgent
+
+    agent = SimpleNamespace(
+        session_id="s1",
+        platform="cli",
+        _parent_session_id=None,
+        _session_db=None,
+        _conversation_root_id=lambda: "s1",
+    )
+
+    def early_failure(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        return {
+            "final_response": "private failure detail",
+            "completed": False,
+            "failed": True,
+            "interrupted": False,
+        }
+
+    monkeypatch.setattr(
+        "agent.conversation_loop.run_conversation",
+        early_failure,
+    )
+    result = AIAgent.run_conversation(agent, "private prompt", task_id="early")
+    assert result["failed"] is True
+
+    def raise_failure(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        raise RuntimeError("private exception detail")
+
+    monkeypatch.setattr(
+        "agent.conversation_loop.run_conversation",
+        raise_failure,
+    )
+    with pytest.raises(RuntimeError, match="private exception detail"):
+        AIAgent.run_conversation(agent, "private prompt", task_id="exception")
+
+    def raise_interrupt(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(
+        "agent.conversation_loop.run_conversation",
+        raise_interrupt,
+    )
+    with pytest.raises(KeyboardInterrupt):
+        AIAgent.run_conversation(agent, "private prompt", task_id="cancelled")
+
+    def raise_timeout(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        raise TimeoutError("private timeout detail")
+
+    monkeypatch.setattr(
+        "agent.conversation_loop.run_conversation",
+        raise_timeout,
+    )
+    with pytest.raises(TimeoutError, match="private timeout detail"):
+        AIAgent.run_conversation(agent, "private prompt", task_id="timed-out")
+
+    lifecycle.finalize_session(session_id="s1")
+
+    task_ends = [
+        event[2]["output"]
+        for event in direct_runtime.events
+        if event[0] == "scope.pop" and event[1][1] == "hermes.task_run"
+    ]
+    assert len(task_ends) == 4
+    assert task_ends[0]["outcome"] == "failed"
+    assert task_ends[0]["end_reason"] == "failed"
+    assert task_ends[0]["termination"] == "none"
+    assert task_ends[1]["outcome"] == "failed"
+    assert task_ends[1]["end_reason"] == "system_aborted"
+    assert task_ends[1]["termination"] == "system_aborted"
+    assert task_ends[2]["outcome"] == "cancelled"
+    assert task_ends[2]["end_reason"] == "user_cancelled"
+    assert task_ends[2]["termination"] == "user_cancelled"
+    assert task_ends[3]["outcome"] == "timed_out"
+    assert task_ends[3]["end_reason"] == "timed_out"
+    assert task_ends[3]["termination"] == "timed_out"
+    serialized = json.dumps(direct_runtime.events)
+    assert "private prompt" not in serialized
+    assert "private failure detail" not in serialized
+    assert "private exception detail" not in serialized
+    assert "private timeout detail" not in serialized
 
 
 
@@ -969,6 +1485,65 @@ def test_failed_flush_keeps_daily_export_open_for_later_task(
     assert "Hermes shared-metrics task flush failed" in caplog.text
 
 
+def test_task_ownership_survives_session_id_rotation(direct_runtime):
+    lifecycle.invoke_hook(
+        "pre_llm_call",
+        session_id="before-compression",
+        task_id="t1",
+        platform="cli",
+    )
+    lifecycle.invoke_hook(
+        "pre_api_request",
+        session_id="after-compression",
+        task_id="t1",
+        api_request_id="r1",
+        platform="cli",
+        provider="nvidia",
+        model="nvidia/nemotron-3-super-120b-a12b",
+    )
+    lifecycle.invoke_hook(
+        "post_api_request",
+        session_id="after-compression",
+        task_id="t1",
+        api_request_id="r1",
+        platform="cli",
+        provider="nvidia",
+        model="nvidia/nemotron-3-super-120b-a12b",
+    )
+    lifecycle.invoke_hook(
+        "on_session_end",
+        session_id="after-compression",
+        task_id="t1",
+        platform="cli",
+        completed=True,
+        failed=False,
+        interrupted=False,
+        turn_exit_reason="text_response(stop)",
+    )
+    lifecycle.finalize_session(session_id="before-compression")
+
+    task_starts = [
+        event
+        for event in direct_runtime.events
+        if event[0] == "scope.push" and event[1] == "hermes.task_run"
+    ]
+    task_ends = [
+        event
+        for event in direct_runtime.events
+        if event[0] == "scope.pop" and event[1][1] == "hermes.task_run"
+    ]
+    model_ends = [
+        event for event in direct_runtime.events if event[0] == "llm.call_end"
+    ]
+    assert len(task_starts) == 1
+    assert len(task_ends) == 1
+    assert len(model_ends) == 1
+    assert model_ends[0][2] == {
+        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "provider": "nvidia",
+    }
+    assert task_ends[0][2]["output"]["model_call_count_bucket"] == "1"
+    assert task_ends[0][2]["output"]["outcome"] == "success"
 
 
 
