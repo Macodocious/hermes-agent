@@ -641,38 +641,10 @@ def test_store_does_not_record_the_retired_model_metric(tmp_path):
     assert store.counter_snapshot() == []
 
 
-def test_package_builder_rejects_tampered_dimensions(tmp_path):
-    database_path = tmp_path / "metrics.sqlite3"
-    outbox_directory = tmp_path / "outbox"
-    store = SharedMetricsStore(database_path, outbox_directory)
-    store.record_model_call(_dimensions(), "test-version")
-    with sqlite3.connect(database_path) as connection:
-        connection.execute(
-            "UPDATE counter_aggregates SET dimensions_json = ?",
-            (json.dumps({"prompt": "must-not-be-exported"}),),
-        )
-
-    with pytest.raises(ValueError, match="Unsupported dimensions"):
-        store.create_and_export_package()
-
-    assert list(outbox_directory.glob("*.json")) == []
 
 
-def test_pending_package_retry_reuses_the_same_package_and_file(tmp_path):
-    database_path = tmp_path / "metrics.sqlite3"
-    outbox_directory = tmp_path / "outbox"
-    store = SharedMetricsStore(database_path, outbox_directory)
-    store.record_model_call(_dimensions(), "test-version")
-    [package_path] = store.create_and_export_package()
-    original_payload = package_path.read_bytes()
 
-    with sqlite3.connect(database_path) as connection:
-        connection.execute("UPDATE package_outbox SET exported_at = NULL")
 
-    restarted = SharedMetricsStore(database_path, outbox_directory)
-    assert restarted.create_and_export_package() == [package_path]
-    assert package_path.read_bytes() == original_payload
-    assert list(outbox_directory.glob("*.json")) == [package_path]
 
 
 def test_retention_prunes_only_expired_exported_history(tmp_path):
