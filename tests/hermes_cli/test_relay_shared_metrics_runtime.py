@@ -1031,6 +1031,43 @@ def test_concurrent_turn_skips_relay_before_scope_stack_can_interleave(
     assert len(turn_closes) == 1
 
 
+def test_concurrent_turn_skips_shared_metrics_scope_creation(direct_runtime):
+    coordinator = relay_runtime.SESSION_COORDINATOR
+    profile_key = relay_runtime.current_profile_key()
+    lease = coordinator.acquire_conversation(
+        profile_key=profile_key,
+        session_id="shared-session",
+        platform="cli",
+    )
+    first = coordinator.begin_turn(lease, turn_id="first", task_id="first-task")
+    second = coordinator.begin_turn(lease, turn_id="second", task_id="second-task")
+
+    relay_shared_metrics.observe_lifecycle(
+        "pre_llm_call",
+        session_id="shared-session",
+        task_id="second-task",
+        platform="cli",
+    )
+    relay_shared_metrics.observe_lifecycle(
+        "pre_api_request",
+        session_id="shared-session",
+        task_id="second-task",
+        api_request_id="second-request",
+        platform="cli",
+    )
+
+    assert second.relay_enabled is False
+    assert not [
+        event
+        for event in direct_runtime.events
+        if event[0] == "scope.push" and event[1] == relay_shared_metrics.TASK_SCOPE
+    ]
+
+    coordinator.end_turn(first, outcome="success")
+    coordinator.end_turn(second, outcome="success")
+    coordinator.release_conversation(lease)
+
+
 
 
 
@@ -1587,7 +1624,6 @@ def test_task_ownership_survives_session_id_rotation(direct_runtime):
     }
     assert task_ends[0][2]["output"]["model_call_count_bucket"] == "1"
     assert task_ends[0][2]["output"]["outcome"] == "success"
-
 
 
 
