@@ -7575,10 +7575,12 @@ class TestCredentialPoolRecovery:
                 error_context=None,
                 api_key_hint=None,
                 model=None,
+                failure_reason=None,
             ):
                 assert status_code == 402
                 assert error_context is None
                 assert api_key_hint == agent.api_key
+                assert failure_reason == "billing"
                 return next_entry
 
         agent._credential_pool = _Pool()
@@ -7604,6 +7606,7 @@ class TestCredentialPoolRecovery:
                 error_context=None,
                 api_key_hint=None,
                 model=None,
+                failure_reason=None,
             ):
                 assert status_code == 400
                 assert error_context == {"reason": "out_of_extra_usage"}
@@ -7642,10 +7645,12 @@ class TestCredentialPoolRecovery:
                 api_key_hint=None,
                 model=None,
                 credential_id=None,
+                failure_reason=None,
             ):
                 assert status_code == 429
                 assert error_context is None
                 assert api_key_hint == agent.api_key
+                assert failure_reason == "rate_limit"
                 return next_entry
 
         agent._credential_pool = _Pool()
@@ -7756,6 +7761,7 @@ class TestCredentialPoolRecovery:
                 api_key_hint=None,
                 model=None,
                 credential_id=None,
+                failure_reason=None,
             ):
                 assert status_code == 401
                 assert error_context is None
@@ -7789,6 +7795,7 @@ class TestCredentialPoolRecovery:
                 api_key_hint=None,
                 model=None,
                 credential_id=None,
+                failure_reason=None,
             ):
                 assert error_context is None
                 return None  # no more credentials
@@ -7877,6 +7884,7 @@ class TestCredentialPoolRecovery:
                 api_key_hint=None,
                 model=None,
                 credential_id=None,
+                failure_reason=None,
             ):
                 captured["status_code"] = status_code
                 captured["error_context"] = error_context
