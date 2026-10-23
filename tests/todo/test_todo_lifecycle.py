@@ -215,8 +215,8 @@ def test_write_demotes_extra_in_progress_to_pending() -> None:
     assert statuses == {"1": "in_progress", "2": "pending"}
 
 
-def test_complete_records_start_and_complete_notices() -> None:
-    """The start line waits for work; the final completion line is held."""
+def test_complete_records_the_start_and_the_final_close_is_silent() -> None:
+    """The start line waits for work; the final close emits nothing."""
     s = TodoStore()
     s.write([{"id": "1", "content": "A", "status": "pending"}])
     s.transition("begin", "1")
@@ -224,11 +224,8 @@ def test_complete_records_start_and_complete_notices() -> None:
     s.mark_work()
     assert [n["kind"] for n in s.drain_notices()] == ["started"]
     s.transition("complete", "1")
-    assert [(n["kind"], n["held"]) for n in s.pending_notices()] == [
-        ("completed", True)
-    ]
+    assert s.pending_notices() == []
     s.release_held_notices()
-    assert [n["kind"] for n in s.drain_notices()] == ["completed"]
     assert s.drain_notices() == []
 
 

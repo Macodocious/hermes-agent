@@ -669,6 +669,11 @@ class TodoStore:
                     row["status"] not in _CLOSED_STATUSES
                     for row in self._items[position:]
                 )
+                if held:
+                    # The close leaves no active task. The user's rule: once
+                    # the task is completed it is final, and with no active
+                    # tasks nothing is emitted.
+                    continue
             self._record_notice(
                 kind,
                 item,

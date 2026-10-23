@@ -1,13 +1,13 @@
-"""The final completion line is held to the turn's end.
+"""A close that leaves no active task emits no completion line.
 
 A close that promotes a successor records its completion line immediately. A
-close with no successor is the turn's final completion: its line is held in
-the queue, the drain skips it while the lines behind it ship, and the turn
-finalizer releases it.
+close with no successor is the turn's final completion: the user's rule is
+that once the task is completed it is final, and with no active tasks nothing
+is emitted.
 """
 
 from agent import task_manager
-from tools.todo_tool import NOTICE_COMPLETED, NOTICE_STARTED, TodoStore
+from tools.todo_tool import NOTICE_COMPLETED, TodoStore
 
 
 def _store(*contents):
@@ -27,8 +27,8 @@ def _agent(store, callback):
     return agent
 
 
-class TestHoldDecision:
-    def test_a_close_with_a_successor_is_not_held(self):
+class TestFinalClose:
+    def test_a_close_with_a_successor_records_its_line(self):
         store = _store("one", "two")
         assert store.transition("begin", "1")["ok"]
         store.mark_work()
@@ -39,18 +39,17 @@ class TestHoldDecision:
         )
         assert notice["held"] is False
 
-    def test_a_close_with_no_successor_is_held(self):
+    def test_a_close_with_no_successor_records_nothing(self):
         store = _store("one")
         assert store.transition("begin", "1")["ok"]
         store.mark_work()
         store.drain_notices()
         assert store.transition("complete", "1")["ok"]
-        notice = next(
+        assert [
             n for n in store.pending_notices() if n["kind"] == NOTICE_COMPLETED
-        )
-        assert notice["held"] is True
+        ] == []
 
-    def test_a_cancellation_is_never_held(self):
+    def test_a_cancellation_is_recorded(self):
         store = _store("one")
         assert store.transition("begin", "1")["ok"]
         assert store.transition("cancel", "1", "not needed")["ok"]
@@ -60,8 +59,8 @@ class TestHoldDecision:
         assert notice["held"] is False
 
 
-class TestDrainSkipsTheHeldLine:
-    def test_the_lines_behind_the_held_line_ship(self):
+class TestDrain:
+    def test_the_successor_close_ships_and_the_final_close_is_silent(self):
         store = _store("one", "two")
         assert store.transition("begin", "1")["ok"]
         store.mark_work()
@@ -77,34 +76,11 @@ class TestDrainSkipsTheHeldLine:
             "✅ Task completed: one",
             "▶️ Working on: two",
         ]
-        assert [n["kind"] for n in store.pending_notices()] == [NOTICE_COMPLETED]
-
-    def test_a_delivery_failure_leaves_the_held_line_and_the_rest(self):
-        store = _store("one", "two")
-        assert store.transition("begin", "1")["ok"]
-        store.mark_work()
-        store.drain_notices()
-        assert store.transition("complete", "1")["ok"]
-        assert store.mark_work()
-        assert store.transition("complete", "2")["ok"]
-        sent = []
-
-        def refuse(line):
-            sent.append(line)
-            return False
-
-        task_manager._emit_pending_notices(_agent(store, refuse))
-
-        assert len(sent) == 1
-        assert [n["kind"] for n in store.pending_notices()] == [
-            NOTICE_COMPLETED,
-            NOTICE_STARTED,
-            NOTICE_COMPLETED,
-        ]
+        assert store.pending_notices() == []
 
 
 class TestRelease:
-    def test_release_ships_the_held_line(self):
+    def test_release_sends_nothing_after_a_final_close(self):
         store = _store("one")
         assert store.transition("begin", "1")["ok"]
         store.mark_work()
@@ -114,28 +90,5 @@ class TestRelease:
 
         task_manager.release_held_notices(_agent(store, sent.append))
 
-        assert sent == ["✅ Task completed: one"]
+        assert sent == []
         assert store.pending_notices() == []
-
-    def test_release_ships_every_held_line_in_order(self):
-        store = _store("one")
-        assert store.transition("begin", "1")["ok"]
-        store.mark_work()
-        store.drain_notices()
-        assert store.transition("complete", "1")["ok"]
-        store.write(
-            [{"id": "2", "content": "two", "status": "pending"}], merge=True
-        )
-        assert store.transition("begin", "2")["ok"]
-        store.mark_work()
-        assert store.transition("complete", "2")["ok"]
-        assert len([n for n in store.pending_notices() if n["held"]]) == 2
-        sent = []
-
-        task_manager.release_held_notices(_agent(store, sent.append))
-
-        assert sent == [
-            "✅ Task completed: one",
-            "▶️ Working on: two",
-            "✅ Task completed: two",
-        ]

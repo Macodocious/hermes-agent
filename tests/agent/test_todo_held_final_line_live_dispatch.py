@@ -1,8 +1,8 @@
-"""Live dispatch: the final completion line waits for the turn's end.
+"""Live dispatch: a close that leaves no active task emits nothing.
 
 A real ``AIAgent`` is driven through ``execute_tool_calls_sequential`` with a
-delivery callback attached. The final close's line is held while the turn
-continues; the turn-end release ships it, on the normal and interrupted paths.
+delivery callback attached. The final close records no line; the turn-end
+release adds nothing.
 """
 
 import json
@@ -120,7 +120,7 @@ def _run_to_the_final_close(agent, sent):
     _send(agent, "m6", _work())  # the turn continues after the final close
 
 
-def test_the_final_line_waits_for_the_turn_end(agent) -> None:
+def test_the_final_close_emits_nothing(agent) -> None:
     sent = []
     _run_to_the_final_close(agent, sent)
 
@@ -132,14 +132,22 @@ def test_the_final_line_waits_for_the_turn_end(agent) -> None:
 
     task_manager.release_held_notices(agent)
 
-    assert sent[-1] == "✅ Task completed: two"
+    assert sent == [
+        "▶️ Working on: one",
+        "✅ Task completed: one",
+        "▶️ Working on: two",
+    ]
 
 
-def test_an_interrupted_turn_still_ships_the_held_line(agent) -> None:
+def test_an_interrupted_turn_emits_nothing_after_the_final_close(agent) -> None:
     sent = []
     _run_to_the_final_close(agent, sent)
     agent._interrupt_requested = True
 
     task_manager.release_held_notices(agent)
 
-    assert sent[-1] == "✅ Task completed: two"
+    assert sent == [
+        "▶️ Working on: one",
+        "✅ Task completed: one",
+        "▶️ Working on: two",
+    ]

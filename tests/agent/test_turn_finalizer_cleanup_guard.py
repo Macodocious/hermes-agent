@@ -185,7 +185,7 @@ def test_text_response_on_last_allowed_call_is_completed():
     assert result["completed"] is True
 
 
-def _held_store():
+def _final_close_store():
     from tools.todo_tool import TodoStore
 
     store = TodoStore()
@@ -197,26 +197,26 @@ def _held_store():
     return store
 
 
-def test_held_todo_line_ships_at_turn_end():
+def test_the_final_close_ships_nothing_at_turn_end():
     agent = _StubAgent(raise_in=())
-    store = _held_store()
-    assert [n["held"] for n in store.pending_notices()] == [True]
+    store = _final_close_store()
+    assert store.pending_notices() == []
     sent = []
     agent._todo_store = store
     agent.todo_notice_callback = sent.append
 
     _run(agent)
 
-    assert sent == ["✅ Task completed: one"]
+    assert sent == []
 
 
-def test_held_todo_line_ships_on_an_interrupted_turn():
+def test_the_final_close_ships_nothing_on_an_interrupted_turn():
     agent = _StubAgent(raise_in=())
-    store = _held_store()
+    store = _final_close_store()
     sent = []
     agent._todo_store = store
     agent.todo_notice_callback = sent.append
 
     _run(agent, interrupted=True)
 
-    assert sent == ["✅ Task completed: one"]
+    assert sent == []

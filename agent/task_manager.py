@@ -475,6 +475,7 @@ def release_held_notices(agent: Any) -> None:
         return
     store.release_held_notices()
     _emit_pending_notices(agent)
+    _persist(agent)
 
 
 def on_todo_write(agent: Any, args: Dict[str, Any]) -> None:
