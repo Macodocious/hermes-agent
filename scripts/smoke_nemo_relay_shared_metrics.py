@@ -298,6 +298,7 @@ def _validate_store(database_path: Path) -> list[dict[str, Any]]:
     for counter in counters:
         by_name.setdefault(counter["name"], []).append(counter)
     if set(by_name) != {
+        "hermes.client.active",
         "hermes.model_route.count",
         "hermes.skill.lifecycle.count",
         "hermes.skill.load.count",
@@ -307,6 +308,17 @@ def _validate_store(database_path: Path) -> list[dict[str, Any]]:
     }:
         raise AssertionError(
             f"Unexpected SQLite counters:\n{json.dumps(counters, indent=2)}"
+        )
+    if by_name["hermes.client.active"] != [
+        {
+            "name": "hermes.client.active",
+            "dimensions": {},
+            "value": 1,
+            "packaged_value": 1,
+        }
+    ]:
+        raise AssertionError(
+            f"Unexpected client-active counter: {by_name['hermes.client.active']}"
         )
     [model] = by_name["hermes.model_route.count"]
     expected_model = {
@@ -455,6 +467,7 @@ def _validate_packages(
         for metric in package.get("metrics", []):
             metrics.setdefault(metric["name"], []).append(metric)
     if set(metrics) != {
+        "hermes.client.active",
         "hermes.model_route.count",
         "hermes.skill.lifecycle.count",
         "hermes.skill.load.count",
@@ -465,14 +478,30 @@ def _validate_packages(
         raise AssertionError(
             f"Unexpected package metrics:\n{json.dumps(metrics, indent=2)}"
         )
-    [model] = metrics["hermes.model_route.count"]
-    if model["dimensions"] != {
-        "model": MODEL_CANARY,
-        "provider": "custom",
-    } or model["value"] != 2:
+    if metrics["hermes.client.active"] != [
+        {
+            "name": "hermes.client.active",
+            "type": "counter",
+            "dimensions": {},
+            "value": 1,
+        }
+    ]:
         raise AssertionError(
-            f"Unexpected model metric: {metrics['hermes.model_route.count']}"
+            f"Unexpected client-active metric: {metrics['hermes.client.active']}"
         )
+    models = metrics["hermes.model_route.count"]
+    if (
+        sum(metric["value"] for metric in models) != 2
+        or any(
+            metric["dimensions"]
+            != {
+                "model": MODEL_CANARY,
+                "provider": "custom",
+            }
+            for metric in models
+        )
+    ):
+        raise AssertionError(f"Unexpected model metrics: {models}")
     [terminal] = metrics["hermes.task_run.finished"]
     if terminal["dimensions"] != {
         "duration_bucket": terminal["dimensions"].get("duration_bucket"),

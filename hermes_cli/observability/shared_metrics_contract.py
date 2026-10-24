@@ -18,12 +18,15 @@ MODEL_CALL_SCOPE = "hermes.model_call"
 MODEL_CALL_PROFILE_MODEL = "unknown"
 TASK_SCOPE = "hermes.task_run"
 TOOL_CALL_SCOPE = "hermes.tool_call"
+CLIENT_ACTIVE_MARK = "hermes.client.active"
 TOOL_APPROVAL_MARK = "hermes.tool_approval"
 SKILL_LIFECYCLE_MARK = "hermes.skill.lifecycle"
 SKILL_LOAD_MARK = "hermes.skill.load"
 SUBSCRIBER_NAME = "hermes.nemo_relay.shared_metrics"
 LEGACY_MODEL_CALL_METRIC = "hermes.model_call.count"
 MODEL_ROUTE_METRIC = "hermes.model_route.count"
+MODEL_CALL_METRIC = "hermes.model_call.count"
+CLIENT_ACTIVE_METRIC = "hermes.client.active"
 TASK_STARTED_METRIC = "hermes.task_run.started"
 TASK_FINISHED_METRIC = "hermes.task_run.finished"
 TOOL_CALL_METRIC = "hermes.tool_call.count"
@@ -316,6 +319,7 @@ _COUNTER_DIMENSION_VALUES: dict[str, dict[str, frozenset[str]]] = {
         "outcome": _LEGACY_MODEL_OUTCOMES,
         "provider_family": _LEGACY_PROVIDER_FAMILIES,
     },
+    CLIENT_ACTIVE_METRIC: {},
     TASK_STARTED_METRIC: {
         "entrypoint": TASK_ENTRYPOINTS,
         "execution_surface": EXECUTION_SURFACES,
@@ -354,6 +358,7 @@ _COUNTER_DIMENSION_VALUES: dict[str, dict[str, frozenset[str]]] = {
     },
 }
 COUNTER_METRICS: frozenset[str] = frozenset({
+    CLIENT_ACTIVE_METRIC,
     MODEL_ROUTE_METRIC,
     SKILL_LIFECYCLE_METRIC,
     SKILL_LOAD_METRIC,
@@ -400,6 +405,22 @@ def _event_metadata_is_valid(event: Any) -> bool:
     return not relay_metadata - {"otel.status_code"} and metadata.get(
         "otel.status_code", "OK"
     ) in {"OK", "ERROR"}
+
+
+def client_active_counter(event: Any) -> tuple[str, dict[str, str]] | None:
+    """Return the active-install counter for one empty allowlisted mark."""
+    if not _event_metadata_is_valid(event):
+        return None
+    if (
+        str(getattr(event, "kind", "") or "") != "mark"
+        or str(getattr(event, "name", "") or "") != CLIENT_ACTIVE_MARK
+        or getattr(event, "category", None) is not None
+        or getattr(event, "scope_category", None) is not None
+        or getattr(event, "category_profile", None) is not None
+        or getattr(event, "data", None) != {}
+    ):
+        return None
+    return CLIENT_ACTIVE_METRIC, {}
 
 
 def model_call_dimensions(event: Any) -> dict[str, str] | None:
