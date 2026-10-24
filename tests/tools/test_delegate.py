@@ -480,14 +480,18 @@ class TestDelegateTask(unittest.TestCase):
             "summary": "Done", "api_calls": 1, "duration_seconds": 1.0
         }
         parent = _make_mock_parent()
-        result = json.loads(delegate_task(
+        json.loads(delegate_task(
             goal="This should be ignored",
-            tasks=[{"goal": "Actual task"}],
+            tasks=[
+                {"goal": "Actual batch task one"},
+                {"goal": "Actual batch task two"},
+            ],
             parent_agent=parent,
         ))
-        # The mock was called with the tasks array item, not the top-level goal
-        call_args = mock_run.call_args
-        self.assertEqual(call_args.kwargs.get("goal") or call_args[1].get("goal", call_args[0][1] if len(call_args[0]) > 1 else None), "Actual task")
+        # The mock was called with the tasks array items, not the top-level goal
+        goals = [call.kwargs.get("goal") for call in mock_run.call_args_list]
+        self.assertEqual(goals, ["Actual batch task one", "Actual batch task two"])
+        self.assertNotIn("This should be ignored", goals)
 
     @patch("tools.delegate_tool._run_single_child")
     def test_failed_child_included_in_results(self, mock_run):
@@ -1928,7 +1932,7 @@ class TestDelegationProviderIntegration(unittest.TestCase):
                 "summary": "Done", "api_calls": 1, "duration_seconds": 1.0
             }
 
-            tasks = [{"goal": "Task A"}, {"goal": "Task B"}]
+            tasks = [{"goal": "Write the audit summary"}, {"goal": "Collect the audit evidence"}]
             delegate_task(tasks=tasks, parent_agent=parent)
 
             self.assertEqual(mock_build.call_count, 2)
@@ -3192,9 +3196,9 @@ class TestOrchestratorRoleBehavior(unittest.TestCase):
         with patch("run_agent.AIAgent", side_effect=_factory):
             delegate_task(
                 tasks=[
-                    {"goal": "A", "role": "orchestrator"},
-                    {"goal": "B", "role": "leaf"},
-                    {"goal": "C"},  # no role → falls back to top_role (leaf)
+                    {"goal": "Plan the migration workstream", "role": "orchestrator"},
+                    {"goal": "Collect the migration inventory", "role": "leaf"},
+                    {"goal": "Draft the rollback checklist"},  # no role → falls back to top_role (leaf)
                 ],
                 parent_agent=parent,
             )
