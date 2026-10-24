@@ -3169,10 +3169,9 @@ def _is_dead_channel_send_failure(result: Any) -> bool:
 def _strip_response_attachments_for_direct_send(response: str, adapter) -> str:
     """Return the visible text portion of a response before direct send().
 
-    Queued follow-up resends only replay attachments we can deliver natively in
-    this path: ``MEDIA:`` tags, bare local files, and internal directives. Keep
-    ordinary image URLs in the visible text until the queued path grows native
-    image-URL delivery too.
+    Queued follow-up resends only replay explicit ``MEDIA:`` attachments in
+    this path. Keep bare local paths and ordinary image URLs visible because
+    the post-stream uploader intentionally ignores them (#20834).
 
     Do not apply a broad ``MEDIA:`` regex after ``extract_media()`` — the
     extractor deliberately preserves protected code/inline spans and
@@ -3181,7 +3180,6 @@ def _strip_response_attachments_for_direct_send(response: str, adapter) -> str:
     _, cleaned = adapter.extract_media(response)
     cleaned = cleaned.replace("[[audio_as_voice]]", "").strip()
     cleaned = cleaned.replace("[[as_document]]", "").strip()
-    _, cleaned = adapter.extract_local_files(cleaned)
     return cleaned.strip()
 
 
@@ -20802,6 +20800,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         response: str,
         event: MessageEvent,
         adapter,
+        thread_metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Extract explicit MEDIA: tags from a response and deliver them.
 
@@ -20848,7 +20847,14 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             # stale inspected content), not an attachment request.
             adapter.extract_images(cleaned)
 
-            _thread_meta = self._thread_metadata_for_source(event.source, self._reply_anchor_for_event(event))
+            _thread_meta = (
+                dict(thread_metadata)
+                if thread_metadata is not None
+                else self._thread_metadata_for_source(
+                    event.source,
+                    self._reply_anchor_for_event(event),
+                )
+            )
 
             _VIDEO_EXTS = {'.mp4', '.mov', '.avi', '.mkv', '.webm', '.3gp'}
             _IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.webp', '.gif'}
@@ -20913,22 +20919,29 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         adapter,
         metadata: Optional[Dict[str, Any]] = None,
         event_message_id: Optional[str] = None,
+        text_already_delivered: bool = False,
     ) -> None:
         """Deliver a queued response using the normal text+attachment split."""
-        text_content = _strip_response_attachments_for_direct_send(response, adapter)
-        if text_content:
-            await adapter.send(
-                source.chat_id,
-                text_content,
-                metadata=metadata,
-            )
+        if not text_already_delivered:
+            text_content = _strip_response_attachments_for_direct_send(response, adapter)
+            if text_content:
+                await adapter.send(
+                    source.chat_id,
+                    text_content,
+                    metadata=metadata,
+                )
 
         synthetic_event = MessageEvent(
             text="",
             source=source,
             message_id=event_message_id,
         )
-        await self._deliver_media_from_response(response, synthetic_event, adapter)
+        await self._deliver_media_from_response(
+            response,
+            synthetic_event,
+            adapter,
+            thread_metadata=metadata,
+        )
 
     async def _run_background_task(
         self,
@@ -27376,26 +27389,28 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                             "Queued follow-up for session %s: suppressing intentional silence marker before continuing.",
                             session_key or "?",
                         )
-                    elif first_response and not _already_streamed:
+                    elif first_response:
                         try:
-                            logger.info(
-                                "Queued follow-up for session %s: final stream delivery not confirmed; sending first response before continuing.",
-                                session_key or "?",
-                            )
+                            if _already_streamed:
+                                logger.info(
+                                    "Queued follow-up for session %s: final text delivery confirmed; delivering explicit media before continuing.",
+                                    session_key or "?",
+                                )
+                            else:
+                                logger.info(
+                                    "Queued follow-up for session %s: final stream delivery not confirmed; sending first response before continuing.",
+                                    session_key or "?",
+                                )
                             await self._deliver_queued_first_response(
                                 first_response,
                                 source=source,
                                 adapter=adapter,
                                 metadata=_status_thread_metadata,
                                 event_message_id=event_message_id,
+                                text_already_delivered=_already_streamed,
                             )
                         except Exception as e:
                             logger.warning("Failed to send first response before queued message: %s", e)
-                    elif first_response:
-                        logger.info(
-                            "Queued follow-up for session %s: skipping resend because final streamed delivery was confirmed.",
-                            session_key or "?",
-                        )
                     # Release deferred bg-review notifications now that the
                     # first response has been delivered.  Pop from the
                     # adapter's callback dict (prevents double-fire in
