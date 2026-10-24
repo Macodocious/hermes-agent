@@ -2276,7 +2276,7 @@ def handle_max_iterations(agent, messages: list, api_call_count: int, append_to_
     caller folds the returned summary into its own context instead, so the
     summary never becomes user-facing output.
     """
-    print(f"⚠️  Reached maximum iterations ({agent.max_iterations}). Requesting summary...")
+    agent._safe_print(f"⚠️  Reached maximum iterations ({agent.max_iterations}). Requesting summary...")
 
     summary_api_request_id = f"iteration-summary:{uuid.uuid4()}"
     summary_call_outcome = "failed"
