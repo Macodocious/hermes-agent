@@ -481,7 +481,8 @@ export function GatewaySettings({ embedded = false }: { embedded?: boolean } = {
     Boolean(remoteToken.trim()) &&
     state.secureTokenStorage === false
 
-  const performSave = async (apply: boolean, allowPlainTextToken: boolean, seq?: number) => {
+  const performSave = async (apply: boolean, allowPlainTextToken: boolean) => {
+    const seq = ++saveSeq.current
     setSaving(true)
 
     try {
@@ -489,9 +490,7 @@ export function GatewaySettings({ embedded = false }: { embedded?: boolean } = {
         ? await window.hermesDesktop.applyConnectionConfig(payload(allowPlainTextToken))
         : await window.hermesDesktop.saveConnectionConfig(payload(allowPlainTextToken))
 
-      // Guard against the past: a slower earlier save must not paint its result
-      // over a newer intent. Callers that own a generation counter pass it in.
-      if (seq !== undefined && seq !== saveSeq.current) {
+      if (seq !== saveSeq.current) {
         return
       }
 
@@ -503,6 +502,10 @@ export function GatewaySettings({ embedded = false }: { embedded?: boolean } = {
         message: apply ? g.restartingMessage : g.savedMessage
       })
     } catch (err) {
+      if (seq !== saveSeq.current) {
+        return
+      }
+
       // The plain-text opt-in path runs inside ConfirmDialog's onConfirm, which
       // keeps the dialog open with an inline error when it throws — rethrow a
       // readable message there so a failed save can't play the success beat.
@@ -510,15 +513,35 @@ export function GatewaySettings({ embedded = false }: { embedded?: boolean } = {
         throw new Error(readableError(err, apply ? g.applyFailed : g.saveFailed).message)
       }
 
-      notifyError(err, apply ? g.applyFailed : g.saveFailed)
+      const sshError = err && typeof err === 'object' && 'sshError' in err ? String(err.sshError) : ''
+
+      const errors = {
+        'auth-failed': g.sshErrAuth,
+        'hermes-not-found': g.sshErrNotInstalled,
+        'host-key-changed': g.sshErrHostKey,
+        timeout: g.sshErrTimeout,
+        unreachable: g.sshErrUnreachable,
+        'unsupported-platform': g.sshErrPlatform,
+        'update-required': g.sshErrUpdateRequired
+      }
+
+      if (state.mode === 'ssh' && sshError) {
+        notify({
+          kind: 'error',
+          title: apply ? g.applyFailed : g.saveFailed,
+          message: (errors as Record<string, string>)[sshError] || g.sshErrUnknown
+        })
+      } else {
+        notifyError(err, apply ? g.applyFailed : g.saveFailed)
+      }
     } finally {
-      setSaving(false)
+      if (seq === saveSeq.current) {
+        setSaving(false)
+      }
     }
   }
 
   const save = async (apply: boolean) => {
-    const seq = ++saveSeq.current
-
     if (state.mode === 'remote' && !canUseRemote) {
       notify({
         kind: 'warning',
@@ -536,7 +559,7 @@ export function GatewaySettings({ embedded = false }: { embedded?: boolean } = {
       return
     }
 
-    await performSave(apply, false, seq)
+    await performSave(apply, false)
   }
 
   // OAuth sign-in: persist the URL + oauth mode first (so the saved config has

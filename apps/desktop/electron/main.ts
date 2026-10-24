@@ -6639,7 +6639,7 @@ async function cloudAgentSilentSignIn(dashboardUrl) {
   return { baseUrl, connected: await hasOauthSessionCookie(baseUrl) }
 }
 
-function encryptDesktopSecret(value, options) {
+function encryptDesktopSecret(value, options = {}) {
   return encryptDesktopSecretStrict(value, safeStorage, options)
 }
 
