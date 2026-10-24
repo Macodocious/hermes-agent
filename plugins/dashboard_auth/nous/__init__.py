@@ -553,9 +553,9 @@ def _load_config_oauth_section() -> dict:
     through to ``{}`` so register() can rely on `.get(...)` access.
     """
     try:
-        from hermes_cli.config import cfg_get, load_config
+        from hermes_cli.config import cfg_get, load_config_readonly
 
-        cfg = load_config()
+        cfg = load_config_readonly()
     except Exception as exc:  # noqa: BLE001 — broad catch is intentional
         logger.debug(
             "dashboard-auth-nous: load_config() raised %s; "

@@ -703,29 +703,42 @@ class TestFTS5Search:
         ]
         assert all("context" in row and row["context"] for row in default)
 
-    def test_search_projection_skips_context_enrichment_queries(self, db):
-        db.create_session(session_id="s1", source="cli")
-        db.append_message("s1", role="user", content="before")
-        db.append_message("s1", role="assistant", content="projectionneedle")
-        db.append_message("s1", role="user", content="after")
+    def test_search_projection_skips_context_enrichment_queries(
+        self, tmp_path, monkeypatch
+    ):
+        # Tracing the two connections this DB happens to hold at setup time
+        # misses the pool: reads are served from a LIFO pool of lazily opened
+        # read-only connections, so the enrichment query can land on a
+        # connection the test never saw. Trace at connect() instead, which
+        # covers the writer and every pooled reader.
+        import sqlite3 as sqlite3_module
 
-        statements = []
-        read_conn = db._get_read_conn() or db._conn
-        traced_connections = [db._conn]
-        if read_conn is not db._conn:
-            traced_connections.append(read_conn)
-        for conn in traced_connections:
+        statements: list[str] = []
+        real_connect = sqlite3_module.connect
+
+        def traced_connect(*args, **kwargs):
+            conn = real_connect(*args, **kwargs)
             conn.set_trace_callback(statements.append)
+            return conn
 
-        def context_query_count():
-            normalized = (" ".join(sql.upper().split()) for sql in statements)
-            return sum("WITH TARGET AS (" in sql for sql in normalized)
-
+        monkeypatch.setattr(sqlite3_module, "connect", traced_connect)
+        db = SessionDB(db_path=tmp_path / "projection.db")
         try:
+            db.create_session(session_id="s1", source="cli")
+            db.append_message("s1", role="user", content="before")
+            db.append_message("s1", role="assistant", content="projectionneedle")
+            db.append_message("s1", role="user", content="after")
+            statements.clear()
+
+            def context_query_count():
+                normalized = (" ".join(sql.upper().split()) for sql in statements)
+                return sum("WITH TARGET AS (" in sql for sql in normalized)
+
             projected = db.search_messages(
                 "projectionneedle", fields=("session_id", "snippet")
             )
             assert len(projected) == 1
+            assert "context" not in projected[0]
             assert context_query_count() == 0
 
             full = db.search_messages(
@@ -740,8 +753,7 @@ class TestFTS5Search:
             assert default[0]["context"]
             assert context_query_count() == 2
         finally:
-            for conn in traced_connections:
-                conn.set_trace_callback(None)
+            db.close()
 
     def test_sanitize_fts5_query_strips_dangerous_chars(self):
         """Unit test for _sanitize_fts5_query static method."""

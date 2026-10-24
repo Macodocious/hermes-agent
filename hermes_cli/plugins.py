@@ -547,8 +547,8 @@ def _get_disabled_plugins() -> set:
     ``plugins.enabled``.
     """
     try:
-        from hermes_cli.config import load_config
-        config = load_config()
+        from hermes_cli.config import load_config_readonly
+        config = load_config_readonly()
         disabled = cfg_get(config, "plugins", "disabled", default=[])
         return set(disabled) if isinstance(disabled, list) else set()
     except Exception:
@@ -573,8 +573,8 @@ def _get_enabled_plugins() -> Optional[List[str]]:
     * ``[...]`` — the concrete allow-list, in config order.
     """
     try:
-        from hermes_cli.config import load_config
-        config = load_config()
+        from hermes_cli.config import load_config_readonly
+        config = load_config_readonly()
         plugins_cfg = config.get("plugins")
         if not isinstance(plugins_cfg, dict):
             return None
@@ -1930,8 +1930,8 @@ class PluginContext:
         default-deny).
         """
         try:
-            from hermes_cli.config import load_config
-            cfg = load_config() or {}
+            from hermes_cli.config import load_config_readonly
+            cfg = load_config_readonly() or {}
         except Exception:
             return []
         entries = (cfg.get("plugins") or {}).get("entries") or {}
@@ -1959,10 +1959,10 @@ class PluginContext:
         if source == "bundled":
             return True
         try:
-            from hermes_cli.config import load_config
+            from hermes_cli.config import load_config_readonly
 
             with _plugin_home_scope(self._manager.home_path):
-                cfg = load_config() or {}
+                cfg = load_config_readonly() or {}
         except Exception:
             # If we can't load config, fail closed — better to break the
             # override than silently grant it.
@@ -3843,9 +3843,9 @@ class PluginManager:
         # Load the secrets config once; hand each source its own section and
         # let its is_enabled() decide (honours custom activation extensions).
         try:
-            from hermes_cli.config import load_config
+            from hermes_cli.config import load_config_readonly
 
-            cfg = load_config() or {}
+            cfg = load_config_readonly() or {}
             secrets = cfg.get("secrets") or {}
         except Exception:
             secrets = {}
@@ -4639,9 +4639,9 @@ class PluginManager:
         plugin_id = manifest.key or manifest.name
         settings: Mapping[str, Any] = {}
         try:
-            from hermes_cli.config import load_config
+            from hermes_cli.config import load_config_readonly
 
-            cfg = load_config() or {}
+            cfg = load_config_readonly() or {}
             entries = (cfg.get("plugins") or {}).get("entries") or {}
             entry = entries.get(plugin_id) if isinstance(entries, Mapping) else None
             raw = entry.get("settings") if isinstance(entry, Mapping) else None

@@ -11014,18 +11014,6 @@ def add_notify_sub(
     )
     insert_chat_type = chat_type or "dm"
     now = int(time.time())
-    # Stamp the subscribing gateway's profile unless the caller names one: the
-    # notifier only polls subscriptions owned by profiles it hosts, so a NULL
-    # profile row is treated as legacy and stays invisible to every gateway
-    # that does not hold the singleton dispatcher lock. The creating process is
-    # by definition the owner of its own subscription.
-    if notifier_profile is None:
-        try:
-            from hermes_cli.profiles import get_active_profile_name
-
-            notifier_profile = get_active_profile_name() or None
-        except Exception:
-            notifier_profile = None
     metadata_json = _encode_notify_delivery_metadata(delivery_metadata)
     with write_txn(conn):
         conn.execute(

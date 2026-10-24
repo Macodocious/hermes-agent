@@ -63,7 +63,7 @@ def test_quick_snapshot_is_published_with_manifest(tmp_path, monkeypatch) -> Non
     def replace(source, destination) -> None:
         source_path = Path(source)
         destination_path = Path(destination)
-        if destination_path.parent == home / "state-snapshots":
+        if destination_path.parent == home / "snapshots":
             assert source_path.name.endswith(".partial")
             assert (source_path / "manifest.json").is_file()
             assert not destination_path.exists()
@@ -76,7 +76,7 @@ def test_quick_snapshot_is_published_with_manifest(tmp_path, monkeypatch) -> Non
     assert snapshot_id is not None
     assert len(published) == 1
     manifest = json.loads(
-        (home / "state-snapshots" / snapshot_id / "manifest.json").read_text(encoding="utf-8")
+        (home / "snapshots" / snapshot_id / "manifest.json").read_text(encoding="utf-8")
     )
     assert manifest["id"] == snapshot_id
     assert manifest["files"] == {"config.yaml": 10}
@@ -84,7 +84,7 @@ def test_quick_snapshot_is_published_with_manifest(tmp_path, monkeypatch) -> Non
 
 def test_quick_snapshot_listing_ignores_partial_directories(tmp_path) -> None:
     home = tmp_path / ".hermes"
-    partial = home / "state-snapshots" / ".unfinished.1.partial"
+    partial = home / "snapshots" / ".unfinished.1.partial"
     partial.mkdir(parents=True)
     (partial / "manifest.json").write_text('{"id":"unfinished"}', encoding="utf-8")
 

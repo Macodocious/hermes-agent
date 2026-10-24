@@ -712,7 +712,7 @@ class TodoStore:
                     "ok": False,
                     "error": (
                         f"cannot {action} task {item_id}: task {earlier['id']} "
-                        f"is still open ('{earlier['status']}') — complete it, "
+                        f"is still open — status '{earlier['status']}' — complete it, "
                         f"cancel it with a reason, or move task {item_id} above it"
                     ),
                 }
@@ -765,7 +765,7 @@ class TodoStore:
                 "ok": False,
                 "error": (
                     f"cannot complete task {item_id}: task {earlier['id']} is "
-                    f"still open ('{earlier['status']}') — complete it, cancel "
+                    f"still open — status '{earlier['status']}' — complete it, cancel "
                     f"it with a reason, or move task {item_id} above it"
                 ),
             }

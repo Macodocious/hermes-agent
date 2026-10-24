@@ -176,7 +176,7 @@ def test_passing_gates_fall_through_to_judge():
     mgr.add_gate("true")
     with patch(
         "hermes_cli.goals.judge_goal",
-        return_value=("done", "all good", False, None, False),
+        return_value=("done", "all good", False, None, False, False, False),
     ) as mock_judge:
         decision = mgr.evaluate_after_turn("finished")
     mock_judge.assert_called_once()
@@ -246,7 +246,7 @@ def test_no_gates_behaves_exactly_as_before():
     mgr = _mgr_with_goal("gate-none-sid")
     with patch(
         "hermes_cli.goals.judge_goal",
-        return_value=("continue", "keep going", False, None, False),
+        return_value=("continue", "keep going", False, None, False, False, False),
     ) as mock_judge:
         decision = mgr.evaluate_after_turn("wip")
     mock_judge.assert_called_once()

@@ -251,9 +251,14 @@ class RelayRuntime:
                             input={},
                             metadata=scope_metadata,
                         ).result(timeout=_SCOPE_OP_TIMEOUT)
-                    except RuntimeError:
+                    except RuntimeError as exc:
                         # Interpreter shutdown: executor refuses new futures;
                         # push synchronously (no agent turn waits at exit).
+                        # Any other RuntimeError is a real scope-start failure
+                        # and must propagate — callers rely on it to close the
+                        # session instead of retrying a half-open scope.
+                        if "shutdown" not in str(exc).lower():
+                            raise
                         session.handle = context.run(
                             self.relay.scope.push,
                             SESSION_SCOPE,
