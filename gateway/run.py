@@ -2469,7 +2469,11 @@ from gateway.delivery import (
     looks_like_telegram_private_chat_id,
     resolve_delivery_transport,
 )
-from gateway.turn_lease import SessionTurnLeaseRegistry, TurnLeaseTimeoutError
+from gateway.turn_lease import (
+    DEFAULT_LEASE_WAIT,
+    SessionTurnLeaseRegistry,
+    TurnLeaseTimeoutError,
+)
 from gateway.session_state import (
     SERVICE_TIER_UNSET as _SERVICE_TIER_UNSET,
     SessionState,
@@ -16341,12 +16345,31 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         _run_generation = self._begin_session_run_generation(_quick_key)
 
         try:
-            _agent_result = await self._handle_message_with_agent(event, source, _quick_key, _run_generation)
             # Task-lifecycle notices are NOT drained here. The live post-write
             # emitter (``_emit_pending_notices``, run from ``on_todo_write``)
             # ships one message per transition at the transition itself. A
             # turn-end drain beside it would be a second emitter, and it is
             # the only code that welds several notices into one message.
+            try:
+                _agent_result = await self._handle_message_with_agent(
+                    event, source, _quick_key, _run_generation
+                )
+            except TurnLeaseTimeoutError as exc:
+                # This is a rejected message, not a completed agent turn. Return
+                # before the /goal judge below so it cannot consume the resend
+                # notice and enqueue a synthetic continuation loop.
+                logger.error(
+                    "Rejecting turn for routing key %s on session %s after "
+                    "turn-lease timeout; transcript load was not started and "
+                    "the user must resend",
+                    _quick_key,
+                    exc.session_id,
+                )
+                return (
+                    "⏳ Another turn is still running on this session. To "
+                    "protect the transcript, this message was not processed. "
+                    "Wait for the active turn to finish, then resend it."
+                )
             # Goal continuation: after the agent returns a final response
             # for this turn, check any standing /goal — the judge will
             # either mark it done, pause it (budget), or enqueue a
@@ -17289,8 +17312,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         # messages never reach this point mid-turn (adapter + runner guards
         # hold them), so the lock is uncontended outside the alias-key route.
         # Fail-closed on timeout: never enter the transcript region without a
-        # lease. A bounded retry response is safer than recreating the exact
-        # concurrent-turn corruption this lease exists to prevent. Released
+        # lease. Outer dispatch returns a bounded rejection/resend notice rather
+        # than recreating the exact concurrent-turn corruption this lease exists
+        # to prevent. Released
         # in _handle_message's finally via _release_turn_lease — granted per
         # (routing key, run generation) so a stale unwind can't release a
         # newer turn's lease.
@@ -17301,20 +17325,16 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     session_entry.session_id,
                     owner_key=_quick_key,
                     generation=run_generation,
-                    timeout=_float_env("HERMES_AGENT_TIMEOUT", 1800),
+                    timeout=_float_env(
+                        "HERMES_TURN_LEASE_TIMEOUT", DEFAULT_LEASE_WAIT
+                    ),
                 )
             except TurnLeaseTimeoutError:
-                logger.error(
-                    "Deferring turn for routing key %s on session %s after "
-                    "turn-lease timeout; transcript load was not started",
-                    _quick_key,
-                    session_entry.session_id,
-                )
-                return (
-                    "⏳ Another turn is still running on this session. To "
-                    "protect the transcript, this message was not processed. "
-                    "Wait for the active turn to finish, then resend it."
-                )
+                # The broad session-context cleanup finally starts later in this
+                # method. Restore the tokens here before propagating the rejection
+                # to outer dispatch, or this early exit leaks task-local identity.
+                self._clear_session_env(_session_env_tokens)
+                raise
             if _lease_token is not None:
                 _lease_state = self._session_state(_quick_key).turn
                 _lease_state.lease_token = _lease_token
