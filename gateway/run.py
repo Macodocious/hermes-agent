@@ -20920,6 +20920,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         metadata: Optional[Dict[str, Any]] = None,
         event_message_id: Optional[str] = None,
         text_already_delivered: bool = False,
+        deliver_media: bool = True,
     ) -> None:
         """Deliver a queued response using the normal text+attachment split."""
         if not text_already_delivered:
@@ -20930,6 +20931,13 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     text_content,
                     metadata=metadata,
                 )
+
+        # Failed turns still deliver their (normalized failure) text above,
+        # but must not upload attachments as if the turn succeeded — mirrors
+        # the ``not agent_result.get("failed")`` guard on the completed-turn
+        # delivery path.
+        if not deliver_media:
+            return
 
         synthetic_event = MessageEvent(
             text="",
@@ -27408,6 +27416,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                                 metadata=_status_thread_metadata,
                                 event_message_id=event_message_id,
                                 text_already_delivered=_already_streamed,
+                                deliver_media=not _delivery_result.get("failed"),
                             )
                         except Exception as e:
                             logger.warning("Failed to send first response before queued message: %s", e)
