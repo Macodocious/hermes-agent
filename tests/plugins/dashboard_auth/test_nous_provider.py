@@ -240,6 +240,10 @@ class TestConfigYamlSource:
             monkeypatch.setattr(
                 "hermes_cli.config.load_config", lambda: cfg
             )
+            # Registration reads settings through the read-only fast path.
+            monkeypatch.setattr(
+                "hermes_cli.config.load_config_readonly", lambda: cfg
+            )
 
         return _set
 

@@ -24,10 +24,11 @@ def _make_ctx(plugin_key: str = "my-plugin") -> PluginContext:
 def _patch_config(monkeypatch, entries: dict) -> None:
     import hermes_cli.config as config_mod
 
-    monkeypatch.setattr(
-        config_mod, "load_config",
-        lambda *a, **k: {"plugins": {"entries": entries}},
-    )
+    # The allowlist is read through the read-only fast path, so pin both
+    # readers to the same fixture config.
+    payload = lambda *a, **k: {"plugins": {"entries": entries}}  # noqa: E731
+    monkeypatch.setattr(config_mod, "load_config", payload)
+    monkeypatch.setattr(config_mod, "load_config_readonly", payload)
 
 
 def _patch_handler(monkeypatch, response: str, captured: dict | None = None):
@@ -79,6 +80,7 @@ def test_default_deny_when_config_unreadable(monkeypatch):
         raise OSError("config torn mid-edit")
 
     monkeypatch.setattr(config_mod, "load_config", _boom)
+    monkeypatch.setattr(config_mod, "load_config_readonly", _boom)
     ctx = _make_ctx()
     with pytest.raises(PermissionError):
         ctx.call_mcp("github", "create_issue")

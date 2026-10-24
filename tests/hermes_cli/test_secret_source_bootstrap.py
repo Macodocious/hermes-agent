@@ -4,6 +4,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import pytest
+
 from agent.secret_sources.base import (
     SECRET_SOURCE_API_VERSION,
     FetchResult,
@@ -51,6 +53,23 @@ def test_refresh_secret_sources_noop_without_plugin_sources(monkeypatch):
 
     mgr._refresh_secret_sources_after_discovery()
     assert called == {"reset": 0, "load": 0}
+
+
+@pytest.fixture(autouse=True)
+def _mirror_readonly_config_reader(monkeypatch):
+    """Route the read-only config reader through whatever the test pins.
+
+    These tests pin ``hermes_cli.config.load_config`` and then assert on
+    behaviour that reads settings; the production path uses the read-only
+    fast reader, so mirror it onto the pinned mutable reader.
+    """
+    import hermes_cli.config as config_mod
+
+    monkeypatch.setattr(
+        config_mod,
+        "load_config_readonly",
+        lambda *args, **kwargs: config_mod.load_config(*args, **kwargs),
+    )
 
 
 def test_refresh_secret_sources_noop_when_only_builtins(monkeypatch):
