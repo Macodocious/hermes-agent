@@ -1394,7 +1394,13 @@ def _media_delivery_denied_paths() -> List[Path]:
         "pairing",
         "mcp-tokens",
     )
-    for hermes_root in (_HERMES_HOME, _HERMES_ROOT):
+    # The default ~/.hermes root is always denied, even when the live
+    # HERMES_HOME points elsewhere (alt-home / test / container runs): the
+    # credential surface of the default install still exists on the host, and
+    # the $HOME exemption in _path_under_denied_prefix would otherwise
+    # un-block it and let a prompt-injected MEDIA tag exfiltrate auth.json.
+    _default_hermes_root = Path(os.path.expanduser("~")) / ".hermes"
+    for hermes_root in (_HERMES_HOME, _HERMES_ROOT, _default_hermes_root):
         for rel in _ROOT_CREDENTIAL_FILES:
             denied.append(hermes_root / rel)
         for rel in _ROOT_CREDENTIAL_DIRS:

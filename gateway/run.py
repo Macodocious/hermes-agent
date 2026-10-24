@@ -3166,6 +3166,20 @@ def _is_dead_channel_send_failure(result: Any) -> bool:
         return False
     error_text = str(getattr(result, "error", "") or "").lower()
     return any(marker in error_text for marker in _DEAD_CHANNEL_ERROR_MARKERS)
+def _strip_response_attachments_for_direct_send(response: str, adapter) -> str:
+    """Return the visible text portion of a response before direct send().
+
+    Queued follow-up resends only replay attachments we can deliver natively in
+    this path: ``MEDIA:`` tags, bare local files, and internal directives. Keep
+    ordinary image URLs in the visible text until the queued path grows native
+    image-URL delivery too.
+    """
+    _, cleaned = adapter.extract_media(response)
+    cleaned = cleaned.replace("[[audio_as_voice]]", "").strip()
+    cleaned = cleaned.replace("[[as_document]]", "").strip()
+    cleaned = re.sub(r"MEDIA:\s*\S+", "", cleaned).strip()
+    _, cleaned = adapter.extract_local_files(cleaned)
+    return cleaned.strip()
 
 
 def _skill_slug_from_frontmatter(skill_md: Path) -> tuple[str | None, str | None]:
@@ -20889,7 +20903,29 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         except Exception as e:
             logger.warning("Post-stream media extraction failed: %s", e)
 
+    async def _deliver_queued_first_response(
+        self,
+        response: str,
+        source: SessionSource,
+        adapter,
+        metadata: Optional[Dict[str, Any]] = None,
+        event_message_id: Optional[str] = None,
+    ) -> None:
+        """Deliver a queued response using the normal text+attachment split."""
+        text_content = _strip_response_attachments_for_direct_send(response, adapter)
+        if text_content:
+            await adapter.send(
+                source.chat_id,
+                text_content,
+                metadata=metadata,
+            )
 
+        synthetic_event = MessageEvent(
+            text="",
+            source=source,
+            message_id=event_message_id,
+        )
+        await self._deliver_media_from_response(response, synthetic_event, adapter)
 
     async def _run_background_task(
         self,
@@ -27343,10 +27379,12 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                                 "Queued follow-up for session %s: final stream delivery not confirmed; sending first response before continuing.",
                                 session_key or "?",
                             )
-                            await adapter.send(
-                                source.chat_id,
+                            await self._deliver_queued_first_response(
                                 first_response,
+                                source=source,
+                                adapter=adapter,
                                 metadata=_status_thread_metadata,
+                                event_message_id=event_message_id,
                             )
                         except Exception as e:
                             logger.warning("Failed to send first response before queued message: %s", e)

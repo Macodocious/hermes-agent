@@ -7,6 +7,7 @@ only renders as a voice bubble when explicitly flagged) and via
 ``GatewayRunner._deliver_media_from_response``.
 """
 
+import pathlib
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -196,3 +197,85 @@ class _DiscordMediaFailureAdapter(BasePlatformAdapter):
 
     async def get_chat_info(self, chat_id):
         return {"id": chat_id, "type": "dm"}
+
+
+@pytest.mark.asyncio
+async def test_queued_followup_delivery_strips_media_tag_from_text_and_sends_image():
+    # The MEDIA path must exist on disk: the fork's delivery guard
+    # (validate_media_delivery_path) refuses non-existent files, so a bare
+    # literal path would be filtered out before the native image send.
+    _media_file = pathlib.Path("/tmp/pricelist.png")
+    _media_file.write_bytes(b"\x89PNG\r\n\x1a\n")
+    event = _event(thread_id="topic-1")
+    runner = object.__new__(GatewayRunner)
+    runner._thread_metadata_for_source = lambda source, anchor=None: {"thread_id": "topic-1"}
+    runner._reply_anchor_for_event = lambda event: event.message_id
+
+    adapter = SimpleNamespace(
+        name="test",
+        extract_media=BasePlatformAdapter.extract_media,
+        extract_images=BasePlatformAdapter.extract_images,
+        extract_local_files=BasePlatformAdapter.extract_local_files,
+        send=AsyncMock(return_value=SendResult(success=True, message_id="text")),
+        send_multiple_images=AsyncMock(return_value=None),
+        send_voice=AsyncMock(return_value=SendResult(success=True, message_id="voice")),
+        send_document=AsyncMock(return_value=SendResult(success=True, message_id="doc")),
+        send_video=AsyncMock(return_value=SendResult(success=True, message_id="video")),
+    )
+
+    await GatewayRunner._deliver_queued_first_response(
+        runner,
+        "Quote here\nMEDIA:/tmp/pricelist.png",
+        source=event.source,
+        adapter=adapter,
+        metadata={"thread_id": "topic-1"},
+        event_message_id=event.message_id,
+    )
+
+    adapter.send.assert_awaited_once_with(
+        "chat-1",
+        "Quote here",
+        metadata={"thread_id": "topic-1"},
+    )
+    adapter.send_multiple_images.assert_awaited_once_with(
+        chat_id="chat-1",
+        images=[("file:///tmp/pricelist.png", "")],
+        metadata={"thread_id": "topic-1"},
+    )
+
+
+@pytest.mark.asyncio
+async def test_queued_followup_delivery_keeps_remote_image_url_in_text():
+    event = _event(thread_id="topic-1")
+    runner = object.__new__(GatewayRunner)
+    runner._thread_metadata_for_source = lambda source, anchor=None: {"thread_id": "topic-1"}
+    runner._reply_anchor_for_event = lambda event: event.message_id
+
+    adapter = SimpleNamespace(
+        name="test",
+        extract_media=BasePlatformAdapter.extract_media,
+        extract_images=BasePlatformAdapter.extract_images,
+        extract_local_files=BasePlatformAdapter.extract_local_files,
+        send=AsyncMock(return_value=SendResult(success=True, message_id="text")),
+        send_multiple_images=AsyncMock(return_value=None),
+        send_voice=AsyncMock(return_value=SendResult(success=True, message_id="voice")),
+        send_document=AsyncMock(return_value=SendResult(success=True, message_id="doc")),
+        send_video=AsyncMock(return_value=SendResult(success=True, message_id="video")),
+    )
+
+    response = "See this mockup\nhttps://example.com/mockup.png"
+    await GatewayRunner._deliver_queued_first_response(
+        runner,
+        response,
+        source=event.source,
+        adapter=adapter,
+        metadata={"thread_id": "topic-1"},
+        event_message_id=event.message_id,
+    )
+
+    adapter.send.assert_awaited_once_with(
+        "chat-1",
+        response,
+        metadata={"thread_id": "topic-1"},
+    )
+    adapter.send_multiple_images.assert_not_awaited()
