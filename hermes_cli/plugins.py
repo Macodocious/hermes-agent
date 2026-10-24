@@ -45,7 +45,7 @@ import threading
 import types
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple, Union
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Set, Tuple, Union
 
 from hermes_constants import get_hermes_home
 from utils import env_var_enabled, fast_safe_load
@@ -393,7 +393,10 @@ _VALID_PLUGIN_KINDS: Set[str] = {"standalone", "backend", "exclusive", "platform
 def _portable_skill_namespace(key: str) -> str:
     """Return a readable, collision-resistant namespace for a portable plugin."""
 
-    slug = "".join(ch if ch.isalnum() or ch in "_-" else "-" for ch in key.lower())
+    slug = "".join(
+        ch if ch.isascii() and (ch.isalnum() or ch in "_-") else "-"
+        for ch in key.lower()
+    )
     slug = slug.strip("-_") or "plugin"
     digest = hashlib.sha256(key.encode("utf-8")).hexdigest()[:8]
     return f"agent-plugin-{slug}-{digest}"
@@ -1351,6 +1354,7 @@ class PluginContext:
         name: str,
         path: Path,
         description: str = "",
+        frontmatter: Optional[Mapping[str, Any]] = None,
     ) -> None:
         """Register a read-only skill provided by this plugin.
 
@@ -1381,13 +1385,14 @@ class PluginContext:
 
         namespace = self.manifest.skill_namespace or self.manifest.name
         qualified = f"{namespace}:{name}"
-        if qualified in self._manager._plugin_skills:
+        if self.manifest.portable and qualified in self._manager._plugin_skills:
             raise ValueError(f"Plugin skill '{qualified}' is already registered")
         self._manager._plugin_skills[qualified] = {
             "path": path,
             "plugin": namespace,
             "bare_name": name,
             "description": description,
+            "frontmatter": dict(frontmatter or {}),
         }
         logger.debug(
             "Plugin %s registered skill: %s",
@@ -2054,7 +2059,12 @@ class PluginManager:
                 )
             for skill in package.skills:
                 try:
-                    ctx.register_skill(skill.name, skill.skill_md, skill.description)
+                    ctx.register_skill(
+                        skill.name,
+                        skill.skill_md,
+                        skill.description,
+                        skill.frontmatter,
+                    )
                 except Exception as exc:
                     logger.warning(
                         "Agent Plugin '%s' skill '%s' skipped: %s",
@@ -2266,7 +2276,7 @@ class PluginManager:
             if qn.startswith(prefix)
         )
 
-    def list_plugin_skill_metadata(self) -> List[Dict[str, str]]:
+    def list_plugin_skill_metadata(self) -> List[Dict[str, Any]]:
         """Return progressive-disclosure metadata for registered plugin skills."""
 
         return [
@@ -2274,6 +2284,7 @@ class PluginManager:
                 "name": qualified,
                 "description": str(entry.get("description", "")),
                 "category": "plugin",
+                "frontmatter": dict(entry.get("frontmatter", {})),
             }
             for qualified, entry in sorted(self._plugin_skills.items())
         ]
