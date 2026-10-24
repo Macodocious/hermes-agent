@@ -648,14 +648,6 @@ def test_desktop_launch_options_normalizes_password_store(raw, expected):
     assert store == expected
 
 
-def test_desktop_launch_options_survives_config_error():
-    with patch("hermes_cli.config.load_config", side_effect=RuntimeError("boom")):
-        flags, gpu, store = cli_main._desktop_launch_options()
-    assert flags == []
-    assert gpu == "auto"
-    assert store == "auto"
-
-
 # --- desktop.password_store detection & bridging (linux) ------------------
 
 
@@ -834,3 +826,35 @@ def test_gui_password_store_bridge_is_linux_only(tmp_path, monkeypatch):
     mock_detect.assert_not_called()
     launch_env = mock_run.call_args_list[1].kwargs["env"]
     assert "HERMES_DESKTOP_PASSWORD_STORE" not in launch_env
+
+
+def test_desktop_launch_options_survives_config_error():
+    with patch("hermes_cli.config.load_config", side_effect=RuntimeError("boom")):
+        flags, gpu, store = cli_main._desktop_launch_options()
+    assert flags == []
+    assert gpu == "auto"
+    assert store == "auto"
+
+
+# ── electronDist (re)download helper tests (#47266) ───────────────────
+
+
+@pytest.mark.parametrize(
+    "platform,rel",
+    [
+        ("linux", "dist/electron"),
+        ("win32", "dist/electron.exe"),
+        ("darwin", "dist/Electron.app/Contents/MacOS/Electron"),
+    ],
+)
+def test_electron_dist_ok_per_platform(tmp_path, monkeypatch, platform, rel):
+    monkeypatch.setattr(cli_main.sys, "platform", platform)
+    electron = tmp_path / "node_modules" / "electron"
+    # A dist dir that exists but lacks the binary is NOT ok (partial extraction).
+    (electron / "dist").mkdir(parents=True)
+    assert cli_main._electron_dist_ok(tmp_path) is False
+
+    binp = electron / rel
+    binp.parent.mkdir(parents=True, exist_ok=True)
+    binp.write_text("", encoding="utf-8")
+    assert cli_main._electron_dist_ok(tmp_path) is True
