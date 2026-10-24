@@ -1728,7 +1728,8 @@ class GatewaySlashCommandsMixin:
                     )
                 except Exception:
                     self._restart_command_source = event.source
-            atomic_json_write(
+            await asyncio.to_thread(
+                atomic_json_write,
                 _hermes_home / ".restart_notify.json",
                 notify_data,
                 indent=None,
@@ -1748,7 +1749,8 @@ class GatewaySlashCommandsMixin:
             }
             if event.platform_update_id is not None:
                 dedup_data["update_id"] = event.platform_update_id
-            atomic_json_write(
+            await asyncio.to_thread(
+                atomic_json_write,
                 _hermes_home / ".restart_last_processed.json",
                 dedup_data,
                 indent=None,
