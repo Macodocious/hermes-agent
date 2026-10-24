@@ -8875,7 +8875,7 @@ def _call_llm_impl(
     effective_timeout = _effective_aux_timeout(task, timeout)
     request_provider = effective_provider or resolved_provider
     _set_relay_auxiliary_route(
-        resolved_provider,
+        request_provider,
         final_model,
         resolved_api_mode,
     )
@@ -8884,7 +8884,7 @@ def _call_llm_impl(
     _base_info = str(getattr(client, "base_url", resolved_base_url) or "")
     if task:
         logger.info("Auxiliary %s: using %s (%s)%s",
-                     task, resolved_provider or "auto", final_model or "default",
+                     task, request_provider or "auto", final_model or "default",
                      f" at {_base_info}" if _base_info and "openrouter" not in _base_info else "")
 
     # Pass the client's actual base_url (not just resolved_base_url) so
@@ -8901,7 +8901,7 @@ def _call_llm_impl(
 
     # Convert image blocks for Anthropic-compatible endpoints (e.g. MiniMax)
     _client_base = str(getattr(client, "base_url", "") or "")
-    if _is_anthropic_compat_endpoint(resolved_provider, _client_base):
+    if _is_anthropic_compat_endpoint(request_provider, _client_base):
         kwargs["messages"] = _convert_openai_images_to_anthropic(kwargs["messages"])
 
     # Streaming path: return the raw SDK Stream iterator directly. This is used by
@@ -8929,7 +8929,7 @@ def _call_llm_impl(
         return _relay_sync_stream(
             client,
             kwargs,
-            provider=resolved_provider,
+            provider=request_provider,
             api_mode=resolved_api_mode,
         )
 
@@ -8957,19 +8957,19 @@ def _call_llm_impl(
                 _relay_sync_completion(
                     client,
                     kwargs,
-                    provider=resolved_provider,
+                    provider=request_provider,
                     api_mode=resolved_api_mode,
                     create=lambda request: _create_with_progress(
                         client,
                         request,
                         task,
                         force_stream=_provider_requires_stream(
-                            resolved_provider, _base_info or resolved_base_url,
+                            request_provider, _base_info or resolved_base_url,
                         ),
                     ),
                 ),
                 task,
-                provider=resolved_provider, base_url=_base_info)
+                provider=request_provider, base_url=_base_info)
         except Exception as transient_err:
             if not _is_transient_transport_error(transient_err):
                 raise
@@ -9004,14 +9004,14 @@ def _call_llm_impl(
                         _relay_sync_completion(
                             client,
                             kwargs,
-                            provider=resolved_provider,
+                            provider=request_provider,
                             api_mode=resolved_api_mode,
                             create=lambda request: _create_with_progress(
                                 client,
                                 request,
                                 task,
                                 force_stream=_provider_requires_stream(
-                                    resolved_provider,
+                                    request_provider,
                                     _base_info or resolved_base_url,
                                 ),
                             ),
@@ -9661,7 +9661,7 @@ async def _async_call_llm_impl(
     effective_timeout = _effective_aux_timeout(task, timeout)
     request_provider = effective_provider or resolved_provider
     _set_relay_auxiliary_route(
-        resolved_provider,
+        request_provider,
         final_model,
         resolved_api_mode,
     )
@@ -9678,7 +9678,7 @@ async def _async_call_llm_impl(
         base_url=_client_base or resolved_base_url, task=task)
 
     # Convert image blocks for Anthropic-compatible endpoints (e.g. MiniMax)
-    if _is_anthropic_compat_endpoint(resolved_provider, _client_base):
+    if _is_anthropic_compat_endpoint(request_provider, _client_base):
         kwargs["messages"] = _convert_openai_images_to_anthropic(kwargs["messages"])
 
     try:
@@ -9687,7 +9687,7 @@ async def _async_call_llm_impl(
         # for the rationale. (PR #16587)
         _force_stream_async = (
             _provider_requires_stream(
-                resolved_provider, _client_base or resolved_base_url,
+                request_provider, _client_base or resolved_base_url,
             )
             and not isinstance(client, (
                 AsyncCodexAuxiliaryClient,
@@ -9706,12 +9706,12 @@ async def _async_call_llm_impl(
                 await _relay_async_completion(
                     client,
                     kwargs,
-                    provider=resolved_provider,
+                    provider=request_provider,
                     api_mode=resolved_api_mode,
                     create=_acreate,
                 ),
                 task,
-                provider=resolved_provider, base_url=_client_base)
+                provider=request_provider, base_url=_client_base)
         except Exception as transient_err:
             if not _is_transient_transport_error(transient_err):
                 raise
@@ -9734,7 +9734,7 @@ async def _async_call_llm_impl(
                 await _relay_async_completion(
                     client,
                     kwargs,
-                    provider=resolved_provider,
+                    provider=request_provider,
                     api_mode=resolved_api_mode,
                     create=_acreate,
                 ),
