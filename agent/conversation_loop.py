@@ -2599,11 +2599,6 @@ def run_conversation(
                             retry_count = 0
                             compression_attempts = 0
                             _retry.primary_recovery_attempted = False
-                            # Failover shrank the compressor's context window to
-                            # the fallback's; restart the outer iteration so the
-                            # pre-API preflight re-runs against the new threshold
-                            # before the first fallback call (#84733).
-                            _preflight_compression_blocked = False
                             _retry.restart_with_rebuilt_messages = True
                             break
                         # No fallback available — surface buffered context
@@ -3057,11 +3052,6 @@ def run_conversation(
                         retry_count = 0
                         compression_attempts = 0
                         _retry.primary_recovery_attempted = False
-                        # Failover shrank the compressor's context window to
-                        # the fallback's; restart the outer iteration so the
-                        # pre-API preflight re-runs against the new threshold
-                        # before the first fallback call (#84733).
-                        _preflight_compression_blocked = False
                         _retry.restart_with_rebuilt_messages = True
                         break
 
@@ -3136,11 +3126,6 @@ def run_conversation(
                             retry_count = 0
                             compression_attempts = 0
                             _retry.primary_recovery_attempted = False
-                            # Failover shrank the compressor's context window to
-                            # the fallback's; restart the outer iteration so the
-                            # pre-API preflight re-runs against the new threshold
-                            # before the first fallback call (#84733).
-                            _preflight_compression_blocked = False
                             _retry.restart_with_rebuilt_messages = True
                             break
                         # Terminal — flush buffered retry trace so user sees what happened.
@@ -3318,11 +3303,6 @@ def run_conversation(
                         retry_count = 0
                         compression_attempts = 0
                         _retry.primary_recovery_attempted = False
-                        # Failover shrank the compressor's context window to
-                        # the fallback's; restart the outer iteration so the
-                        # pre-API preflight re-runs against the new threshold
-                        # before the first fallback call (#84733).
-                        _preflight_compression_blocked = False
                         _retry.restart_with_rebuilt_messages = True
                         break
 
@@ -5136,11 +5116,6 @@ def run_conversation(
                             retry_count = 0
                             compression_attempts = 0
                             _retry.primary_recovery_attempted = False
-                            # Failover shrank the compressor's context window to
-                            # the fallback's; restart the outer iteration so the
-                            # pre-API preflight re-runs against the new threshold
-                            # before the first fallback call (#84733).
-                            _preflight_compression_blocked = False
                             _retry.restart_with_rebuilt_messages = True
                             break
 
@@ -5175,11 +5150,6 @@ def run_conversation(
                         retry_count = 0
                         compression_attempts = 0
                         _retry.primary_recovery_attempted = False
-                        # Failover shrank the compressor's context window to
-                        # the fallback's; restart the outer iteration so the
-                        # pre-API preflight re-runs against the new threshold
-                        # before the first fallback call (#84733).
-                        _preflight_compression_blocked = False
                         _retry.restart_with_rebuilt_messages = True
                         break
 
@@ -5799,11 +5769,6 @@ def run_conversation(
                         retry_count = 0
                         compression_attempts = 0
                         _retry.primary_recovery_attempted = False
-                        # Failover shrank the compressor's context window to
-                        # the fallback's; restart the outer iteration so the
-                        # pre-API preflight re-runs against the new threshold
-                        # before the first fallback call (#84733).
-                        _preflight_compression_blocked = False
                         _retry.restart_with_rebuilt_messages = True
                         break
                     if api_kwargs is not None:
@@ -6028,11 +5993,6 @@ def run_conversation(
                         retry_count = 0
                         compression_attempts = 0
                         _retry.primary_recovery_attempted = False
-                        # Failover shrank the compressor's context window to
-                        # the fallback's; restart the outer iteration so the
-                        # pre-API preflight re-runs against the new threshold
-                        # before the first fallback call (#84733).
-                        _preflight_compression_blocked = False
                         _retry.restart_with_rebuilt_messages = True
                         break
                     # Terminal — flush buffered retry/fallback trace.
@@ -6350,14 +6310,20 @@ def run_conversation(
             continue
 
         if _retry.restart_with_rebuilt_messages:
-            # A content-filter stream stall (#32421) was escalated to the
-            # fallback chain and the partial content rolled back.  Re-issue
-            # the API call against the now-active fallback provider.  Refund
-            # the budget/count for the stalled attempt so the fallback gets a
-            # fair turn.
+            # A stream stall or provider failure was escalated to the
+            # fallback chain (10 activation sites in the retry loop set this
+            # flag and break here).  Re-issue the API call against the
+            # now-active fallback provider.  Refund the budget/count for the
+            # stalled attempt so the fallback gets a fair turn.
             api_call_count -= 1
             agent.iteration_budget.refund()
             _retry.restart_with_rebuilt_messages = False
+            # Failover shrank the compressor's context window to the
+            # fallback's; clear the preflight block so the pre-API preflight
+            # re-runs against the new threshold before the first fallback
+            # call (#84733). Hoisted here (the single consumer) so every
+            # activation site — including ones added later — gets it.
+            _preflight_compression_blocked = False
             continue
 
         if _retry.restart_with_length_continuation:
