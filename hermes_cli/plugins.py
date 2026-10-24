@@ -290,6 +290,23 @@ VALID_HOOKS: Set[str] = {
     # None falls through to core's own handling.
     # Kwargs: action_id: str, session_key: str, user: str.
     "approval_action",
+    # Gateway platform-boundary observer hooks (#64176). Observer-only; each
+    # callback isolated by invoke_hook. Normalized envelopes only — NO raw
+    # platform SDK objects in the payload (per #64176 / #64182 ground rule);
+    # raw access is a separate capability-gated action API, not a hook.
+    #
+    #   gateway_platform_event — inbound platform event (reactions, forwards,
+    #       edits, chat-member) as a normalized envelope. Kwargs: platform,
+    #       event_type, payload (event_type-specific dict). Fired for Telegram
+    #       reactions today; other event types + fire-sites land with #64176's
+    #       taxonomy (#64231).
+    #   gateway_session_titled / gateway_message_delivered / gateway_thread_created
+    #       — reserved (fire-sites pending #64176); names registered so plugins
+    #       can subscribe ahead of implementation.
+    "gateway_session_titled",
+    "gateway_message_delivered",
+    "gateway_thread_created",
+    "gateway_platform_event",
 }
 
 ENTRY_POINTS_GROUP = "hermes_agent.plugins"
