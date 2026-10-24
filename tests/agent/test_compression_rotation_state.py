@@ -678,8 +678,15 @@ class TestTodoSnapshotScaffoldingTails:
             _msgs(), "sys", approx_tokens=120_000
         )
 
+        # ``_row_id`` is durable-addressing metadata added by the rewind
+        # truncation work; it is not part of the message contract these
+        # assertions compare, so drop it before matching. The tail is
+        # excluded because it is rewritten with the todo snapshot below.
         assert len(compressed) == len(expected)
-        assert compressed[:-1] == expected[:-1]
+        assert [
+            {k: v for k, v in m.items() if k != "_row_id"}
+            for m in compressed[:-1]
+        ] == expected[:-1]
         tail = compressed[-1]
         assert tail["role"] == "user"
         assert tail["content"].startswith("tail")
