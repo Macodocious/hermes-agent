@@ -311,6 +311,7 @@ _LEGACY_MODEL_FAMILIES = frozenset({
 })
 
 _COUNTER_DIMENSION_VALUES: dict[str, dict[str, frozenset[str]]] = {
+    CLIENT_ACTIVE_METRIC: {},
     # Retained only so pre-v2 pending rows remain packageable.
     LEGACY_MODEL_CALL_METRIC: {
         "call_role": frozenset({"primary"}),
@@ -319,7 +320,6 @@ _COUNTER_DIMENSION_VALUES: dict[str, dict[str, frozenset[str]]] = {
         "outcome": _LEGACY_MODEL_OUTCOMES,
         "provider_family": _LEGACY_PROVIDER_FAMILIES,
     },
-    CLIENT_ACTIVE_METRIC: {},
     TASK_STARTED_METRIC: {
         "entrypoint": TASK_ENTRYPOINTS,
         "execution_surface": EXECUTION_SURFACES,

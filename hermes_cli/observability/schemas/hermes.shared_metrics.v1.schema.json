@@ -57,9 +57,6 @@
       "items": {
         "oneOf": [
           {
-            "$ref": "#/$defs/client_active_counter"
-          },
-          {
             "$ref": "#/$defs/model_call_counter"
           },
           {
