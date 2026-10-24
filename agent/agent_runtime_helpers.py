@@ -108,6 +108,7 @@ AGENT_RUNTIME_POST_HOOK_TOOL_NAMES = frozenset(
         "read_terminal",
         "read_preview",
         "read_window_below",
+        "setup_mcp",
         "delegate_task",
     }
 )
@@ -3093,6 +3094,18 @@ def invoke_tool(agent, function_name: str, function_args: dict, effective_task_i
             return _finish_agent_tool(
                 _read_window_below_tool(
                     callback=getattr(agent, "read_window_below_callback", None),
+                ),
+                next_args,
+            )
+    elif function_name == "setup_mcp":
+        def _execute(next_args: dict) -> Any:
+            from tools.setup_mcp_tool import setup_mcp_tool as _setup_mcp_tool
+            return _finish_agent_tool(
+                _setup_mcp_tool(
+                    server=next_args.get("server", ""),
+                    action=next_args.get("action", "install"),
+                    reason=next_args.get("reason", ""),
+                    callback=getattr(agent, "setup_mcp_callback", None),
                 ),
                 next_args,
             )

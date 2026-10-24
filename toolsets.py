@@ -298,6 +298,7 @@ TOOLSETS = {
             "open_preview", "read_preview",
             "read_window_below",
             "focus_pane", "react_to_message",
+            "setup_mcp",
         ],
         "includes": []
     },
