@@ -1403,7 +1403,7 @@ class TestPluginContext:
         assert "plugin_echo" in mgr._plugin_tool_names
 
         from tools.registry import registry
-        assert "plugin_echo" in registry._tools
+        assert registry.get_entry("plugin_echo", scope=mgr.scope_key) is not None
 
 
     def test_register_tool_override_replaces_existing(self, tmp_path, monkeypatch, caplog):
@@ -1448,9 +1448,15 @@ class TestPluginContext:
                 mgr = PluginManager()
                 mgr.discover_and_load()
 
-            # Plugin handler replaced the built-in one.
-            assert registry._tools["override_target"].toolset == "plugin_override_plugin"
-            assert registry._tools["override_target"].handler({}, ) == "plugin"
+            # Plugin handler replaced the built-in one. Plugin tools live in
+            # the manager's scope bucket, so read through the scope-aware
+            # lookup rather than the unscoped ``_tools`` map.
+            override_entry = registry.get_entry(
+                "override_target", scope=mgr.scope_key
+            )
+            assert override_entry is not None
+            assert override_entry.toolset == "plugin_override_plugin"
+            assert override_entry.handler({}, ) == "plugin"
             # Override is audit-logged at INFO.
             assert any(
                 "overriding existing" in r.message and "override_target" in r.message
@@ -1495,7 +1501,10 @@ class TestPluginContext:
         try:
             mgr = PluginManager()
             mgr.discover_and_load()
-            assert "brand_new_override_tool" in registry._tools
+            assert (
+                registry.get_entry("brand_new_override_tool", scope=mgr.scope_key)
+                is not None
+            )
         finally:
             registry.deregister("brand_new_override_tool")
 
