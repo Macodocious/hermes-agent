@@ -725,6 +725,10 @@ def run_conversation(
     # the first call that does work with no task current, and must not repeat
     # on every later call of the same turn.
     agent._lifecycle_reminder_issued = False
+    # The pacing line's per-turn gate: None until it ships this turn, then the
+    # tenure it shipped for, so a mid-turn tenure change re-emits while later
+    # calls of the same tenure stay silent.
+    agent._lifecycle_pacing_tenure = None
     _ctx = build_turn_context(
         agent,
         user_message,

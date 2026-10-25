@@ -118,27 +118,60 @@ LIFECYCLE_TOOL_REMINDER = (
     "action=complete when its work is done."
 )
 
+# The active-task counterpart: the empty case above can only speak when no row
+# is current, so a task that stayed current through a long stretch of work
+# never asked to be closed — its backlog cleared as one sweep instead of along
+# the work. This line names the current row and the tenure's call count, once
+# per turn, so the count visibly grows while the task is open.
+TASK_PACING_TOOL_REMINDER = (
+    "[Task lifecycle] Task {task_id} \"{content}\" is current — {work_count} "
+    "tool calls under it. Close it with todo action=complete when its work is done."
+)
+# A task content can be a paragraph; the line ships on every turn, so its
+# quoted portion is capped with an ellipsis instead.
+PACING_CONTENT_MAX_CHARS = 60
+
+
+def _pacing_reminder(item: Dict[str, Any], work_count: int) -> str:
+    """The pacing line for one active row: id, capped content, tenure count."""
+    content = str(item.get("content") or "")
+    if len(content) > PACING_CONTENT_MAX_CHARS:
+        content = content[:PACING_CONTENT_MAX_CHARS].rstrip() + "…"
+    return TASK_PACING_TOOL_REMINDER.format(
+        task_id=item.get("id", ""),
+        content=content,
+        work_count=work_count,
+    )
+
 
 def tool_result_reminder(agent: Any, tool_name: str) -> str:
-    """One line for a tool result when work happens with no current task.
+    """One line for a tool result: the empty case, or pacing for the current task.
 
     Empty when the call is the lifecycle tool itself, when the lifecycle is
-    off, when a task is already current, when the session has no task list,
-    or when this turn already carried the reminder.
+    off, when the session has no task list, or when this turn already carried
+    the line for the current tenure. With no current task the line nags to
+    start one, once per turn. With a current task the line paces that task —
+    once per turn, and again after every tenure change, so a task promoted
+    mid-turn announces itself at its first worked call.
     """
     if tool_name == "todo":
         return ""
     if not _lifecycle_enabled():
         return ""
-    if getattr(agent, "_lifecycle_reminder_issued", False):
-        return ""
     store = getattr(agent, "_todo_store", None)
     if store is None or not store.has_items():
         return ""
-    if _current_item(agent) is not None:
+    current = _current_item(agent)
+    if current is None:
+        if getattr(agent, "_lifecycle_reminder_issued", False):
+            return ""
+        agent._lifecycle_reminder_issued = True
+        return LIFECYCLE_TOOL_REMINDER
+    tenure = store.tenure_seq()
+    if getattr(agent, "_lifecycle_pacing_tenure", None) == tenure:
         return ""
-    agent._lifecycle_reminder_issued = True
-    return LIFECYCLE_TOOL_REMINDER
+    agent._lifecycle_pacing_tenure = tenure
+    return _pacing_reminder(current, store.work_count())
 
 
 # =============================================================================
