@@ -139,7 +139,10 @@ def test_current_user_turn_is_persisted_before_provider_call(agent):
     # preserved as the trailing content. Match on the suffix so the assertion
     # still proves the user turn was flushed before the provider call.
     assert persisted_messages[-1]["role"] == "user"
-    assert persisted_messages[-1]["content"].endswith("new message that must survive a crash")
+    assert persisted_messages[-1]["content"].endswith(
+        "new message that must survive a crash"
+    )
+    assert isinstance(persisted_messages[-1]["timestamp"], float)
 
 
 class TestHTTP413Compression:
