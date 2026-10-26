@@ -501,6 +501,7 @@ class CLIAgentSetupMixin:
                 max_tokens=self.max_tokens,
                 temperature=getattr(self, "temperature", None),
                 max_iterations=self.max_turns,
+                run_budget_seconds=getattr(self, "run_budget_seconds", None),
                 enabled_toolsets=self.enabled_toolsets,
                 disabled_toolsets=self.disabled_toolsets,
                 verbose_logging=self.verbose,
