@@ -1120,7 +1120,7 @@ def _parse_judge_response(
             blocked = blocked_val.strip().lower() in {"true", "yes", "1"}
         else:
             blocked = bool(blocked_val)
-        return verdict, reason, False, None, False, (verdict == "done" and blocked), clarify
+        return verdict, reason, False, None, (verdict == "done" and blocked), clarify
 
     # Wait verdict: extract a concrete directive (pid or seconds). Accept a
     # few key spellings the model might emit.

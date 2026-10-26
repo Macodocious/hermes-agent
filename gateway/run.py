@@ -14640,12 +14640,18 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             #
             # Best-effort, matching the end-of-drain call's error handling:
             # a scheduler that cannot mark is not going to stop the shutdown.
+            _drain_interrupted_jobs: list = []
             try:
                 from cron.scheduler import mark_running_jobs_interrupted
                 _drain_interrupted = mark_running_jobs_interrupted(
                     "Gateway shutting down (drain began before the run finished)."
                 )
                 if _drain_interrupted:
+                    # Keep them: the drain-start call is the one that claims the
+                    # row, so the later tool-sweep call reports an empty list
+                    # for these jobs. The notice is sent from this set too,
+                    # otherwise it never fires (#82232).
+                    _drain_interrupted_jobs = list(_drain_interrupted)
                     logger.warning(
                         "Shutdown (drain-start): marked %d in-flight cron job(s) interrupted: %s",
                         len(_drain_interrupted), ", ".join(_drain_interrupted),
@@ -14901,7 +14907,11 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 # "interrupted" notice, but it gets there after the adapter
                 # teardown below and the message is lost (#82232).
                 try:
-                    await self._notify_interrupted_cron_jobs(_interrupted_cron_jobs)
+                    _notify_ids: list = list(_drain_interrupted_jobs)
+                    for _job_id in _interrupted_cron_jobs:
+                        if _job_id not in _notify_ids:
+                            _notify_ids.append(_job_id)
+                    await self._notify_interrupted_cron_jobs(_notify_ids)
                 except Exception as _e:
                     logger.debug("Cron interrupt notification failed: %s", _e)
                 logger.info(

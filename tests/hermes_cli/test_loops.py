@@ -394,7 +394,10 @@ class TestTickLifecycle:
         state = mgr.set("poll", interval_seconds=300, until="the suite is green")
         state.next_due_at = time.time() - 1
         mgr.fire_tick()
-        with patch("hermes_cli.goals.judge_goal", return_value=("done", "suite green", False, None, False)):
+        with patch(
+            "hermes_cli.goals.judge_goal",
+            return_value=("done", "suite green", False, None, False, False, False),
+        ):
             decision = mgr.complete_tick("All 500 tests passed.")
         assert decision["stopped"] is True
         assert decision["status"] == "done"

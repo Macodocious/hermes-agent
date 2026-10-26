@@ -952,16 +952,17 @@ def mark_running_jobs_interrupted(
         # first call must not be re-marked — that double-increments the
         # ``completed`` counter inside ``mark_job_run`` and double-advances
         # ``next_run_at``. Fires that raced the first call stay captured here.
-        active_fires = [
-            fire
-            for fire in active_fires
-            if (fire[0] if fire[0] is not None else fire[1])
-            not in _interrupted_job_ids
-        ]
+        already_marked = set(_interrupted_job_ids)
         _interrupted_job_ids.update(
             token if token is not None else job_id
             for token, job_id, _owner, _profile_home in active_fires
         )
+        active_fires = [
+            fire
+            for fire in active_fires
+            if (fire[0] if fire[0] is not None else fire[1])
+            not in already_marked
+        ]
     marked = []
     for _token, job_id, fire_owner, profile_home in active_fires:
         if not fire_owner:
