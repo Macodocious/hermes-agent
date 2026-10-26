@@ -200,7 +200,12 @@ async def test_full_dispatch_rejects_lease_timeout_without_running_goal_hook(
     runner._post_turn_goal_continuation = AsyncMock()
 
     try:
-        response = await asyncio.wait_for(runner._handle_message(_event()), timeout=1)
+        # The outer bound only has to outlast the scheduler, not the lease:
+        # the lease itself expires after 0.02 s, so a slow box cannot change
+        # which branch this takes — but a 1 s bound does fire under parallel
+        # suite load (this suite runs 7x slower in the full run than alone)
+        # and would cancel the handler before it ever reached the lease.
+        response = await asyncio.wait_for(runner._handle_message(_event()), timeout=10)
     finally:
         assert runner._turn_leases.release(holder) is True
 
