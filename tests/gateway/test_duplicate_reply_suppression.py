@@ -107,11 +107,19 @@ class TestBaseInterruptSuppression:
 
         # The in-band pending-drain now hands off to a fresh task instead
         # of recursing (#17758).  Wait for that task to finish before
-        # checking the sent list.
-        for _ in range(200):
+        # checking the sent list.  2 s was the old bound and it tripped only
+        # when the suite ran files in parallel: the fresh task needs a slot
+        # on a saturated machine, so the wait is a liveness bound, not a
+        # latency assertion.
+        for _ in range(750):
             if any(s["content"] == pending_response for s in adapter.sent):
                 break
-            await asyncio.sleep(0.01)
+            await asyncio.sleep(0.02)
+        else:
+            raise AssertionError(
+                "Pending message response never arrived within 15s: "
+                f"sent={[s['content'] for s in adapter.sent]}"
+            )
         await adapter.cancel_background_tasks()
 
         # The stale response should NOT have been sent.
