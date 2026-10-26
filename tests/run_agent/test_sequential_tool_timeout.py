@@ -151,14 +151,6 @@ def test_sequential_tool_timeout_emits_result_and_continues(tmp_path, monkeypatc
         ):
             execute_tool_calls_sequential(agent, assistant, messages, "task")
             elapsed = time.monotonic() - started
-            release_first.set()
-            # Give a late-scheduled worker a moment to drain inside the patch
-            # context (if the with block exits first, a late worker would hit
-            # the REAL handle_function_call).
-            for _ in range(100):
-                if "next" in dispatched:
-                    break
-                time.sleep(0.05)
     finally:
         release_first.set()
 
