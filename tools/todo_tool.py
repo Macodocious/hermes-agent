@@ -445,7 +445,7 @@ class TodoStore:
                     and item["id"] not in incoming_ids
                 ):
                     incoming.append(item)
-            self._items = incoming
+            self._items = self._normalize_order(incoming)
         else:
             # Merge mode: update existing items by id, append new ones
             existing = {item["id"]: item for item in self._items}
@@ -486,7 +486,7 @@ class TodoStore:
                 if current["id"] not in seen:
                     rebuilt.append(current)
                     seen.add(current["id"])
-            self._items = rebuilt
+            self._items = self._normalize_order(rebuilt)
         # Bound total item count so a replayed/oversized list can't grow the
         # re-injection block without limit. Keep the highest-priority head
         # (list order is priority).
@@ -1244,6 +1244,31 @@ class TodoStore:
             item_id = str(item.get("id", "")).strip() or "?"
             last_index[item_id] = i
         return [todos[i] for i in sorted(last_index.values())]
+
+    @staticmethod
+    def _normalize_order(items: List[Dict[str, str]]) -> List[Dict[str, str]]:
+        """Lift the active step ahead of any earlier unfinished placeholders."""
+        active_index = next(
+            (i for i, item in enumerate(items) if item["status"] == "in_progress"),
+            None,
+        )
+        if active_index is None:
+            return items
+
+        pending_index = next(
+            (
+                i for i, item in enumerate(items[:active_index])
+                if item["status"] == "pending"
+            ),
+            None,
+        )
+        if pending_index is None:
+            return items
+
+        normalized = items.copy()
+        active_item = normalized.pop(active_index)
+        normalized.insert(pending_index, active_item)
+        return normalized
 
 
 def _lifecycle_write_violation(todos: List[Any], store: "TodoStore") -> Optional[str]:
