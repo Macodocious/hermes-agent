@@ -62,6 +62,10 @@
           "minLength": 1,
           "maxLength": 64
         },
+        "install_method": {
+          "type": "string",
+          "enum": ["apt", "docker", "git", "homebrew", "nixos", "pip", "unknown"]
+        },
         "os_family": {
           "type": "string",
           "enum": [
@@ -69,17 +73,6 @@
             "macos",
             "unknown",
             "windows"
-          ]
-        },
-        "install_method": {
-          "type": "string",
-          "enum": [
-            "docker",
-            "git",
-            "homebrew",
-            "nixos",
-            "pip",
-            "unknown"
           ]
         }
       }
