@@ -20899,6 +20899,14 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                             )
                     except Exception as _e:
                         logger.debug("trailing footer send failed: %s", _e)
+                # This branch returns None so the adapter does not send the
+                # body twice. /loop and /goal hooks in _handle_message read
+                # the return value, so stash the delivered text on the event
+                # or those hooks never run and a /loop tick stays awaiting.
+                try:
+                    event._streamed_final_response = str(response or "")
+                except Exception:
+                    pass
                 return None
 
             return response
@@ -22041,11 +22049,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         synthetic goal-continuation turn and a plan-approval turn both blank
         their prose, and the caller must ship nothing for them.
         """
-        final_text = ""
-        if isinstance(agent_result, dict):
-            final_text = str(agent_result.get("final_response") or "")
-        elif isinstance(agent_result, str):
-            final_text = agent_result
+        final_text = self._final_text_for_post_turn_hooks(agent_result, event)
 
         try:
             session_entry = await self.async_session_store.get_or_create_session(
@@ -22104,7 +22108,25 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             logger.debug("loop completion hook failed: %s", exc)
         return suppressed
 
+    @staticmethod
+    def _final_text_for_post_turn_hooks(agent_result, event=None) -> str:
+        """Text for /goal and /loop after a gateway turn.
 
+        Streamed turns return None from _handle_message_with_agent
+        (already_sent). The delivered reply is stashed on the event so
+        those hooks still see it.
+        """
+        text = ""
+        if isinstance(agent_result, dict):
+            text = str(agent_result.get("final_response") or "")
+        elif isinstance(agent_result, str):
+            text = agent_result
+        if text.strip():
+            return text
+        streamed = getattr(event, "_streamed_final_response", None)
+        if isinstance(streamed, str) and streamed.strip():
+            return streamed
+        return text
 
     async def _post_turn_loop_completion(
         self,
