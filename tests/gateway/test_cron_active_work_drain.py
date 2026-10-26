@@ -34,10 +34,12 @@ def _reset_cron_running_set():
     import cron.scheduler as sched
 
     sched._running_job_ids.clear()
+    sched._running_fire_owners.clear()
     sched._interrupted_job_ids.clear()
     sched._job_agents.clear()
     yield
     sched._running_job_ids.clear()
+    sched._running_fire_owners.clear()
     sched._interrupted_job_ids.clear()
     sched._job_agents.clear()
 
@@ -147,6 +149,9 @@ class TestKillToolSubprocessesMarksCronInterrupted:
         adapter.disconnect = _make_async_noop()
 
         sched._running_job_ids.add("job-1")
+        sched._running_fire_owners["job-1"] = {
+            object(): ("owner-1", sched._get_hermes_home().resolve())
+        }
 
         monkeypatch.setattr(_pr.process_registry, "kill_all", lambda task_id=None: 1)
         monkeypatch.setattr(_tt, "cleanup_all_environments", lambda: None)
