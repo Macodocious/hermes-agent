@@ -973,10 +973,14 @@ def mark_running_jobs_interrupted(
             # survives the shutdown and re-fires on next start.
             try:
                 with use_cron_store(profile_home):
-                    if mark_job_run(job_id, False, reason):
-                        marked.append(job_id)
+                    mark_job_run(job_id, False, reason)
             except Exception as e:
                 logger.warning("Failed to mark job %s interrupted: %s", job_id, e)
+            # Still report the interruption to the caller: the gateway
+            # shutdown path uses the returned IDs to send the
+            # interrupted-cron notice while adapters are still connected
+            # (#82232).
+            marked.append(job_id)
             continue
         try:
             with use_cron_store(profile_home):
