@@ -52,6 +52,12 @@ class TestCommandRegistry:
         for entry in COMMAND_REGISTRY:
             assert isinstance(entry, CommandDef), f"Unexpected type: {type(entry)}"
 
+    def test_export_command_registered(self):
+        cmd = resolve_command("export")
+        assert cmd is not None
+        assert cmd.name == "export"
+        assert cmd.args_hint == "[format] [filename]"
+
     def test_no_duplicate_canonical_names(self):
         names = [cmd.name for cmd in COMMAND_REGISTRY]
         assert len(names) == len(set(names)), f"Duplicate names: {[n for n in names if names.count(n) > 1]}"
