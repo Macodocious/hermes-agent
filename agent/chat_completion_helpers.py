@@ -48,6 +48,7 @@ from agent.turn_context import substitute_api_content
 from agent.gemini_native_adapter import is_native_gemini_base_url
 from agent.model_metadata import is_local_endpoint
 from agent.message_content import flatten_message_text
+from agent.message_metadata import append_message, stamp_message_timestamp
 from agent.message_sanitization import (
     _sanitize_surrogates,
     _repair_tool_call_arguments,
@@ -2294,12 +2295,12 @@ def build_assistant_message(agent, assistant_message, finish_reason: str) -> dic
     # a DB-side pad can't survive ``_rows_to_conversation``'s whitespace strip
     # anyway.  Repair belongs at the send boundary, once.
 
-    msg = {
+    msg = stamp_message_timestamp({
         "role": "assistant",
         "content": _san_content,
         "reasoning": reasoning_text,
         "finish_reason": finish_reason,
-    }
+    })
 
     raw_reasoning_content = getattr(assistant_message, "reasoning_content", None)
     if raw_reasoning_content is None and hasattr(assistant_message, "model_extra"):
@@ -2995,7 +2996,7 @@ def handle_max_iterations(agent, messages: list, api_call_count: int, append_to_
 
     summary_request = MAX_ITERATIONS_SUMMARY_REQUEST
     if append_to_history:
-        messages.append({"role": "user", "content": summary_request})
+        append_message(messages, {"role": "user", "content": summary_request})
         request_messages = messages
     else:
         # Build against a copy so the caller's transcript gains neither the
@@ -3224,7 +3225,10 @@ def handle_max_iterations(agent, messages: list, api_call_count: int, append_to_
             if final_response:
                 summary_call_outcome = "success"
                 if append_to_history:
-                    messages.append({"role": "assistant", "content": final_response})
+                    append_message(
+                        messages,
+                        {"role": "assistant", "content": final_response},
+                    )
             else:
                 final_response = "I reached the iteration limit and couldn't generate a summary."
         else:
@@ -3287,7 +3291,10 @@ def handle_max_iterations(agent, messages: list, api_call_count: int, append_to_
                 if final_response:
                     summary_call_outcome = "success"
                     if append_to_history:
-                        messages.append({"role": "assistant", "content": final_response})
+                        append_message(
+                            messages,
+                            {"role": "assistant", "content": final_response},
+                        )
                 else:
                     final_response = "I reached the iteration limit and couldn't generate a summary."
             else:
