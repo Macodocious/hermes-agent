@@ -95,6 +95,9 @@ class RelayAdapter(BasePlatformAdapter):
         # feedback off SendResult — see send()). Consumed by the gateway's
         # semantic thread-rename lane; bounded like the sibling caches.
         self._auto_thread_by_chat: Dict[str, Tuple[str, str]] = {}
+        # Bounded FIFO seen-set for inbound replay dedupe (finding #3);
+        # dict preserves insertion order, giving cheap oldest-first eviction.
+        self._seen_inbound: Dict[str, None] = {}
         # chat_id -> draft_id of the currently OPEN native draft stream
         # (NS-658 live cards). Armed by send_draft on a successful frame;
         # consumed by send() to convert the turn-final delivery into the
@@ -130,9 +133,6 @@ class RelayAdapter(BasePlatformAdapter):
         self.draft_stream_is_message = (
             str(getattr(descriptor, "platform", "") or "").lower() == "slack"
         )
-        # Bounded FIFO seen-set for inbound replay dedupe (finding #3);
-        # dict preserves insertion order, giving cheap oldest-first eviction.
-        self._seen_inbound: Dict[str, None] = {}
         # chat_id -> event fired when the entry above lands, so a consumer that
         # arrives before the send can wait for it instead of polling. See
         # wait_for_auto_thread_info.
