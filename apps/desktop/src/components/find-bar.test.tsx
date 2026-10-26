@@ -708,7 +708,8 @@ describe('view.findInPage keybind gate', () => {
       toggleCommandCenter: vi.fn(),
       startFreshSession: vi.fn(),
       openNewSessionTab: vi.fn(),
-      toggleSelectedPin: vi.fn()
+      toggleSelectedPin: vi.fn(),
+      archiveSelectedSession: vi.fn()
     }
 
     render(
