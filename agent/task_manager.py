@@ -121,8 +121,9 @@ LIFECYCLE_TOOL_REMINDER = (
 # The active-task counterpart: the empty case above can only speak when no row
 # is current, so a task that stayed current through a long stretch of work
 # never asked to be closed — its backlog cleared as one sweep instead of along
-# the work. This line names the current row and the tenure's call count, once
-# per turn, so the count visibly grows while the task is open.
+# the work. This line names the current row and the tenure's call count on
+# every worked call, so the count climbs with the work and a task cannot
+# accumulate a pile unseen.
 TASK_PACING_TOOL_REMINDER = (
     "[Task lifecycle] Task {task_id} \"{content}\" is current — {work_count} "
     "tool calls under it. Close it with todo action=complete when its work is done."
@@ -148,11 +149,11 @@ def tool_result_reminder(agent: Any, tool_name: str) -> str:
     """One line for a tool result: the empty case, or pacing for the current task.
 
     Empty when the call is the lifecycle tool itself, when the lifecycle is
-    off, when the session has no task list, or when this turn already carried
-    the line for the current tenure. With no current task the line nags to
-    start one, once per turn. With a current task the line paces that task —
-    once per turn, and again after every tenure change, so a task promoted
-    mid-turn announces itself at its first worked call.
+    off, or when the session has no task list. With no current task the line
+    nags to start one, once per turn. With a current task the line paces that
+    task on every worked call: the count is the tenure's non-todo calls, so it
+    climbs 1, 2, 3 … as the work piles up, and a task promoted mid-turn starts
+    its own count at 1.
     """
     if tool_name == "todo":
         return ""
@@ -167,10 +168,6 @@ def tool_result_reminder(agent: Any, tool_name: str) -> str:
             return ""
         agent._lifecycle_reminder_issued = True
         return LIFECYCLE_TOOL_REMINDER
-    tenure = store.tenure_seq()
-    if getattr(agent, "_lifecycle_pacing_tenure", None) == tenure:
-        return ""
-    agent._lifecycle_pacing_tenure = tenure
     return _pacing_reminder(current, store.work_count())
 
 
