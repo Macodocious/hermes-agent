@@ -215,8 +215,8 @@ def test_write_demotes_extra_in_progress_to_pending() -> None:
     assert statuses == {"1": "in_progress", "2": "pending"}
 
 
-def test_complete_records_the_start_and_the_final_close_is_silent() -> None:
-    """The start line waits for work; the final close emits nothing."""
+def test_complete_records_the_start_and_holds_the_final_close() -> None:
+    """The start line waits for work; the final close waits for turn end."""
     s = TodoStore()
     s.write([{"id": "1", "content": "A", "status": "pending"}])
     s.transition("begin", "1")
@@ -224,9 +224,10 @@ def test_complete_records_the_start_and_the_final_close_is_silent() -> None:
     s.mark_work()
     assert [n["kind"] for n in s.drain_notices()] == ["started"]
     s.transition("complete", "1")
-    assert s.pending_notices() == []
+    assert [n["kind"] for n in s.pending_notices()] == ["completed"]
+    assert s.pending_notices()[0]["held"] is True
     s.release_held_notices()
-    assert s.drain_notices() == []
+    assert [n["kind"] for n in s.drain_notices()] == ["completed"]
 
 
 def test_cancelling_the_current_task_makes_the_next_one_current() -> None:
