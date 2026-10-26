@@ -3371,13 +3371,24 @@ class TestConcurrentToolExecution:
         mock_msg = _mock_assistant_msg(content="", tool_calls=[tool_call])
         messages = []
 
+        # The batch deadline excludes time the approval layer records as a
+        # human wait, so the stub reports its sleep the same way the real
+        # CLI prompt does — a plugin prompt is charged to the tool, a human
+        # wait is not.
+        waited = {"seconds": 0.0}
+
         def authorize(*_args, **_kwargs):
+            waited["seconds"] += 0.15
             time.sleep(0.15)
             return None
 
         monkeypatch.setattr(
             "hermes_cli.plugins.resolve_pre_tool_block",
             authorize,
+        )
+        monkeypatch.setattr(
+            "tools.approval.human_wait_seconds",
+            lambda *_args, **_kwargs: waited["seconds"],
         )
 
         with patch("run_agent.handle_function_call", return_value="approved-result"):
@@ -3764,6 +3775,7 @@ class TestConcurrentToolExecution:
             dispositions=None,
             action=None,
             item_id=None,
+            reason=None,
         )
         post_call = next(call for call in hook_calls if call[0] == "post_tool_call")
         assert post_call[1]["tool_name"] == "todo"
