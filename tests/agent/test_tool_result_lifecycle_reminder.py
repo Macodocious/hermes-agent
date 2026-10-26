@@ -1,4 +1,4 @@
-"""The tool-result lifecycle reminder: one line, once per turn, no refusal.
+"""The tool-result lifecycle reminder: one line per worked call, no refusal.
 
 The turn-end audit speaks only after the turn. This speaks at the call that
 did the work, which is where the transition belongs. It refuses nothing and
@@ -44,35 +44,25 @@ def test_reminder_fires_once_when_no_task_is_current() -> None:
     assert tool_result_reminder(agent, "read_file") == ""
 
 
-def test_pacing_fires_once_while_a_task_is_current() -> None:
-    agent = _agent(_store_with("in_progress"))
-
-    line = tool_result_reminder(agent, "read_file")
-    assert line.startswith('[Task lifecycle] Task 1 "Build the thing" is current — ')
-    assert "Close it with todo action=complete when its work is done." in line
-    assert tool_result_reminder(agent, "read_file") == ""
-
-
-def test_pacing_counts_this_tenure_work_calls() -> None:
+def test_pacing_fires_on_every_worked_call_and_the_count_climbs() -> None:
     store = _store_with("in_progress")
     agent = _agent(store)
-    store.mark_work()
-    store.mark_work()
-    store.mark_work()
 
+    store.mark_work()
+    first = tool_result_reminder(agent, "read_file")
+    assert first.startswith('[Task lifecycle] Task 1 "Build the thing" is current — ')
+    assert "— 1 tool calls under it" in first
+    assert "Close it with todo action=complete when its work is done." in first
+
+    store.mark_work()
+    second = tool_result_reminder(agent, "read_file")
+    assert "— 2 tool calls under it" in second
+
+    store.mark_work()
     assert "— 3 tool calls under it" in tool_result_reminder(agent, "read_file")
 
 
-def test_pacing_re_emits_next_turn() -> None:
-    agent = _agent(_store_with("in_progress"))
-    assert tool_result_reminder(agent, "read_file") != ""
-
-    agent._lifecycle_pacing_tenure = None  # the turn prologue's per-turn reset
-
-    assert tool_result_reminder(agent, "read_file") != ""
-
-
-def test_pacing_re_emits_after_a_promotion_in_the_same_turn() -> None:
+def test_pacing_restarts_for_a_task_promoted_in_the_same_turn() -> None:
     store = TodoStore()
     store.write([
         {"id": "1", "content": "First", "status": "pending"},
@@ -87,7 +77,7 @@ def test_pacing_re_emits_after_a_promotion_in_the_same_turn() -> None:
 
     line = tool_result_reminder(agent, "read_file")
     assert "Task 2 " in line
-    assert tool_result_reminder(agent, "read_file") == ""
+    assert "— 0 tool calls under it" in line
 
 
 def test_pacing_caps_long_content() -> None:
@@ -99,14 +89,13 @@ def test_pacing_caps_long_content() -> None:
     assert '"' + "x" * PACING_CONTENT_MAX_CHARS + "…\"" in line
 
 
-def test_count_and_tenure_survive_json_round_trip() -> None:
+def test_count_survives_json_round_trip() -> None:
     store = _store_with("in_progress")
     store.mark_work()
     store.mark_work()
     restored = TodoStore.from_json(store.to_json())
 
     assert restored.work_count() == 2
-    assert restored.tenure_seq() == store.tenure_seq()
 
 
 def test_no_reminder_for_the_lifecycle_tool_itself() -> None:

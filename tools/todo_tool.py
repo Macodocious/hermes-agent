@@ -414,11 +414,8 @@ class TodoStore:
         self._start_line_sent_id = ""
         # Per-tenure pacing count: non-todo calls since the current row became
         # current, beside ``_worked_id`` so no model write can set it, reset at
-        # the same tenure boundaries. Plus a monotonic tenure sequence, bumped
-        # at each of those boundaries, so the pacing line can tell "this tenure
-        # already announced itself" from "a fresh row is current".
+        # the same tenure boundaries.
         self._work_count = 0
-        self._tenure_seq = 0
 
     def seed_from_user_message(self, text: Any, origin: str = "") -> Optional[Dict[str, str]]:
         """Seed an empty store with the user's opening message (P5).
@@ -536,7 +533,6 @@ class TodoStore:
             # start line is recorded at the first call under it, not here.
             self._start_line_sent_id = ""
             self._work_count = 0
-            self._tenure_seq += 1
         if not merge:
             self._renumber_items(self._items)
         self._commit(before)
@@ -788,7 +784,6 @@ class TodoStore:
             self._worked_id = ""
             self._start_line_sent_id = ""
             self._work_count = 0
-            self._tenure_seq += 1
             return {"ok": True, "item": item.copy()}
         if action == "pause":
             item["status"] = "paused"
@@ -815,7 +810,6 @@ class TodoStore:
                 # to work on. Cancelling a later row moves nothing.
                 self._start_line_sent_id = ""
                 self._work_count = 0
-                self._tenure_seq += 1
                 self._promote_successor(item)
             return {"ok": True, "item": item.copy()}
         # action == "complete": only the head may close, and its successor —
@@ -860,7 +854,6 @@ class TodoStore:
         self._worked_id = ""
         self._start_line_sent_id = ""
         self._work_count = 0
-        self._tenure_seq += 1
         self._promote_successor(item)
         return {"ok": True, "item": item.copy()}
 
@@ -889,7 +882,6 @@ class TodoStore:
             self._worked_id = ""
             self._start_line_sent_id = ""
             self._work_count = 0
-            self._tenure_seq += 1
 
     def mark_work(self) -> bool:
         """Record that a non-todo call ran under the current row.
@@ -923,11 +915,6 @@ class TodoStore:
         """Non-todo calls recorded under the current tenure (pacing line)."""
         with self._lock:
             return self._work_count
-
-    def tenure_seq(self) -> int:
-        """Monotonic tenure sequence — bumps at every fresh-tenure mark."""
-        with self._lock:
-            return self._tenure_seq
 
     def _record_notice(
         self,
@@ -1288,7 +1275,6 @@ class TodoStore:
                 "last_close_request": self._last_close_request,
                 "start_line_sent_id": self._start_line_sent_id,
                 "work_count": self._work_count,
-                "tenure_seq": self._tenure_seq,
             },
             ensure_ascii=False,
         )
@@ -1329,14 +1315,11 @@ class TodoStore:
         store._start_line_sent_id = str(
             data.get("start_line_sent_id", "") or ""
         ).strip()
-        # The pacing count and tenure sequence ride beside the marks so a
-        # reload keeps counting the same tenure; older state without the keys
-        # starts at zero, and a non-integer value is read as zero rather than
-        # breaking the reload.
+        # The pacing count rides beside the marks so a reload keeps counting
+        # the same tenure; older state without the key starts at zero, and a
+        # non-integer value is read as zero rather than breaking the reload.
         raw_count = data.get("work_count", 0)
-        raw_tenure = data.get("tenure_seq", 0)
         store._work_count = raw_count if isinstance(raw_count, int) else 0
-        store._tenure_seq = raw_tenure if isinstance(raw_tenure, int) else 0
 
         # Restore pending lifecycle notices (defensive): only well-formed
         # entries survive, so a replayed store cannot inject a bogus notice.
