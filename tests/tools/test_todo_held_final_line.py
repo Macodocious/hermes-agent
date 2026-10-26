@@ -1,9 +1,9 @@
-"""A close that leaves no active task emits no completion line.
+"""A close that leaves no active task holds its completion line to turn end.
 
 A close that promotes a successor records its completion line immediately. A
-close with no successor is the turn's final completion: the user's rule is
-that once the task is completed it is final, and with no active tasks nothing
-is emitted.
+close with no successor is the turn's final completion: its line is held, the
+mid-turn drain skips it, and the turn finalizer releases it so the finish
+still ships.
 """
 
 from agent import task_manager
@@ -39,15 +39,16 @@ class TestFinalClose:
         )
         assert notice["held"] is False
 
-    def test_a_close_with_no_successor_records_nothing(self):
+    def test_a_close_with_no_successor_records_a_held_line(self):
         store = _store("one")
         assert store.transition("begin", "1")["ok"]
         store.mark_work()
         store.drain_notices()
         assert store.transition("complete", "1")["ok"]
-        assert [
+        notice = next(
             n for n in store.pending_notices() if n["kind"] == NOTICE_COMPLETED
-        ] == []
+        )
+        assert notice["held"] is True
 
     def test_a_cancellation_is_recorded(self):
         store = _store("one")
@@ -60,7 +61,7 @@ class TestFinalClose:
 
 
 class TestDrain:
-    def test_the_successor_close_ships_and_the_final_close_is_silent(self):
+    def test_the_successor_close_ships_and_the_final_close_waits(self):
         store = _store("one", "two")
         assert store.transition("begin", "1")["ok"]
         store.mark_work()
@@ -76,11 +77,11 @@ class TestDrain:
             "✅ Task completed: one",
             "▶️ Working on: two",
         ]
-        assert store.pending_notices() == []
+        assert [n["held"] for n in store.pending_notices()] == [True]
 
 
 class TestRelease:
-    def test_release_sends_nothing_after_a_final_close(self):
+    def test_release_ships_the_final_close(self):
         store = _store("one")
         assert store.transition("begin", "1")["ok"]
         store.mark_work()
@@ -90,5 +91,5 @@ class TestRelease:
 
         task_manager.release_held_notices(_agent(store, sent.append))
 
-        assert sent == []
+        assert sent == ["✅ Task completed: one"]
         assert store.pending_notices() == []

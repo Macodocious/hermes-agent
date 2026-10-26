@@ -152,9 +152,13 @@ def test_one_task_per_message_spreads_the_notices(agent) -> None:
         (NOTICE_STARTED, "2"),
     ]
     _send(agent, "m5", _complete("2"))
-    # The last close leaves no active task: nothing is emitted.
-    assert agent._todo_store.pending_notices() == []
+    # The last close leaves no active task: its line waits for turn end.
+    assert [(n["kind"], n["id"]) for n in agent._todo_store.pending_notices()] == [
+        (NOTICE_COMPLETED, "2"),
+    ]
     agent._todo_store.release_held_notices()
-    assert agent._todo_store.drain_notices() == []
+    assert [(n["kind"], n["id"]) for n in agent._todo_store.drain_notices()] == [
+        (NOTICE_COMPLETED, "2"),
+    ]
     assert agent._todo_store.read()[0]["status"] == "completed"
     assert agent._todo_store.read()[1]["status"] == "completed"

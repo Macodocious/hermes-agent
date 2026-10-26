@@ -197,20 +197,20 @@ def _final_close_store():
     return store
 
 
-def test_the_final_close_ships_nothing_at_turn_end():
+def test_the_final_close_ships_at_turn_end():
     agent = _StubAgent(raise_in=())
     store = _final_close_store()
-    assert store.pending_notices() == []
+    assert [n["held"] for n in store.pending_notices()] == [True]
     sent = []
     agent._todo_store = store
     agent.todo_notice_callback = sent.append
 
     _run(agent)
 
-    assert sent == []
+    assert sent == ["✅ Task completed: one"]
 
 
-def test_the_final_close_ships_nothing_on_an_interrupted_turn():
+def test_the_final_close_ships_on_an_interrupted_turn():
     agent = _StubAgent(raise_in=())
     store = _final_close_store()
     sent = []
@@ -219,4 +219,4 @@ def test_the_final_close_ships_nothing_on_an_interrupted_turn():
 
     _run(agent, interrupted=True)
 
-    assert sent == []
+    assert sent == ["✅ Task completed: one"]
