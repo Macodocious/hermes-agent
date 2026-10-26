@@ -149,6 +149,9 @@ class TestTransportTagsAmbiguity:
         transport = WebSocketRelayTransport.__new__(WebSocketRelayTransport)
         transport._closing = False
         transport._ws = object()  # non-None so we reach the pending path
+        # The branch's send_outbound also checks the reconnect supervisor
+        # before registering a future; __new__ skips __init__, so pin it.
+        transport._supervisor = None
         transport._pending = {}
         transport._outbound_timeout_s = 0.01
         transport._bot_id_for = lambda p: None
