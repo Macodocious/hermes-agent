@@ -21989,7 +21989,8 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 source,
                 touch_activity=not is_internal,
             )
-        except Exception:
+        except Exception as exc:
+            logger.debug("post-turn session resolution failed: %s", exc)
             return agent_result
 
         suppressed = agent_result
@@ -22007,29 +22008,37 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             plan_approval_nudge = ""
             if isinstance(agent_result, dict):
                 plan_approval_nudge = str(agent_result.get("plan_approval_nudge") or "")
-            suppress = await self._post_turn_goal_continuation(
+            try:
+                suppress = await self._post_turn_goal_continuation(
+                    session_entry=session_entry,
+                    source=source,
+                    final_response=final_text,
+                    task_lifecycle_nudge=lifecycle_nudge,
+                    plan_approval_nudge=plan_approval_nudge,
+                    user_message=(
+                        ""
+                        if event is not None and self._is_goal_continuation_event(event)
+                        else str(getattr(event, "text", "") or "")
+                    ),
+                    user_initiated=(
+                        not self._is_goal_continuation_event(event) if event is not None else True
+                    ),
+                    turn_started_at=(
+                        self._running_agents_ts.get(quick_key, 0.0) if quick_key else 0.0
+                    ),
+                )
+                if suppress:
+                    suppressed = None
+            except Exception as exc:
+                logger.debug("goal continuation hook failed: %s", exc)
+        try:
+            await self._post_turn_loop_completion(
                 session_entry=session_entry,
                 source=source,
                 final_response=final_text,
-                task_lifecycle_nudge=lifecycle_nudge,
-                plan_approval_nudge=plan_approval_nudge,
-                user_message=(
-                    ""
-                    if event is not None and self._is_goal_continuation_event(event)
-                    else str(getattr(event, "text", "") or "")
-                ),
-                user_initiated=(
-                    not self._is_goal_continuation_event(event) if event is not None else True
-                ),
-                turn_started_at=self._running_agents_ts.get(quick_key, 0.0) if quick_key else 0.0,
             )
-            if suppress:
-                suppressed = None
-        await self._post_turn_loop_completion(
-            session_entry=session_entry,
-            source=source,
-            final_response=final_text,
-        )
+        except Exception as exc:
+            logger.debug("loop completion hook failed: %s", exc)
         return suppressed
 
 
