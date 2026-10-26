@@ -1791,11 +1791,19 @@ def _build_child_agent(
         import shutil as _shutil
 
         if not _shutil.which(override_acp_command):
-            raise ValueError(
-                f"Pinned delegation command '{override_acp_command}' was not "
-                f"found on PATH. Install it or remove delegation.command from "
-                f"config.yaml."
+            # Fork contract: a stale pin must not crash delegation on a host
+            # that has no ACP CLI — a Telegram or cron agent with leftover
+            # ``delegation.command`` would otherwise fail every spawn. Upstream
+            # #80450 refuses loudly instead; that behavior does not exist on
+            # this branch, so keep the graceful drop but log it, so the
+            # misconfiguration is still visible.
+            logger.warning(
+                "Ignoring pinned delegation command %r: not found on PATH; "
+                "falling back to the default transport.",
+                override_acp_command,
             )
+            override_acp_command = None
+            override_acp_args = []
     effective_acp_command = override_acp_command or getattr(
         parent_agent, "acp_command", None
     )

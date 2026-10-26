@@ -1463,9 +1463,6 @@ class TestProfilesToServe:
         serve = dict(profiles_to_serve(multiplex=True))
         assert set(serve) == {"default", "coder"}
 
-        assert set(serve) == {"default", "worker"}
-        assert serve["worker"] == get_profile_dir("worker")
-
 
 # ---------------------------------------------------------------------------
 # resolve_profile_env spelling preservation (#82581 junction follow-up)

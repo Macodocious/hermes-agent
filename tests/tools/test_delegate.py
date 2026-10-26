@@ -3639,17 +3639,27 @@ class TestFallbackModelInheritance(unittest.TestCase):
         _, kwargs = MockAgent.call_args
         self.assertIsNone(kwargs["fallback_model"])
 
-    def test_pinned_acp_command_missing_raises(self):
-        """A pinned delegation command absent from PATH must refuse the spawn
-        loudly instead of silently falling back to the default transport
-        (#80450)."""
+    def test_pinned_acp_command_missing_falls_back(self):
+        """A pinned delegation command absent from PATH is dropped with a
+        warning instead of refusing the spawn.
+
+        Upstream #80450 refuses loudly. This branch keeps the graceful
+        fallback, because a Telegram or cron agent carrying a stale
+        ``delegation.command`` must still be able to delegate on a host with
+        no ACP CLI — the pinned override is ignored, not fatal.
+        """
         parent = _make_mock_parent(depth=0)
         parent._fallback_chain = None
+        # The mock parent is a MagicMock, so every unset attribute is itself a
+        # mock; pin the ACP fields to real values or the fallback check would
+        # pass a MagicMock through as the child's acp_command.
+        parent.acp_command = None
+        parent.acp_args = []
 
         with patch("run_agent.AIAgent") as MockAgent:
             MockAgent.return_value = MagicMock()
             with patch("shutil.which", return_value=None):
-                with self.assertRaises(ValueError) as ctx:
+                with self.assertLogs("tools.delegate_tool", level="WARNING") as logs:
                     _build_child_agent(
                         task_index=0,
                         goal="test pinned acp command",
@@ -3661,8 +3671,14 @@ class TestFallbackModelInheritance(unittest.TestCase):
                         task_count=1,
                         override_acp_command="definitely-not-a-real-binary",
                     )
-        self.assertIn("definitely-not-a-real-binary", str(ctx.exception))
-        self.assertIn("not", str(ctx.exception).lower())
+
+        _, kwargs = MockAgent.call_args
+        self.assertNotEqual(kwargs.get("provider"), "copilot-acp")
+        self.assertIsNone(kwargs.get("acp_command"))
+        self.assertTrue(
+            any("definitely-not-a-real-binary" in line for line in logs.output),
+            f"expected a warning naming the dropped command, got {logs.output}",
+        )
 
     def test_resolve_credentials_rejects_missing_pinned_command(self):
         """_resolve_delegation_credentials refuses a provider whose pinned
