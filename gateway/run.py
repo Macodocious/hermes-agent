@@ -18056,88 +18056,16 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     "protect the transcript, this message was not processed. "
                     "Wait for the active turn to finish, then resend it."
                 )
-            # Goal continuation: after the agent returns a final response
-            # for this turn, check any standing /goal — the judge will
-            # either mark it done, pause it (budget), or enqueue a
-            # continuation prompt back through the adapter FIFO so the
-            # next turn makes more progress. Wrapped in try/except so a
-            # broken judge never breaks normal message handling.
             try:
-                _final_text = ""
-                if isinstance(_agent_result, dict):
-                    _final_text = str(_agent_result.get("final_response") or "")
-                elif isinstance(_agent_result, str):
-                    _final_text = _agent_result
-                # Skip for empty responses (interrupted / errored) — the
-                # judge would almost always say "continue" and we'd loop
-                # on error. Let the user drive the next turn.
-                if _final_text.strip():
-                    try:
-                        session_entry = await self.async_session_store.get_or_create_session(
-                            source,
-                            touch_activity=not is_internal,
-                        )
-                    except Exception:
-                        session_entry = None
-                    if session_entry is not None:
-                        # Task-lifecycle pull-back (P1/P2): if the turn-end
-                        # audit flagged work with no open task, enqueue the
-                        # nudge ahead of any goal continuation so the agent
-                        # is pulled back to the lifecycle.
-                        _lifecycle_nudge = ""
-                        if isinstance(_agent_result, dict):
-                            _lifecycle_nudge = str(
-                                _agent_result.get("task_lifecycle_nudge") or ""
-                            )
-                        # Plan-approval relay: when this turn approved a plan,
-                        # the finalizer stamped the user-role text the gateway
-                        # must deliver (and the turn must ship nothing).
-                        _plan_approval_nudge = ""
-                        if isinstance(_agent_result, dict):
-                            _plan_approval_nudge = str(
-                                _agent_result.get("plan_approval_nudge") or ""
-                            )
-                        _suppress_final_response = await self._post_turn_goal_continuation(
-                            session_entry=session_entry,
-                            source=source,
-                            final_response=_final_text,
-                            task_lifecycle_nudge=_lifecycle_nudge,
-                            plan_approval_nudge=_plan_approval_nudge,
-                            user_message=(
-                                ""
-                                if self._is_goal_continuation_event(event)
-                                else str(getattr(event, "text", "") or "")
-                            ),
-                            user_initiated=not self._is_goal_continuation_event(event),
-                            turn_started_at=self._running_agents_ts.get(_quick_key, 0.0),
-                        )
-                        if _suppress_final_response:
-                            # Two suppressions share this flag. (a) The judge
-                            # said DONE on a synthetic goal-continuation turn:
-                            # the wrap-up prose on this turn is redundant — the
-                            # conversation prose already shipped on the real
-                            # user turn — so blank the final response and let
-                            # the deferred "✅ Task completed" line be the only
-                            # user-visible completion message. Real user turns
-                            # are never suppressed by (a). (b) The user approved
-                            # a plan at the authorization prompt on this turn
-                            # (Mac's "zero output"): the approval is relayed as
-                            # the next user-role turn, so this turn's prose would
-                            # only narrate what that turn now instructs. (b) is
-                            # the one deliberate suppression of a real-turn
-                            # response, and it is scoped to the approval turn by
-                            # the finalizer's stamp.
-                            _agent_result = None
-                        # /loop tick completion: if this turn was a loop
-                        # wakeup, evaluate it (LOOP_COMPLETE marker, --until
-                        # judge, caps) and schedule the next tick.
-                        await self._post_turn_loop_completion(
-                            session_entry=session_entry,
-                            source=source,
-                            final_response=_final_text,
-                        )
+                _agent_result = await self._run_post_turn_hooks(
+                    agent_result=_agent_result,
+                    source=source,
+                    is_internal=is_internal,
+                    event=event,
+                    quick_key=_quick_key,
+                )
             except Exception as _goal_exc:
-                logger.debug("goal continuation hook failed: %s", _goal_exc)
+                logger.debug("post-turn hook failed: %s", _goal_exc)
             return _agent_result
         finally:
             # MoA one-shot restore must run on EVERY exit path, not just
@@ -22034,6 +21962,75 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 )
         except Exception as exc:
             logger.debug("task-lifecycle nudge enqueue failed: %s", exc)
+
+    async def _run_post_turn_hooks(
+        self,
+        *,
+        agent_result: Any,
+        source: Any,
+        is_internal: bool,
+        event: Any = None,
+        quick_key: str = "",
+    ) -> Any:
+        """Run goal and loop bookkeeping after an agent turn returns.
+
+        Returns the (possibly suppressed) agent result: a DONE verdict on a
+        synthetic goal-continuation turn and a plan-approval turn both blank
+        their prose, and the caller must ship nothing for them.
+        """
+        final_text = ""
+        if isinstance(agent_result, dict):
+            final_text = str(agent_result.get("final_response") or "")
+        elif isinstance(agent_result, str):
+            final_text = agent_result
+
+        try:
+            session_entry = await self.async_session_store.get_or_create_session(
+                source,
+                touch_activity=not is_internal,
+            )
+        except Exception:
+            return agent_result
+
+        suppressed = agent_result
+
+        # Empty interrupted/errored responses must not drive /goal, but an
+        # in-flight /loop tick still needs to be released and rescheduled.
+        if final_text.strip():
+            # Task-lifecycle pull-back (P1/P2): a turn-end audit that flagged
+            # work with no open task is queued ahead of any goal continuation.
+            lifecycle_nudge = ""
+            if isinstance(agent_result, dict):
+                lifecycle_nudge = str(agent_result.get("task_lifecycle_nudge") or "")
+            # Plan-approval relay: the finalizer stamps the user-role text the
+            # gateway must deliver, and the turn itself ships nothing.
+            plan_approval_nudge = ""
+            if isinstance(agent_result, dict):
+                plan_approval_nudge = str(agent_result.get("plan_approval_nudge") or "")
+            suppress = await self._post_turn_goal_continuation(
+                session_entry=session_entry,
+                source=source,
+                final_response=final_text,
+                task_lifecycle_nudge=lifecycle_nudge,
+                plan_approval_nudge=plan_approval_nudge,
+                user_message=(
+                    ""
+                    if event is not None and self._is_goal_continuation_event(event)
+                    else str(getattr(event, "text", "") or "")
+                ),
+                user_initiated=(
+                    not self._is_goal_continuation_event(event) if event is not None else True
+                ),
+                turn_started_at=self._running_agents_ts.get(quick_key, 0.0) if quick_key else 0.0,
+            )
+            if suppress:
+                suppressed = None
+        await self._post_turn_loop_completion(
+            session_entry=session_entry,
+            source=source,
+            final_response=final_text,
+        )
+        return suppressed
 
 
 

@@ -755,7 +755,9 @@ class LoopManager:
             try:
                 from hermes_cli.goals import judge_goal
 
-                verdict, reason, _pf, _wait, _tf = judge_goal(s.until, last_response)
+                verdict, reason, _pf, _wait, _tf, _blocked, _clarify = judge_goal(
+                    s.until, last_response
+                )
             except Exception as exc:
                 verdict, reason = "continue", f"judge unavailable: {type(exc).__name__}"
             if verdict == "done":

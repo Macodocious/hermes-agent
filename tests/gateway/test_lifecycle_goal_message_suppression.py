@@ -110,7 +110,7 @@ async def test_lifecycle_goal_continue_suppresses_progress_line(hermes_home):
     mgr = GoalManager(session_entry.session_id)
     mgr.set("Complete the task: ship the feature", lifecycle=True)
 
-    with patch("hermes_cli.goals.judge_goal", return_value=("continue", "still working", False, None, False, False)):
+    with patch("hermes_cli.goals.judge_goal", return_value=("continue", "still working", False, None, False, False, False)):
         await runner._post_turn_goal_continuation(
             session_entry=session_entry,
             source=src,
@@ -141,7 +141,7 @@ async def test_lifecycle_goal_done_rewrites_completed_message(hermes_home):
     store.write([{"id": "lftask-1", "content": "ship the feature", "status": "in_progress"}])
 
     with (
-        patch("hermes_cli.goals.judge_goal", return_value=("done", "the feature shipped", False, None, False, False)),
+        patch("hermes_cli.goals.judge_goal", return_value=("done", "the feature shipped", False, None, False, False, False)),
         patch("hermes_cli.tasks.load_todo", return_value=store),
     ):
         await runner._post_turn_goal_continuation(
@@ -168,7 +168,7 @@ async def test_native_goal_continue_keeps_progress_line(hermes_home):
     mgr = GoalManager(session_entry.session_id)
     mgr.set("polish the docs")
 
-    with patch("hermes_cli.goals.judge_goal", return_value=("continue", "still needs work", False, None, False, False)):
+    with patch("hermes_cli.goals.judge_goal", return_value=("continue", "still needs work", False, None, False, False, False)):
         await runner._post_turn_goal_continuation(
             session_entry=session_entry,
             source=src,
@@ -202,7 +202,7 @@ async def test_lifecycle_goal_done_keeps_final_response(hermes_home):
     store.write([{"id": "lftask-2", "content": "ship the feature", "status": "in_progress"}])
 
     with (
-        patch("hermes_cli.goals.judge_goal", return_value=("done", "the feature shipped", False, None, False, False)),
+        patch("hermes_cli.goals.judge_goal", return_value=("done", "the feature shipped", False, None, False, False, False)),
         patch("hermes_cli.tasks.load_todo", return_value=store),
     ):
         suppress = await runner._post_turn_goal_continuation(
@@ -250,7 +250,7 @@ async def test_lifecycle_goal_done_on_continuation_turn_suppresses(hermes_home):
     store.write([{"id": "lftask-3", "content": "ship the feature", "status": "in_progress"}])
 
     with (
-        patch("hermes_cli.goals.judge_goal", return_value=("done", "the feature shipped", False, None, False, False)),
+        patch("hermes_cli.goals.judge_goal", return_value=("done", "the feature shipped", False, None, False, False, False)),
         patch("hermes_cli.tasks.load_todo", return_value=store),
     ):
         suppress = await runner._post_turn_goal_continuation(
@@ -277,7 +277,7 @@ async def test_native_goal_done_returns_no_suppress_flag(hermes_home):
     mgr = GoalManager(session_entry.session_id)
     mgr.set("polish the docs")
 
-    with patch("hermes_cli.goals.judge_goal", return_value=("done", "docs polished", False, None, False, False)):
+    with patch("hermes_cli.goals.judge_goal", return_value=("done", "docs polished", False, None, False, False, False)):
         suppress = await runner._post_turn_goal_continuation(
             session_entry=session_entry,
             source=src,
@@ -302,7 +302,7 @@ async def test_lifecycle_goal_continue_returns_no_suppress_flag(hermes_home):
     mgr = GoalManager(session_entry.session_id)
     mgr.set("Complete the task: ship the feature", lifecycle=True)
 
-    with patch("hermes_cli.goals.judge_goal", return_value=("continue", "still working", False, None, False, False)):
+    with patch("hermes_cli.goals.judge_goal", return_value=("continue", "still working", False, None, False, False, False)):
         suppress = await runner._post_turn_goal_continuation(
             session_entry=session_entry,
             source=src,
@@ -428,7 +428,7 @@ async def test_rejection_gate_path_continuation_done_suppresses(hermes_home):
 
     # Turn 1 — real user turn: judge says done, user rejects finalization.
     with (
-        patch("hermes_cli.goals.judge_goal", return_value=("done", "the feature shipped", False, None, False, False)),
+        patch("hermes_cli.goals.judge_goal", return_value=("done", "the feature shipped", False, None, False, False, False)),
         patch("gateway.run._is_lifecycle_rejection_message", return_value=True),
     ):
         await runner._post_turn_goal_continuation(
@@ -452,7 +452,7 @@ async def test_rejection_gate_path_continuation_done_suppresses(hermes_home):
     assert state.last_verdict == "done"
 
     # Turn 2 — synthetic continuation turn: judge says done again.
-    with patch("hermes_cli.goals.judge_goal", return_value=("done", "the feature shipped", False, None, False, False)):
+    with patch("hermes_cli.goals.judge_goal", return_value=("done", "the feature shipped", False, None, False, False, False)):
         suppress = await runner._post_turn_goal_continuation(
             session_entry=session_entry,
             source=src,
@@ -501,7 +501,7 @@ async def test_working_continuation_path_first_done_ships(hermes_home):
     store.write([{"id": "lftask-4", "content": "verify the refactor", "status": "in_progress"}])
 
     with (
-        patch("hermes_cli.goals.judge_goal", return_value=("done", "the refactor is verified", False, None, False, False)),
+        patch("hermes_cli.goals.judge_goal", return_value=("done", "the refactor is verified", False, None, False, False, False)),
         patch("hermes_cli.tasks.load_todo", return_value=store),
     ):
         suppress = await runner._post_turn_goal_continuation(
@@ -538,7 +538,7 @@ async def test_finalization_hold_keeps_task_ongoing(hermes_home):
 
     save_goal(session_entry.session_id, mgr.state)
 
-    with patch("hermes_cli.goals.judge_goal", return_value=("done", "the feature shipped", False, None, False, False)):
+    with patch("hermes_cli.goals.judge_goal", return_value=("done", "the feature shipped", False, None, False, False, False)):
         suppress = await runner._post_turn_goal_continuation(
             session_entry=session_entry,
             source=src,
@@ -587,7 +587,7 @@ async def test_final_finalization_releases_hold_and_finalizes(hermes_home):
     store.write([{"id": "lftask-5", "content": "ship the feature", "status": "in_progress"}])
 
     with (
-        patch("hermes_cli.goals.judge_goal", return_value=("done", "the feature shipped", False, None, False, False)),
+        patch("hermes_cli.goals.judge_goal", return_value=("done", "the feature shipped", False, None, False, False, False)),
         patch("hermes_cli.tasks.load_todo", return_value=store),
         patch("gateway.run._is_lifecycle_rejection_message", return_value=False),
     ):
