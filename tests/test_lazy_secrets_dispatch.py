@@ -18,7 +18,11 @@ from pathlib import Path
 import pytest
 
 
-def _run_hermes(args: list[str], timeout: int = 30) -> subprocess.CompletedProcess[str]:
+def _run_hermes(args: list[str], timeout: int = 120) -> subprocess.CompletedProcess[str]:
+    # 30 s was not enough once the suite runs files in parallel: a cold
+    # ``hermes update --check`` has to import the CLI and probe the network
+    # while dozens of other subprocesses compete for the same cores, and the
+    # timeout tripped on load rather than on a hang.
     """Run hermes CLI as a subprocess from repo root."""
     repo_root = Path(__file__).parent.parent
     return subprocess.run(

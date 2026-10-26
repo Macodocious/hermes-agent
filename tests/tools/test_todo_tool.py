@@ -14,13 +14,14 @@ class TestWriteAndRead:
         ]
         result = store.write(items)
         assert len(result) == 2
-        # Replace mode lifts the active step ahead of the pending one and
-        # renumbers ids 1..N in that order (the fork's positional addressing).
+        # Replace mode keeps the caller's order and renumbers ids 1..N in that
+        # order (the fork's positional addressing).
         assert result[0]["id"] == "1"
-        assert result[0]["status"] == "in_progress"
-        assert result[0]["content"] == "Second task"
+        assert result[0]["status"] == "pending"
+        assert result[0]["content"] == "First task"
         assert result[1]["id"] == "2"
-        assert result[1]["content"] == "First task"
+        assert result[1]["status"] == "in_progress"
+        assert result[1]["content"] == "Second task"
 
     def test_read_returns_copy(self):
         store = TodoStore()
@@ -39,21 +40,24 @@ class TestWriteAndRead:
         # Duplicate ids keep the last occurrence; replace-mode renumbers to
         # sequential ids in list order.
         assert result == [
-            {"id": "1", "content": "Latest version", "status": "in_progress"},
-            {"id": "2", "content": "Other task", "status": "pending"},
+            {"id": "1", "content": "Other task", "status": "pending"},
+            {"id": "2", "content": "Latest version", "status": "in_progress"},
         ]
 
-    def test_write_moves_active_item_before_earlier_pending_step(self):
+    def test_write_keeps_caller_order_for_active_step(self):
         store = TodoStore()
         result = store.write([
             {"id": "1", "content": "Already done", "status": "completed"},
             {"id": "2", "content": "Verify freed space", "status": "pending"},
             {"id": "3", "content": "Move archives to Trash", "status": "in_progress"},
         ])
+        # List order is priority: the write must not lift the active step over
+        # an earlier pending one. The single-current-task invariant is enforced
+        # by refusing a start past an open earlier task, not by reordering.
         assert result == [
             {"id": "1", "content": "Already done", "status": "completed"},
-            {"id": "2", "content": "Move archives to Trash", "status": "in_progress"},
-            {"id": "3", "content": "Verify freed space", "status": "pending"},
+            {"id": "2", "content": "Verify freed space", "status": "pending"},
+            {"id": "3", "content": "Move archives to Trash", "status": "in_progress"},
         ]
 
 
@@ -145,7 +149,8 @@ class TestMergeMode:
         ])
         store.write([{"id": "1", "status": "completed"}], merge=True)
         assert store.read()[0]["plan"] == "/plans/p/plan.md"
-    def test_merge_reorders_active_item_ahead_of_earlier_pending_step(self):
+
+    def test_merge_keeps_item_position_when_activating(self):
         store = TodoStore()
         store.write([
             {"id": "1", "content": "Completed", "status": "completed"},
@@ -156,10 +161,12 @@ class TestMergeMode:
             [{"id": "3", "status": "in_progress"}],
             merge=True,
         )
+        # Merge updates in place: activating an item must not move it, because
+        # list order is the priority order the user sees.
         assert result == [
             {"id": "1", "content": "Completed", "status": "completed"},
-            {"id": "3", "content": "Move archives to Trash", "status": "in_progress"},
             {"id": "2", "content": "Verify freed space", "status": "pending"},
+            {"id": "3", "content": "Move archives to Trash", "status": "in_progress"},
         ]
 
 

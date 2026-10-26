@@ -21,6 +21,7 @@ from tools.delegate_tool import (
     DELEGATE_BLOCKED_TOOLS,
     DELEGATE_TASK_SCHEMA,
     DelegateEvent,
+    _DEFAULT_MAX_CONCURRENT_CHILDREN,
     _get_max_concurrent_children,
     _load_config,
     _LEGACY_EVENT_MAP,
@@ -1454,7 +1455,7 @@ class TestBlockedTools(unittest.TestCase):
             _get_max_spawn_depth, _get_orchestrator_enabled,
             _MIN_SPAWN_DEPTH,
         )
-        self.assertEqual(_get_max_concurrent_children(), 3)
+        self.assertEqual(_get_max_concurrent_children(), _DEFAULT_MAX_CONCURRENT_CHILDREN)
         self.assertEqual(MAX_DEPTH, 1)
         self.assertEqual(_get_max_spawn_depth(), 1)       # default: flat
         self.assertTrue(_get_orchestrator_enabled())      # default
@@ -2970,7 +2971,9 @@ class TestConcurrencyDefaults(unittest.TestCase):
     def test_default_is_three(self, mock_cfg):
         # Clear env var if set
         with patch.dict(os.environ, {}, clear=True):
-            self.assertEqual(_get_max_concurrent_children(), 3)
+            self.assertEqual(
+                _get_max_concurrent_children(), _DEFAULT_MAX_CONCURRENT_CHILDREN
+            )
 
     @patch("tools.delegate_tool._load_config",
            return_value={"max_concurrent_children": 10})

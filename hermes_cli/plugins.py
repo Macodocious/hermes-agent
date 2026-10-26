@@ -6293,6 +6293,7 @@ def resolve_pre_tool_block(
     api_request_id: str = "",
     middleware_trace: Optional[List[Dict[str, Any]]] = None,
     reasoning: str = "",
+    _details: Optional["_PreToolCallDirective"] = None,
 ) -> Optional[str]:
     """Resolve the pre_tool_call directive to a final block message (or None).
 
@@ -6307,8 +6308,12 @@ def resolve_pre_tool_block(
     dispatch paths: an ``approve`` directive whose gate errors, denies, or
     times out is fail-closed to a block; ``block`` blocks with its message;
     anything else proceeds.
+
+    ``_details`` lets a caller that already invoked the hooks pass the
+    directive in, so the block decision still runs through this one function
+    without dispatching ``pre_tool_call`` twice.
     """
-    details = _get_pre_tool_call_directive_details(
+    details = _details or _get_pre_tool_call_directive_details(
         tool_name, args, task_id=task_id, session_id=session_id,
         tool_call_id=tool_call_id, turn_id=turn_id,
         api_request_id=api_request_id, middleware_trace=middleware_trace,
@@ -6389,6 +6394,7 @@ def _dispatch_pre_tool_call_hooks(
     turn_id: str = "",
     api_request_id: str = "",
     middleware_trace: Optional[List[Dict[str, Any]]] = None,
+    reasoning: str = "",
 ) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
     """Invoke ``pre_tool_call`` hooks once and process all response types.
 
@@ -6412,10 +6418,19 @@ def _dispatch_pre_tool_call_hooks(
         tool_name, args, task_id=task_id, session_id=session_id,
         tool_call_id=tool_call_id, turn_id=turn_id,
         api_request_id=api_request_id, middleware_trace=middleware_trace,
+        reasoning=reasoning,
     )
-    block_msg = _resolve_block_from_details(
-        details, tool_name,
-        turn_id=turn_id, tool_call_id=tool_call_id, session_id=session_id,
+    block_msg = resolve_pre_tool_block(
+        tool_name,
+        args,
+        task_id=task_id,
+        session_id=session_id,
+        tool_call_id=tool_call_id,
+        turn_id=turn_id,
+        api_request_id=api_request_id,
+        middleware_trace=middleware_trace,
+        reasoning=reasoning,
+        _details=details,
     )
     return (block_msg, details.modified_args)
 
