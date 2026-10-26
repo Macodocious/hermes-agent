@@ -70,6 +70,38 @@ FILE_MUTATION_TOOLS = frozenset({"write_file", "patch"})
 # Mirrors the read_file_tool signature defaults in tools/file_tools.py.
 READ_FILE_DEFAULT_OFFSET = 1
 READ_FILE_DEFAULT_LIMIT = 500
+# Tools that are legitimately re-invoked with identical arguments and may
+# legitimately return an unchanged result while waiting on external progress —
+# background-process management and job pollers. The identical-call loop
+# notice (agent.stall_guards) never fires for these, so polling patterns like
+# ``process(action="poll")`` or repeatedly checking a generation job stay
+# unannotated.
+STALL_GUARD_REPEATABLE_TOOLS = frozenset(
+    {
+        "process",
+        "bfl_flux3_get_result",
+    }
+)
+
+# Poller naming conventions (e.g. ``<vendor>_get_result``) used by generated /
+# MCP tool surfaces. Matched as suffixes so vendor-prefixed pollers are exempt
+# without enumerating every vendor.
+_STALL_GUARD_REPEATABLE_SUFFIXES = (
+    "_get_result",
+    "_poll",
+)
+
+# The notice fires on the Nth consecutive identical call (same tool, same
+# canonical args, same result). 3 tolerates one legitimate double-check while
+# catching the observed re-issue loops (3x/4x identical calls in eval traces).
+STALL_GUARD_IDENTICAL_CALL_THRESHOLD = 3
+
+
+def is_stall_guard_repeatable(tool_name: str) -> bool:
+    """Whether a tool is exempt from the identical-call loop notice."""
+    if tool_name in STALL_GUARD_REPEATABLE_TOOLS:
+        return True
+    return tool_name.endswith(_STALL_GUARD_REPEATABLE_SUFFIXES)
 
 
 @dataclass(frozen=True)
@@ -306,6 +338,14 @@ class ToolCallGuardrailController:
         self._repeat_counts: dict[tuple[str, ...], int] = {}
         self._read_coverage: dict[str, list[tuple[int, int]]] = {}
         self._halt_decision: ToolGuardrailDecision | None = None
+        # Identical-call loop-breaker state (agent.stall_guards): tracks the
+        # CONSECUTIVE streak of identical (tool, canonical args) calls whose
+        # results were also identical. Any different call — or a different
+        # result — resets the streak, so legitimate re-reads after edits and
+        # varied polling are never flagged. Per-turn, like everything else here.
+        self._identical_streak_sig: ToolCallSignature | None = None
+        self._identical_streak_result_hash: str = ""
+        self._identical_streak_count: int = 0
         # Per-turn runaway-loop cap counters. Reset every turn (this method
         # runs at the start of each run_conversation), so the caps bound a
         # single agent loop rather than accumulating across the session.
@@ -630,6 +670,52 @@ class ToolCallGuardrailController:
         if len(searches) > limit:
             lines.append(f"  …and {len(searches) - limit} more searches")
         return lines
+    def observe_identical_call(
+        self,
+        tool_name: str,
+        args: Mapping[str, Any] | None,
+        result: str | None,
+    ) -> str | None:
+        """Track consecutive identical calls; return a loop-breaker notice or None.
+
+        Fires the compact notice when the SAME tool is called with identical
+        canonical arguments AND returns an identical result for the
+        ``STALL_GUARD_IDENTICAL_CALL_THRESHOLD``-th (and every subsequent)
+        consecutive time within the turn. Purely observational — never blocks
+        the call. Allowlisted pollers (``is_stall_guard_repeatable``) are
+        exempt, and any intervening different call or changed result resets
+        the streak. Callers append the returned notice to the tool RESULT at
+        construction time, which is cache-safe: tool results are append-only
+        and never mutate already-sent context.
+        """
+        if is_stall_guard_repeatable(tool_name):
+            # Don't let a poller streak carry over into the next tool either.
+            self._identical_streak_sig = None
+            self._identical_streak_count = 0
+            return None
+
+        signature = ToolCallSignature.from_call(tool_name, _coerce_args(args))
+        result_hash = _result_hash(result)
+        if (
+            self._identical_streak_sig == signature
+            and self._identical_streak_result_hash == result_hash
+        ):
+            self._identical_streak_count += 1
+        else:
+            self._identical_streak_sig = signature
+            self._identical_streak_result_hash = result_hash
+            self._identical_streak_count = 1
+
+        count = self._identical_streak_count
+        if count < STALL_GUARD_IDENTICAL_CALL_THRESHOLD:
+            return None
+        ordinal = f"{count}{'th' if 11 <= count % 100 <= 13 else {1: 'st', 2: 'nd', 3: 'rd'}.get(count % 10, 'th')}"
+        return (
+            f"[hermes note: this is the {ordinal} consecutive identical call to "
+            f"{tool_name} with identical arguments returning the same result. "
+            "Do not repeat it — change arguments, use a different tool, or "
+            "proceed with what you have.]"
+        )
 
     def _check_loop_cap(
         self,
