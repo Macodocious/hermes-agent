@@ -4327,9 +4327,11 @@ class TestAgentRuntimePostHookOwnershipSync:
         # runtime owns its post hook too, but the tool only exists in the
         # model's list when a context engine is configured, so it has no
         # generic case in _CASES for the parametrized execution below.
+        # ``tour`` is upstream's guided-UI tool and needs a live UI session to
+        # run, so it cannot be driven through the generic executor case either.
         assert AGENT_RUNTIME_POST_HOOK_TOOL_NAMES == {
             tool_name for tool_name, _ in self._CASES
-        } | {"declare_task_context"}
+        } | {"declare_task_context", "tour"}
 
 
 class TestPathsOverlap:
