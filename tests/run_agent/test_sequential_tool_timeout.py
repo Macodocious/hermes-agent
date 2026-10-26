@@ -150,12 +150,31 @@ def test_sequential_tool_timeout_emits_result_and_continues(tmp_path, monkeypatc
             ),
         ):
             execute_tool_calls_sequential(agent, assistant, messages, "task")
+            elapsed = time.monotonic() - started
+            release_first.set()
+            # Give a late-scheduled worker a moment to drain inside the patch
+            # context (if the with block exits first, a late worker would hit
+            # the REAL handle_function_call).
+            for _ in range(100):
+                if "next" in dispatched:
+                    break
+                time.sleep(0.05)
     finally:
         release_first.set()
 
-    assert first_started.is_set()
-    assert time.monotonic() - started < 10.0
-    assert dispatched == ["hung", "next"]
+    # The configured deadline is 1.0s and the hung call is released only after
+    # this call returns, so the executor can never block on it. Allow one
+    # deadline plus scheduling slack — asserting < 1.0 measured the deadline
+    # itself, which fails on any loaded runner.
+    assert elapsed < 1.5
+    # The hung call's dispatch is NOT guaranteed: on a loaded runner the
+    # 0.05s timeout can expire before its worker thread starts, in which case
+    # future.cancel() legitimately prevents the dispatch entirely
+    # (tool_executor timeout path). The contract is: the executor emitted a
+    # timeout result for it and CONTINUED — the next tool must have actually
+    # run, and the message stream must carry both call ids in order.
+    assert "next" in dispatched
+    assert set(dispatched) <= {"hung", "next"}
     assert [message["tool_call_id"] for message in messages] == ["hung", "next"]
     assert "timed out after 1.0s" in messages[0]["content"]
     assert messages[0]["effect_disposition"] == "unknown"
