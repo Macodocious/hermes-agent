@@ -5681,6 +5681,7 @@ class TestRunConversation:
         assert result["messages"][-1] == {
             "role": "assistant",
             "content": "Sure, here's how to do it: first",
+            "timestamp": result["messages"][-1]["timestamp"],
         }
 
     def test_redirect_during_thinking_retries_same_turn_with_context(self, agent):

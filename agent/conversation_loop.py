@@ -41,6 +41,7 @@ from agent.context_engine import automatic_compaction_status_message
 from agent.display import KawaiiSpinner
 from agent.error_classifier import FailoverReason, classify_api_error
 from agent.iteration_budget import IterationBudget
+from agent.message_metadata import append_message
 from agent.turn_context import (
     _compression_warrants_another_preflight_pass,
     build_turn_context,
@@ -140,7 +141,7 @@ def _restore_user_after_reference_handoff(
         and messages[-1].get("content") == content
     ):
         return False
-    messages.append({"role": "user", "content": content})
+    append_message(messages, {"role": "user", "content": content})
     return True
 
 
@@ -398,8 +399,9 @@ def _apply_active_turn_redirect(agent: Any, messages: List[Dict[str, Any]], text
     if messages and messages[-1].get("role") == "assistant":
         # Transcript shows the user's own words; the provider replays the
         # scaffolded form so it still sees the interrupted context.
-        messages.append(
-            {"role": "user", "content": text, "api_content": correction}
+        append_message(
+            messages,
+            {"role": "user", "content": text, "api_content": correction},
         )
     else:
         # Placeholder preserves role alternation only. Scaffold bytes must
@@ -412,9 +414,10 @@ def _apply_active_turn_redirect(agent: Any, messages: List[Dict[str, Any]], text
         }
         if not visible:
             placeholder["display_kind"] = "hidden"
-        messages.append(placeholder)
-        messages.append(
-            {"role": "user", "content": text, "api_content": correction}
+        append_message(messages, placeholder)
+        append_message(
+            messages,
+            {"role": "user", "content": text, "api_content": correction},
         )
 
     agent._current_streamed_assistant_text = ""
@@ -2501,7 +2504,7 @@ def run_conversation(
             final_response = _runtime_context_error
             failed = True
             _turn_exit_reason = "ollama_runtime_context_too_small"
-            messages.append({"role": "assistant", "content": final_response})
+            append_message(messages, {"role": "assistant", "content": final_response})
             agent._emit_status("❌ Ollama runtime context is too small for Hermes tool use")
             api_call_count -= 1
             agent._api_call_count = api_call_count
@@ -3822,7 +3825,7 @@ def run_conversation(
                                 interim_msg = agent._build_assistant_message(assistant_message, finish_reason)
                                 # Marked so the ceiling exit can drop the fragment trail.
                                 interim_msg["_length_continuation_fragment"] = True
-                                messages.append(interim_msg)
+                                append_message(messages, interim_msg)
                                 if assistant_message.content:
                                     truncated_response_parts.append(assistant_message.content)
 
@@ -3862,7 +3865,7 @@ def run_conversation(
                                     "content": _continue_content,
                                     "_length_continuation_nudge": True,
                                 }
-                                messages.append(continue_msg)
+                                append_message(messages, continue_msg)
                                 agent._session_messages = messages
                                 # The four attempts before the stop notice are
                                 # sampled at the cap: the recovery is the capped
@@ -3903,7 +3906,7 @@ def run_conversation(
                                 )
                             ]
                             if partial_response:
-                                messages.append({
+                                append_message(messages, {
                                     "role": "assistant",
                                     "content": partial_response,
                                     "finish_reason": "length",
@@ -4350,7 +4353,7 @@ def run_conversation(
                     getattr(agent, "_current_streamed_assistant_text", "") or ""
                 ).strip()
                 if _partial:
-                    messages.append({"role": "assistant", "content": _partial})
+                    append_message(messages, {"role": "assistant", "content": _partial})
                     final_response = _partial
                 else:
                     final_response = f"{INTERRUPT_WAITING_FOR_MODEL_PREFIX}{api_elapsed:.1f}s elapsed)."
@@ -6829,7 +6832,7 @@ def run_conversation(
                                 else:
                                     last_msg[_key] = interim_msg[_key]
                     else:
-                        messages.append(interim_msg)
+                        append_message(messages, interim_msg)
                         agent._emit_interim_assistant_message(interim_msg)
 
                 if agent._codex_incomplete_retries < 3:
@@ -6867,7 +6870,7 @@ def run_conversation(
                             and _last_msg.get("role") == "assistant"
                         )
                         if not _already_nudged and _last_is_assistant:
-                            messages.append({
+                            append_message(messages, {
                                 "role": "user",
                                 "content": _CODEX_INCOMPLETE_NUDGE,
                             })
@@ -6987,7 +6990,7 @@ def run_conversation(
                         }
 
                     assistant_msg = agent._build_assistant_message(assistant_message, finish_reason)
-                    messages.append(assistant_msg)
+                    append_message(messages, assistant_msg)
                     for tc in assistant_message.tool_calls:
                         _tc_name = tc.function.name
                         if _tc_name not in agent.valid_tool_names:
@@ -6998,7 +7001,7 @@ def run_conversation(
                             )
                         else:
                             content = "Skipped: another tool call in this turn used an invalid name. Please retry this tool call."
-                        messages.append({
+                        append_message(messages, {
                             "role": "tool",
                             "name": tc.function.name,
                             "tool_call_id": tc.id,
@@ -7088,7 +7091,7 @@ def run_conversation(
                         
                         # Append the assistant message with its (broken) tool_calls
                         recovery_assistant = agent._build_assistant_message(assistant_message, finish_reason)
-                        messages.append(recovery_assistant)
+                        append_message(messages, recovery_assistant)
                         
                         # Respond with tool error results for each tool call
                         invalid_names = {name for name, _ in invalid_json_args}
@@ -7102,7 +7105,7 @@ def run_conversation(
                                 )
                             else:
                                 tool_result = "Skipped: other tool call in this response had invalid JSON."
-                            messages.append({
+                            append_message(messages, {
                                 "role": "tool",
                                 "name": tc.function.name,
                                 "tool_call_id": tc.id,
@@ -7241,7 +7244,7 @@ def run_conversation(
                     and previous_msg.get("finish_reason") == "incomplete"
                     and previous_interim_visible == current_interim_visible
                 )
-                messages.append(assistant_msg)
+                append_message(messages, assistant_msg)
 
                 # Mixed batch: error-result the invalid calls and strip them
                 # from the execution set. The assistant message above keeps
@@ -7250,7 +7253,7 @@ def run_conversation(
                 # provider-side tool_call/result pairing stays intact.
                 if _invalid_batch_calls:
                     for tc in _invalid_batch_calls:
-                        messages.append({
+                        append_message(messages, {
                             "role": "tool",
                             "name": tc.function.name,
                             "tool_call_id": tc.id,
@@ -7335,7 +7338,7 @@ def run_conversation(
                     agent._emit_status(
                         f"⚠️ Tool guardrail halted {decision.tool_name}: {decision.code}"
                     )
-                    messages.append({"role": "assistant", "content": final_response})
+                    append_message(messages, {"role": "assistant", "content": final_response})
                     # Emit the halt message to the client so it's not
                     # indistinguishable from a crash.  The stream display
                     # was flushed (callback(None)) before tool execution,
@@ -7662,8 +7665,8 @@ def run_conversation(
                         _nudge_msg = agent._build_assistant_message(assistant_message, finish_reason)
                         _nudge_msg["content"] = "(empty)"
                         _nudge_msg["_empty_recovery_synthetic"] = True
-                        messages.append(_nudge_msg)
-                        messages.append({
+                        append_message(messages, _nudge_msg)
+                        append_message(messages, {
                             "role": "user",
                             "content": _EMPTY_TOOL_RESPONSE_NUDGE,
                             "_empty_recovery_synthetic": True,
@@ -7700,7 +7703,7 @@ def run_conversation(
                             assistant_message, "incomplete"
                         )
                         interim_msg["_thinking_prefill"] = True
-                        messages.append(interim_msg)
+                        append_message(messages, interim_msg)
                         agent._session_messages = messages
                         continue
 
@@ -7823,7 +7826,7 @@ def run_conversation(
                     # were a meaningful model response, which can keep long
                     # tool-heavy sessions stuck in empty-response loops.
                     assistant_msg["_empty_terminal_sentinel"] = True
-                    messages.append(assistant_msg)
+                    append_message(messages, assistant_msg)
 
                     if reasoning_text:
                         reasoning_preview = reasoning_text[:500] + "..." if len(reasoning_text) > 500 else reasoning_text
@@ -7901,14 +7904,14 @@ def run_conversation(
                 ):
                     codex_ack_continuations += 1
                     interim_msg = agent._build_assistant_message(assistant_message, "incomplete")
-                    messages.append(interim_msg)
+                    append_message(messages, interim_msg)
                     agent._emit_interim_assistant_message(interim_msg)
 
                     continue_msg = {
                         "role": "user",
                         "content": _CODEX_ACK_CONTINUATION_NUDGE,
                     }
-                    messages.append(continue_msg)
+                    append_message(messages, continue_msg)
                     agent._session_messages = messages
                     # An acknowledgment is explicitly non-final. Do not let its
                     # text suppress iteration-limit summarization if this
@@ -7971,8 +7974,8 @@ def run_conversation(
                     # buried mid-list in live memory but is skipped by the
                     # flush regardless of position.
                     final_msg["_dropped_toolcall_nudge"] = True
-                    messages.append(final_msg)
-                    messages.append({
+                    append_message(messages, final_msg)
+                    append_message(messages, {
                         "role": "user",
                         "content": _DROPPED_TOOLCALL_NUDGE_CONTENT,
                         "_dropped_toolcall_nudge": True,
@@ -8032,12 +8035,12 @@ def run_conversation(
                     # Only the nudge is flagged synthetic so it gets stripped
                     # from the durable transcript (#65919 §7).
                     agent._emit_interim_assistant_message(final_msg)
-                    messages.append(final_msg)
+                    append_message(messages, final_msg)
                     try:
                         agent._flush_messages_to_session_db(messages, conversation_history)
                     except Exception:
                         logger.debug("verify-on-stop interim flush failed", exc_info=True)
-                    messages.append({
+                    append_message(messages, {
                         "role": "user",
                         "content": _verify_nudge,
                         "_verification_stop_synthetic": True,
@@ -8104,12 +8107,12 @@ def run_conversation(
                     # Only the nudge is flagged synthetic so it gets stripped
                     # from the durable transcript (#65919 §7).
                     agent._emit_interim_assistant_message(final_msg)
-                    messages.append(final_msg)
+                    append_message(messages, final_msg)
                     try:
                         agent._flush_messages_to_session_db(messages, conversation_history)
                     except Exception:
                         logger.debug("pre_verify interim flush failed", exc_info=True)
-                    messages.append({
+                    append_message(messages, {
                         "role": "user",
                         "content": _verify_nudge2,
                         "_pre_verify_synthetic": True,
@@ -8208,8 +8211,8 @@ def run_conversation(
                     )
                     final_msg["finish_reason"] = "kanban_terminal_required"
                     final_msg["_kanban_stop_synthetic"] = True
-                    messages.append(final_msg)
-                    messages.append({
+                    append_message(messages, final_msg)
+                    append_message(messages, {
                         "role": "user",
                         "content": _kanban_nudge,
                         "_kanban_stop_synthetic": True,
@@ -8235,7 +8238,7 @@ def run_conversation(
                     final_response = None
                     continue
 
-                messages.append(final_msg)
+                append_message(messages, final_msg)
                 # Make the completed answer durable before leaving the loop —
                 # a session torn down before finalize_turn's _persist_session
                 # otherwise loses a reply the user already saw (#81641). Same
@@ -8327,7 +8330,7 @@ def run_conversation(
                                 "tool_call_id": tc["id"],
                                 "content": f"Error executing tool: {error_msg}",
                             }
-                            messages.append(err_msg)
+                            append_message(messages, err_msg)
                 break
             
             # Non-tool errors don't need a synthetic message injected.
@@ -8351,7 +8354,7 @@ def run_conversation(
                     final_response = f"I apologize, but I encountered repeated errors: {error_msg}"
                 # Append as assistant so the history stays valid for
                 # session resume (avoids consecutive user messages).
-                messages.append({"role": "assistant", "content": final_response})
+                append_message(messages, {"role": "assistant", "content": final_response})
                 break
     
     # Post-loop turn finalization extracted to agent/turn_finalizer.finalize_turn
