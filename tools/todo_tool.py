@@ -1387,6 +1387,8 @@ TODO_SCHEMA = {
     "description": (
         "Manage your task list for the current session. Use for complex tasks "
         "with 3+ steps or when the user provides multiple tasks. "
+        "For 'all N items' tasks, enumerate every instance as its own checklist "
+        "item so none are silently dropped. "
         "Call with no parameters to read the current list.\n\n"
         "Lifecycle (task state machine):\n"
         "- begin: start the earliest unfinished task (it becomes "
@@ -1423,7 +1425,8 @@ TODO_SCHEMA = {
         "List order is priority. Only ONE item in_progress at a time, and "
         "it must be the earliest unfinished task — the store refuses a "
         "start on any later task while an earlier one is open.\n"
-        "Mark items completed immediately when done. If something fails, "
+        "Mark an item completed immediately once the work is verified done, "
+        "never on intent. If something fails, "
         "cancel it and add a revised item.\n\n"
         "Captured requests: when the response includes 'captures', "
         "disposition each one explicitly via the 'dispositions' parameter "
