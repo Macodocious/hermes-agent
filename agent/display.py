@@ -438,6 +438,12 @@ def _delegate_task_goal_parts(tasks: Any, *, per_goal_len: int) -> tuple[int, li
     return len(goals), goals
 
 
+# Mnemosyne write tools carry long-form memory text. Their preview is capped
+# tighter than the global length so one memory write cannot fill the tool line.
+_MNEMOSYNE_PREVIEW_MAX_LENGTH = 120
+_MNEMOSYNE_PREVIEW_TOOLS = frozenset({"mnemosyne_remember", "mnemosyne_remember_canonical"})
+
+
 def build_tool_preview(tool_name: str, args: dict, max_len: int | None = None) -> str | None:
     """Build a short preview of a tool call's primary argument for display.
 
@@ -466,7 +472,14 @@ def build_tool_preview(tool_name: str, args: dict, max_len: int | None = None) -
         "cronjob": "action",
         "execute_code": "code", "delegate_task": "goal",
         "clarify": "question", "skill_manage": "name",
+        "mnemosyne_remember": "content",
+        "mnemosyne_remember_canonical": "body",
     }
+    # Cap the two mnemosyne write previews before any branch reads max_len.
+    if tool_name in _MNEMOSYNE_PREVIEW_TOOLS and (
+        max_len <= 0 or max_len > _MNEMOSYNE_PREVIEW_MAX_LENGTH
+    ):
+        max_len = _MNEMOSYNE_PREVIEW_MAX_LENGTH
 
     # delegate_task: show goal (single) or individual task goals (batch)
     if tool_name == "delegate_task":

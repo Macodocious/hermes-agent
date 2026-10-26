@@ -53,6 +53,26 @@ class TestBuildToolPreview:
         assert result is not None
         assert "ls -la" in result
 
+    def test_mnemosyne_remember_previews_content(self):
+        result = build_tool_preview(
+            "mnemosyne_remember",
+            {"content": "Brian prefers dark mode", "scope": "global"},
+        )
+        assert result == "Brian prefers dark mode"
+
+    def test_mnemosyne_remember_canonical_previews_body(self):
+        result = build_tool_preview(
+            "mnemosyne_remember_canonical",
+            {"category": "identity", "name": "name", "body": "Brian"},
+        )
+        assert result == "Brian"
+
+    def test_mnemosyne_preview_capped_at_120_characters(self):
+        result = build_tool_preview("mnemosyne_remember", {"content": "x" * 200})
+        assert result is not None
+        assert len(result) == 120
+        assert result.endswith("...")
+
     def test_terminal_preview_compacts_shell_plumbing(self):
         result = build_tool_preview(
             "terminal",
