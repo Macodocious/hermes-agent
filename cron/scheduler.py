@@ -6967,7 +6967,8 @@ def tick(
                 — a stale claim expiring at the TTL is a better outcome than
                 crashing the tick (#86522).
                 """
-                if (job.get("schedule") or {}).get("kind") != "once":
+                _schedule = job.get("schedule")
+                if not (isinstance(_schedule, dict) and _schedule.get("kind") == "once"):
                     return
                 try:
                     clear_run_claim(job_id)
