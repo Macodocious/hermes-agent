@@ -23,9 +23,12 @@ class TestJsonStringCoercion:
         result = json.loads(todo_tool(todos=todos_str, store=store))
         assert "error" not in result
         assert result["summary"]["total"] == 2
-        # Replace-mode write renumbers ids to sequential 1..N in list order.
-        assert result["todos"][0]["id"] == "1"
-        assert result["todos"][1]["status"] == "pending"
+        # Replace-mode write renumbers ids to sequential 1..N in list order,
+        # and _normalize_order may lift the in_progress item ahead of earlier
+        # pending rows (#42649). This test only pins JSON-string coercion, so
+        # assert on ids and statuses rather than on a position.
+        assert set(t["id"] for t in result["todos"]) == {"1", "2"}
+        assert [t["status"] for t in result["todos"]] == ["pending", "pending"]
 
     def test_unparseable_string_returns_error(self):
         store = TodoStore()
