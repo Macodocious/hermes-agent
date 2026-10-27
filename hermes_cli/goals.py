@@ -1287,6 +1287,162 @@ def _parse_judge_response(
     return "continue", f"{reason} (wait verdict had no target — continuing)", False, None, False, clarify
 
 
+def _goal_judge_timeout() -> float:
+    """Resolve auxiliary.goal_judge.timeout, falling back to the default.
+
+    Mirrors :func:`_goal_judge_max_tokens`. The key is declared in
+    ``DEFAULT_CONFIG`` and surfaces in the auxiliary config UI, but the
+    judge path used to hardcode ``DEFAULT_JUDGE_TIMEOUT`` and never read
+    it — so a user raising the timeout for a slow-but-healthy reasoning
+    endpoint got no effect, and the loop auto-paused on misleading
+    transport failures pointing at provider/key (#91022). A non-positive
+    or non-numeric value falls back rather than crashing the goal loop.
+    """
+    try:
+        from hermes_cli.config import load_config
+
+        cfg = load_config()
+        value = (
+            (cfg.get("auxiliary") or {})
+            .get("goal_judge", {})
+            .get("timeout", DEFAULT_JUDGE_TIMEOUT)
+        )
+        value = float(value)
+        if value > 0:
+            return value
+    except Exception:
+        pass
+    return DEFAULT_JUDGE_TIMEOUT
+
+
+def _parse_judge_response(raw: str) -> Tuple[str, str, bool, Optional[Dict[str, Any]]]:
+    """Parse the judge's reply. Fail-open on unusable output.
+
+    Returns ``(verdict, reason, parse_failed, wait_directive, blocked, clarify)``
+    where:
+      - ``verdict`` is ``"done"``, ``"continue"``, or ``"wait"``.
+      - ``parse_failed`` is True when the judge returned output that couldn't
+        be interpreted as the expected JSON verdict (empty body, prose,
+        malformed JSON). Callers use it to auto-pause after N consecutive
+        parse failures so a weak judge model doesn't silently burn the budget.
+      - ``wait_directive`` is set only for ``verdict == "wait"``: a dict with
+        ``{"pid": int}`` or ``{"seconds": int}`` (whichever the judge supplied).
+        ``None`` otherwise. If a wait verdict carries neither a usable pid nor
+        seconds, it is downgraded to ``continue`` (can't park on nothing).
+      - ``blocked`` is True only for ``verdict == "done"`` when the judge
+        decided DONE because the agent is blocked awaiting user input — the
+        goal is parked on a human decision, not actually complete. Callers
+        use it to skip the lifecycle rejection gate: a blocked stop must
+        never be force-continued.
+      - ``clarify`` is True when the agent's message handed the decision back
+        to the user — it ended by asking a question, or declared it awaits the
+        user's authorization before acting. It is an ATTRIBUTE of the verdict,
+        not a fourth verdict. ``blocked``'s definition is untouched: blocked
+        means the judge decided DONE *because* the goal is unreachable, while
+        clarify means the agent is asking for a user decision. A response
+        missing the key fails back to False (back-compat: both prompts always
+        emit it).
+
+    Accepts both the new ``{"verdict": ...}`` shape and the legacy
+    ``{"done": <bool>}`` shape.
+    """
+    if not raw:
+        return "continue", "judge returned empty response", True, None, False, False
+
+    text = raw.strip()
+
+    # Strip markdown code fences the model may wrap JSON in.
+    if text.startswith("```"):
+        text = text.strip("`")
+        # Peel off leading json/JSON/etc tag
+        nl = text.find("\n")
+        if nl != -1:
+            text = text[nl + 1:]
+
+    # First try: parse the whole blob.
+    data: Optional[Dict[str, Any]] = None
+    try:
+        data = json.loads(text)
+    except Exception:
+        # Second try: pull the first JSON object out.
+        match = _JSON_OBJECT_RE.search(text)
+        if match:
+            try:
+                data = json.loads(match.group(0))
+            except Exception:
+                data = None
+
+    if not isinstance(data, dict):
+        return "continue", f"judge reply was not JSON: {_truncate(raw, 200)!r}", True, None, False, False
+
+    reason = str(data.get("reason") or "").strip() or "no reason provided"
+
+    # Determine verdict — prefer the explicit "verdict" field, fall back to
+    # the legacy "done" boolean.
+    verdict_raw = data.get("verdict")
+    if isinstance(verdict_raw, str):
+        verdict = verdict_raw.strip().lower()
+    else:
+        done_val = data.get("done")
+        if isinstance(done_val, str):
+            done = done_val.strip().lower() in {"true", "yes", "1", "done"}
+        else:
+            done = bool(done_val)
+        verdict = "done" if done else "continue"
+
+    if verdict not in {"done", "continue", "wait"}:
+        verdict = "continue"
+
+    # clarify — the agent handed the decision back to the user (asked a
+    # question or declared it awaits authorization). Parsed for every verdict
+    # so the classify-to-park path can read it; a response without the key
+    # (older prompts, legacy shapes) fails back to False.
+    clarify_val = data.get("clarify")
+    if isinstance(clarify_val, str):
+        clarify = clarify_val.strip().lower() in {"true", "yes", "1"}
+    else:
+        clarify = bool(clarify_val)
+
+    if verdict != "wait":
+        # The blocked flag is meaningful only for a done verdict: the judge
+        # decided DONE because the agent is blocked awaiting user input.
+        blocked_val = data.get("blocked")
+        if isinstance(blocked_val, str):
+            blocked = blocked_val.strip().lower() in {"true", "yes", "1"}
+        else:
+            blocked = bool(blocked_val)
+        return verdict, reason, False, None, (verdict == "done" and blocked), clarify
+
+    # Wait verdict: extract a concrete directive (pid or seconds). Accept a
+    # few key spellings the model might emit.
+    def _first_int(*keys: str) -> Optional[int]:
+        for k in keys:
+            v = data.get(k)
+            if v is None:
+                continue
+            try:
+                iv = int(v)
+                if iv > 0:
+                    return iv
+            except (TypeError, ValueError):
+                continue
+        return None
+
+    # Prefer a session-id directive (releases on the process's own trigger —
+    # exit OR watch-pattern match), then pid (exit only), then seconds.
+    sess = data.get("wait_on_session") or data.get("session_id") or data.get("wait_session")
+    if isinstance(sess, str) and sess.strip():
+        return "wait", reason, False, {"session_id": sess.strip()}, False, clarify
+    pid = _first_int("wait_on_pid", "pid", "wait_pid")
+    if pid is not None:
+        return "wait", reason, False, {"pid": pid}, False, clarify
+    seconds = _first_int("wait_for_seconds", "seconds", "wait_seconds")
+    if seconds is not None:
+        return "wait", reason, False, {"seconds": seconds}, False, clarify
+    # Wait with no usable target — can't park on nothing; treat as continue.
+    return "continue", f"{reason} (wait verdict had no target — continuing)", False, None, False, clarify
+
+
 def _render_background_block(background_processes: Optional[List[Dict[str, Any]]]) -> str:
     """Render the live background-process list for the judge prompt.
 
@@ -1396,7 +1552,7 @@ def judge_goal(
     goal: str,
     last_response: str,
     *,
-    timeout: float = DEFAULT_JUDGE_TIMEOUT,
+    timeout: Optional[float] = None,
     subgoals: Optional[List[str]] = None,
     background_processes: Optional[List[Dict[str, Any]]] = None,
     contract: Optional[GoalContract] = None,
@@ -1450,6 +1606,10 @@ def judge_goal(
     if not last_response.strip():
         # No substantive reply this turn — almost certainly not done yet.
         return "continue", "empty response (nothing to evaluate)", False, None, False, False, False
+    if timeout is None:
+        # The declared default for this path is the config key, not the
+        # module constant — see _goal_judge_timeout (#91022).
+        timeout = _goal_judge_timeout()
 
     try:
         from agent.auxiliary_client import call_llm
@@ -1557,7 +1717,7 @@ def gather_background_processes(task_id: Optional[str] = None) -> List[Dict[str,
     return [s for s in sessions if isinstance(s, dict) and s.get("status") != "exited"]
 
 
-def draft_contract(objective: str, *, timeout: float = DEFAULT_JUDGE_TIMEOUT) -> Optional[GoalContract]:
+def draft_contract(objective: str, *, timeout: Optional[float] = None) -> Optional[GoalContract]:
     """Expand a plain-language objective into a structured completion contract.
 
     Uses the ``goal_judge`` auxiliary task (main-model-first, cache-safe — it
@@ -1570,6 +1730,9 @@ def draft_contract(objective: str, *, timeout: float = DEFAULT_JUDGE_TIMEOUT) ->
     objective = (objective or "").strip()
     if not objective:
         return None
+    if timeout is None:
+        # Same config-backed default as judge_goal (#91022).
+        timeout = _goal_judge_timeout()
 
     try:
         from agent.auxiliary_client import call_llm
