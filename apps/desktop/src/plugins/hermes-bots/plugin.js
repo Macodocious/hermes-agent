@@ -84,6 +84,11 @@ const createBudgetedLoop = typeof sdk === 'undefined' ? undefined : sdk.createBu
 
 const ID = 'hermes-bots'
 const ROSTER_KEY = [ID, 'roster']
+// Bounded retries. `retry: true` keeps React Query in isLoading until the
+// first success, so a stalled profiles.list (live state.db write lock, SSH
+// flap) leaves the Bots sidebar on a spinner with no error card. The 5s
+// refetchInterval and the gateway-open effect already recover drops.
+const ROSTER_QUERY_RETRY = 2
 const ROUTINES_KEY = [ID, 'routines']
 const NAME_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/
 
@@ -3648,9 +3653,7 @@ function useRoster() {
     },
     refetchInterval: 5000,
     staleTime: 5000,
-    // Remote (SSH) gateways connect slowly and drop on sleep/wake; keep
-    // retrying instead of latching a terminal error card.
-    retry: true,
+    retry: ROSTER_QUERY_RETRY,
     retryDelay: attempt => Math.min(15000, 1000 * 2 ** attempt)
   })
 }
