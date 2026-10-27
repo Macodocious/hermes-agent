@@ -745,14 +745,26 @@ export const host = {
     // is a gateway problem, a slow transcript is a backend-warmup one.
     let wakePhase: 'activation' | 'hydration' = 'activation'
 
+    if (ownerRoute) {
+      setSessionOwnerHint(storedSessionId, ownerRoute)
+    } else if (profile) {
+      // Local plugin-owned opens (Bot Mode without a cross-connection route)
+      // still carry an explicit owning profile. Record it: hidden sessions
+      // (canonical Bot Chats) have no sidebar row, so this hint is the only
+      // durable owner record the session-RPC router can consult — without it
+      // a later prompt.submit resolves to the ACTIVE profile's backend and
+      // 4001s while the bot's own backend is healthy.
+      const connectionId = activeGatewayConnectionId()
+
+      if (connectionId) {
+        setSessionOwnerHint(storedSessionId, { connectionId, mode: 'local', profile: targetProfile })
+      }
+    }
+
     // Bounded to 2 attempts (never more): a cold profile backend can lose the
     // hydration-timeout race once and still be fine moments later, but this is
     // a caller-opt-in retry of the SAME wait, not a backoff loop.
     const maxAttempts = options.awaitHydration && options.retryHydrationTimeoutOnce ? 2 : 1
-    if (ownerRoute) {
-      // Routing hint only: the fork's plan below owns which backend to dial.
-      setSessionOwnerHint(storedSessionId, ownerRoute)
-    }
 
     if (generation !== openSessionGeneration) {
       throw new Error('Session open was superseded by a newer selection.')
