@@ -54,6 +54,7 @@ from agent.runtime_cwd import resolve_agent_cwd
 from agent.message_sanitization import (
     close_interrupted_tool_sequence,
     _repair_tool_call_arguments,
+    coalesce_tool_call_id,
     _sanitize_messages_non_ascii,
     _sanitize_messages_surrogates,
     _sanitize_structure_non_ascii,
@@ -7335,7 +7336,7 @@ def run_conversation(
                         append_message(messages, {
                             "role": "tool",
                             "name": tc.function.name,
-                            "tool_call_id": tc.id,
+                            "tool_call_id": coalesce_tool_call_id(tc),
                             "content": content,
                         })
                     continue
@@ -7439,7 +7440,7 @@ def run_conversation(
                             append_message(messages, {
                                 "role": "tool",
                                 "name": tc.function.name,
-                                "tool_call_id": tc.id,
+                                "tool_call_id": coalesce_tool_call_id(tc),
                                 "content": tool_result,
                             })
                         continue
@@ -7587,7 +7588,7 @@ def run_conversation(
                         append_message(messages, {
                             "role": "tool",
                             "name": tc.function.name,
-                            "tool_call_id": tc.id,
+                            "tool_call_id": coalesce_tool_call_id(tc),
                             "content": _invalid_tool_name_error_content(
                                 tc.function.name, agent.valid_tool_names
                             ),
