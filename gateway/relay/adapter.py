@@ -1682,6 +1682,8 @@ class RelayAdapter(BasePlatformAdapter):
                 # format_hints on the explicit-platform lane too: this is the
                 # scheduled/cron delivery path — the in_channel brief itself —
                 # and it must render blocks exactly like an interactive send.
+                # Stamps _sfp_metadata (the interim-marker-stripped copy, per
+                # the seal path above), composing both sides of the merge.
                 "metadata": self._with_scope(
                     chat_id,
                     self._with_format_hints_for_platform(
