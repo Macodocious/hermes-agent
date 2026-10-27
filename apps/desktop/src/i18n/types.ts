@@ -218,6 +218,15 @@ export interface Translations {
     message: (reason: string) => string
   }
 
+  pendingBuild: {
+    changed: (count: number) => string
+    dismiss: string
+    failed: string
+    failedHint: string
+    ready: string
+    restart: string
+  }
+
   titlebar: {
     hideSidebar: string
     showSidebar: string

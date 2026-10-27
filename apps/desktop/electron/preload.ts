@@ -36,6 +36,18 @@ contextBridge.exposeInMainWorld('hermesDesktop', {
       return () => ipcRenderer.removeListener('hermes:pet-overlay:control', listener)
     }
   },
+  // Apply loop: a main-process build pulled from the box waits for a click.
+  applyLoop: {
+    status: () => ipcRenderer.invoke('hermes:apply-loop:status'),
+    dismiss: () => ipcRenderer.invoke('hermes:apply-loop:dismiss'),
+    restart: () => ipcRenderer.invoke('hermes:apply-loop:restart'),
+    onPending: callback => {
+      const listener = (_event, build) => callback(build)
+      ipcRenderer.on('hermes:apply-loop:pending', listener)
+
+      return () => ipcRenderer.removeListener('hermes:apply-loop:pending', listener)
+    }
+  },
   getBootProgress: () => ipcRenderer.invoke('hermes:boot-progress:get'),
   getConnectionConfig: profile => ipcRenderer.invoke('hermes:connection-config:get', profile),
   saveConnectionConfig: payload => ipcRenderer.invoke('hermes:connection-config:save', payload),

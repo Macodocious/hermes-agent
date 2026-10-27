@@ -178,6 +178,15 @@ export const ja = defineLocale({
       `ソフトウェアレンダリングが有効です — リモートディスプレイを検出しました（${reason}）。ちらつきを防ぐため GPU アクセラレーションは無効化されています。`
   },
 
+  pendingBuild: {
+    changed: count => `メインプロセスで ${count} 件のファイルが変更されました`,
+    dismiss: 'あとで',
+    failed: '前回のメインプロセスビルドに失敗しました',
+    failedHint: '実行中のビルドは変更されていません。ボックス側でエラーを修正して再ビルドすると、このコントロールが再び表示されます。',
+    ready: '再起動して新しいビルドを適用',
+    restart: '今すぐ再起動'
+  },
+
   titlebar: {
     hideSidebar: 'サイドバーを非表示',
     showSidebar: 'サイドバーを表示',

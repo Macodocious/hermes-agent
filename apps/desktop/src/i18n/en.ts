@@ -177,6 +177,15 @@ export const en: Translations = {
       `Software rendering active — remote display detected (${reason}). GPU acceleration is disabled to prevent flickering.`
   },
 
+  pendingBuild: {
+    changed: count => `${count} file${count === 1 ? '' : 's'} changed in the main process`,
+    dismiss: 'Later',
+    failed: 'The last main-process build failed',
+    failedHint: 'The running build is unchanged. Fix the error on the box, build again, and this control returns.',
+    ready: 'Restart to apply the new build',
+    restart: 'Restart now'
+  },
+
   titlebar: {
     hideSidebar: 'Hide sidebar',
     showSidebar: 'Show sidebar',

@@ -172,6 +172,15 @@ export const zh: Translations = {
     message: reason => `软件渲染已启用 — 检测到远程显示（${reason}）。为防止画面闪烁，已禁用 GPU 加速。`
   },
 
+  pendingBuild: {
+    changed: count => `主进程有 ${count} 个文件已更改`,
+    dismiss: '稍后',
+    failed: '最近一次主进程构建失败',
+    failedHint: '当前运行的构建未受影响。在服务器上修复错误后重新构建，此控件会再次出现。',
+    ready: '重启以应用新构建',
+    restart: '立即重启'
+  },
+
   titlebar: {
     hideSidebar: '隐藏侧边栏',
     showSidebar: '显示侧边栏',

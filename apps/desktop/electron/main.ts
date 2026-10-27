@@ -30,6 +30,7 @@ import {
 } from 'electron'
 import nodePty from 'node-pty'
 
+import { registerApplyLoopIpc, wireDevServerResilience } from './apply-loop'
 import { stopBackendChild as stopBackendChildImpl } from './backend-child'
 import { dashboardFallbackArgs, sourceDeclaresServe } from './backend-command'
 import { createBackendConnectionState } from './backend-connection-state'
@@ -7853,6 +7854,7 @@ function wireCommonWindowHandlers(win, { zoom = true }: { zoom?: boolean } = {})
 
     return { action: 'deny' }
   })
+  wireDevServerResilience(win, DEV_SERVER)
   win.webContents.on('will-navigate', (event, url) => {
     if ((DEV_SERVER && url.startsWith(DEV_SERVER)) || (!DEV_SERVER && url.startsWith('file:'))) {
       return
@@ -10355,6 +10357,8 @@ app.on('open-url', (event, url) => {
 })
 
 app.whenReady().then(() => {
+  registerApplyLoopIpc()
+
   const systemCa = installWindowsSystemCaTrust(tls)
 
   if (systemCa.applied) {

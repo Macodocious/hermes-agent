@@ -172,6 +172,15 @@ export const zhHant = defineLocale({
     message: reason => `軟體繪圖已啟用 — 偵測到遠端顯示（${reason}）。為防止畫面閃爍，已停用 GPU 加速。`
   },
 
+  pendingBuild: {
+    changed: count => `主程序有 ${count} 個檔案已變更`,
+    dismiss: '稍後',
+    failed: '最近一次主程序建置失敗',
+    failedHint: '目前執行的建置未受影響。在伺服器上修正錯誤後重新建置，此控制項會再次出現。',
+    ready: '重新啟動以套用新建置',
+    restart: '立即重新啟動'
+  },
+
   titlebar: {
     hideSidebar: '隱藏側邊欄',
     showSidebar: '顯示側邊欄',
