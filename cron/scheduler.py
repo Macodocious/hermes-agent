@@ -1813,6 +1813,7 @@ def _seed_cron_thread_session(
     mirror_text: str,
     chat_name: Optional[str] = None,
     is_dm: bool = False,
+    scope_id: Optional[str] = None,
 ) -> None:
     """Seed the freshly-opened cron thread's session with the brief.
 
@@ -1822,6 +1823,12 @@ def _seed_cron_thread_session(
     same key the user's reply will resolve to — ``build_session_key`` keys
     threads as participant-shared, so no ``user_id`` is needed) and append the
     brief as an assistant turn via the shipped ``mirror_to_session``.
+
+    ``scope_id`` is the workspace/server scope (Slack team id).
+    ``build_session_key`` embeds it in every Slack key, so a scoped reply's
+    key carries it — the seed must reproduce it or the seeded row is
+    unreachable (the scope-less flat-seed sibling of the is_dm keying bug).
+    Best-effort None for platforms without scope.
 
     ``is_dm`` selects the seeded ``chat_type``: a thread under a DM must seed
     ``chat_type="dm"`` because the user's in-thread DM reply arrives with
@@ -1873,6 +1880,7 @@ def _seed_cron_thread_session(
                     user_id="system:cron",
                     user_name="Cron",
                     thread_id=str(thread_id),
+                    scope_id=str(scope_id) if scope_id else None,
                 )
                 # Ensure the thread-keyed session row exists so the mirror has
                 # a target and the user's later reply joins the same session.
@@ -1929,6 +1937,7 @@ def _seed_cron_channel_session(
     is_dm: bool,
     user_id: Optional[str],
     chat_name: Optional[str] = None,
+    scope_id: Optional[str] = None,
 ) -> bool:
     """Seed the FLAT (thread_id=None) session for an ``in_channel`` cron delivery.
 
@@ -1986,6 +1995,10 @@ def _seed_cron_channel_session(
                     chat_type=chat_type,
                     user_id=str(user_id) if user_id else None,
                     thread_id=None,  # flat — the whole-channel/DM session
+                    # Workspace scope: build_session_key embeds it in every
+                    # Slack key, so a scoped reply only resolves to this row
+                    # when the seed carries it too (see thread-seed docstring).
+                    scope_id=str(scope_id) if scope_id else None,
                 )
                 # Create the flat session row so the mirror has a target and the
                 # user's later plain reply joins the SAME session. Capture the
@@ -3226,6 +3239,7 @@ def _deliver_result(job: dict, content: str, adapters=None, loop=None) -> Option
                             opened_thread_id, mirror_text,
                             chat_name=origin.get("chat_name"),
                             is_dm=is_dm_target,
+                            scope_id=origin.get("scope_id"),
                         )
                         thread_seeded = True
                     # in_channel surface: CREATE + seed the flat channel/DM
@@ -3245,6 +3259,7 @@ def _deliver_result(job: dict, content: str, adapters=None, loop=None) -> Option
                             mirror_text, is_dm=is_dm_target,
                             user_id=origin_user_id,
                             chat_name=origin.get("chat_name"),
+                            scope_id=origin.get("scope_id"),
                         )
                         if not inchannel_seeded:
                             logger.warning(
@@ -3266,6 +3281,7 @@ def _deliver_result(job: dict, content: str, adapters=None, loop=None) -> Option
                                 str(delivered_message_id), mirror_text,
                                 chat_name=origin.get("chat_name"),
                                 is_dm=is_dm_target,
+                                scope_id=origin.get("scope_id"),
                             )
                     elif in_channel_surface and not origin_target:
                         logger.warning(
