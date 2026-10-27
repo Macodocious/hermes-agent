@@ -31,8 +31,10 @@ import {
   removeTreePane,
   revealTreePane
 } from '@/components/pane-shell/tree/store'
+import { setWorkspaceScope as publishWorkspaceScope } from '@/components/pane-shell/workspace-scope'
 import { onGatewayEvent } from '@/contrib/events'
 import { registry } from '@/contrib/registry'
+import type { WorkspaceMode } from '@/contrib/types'
 import { deleteProfile, getLogs, getStatus, type HermesGateway } from '@/hermes'
 import {
   $gateway,
@@ -292,6 +294,8 @@ export interface PluginOpenSessionOptions {
    *  itself because only this SDK layer sees $resumeExhaustedSessionId. */
   retryHydrationTimeoutOnce?: boolean
   route?: PluginProfileRoute
+  workspaceMode?: WorkspaceMode
+  workspaceOwnerKey?: string
 }
 
 function waitForFocusedSessionHydration({
@@ -741,19 +745,26 @@ export const host = {
       // again inside the same wake — that is the Retry surface's job.
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         try {
-          openSession(
-            storedSessionId,
-            (to: string, opts?: { replace?: boolean }) => {
-              const target = to.startsWith('#') ? to : `#${to}`
+          const navigate = (to: string, opts?: { replace?: boolean }) => {
+            const target = to.startsWith('#') ? to : `#${to}`
 
-              if (opts?.replace) {
-                window.location.replace(target)
-              } else {
-                window.location.hash = target
-              }
-            },
-            options.intent ?? 'in-place'
-          )
+            if (opts?.replace) {
+              window.location.replace(target)
+            } else {
+              window.location.hash = target
+            }
+          }
+
+          const intent = options.intent ?? 'in-place'
+
+          if (options.workspaceMode === 'bots') {
+            openSession(storedSessionId, navigate, intent, {
+              workspaceMode: 'bots',
+              workspaceOwnerKey: options.workspaceOwnerKey
+            })
+          } else {
+            openSession(storedSessionId, navigate, intent)
+          }
 
           // Judge the main surface AFTER the open: on a cold start the persisted
           // route can already point at this session while selection has not
@@ -861,7 +872,17 @@ export const host = {
    *  fallback. */
   openWorkspace: (
     id: string,
-    options: { minWidth?: string; onClose?: () => void; render: () => ReactNode; title?: string }
+    options: {
+      dock?: { before?: null | string; pane: string; pos: 'bottom' | 'center' | 'left' | 'right' | 'top' }
+      headerVeto?: boolean
+      minWidth?: string
+      onClose?: () => void
+      render: () => ReactNode
+      title?: string
+      uncloseable?: boolean
+      workspaceMode?: WorkspaceMode
+      workspaceOwnerKey?: string
+    }
   ): (() => void) => {
     const key = (id ?? '').trim()
 
@@ -876,13 +897,17 @@ export const host = {
       data: {
         // The session-tile shape: a full workspace surface docked beside main,
         // closeable so it keeps its tab when it lands in a zone of its own.
-        dock: { pane: 'workspace', pos: 'center' },
+        dock: options.dock ?? { pane: 'workspace', pos: 'center' },
+        headerVeto: options.headerVeto,
         minWidth: options.minWidth ?? '22rem',
-        placement: 'main'
+        placement: 'main',
+        uncloseable: options.uncloseable
       },
       id: paneId,
       render: options.render,
-      title: options.title ?? key
+      title: options.title ?? key,
+      workspaceMode: options.workspaceMode,
+      workspaceOwnerKey: options.workspaceOwnerKey
     })
 
     const close = () => {
@@ -900,6 +925,10 @@ export const host = {
 
     return close
   },
+
+  /** Switch the visible main-pane workspace without unregistering retained panes. */
+  setWorkspaceScope: (mode: WorkspaceMode, ownerKey: null | string = null): boolean =>
+    publishWorkspaceScope(mode, ownerKey),
 
   /** Start a fresh chat draft, optionally pointed at another profile (its
    *  backend spins up in the background — same door the sidebar's per-profile
