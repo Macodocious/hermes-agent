@@ -13,9 +13,8 @@ import { setSessionYolo } from '@/lib/yolo-session'
 import { normalizeChoices, setClarifyRequest } from '@/store/clarify'
 import { migrateSessionDraft } from '@/store/composer'
 import { clearQueuedPrompts, migrateQueuedPrompts } from '@/store/composer-queue'
-import { openGatewayForAgent, openGatewayForProfile } from '@/store/gateway'
+import { openGatewayForAgent, openGatewayForProfile, requestGatewayForAgent } from '@/store/gateway'
 import { $gatewaySwitching } from '@/store/gateway-switch'
-import { requestGatewayForAgent } from '@/store/gateway'
 import { $pinnedSessionIds } from '@/store/layout'
 import { clearNotifications, notify, notifyError } from '@/store/notifications'
 import {
@@ -782,8 +781,11 @@ export function useSessionActions({
           : sessionProfile)
 
       if ($showAllProfiles.get()) {
-        if (storedForProfile?.connection_id) {
-          await openGatewayForAgent(storedForProfile.connection_id, sessionProfile || 'default')
+        if (ownerRoute?.connectionId || storedForProfile?.connection_id) {
+          await openGatewayForAgent(
+            ownerRoute?.connectionId || storedForProfile?.connection_id || null,
+            ownerRoute?.profile || sessionProfile || 'default'
+          )
         } else if (sessionProfile) {
           await openGatewayForProfile(normalizeProfileKey(sessionProfile))
         }

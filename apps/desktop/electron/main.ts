@@ -13647,12 +13647,17 @@ async function pooledRegistrySessionSources(): Promise<RegistrySessionSource[]> 
   return sources
 }
 
-async function dispatchRegistryApiRequest(request, registryConnectionId, routeProfile = request?.profile) {
+async function dispatchRegistryApiRequest(
+  request,
+  registryConnectionId,
+  routeProfile = request?.profile,
+  requestProfile = request?.profile
+) {
   const connection: any = await ensureRegistryBackend(registryConnectionId, routeProfile)
 
   const requestPath = connection.sharedRemote
-    ? pathWithProfileScope(request.path, request?.profile)
-    : translateSelfProfileQuery(request.path, request?.profile, connection.remoteProfile)
+    ? pathWithProfileScope(request.path, requestProfile)
+    : translateSelfProfileQuery(request.path, requestProfile, connection.remoteProfile)
 
   return fetchJsonForBackend(connection, requestPath, {
     method: request?.method,
@@ -13673,8 +13678,8 @@ function registryConnectionKind(connectionId) {
   return source.kind
 }
 
-async function teardownConnectionScopedProfileBackend(connectionId, profile, request) {
-  const key = backendScopeKey(connectionId, request?.profile || profile)
+async function teardownConnectionScopedProfileBackend(connectionId, profile) {
+  const key = backendScopeKey(connectionId, profile)
   await Promise.all([
     poolStopper.stop(key),
     sshBootstrapCoordinator.cancelAndWait(key).then(() => teardownSshConnection(key))
@@ -13810,12 +13815,13 @@ ipcMain.handle('hermes:api', async (_event, request) => {
     return dispatchConnectionScopedProfileDelete(request, {
       acquire: profile => profileDeletionGate.acquire(profile),
       connectionKind: connectionId => registryConnectionKind(connectionId),
-      dispatch: routeProfile => dispatchRegistryApiRequest(request, registryConnectionId, routeProfile),
+      dispatch: routeProfile =>
+        dispatchRegistryApiRequest(request, registryConnectionId, routeProfile, deletingProfile),
       isDefaultProfile: profile => profile === 'default',
       isValidProfileName: profile => PROFILE_NAME_RE.test(profile),
       prepareLocal: localRequest => prepareProfileDeleteRequest(localRequest).then(() => undefined),
       teardownConnection: (connectionId, profile) =>
-        teardownConnectionScopedProfileBackend(connectionId, profile, request)
+        teardownConnectionScopedProfileBackend(connectionId, profile)
     })
   }
 

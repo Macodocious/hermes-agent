@@ -575,7 +575,10 @@ export const host = {
       retireLocalProfileGateways(targetProfile)
     }
 
-    await deleteProfile(targetProfile, route ? { connectionId: route.connectionId, profile: targetProfile } : undefined)
+    await deleteProfile(
+      targetProfile,
+      route ? { connectionId: route.connectionId, profile: route.profile } : undefined
+    )
 
     // The profile rail paints from the shared $profiles cache; without a
     // refresh the deleted profile's badge survives and clicking it starts a
@@ -700,11 +703,13 @@ export const host = {
       // budget's. A workspace switch moves $activeGatewayProfile / chrome REST;
       // a plain navigation only opens the bot's gateway so session.resume can
       // hydrate, leaving chrome on the launch backend.
-      const dial = plan.switchWorkspace
-        ? () => ensureGatewayProfile(plan.switchWorkspace as string)
-        : plan.dialWithoutSwitching
-          ? () => openGatewayForProfile(plan.dialWithoutSwitching as string)
-          : null
+      const dial = ownerRoute
+        ? () => openGatewayForAgent(ownerRoute.connectionId, ownerRoute.profile)
+        : plan.switchWorkspace
+          ? () => ensureGatewayProfile(plan.switchWorkspace as string)
+          : plan.dialWithoutSwitching
+            ? () => openGatewayForProfile(plan.dialWithoutSwitching as string)
+            : null
 
       if (dial) {
         // Bounded only on the hydration contract, which is where a budget and a
@@ -715,7 +720,9 @@ export const host = {
         profileActiveAt = Date.now()
       }
 
-      if (plan.showAllProfiles !== null) {
+      if (ownerRoute) {
+        setShowAllProfiles(true)
+      } else if (plan.showAllProfiles !== null) {
         setShowAllProfiles(plan.showAllProfiles)
       }
 
@@ -781,7 +788,7 @@ export const host = {
               profile: targetProfile,
               // A background dial never moves $activeGatewayProfile, so gating
               // hydration on it would wait for something that is not coming.
-              requireActiveProfile: plan.requireActiveProfileForHydration,
+              requireActiveProfile: ownerRoute ? false : plan.requireActiveProfileForHydration,
               storedSessionId,
               timeoutMs: hydrationTimeoutMs
             })

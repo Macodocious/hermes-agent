@@ -91,7 +91,18 @@ export function requestForSessionProfile<T>(
       return Promise.reject(new Error('Session owner route is missing connectionId'))
     }
 
-    return requestGatewayForAgent<T>(connectionId, normKey(ownerProfile.profile), method, routeParams(ownerProfile, params))
+    const routedParams = routeParams(ownerProfile, params)
+
+    return timeoutMs === undefined && signal === undefined
+      ? requestGatewayForAgent<T>(connectionId, normKey(ownerProfile.profile), method, routedParams)
+      : requestGatewayForAgent<T>(
+          connectionId,
+          normKey(ownerProfile.profile),
+          method,
+          routedParams,
+          timeoutMs,
+          signal
+        )
   }
 
   if (!sessionRpcNeedsProfileRoute(ownerProfile)) {

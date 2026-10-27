@@ -276,7 +276,7 @@ describe('connection-aware plugin host APIs', () => {
 
     expect(deleteProfile).toHaveBeenCalledWith('backend-worker', {
       connectionId: 'source-a',
-      profile: 'backend-worker'
+      profile: 'worker'
     })
     expect(retireLocalProfileGateways).not.toHaveBeenCalled()
   })
@@ -322,7 +322,7 @@ describe('connection-aware plugin host APIs', () => {
     expect(retireLocalProfileGateways).toHaveBeenCalledWith('backend-worker')
     expect(deleteProfile).toHaveBeenCalledWith('backend-worker', {
       connectionId: 'source-local',
-      profile: 'backend-worker'
+      profile: 'worker'
     })
   })
 
@@ -399,7 +399,10 @@ describe('profile-aware plugin session opens', () => {
 
     await host.openSession('remote-chat', { route })
 
-    expect(ensureGatewayAgent).toHaveBeenCalledWith('source-a', 'default')
+    expect(openGatewayForAgent).toHaveBeenCalledWith('source-a', 'default')
+    expect(ensureGatewayProfile).not.toHaveBeenCalled()
+    expect(setShowAllProfiles).toHaveBeenCalledWith(true)
+    expect($activeGatewayProfile.get()).toBe('remote-worker')
     expect(setSessionOwnerHint).toHaveBeenCalledWith('remote-chat', route)
     expect(openSessionCore).toHaveBeenCalledWith('remote-chat', expect.any(Function), 'in-place')
   })
@@ -475,7 +478,7 @@ describe('profile-aware plugin session opens', () => {
 
     // The old pre-open "already selected" precondition skipped this request,
     // stranding the pane blank until timeout. It must fire now.
-    expect(requestSessionResume).toHaveBeenCalledWith('cold-bot-chat')
+    expect(requestSessionResume).toHaveBeenCalledWith('cold-bot-chat', undefined)
 
     setMockAtom($selectedStoredSessionId, 'cold-bot-chat')
     setMockAtom($activeSessionId, 'runtime-cold')
@@ -499,7 +502,7 @@ describe('profile-aware plugin session opens', () => {
     })
 
     await Promise.resolve()
-    expect(requestSessionResume).toHaveBeenCalledWith('bot-chat')
+    expect(requestSessionResume).toHaveBeenCalledWith('bot-chat', undefined)
 
     setMockAtom($activeSessionId, 'runtime-refreshed')
     setMockAtom($messages, [{ id: 'history-restored', parts: [], role: 'assistant' }] as never)

@@ -266,6 +266,35 @@ describe('requestForSessionProfile', () => {
     )
   })
 
+  it('forwards timeout and abort signal onto the owning connection socket', async () => {
+    const primary = makePrimary()
+    setPrimaryGateway(primary as never, 'default')
+    installDesktop()
+    const ambient = vi.fn(async () => ({ ambient: true }))
+    const controller = new AbortController()
+
+    await requestForSessionProfile(
+      {
+        connectionId: 'source-a',
+        profile: 'default',
+        targetProfile: 'backend-default'
+      },
+      ambient as never,
+      'prompt.submit',
+      { profile: 'default', session_id: 'stored-remote-chat', text: 'hi' },
+      1_800_000,
+      controller.signal
+    )
+
+    expect(ambient).not.toHaveBeenCalled()
+    expect(secondaryGateways[0].request).toHaveBeenCalledWith(
+      'prompt.submit',
+      { profile: 'backend-default', session_id: 'stored-remote-chat', text: 'hi' },
+      1_800_000,
+      controller.signal
+    )
+  })
+
   it('keeps the ambient dispatcher when the active route already serves the owner', async () => {
     const primary = makePrimary()
     setPrimaryGateway(primary as never, 'default')
