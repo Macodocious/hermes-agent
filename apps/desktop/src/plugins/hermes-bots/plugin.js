@@ -8469,13 +8469,68 @@ function isLegacyDelegatedRoutine(job) {
   return Boolean(routineBot(job) && typeof preview === 'string' && preview.startsWith(LEGACY_DELEGATED_ROUTINE_PREFIX))
 }
 
+/** Coerce an IPC/JSON-RPC rejection into an Error with a string `name`.
+ *
+ *  React Query stores whatever the queryFn throws. React 19 then formats it
+ *  with `(e.name || '').trim()`, which throws TypeError when `name` is a
+ *  number (JSON-RPC codes) or another non-string — the Routines pane crash
+ *  in #94471. Real Error instances are returned as-is when already safe.
+ */
+function asRpcError(value, fallback) {
+  // Duck-type across realms (plugin tests run the source in `vm`, and IPC
+  // can deliver Error-like objects whose prototype is not this realm's
+  // Error). React 19 only needs a string `name`; a stack marks a real
+  // exception vs a JSON-RPC payload like `{ name: 32000, message }`.
+  const isObject = value != null && typeof value === 'object'
+  const name = isObject ? value.name : undefined
+  const message = isObject ? value.message : undefined
+  const hasStringName = typeof name === 'string'
+  const hasStringMessage = typeof message === 'string'
+  const hasStack = isObject && typeof value.stack === 'string'
+
+  if (isObject && hasStringName && (hasStack || hasStringMessage)) {
+    return value
+  }
+
+  if (hasStack) {
+    try {
+      value.name = 'Error'
+      if (typeof value.name === 'string') {
+        return value
+      }
+    } catch {
+      void 0
+    }
+    const copy = new Error(hasStringMessage && message ? String(message) : fallback)
+    copy.cause = value
+    return copy
+  }
+
+  if (isObject) {
+    const text = hasStringMessage && String(message).trim() ? String(message) : fallback
+    const error = new Error(text)
+    error.cause = value
+    return error
+  }
+
+  return new Error(value == null || value === '' ? fallback : String(value))
+}
+
 async function loadRoutines(profile) {
   // profile scopes cron.manage to that bot's own cron store (core RPC gained an
   // optional `profile` param). Older gateways ignore the unknown param and
   // return the launch-profile store — the [bot:] tag filter in selectRoutineJobs
   // remains the graceful fallback there.
   const scope = profile ? { profile } : {}
-  const data = await host.request('cron.manage', { action: 'list', include_disabled: true, ...scope })
+  let data
+  try {
+    data = await host.request('cron.manage', { action: 'list', include_disabled: true, ...scope })
+  } catch (error) {
+    // The pane formats the rejection through React 19's `(e.name || '').trim()`,
+    // which throws when a JSON-RPC code arrives as a number and hides the real
+    // failure (#94471). Coerce before it reaches the query layer.
+    throw asRpcError(error, 'Gateway request cron.manage failed')
+  }
   const jobs = Array.isArray(data?.jobs) ? data.jobs : []
   const activeLegacyJobs = jobs.filter(
     job => isLegacyDelegatedRoutine(job) && job.enabled !== false && job.state !== 'paused'
