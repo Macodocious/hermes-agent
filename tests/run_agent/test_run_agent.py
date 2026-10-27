@@ -3564,9 +3564,14 @@ class TestConcurrentToolExecution:
             agent._execute_tool_calls_concurrent(mock_msg, messages, "task-1")
 
         assert len(messages) == 2
-        for m in messages:
-            assert len(m["content"]) < 150_000
-            assert ("Truncated" in m["content"] or "<persisted-output>" in m["content"])
+        # The first call carries the oversized payload, so it must be spilled or
+        # truncated; the identical second call is answered with a reference stub
+        # instead of a second copy of the payload.
+        first, second = messages
+        assert len(first["content"]) < 150_000
+        assert "Truncated" in first["content"] or "<persisted-output>" in first["content"]
+        assert "repeating it unchanged" in second["content"]
+        assert len(second["content"]) < 150_000
 
     def test_invoke_tool_dispatches_to_handle_function_call(self, agent):
         """_invoke_tool should route regular tools through handle_function_call."""
