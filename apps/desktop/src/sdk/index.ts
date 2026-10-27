@@ -50,6 +50,7 @@ import {
   $profiles,
   ensureGatewayAgent,
   ensureGatewayProfile,
+  newSessionInAgent,
   newSessionInProfile,
   normalizeProfileKey,
   refreshProfiles,
@@ -67,6 +68,7 @@ import {
   $selectedStoredSessionId,
   $sessions,
   rememberedSessionProfile,
+  setSessionOwnerHint,
   requestSessionResume,
   setResumeExhaustedSessionId
 } from '@/store/session'
@@ -167,6 +169,10 @@ async function requestPluginProfile<T>(
   params: Record<string, unknown>
 ): Promise<T> {
   if (typeof route !== 'string') {
+    if (!route.connectionId.trim() || !route.profile.trim() || !route.targetProfile.trim()) {
+      throw new Error('Profile route must include connectionId, profile, and targetProfile')
+    }
+
     return requestGatewayForAgent<T>(route.connectionId, route.profile, method, params)
   }
 
@@ -221,7 +227,7 @@ const $activeConnectionId = computed($connection, connection => {
 const DEFAULT_SESSION_HYDRATION_TIMEOUT_MS = 20_000
 let openSessionGeneration = 0
 
-interface PluginOpenSessionOptions {
+export interface PluginOpenSessionOptions {
   awaitHydration?: boolean
   expectHistory?: boolean
   hydrationTimeoutMs?: number
@@ -234,9 +240,11 @@ interface PluginOpenSessionOptions {
    *  overlay ($resumeExhaustedSessionId) — a caller-side retry can't do this
    *  itself because only this SDK layer sees $resumeExhaustedSessionId. */
   retryHydrationTimeoutOnce?: boolean
+  route?: PluginProfileRoute
 }
 
 function waitForFocusedSessionHydration({
+  connectionId,
   expectHistory,
   generation,
   profile,
@@ -244,6 +252,7 @@ function waitForFocusedSessionHydration({
   storedSessionId,
   timeoutMs
 }: {
+  connectionId?: string
   expectHistory: boolean
   generation: number
   profile: string
@@ -286,6 +295,7 @@ function waitForFocusedSessionHydration({
       }
 
       const profileMatches = !requireActiveProfile || normalizeProfileKey($activeGatewayProfile.get()) === profile
+      const connectionMatches = !connectionId || $activeConnectionId.get() === connectionId
       const sessionMatches = $selectedStoredSessionId.get() === storedSessionId
       const runtimeReady = Boolean($activeSessionId.get())
       const historyPainted = Boolean($messages.get().length)
@@ -304,12 +314,13 @@ function waitForFocusedSessionHydration({
       // surface is real rather than a stuck loader.
       const hydrated = expectHistory ? historyPainted : runtimeReady
 
-      if (profileMatches && sessionMatches && hydrated) {
+      if (profileMatches && connectionMatches && sessionMatches && hydrated) {
         finish()
       }
     }
 
     unbinds.push($activeGatewayProfile.listen(check))
+    unbinds.push($activeConnectionId.listen(check))
     unbinds.push($selectedStoredSessionId.listen(check))
     unbinds.push($activeSessionId.listen(check))
     unbinds.push($messages.listen(check))
@@ -470,27 +481,48 @@ export const host = {
    *  entirely. When the deleted profile was the live gateway's, the app is
    *  re-homed to the default profile — same semantics as the core dialog.
    *  Rejects with the backend's error when the delete fails. */
-  deleteProfile: async (profile: string): Promise<void> => {
-    const name = (profile ?? '').trim()
+  deleteProfile: async (profile: string | PluginProfileRoute): Promise<void> => {
+    const route =
+      typeof profile === 'string'
+        ? null
+        : {
+            ...profile,
+            connectionId: String(profile.connectionId || '').trim(),
+            profile: String(profile.profile || '').trim(),
+            targetProfile: String(profile.targetProfile || '').trim()
+          }
+    const name = typeof profile === 'string' ? profile.trim() : route?.profile || ''
+
+    if (route && (!route.connectionId || !route.profile || !route.targetProfile)) {
+      throw new Error('deleteProfile: route requires connectionId, profile, and targetProfile')
+    }
+
+    const targetProfile = route?.targetProfile || name
 
     if (!name) {
       throw new Error('deleteProfile: profile name required')
     }
 
-    if (normalizeProfileKey(name) === 'default') {
+    if (normalizeProfileKey(targetProfile) === 'default') {
       throw new Error('The default profile cannot be deleted.')
     }
 
     // Capture before the delete; re-home after so our write is the last one
     // (mirrors DeleteProfileDialog — a refreshActiveProfile racing the dying
     // backend can't clobber the pill back to the deleted profile).
-    const wasActive = normalizeProfileKey(name) === normalizeProfileKey($activeGatewayProfile.get())
+    const wasActive = route
+      ? route.connectionId === ($activeConnectionId.get() || '') &&
+        normalizeProfileKey(route.profile) === normalizeProfileKey($activeGatewayProfile.get())
+      : normalizeProfileKey(name) === normalizeProfileKey($activeGatewayProfile.get())
 
     // A hover-warmed Bot Mode row owns a retained renderer socket. Retire it
     // before Electron stops the profile backend so the socket closure cannot
     // schedule a reconnect that resurrects the deleted profile.
-    retireLocalProfileGateways(name)
-    await deleteProfile(name)
+    if (!route || route.mode === 'local') {
+      retireLocalProfileGateways(targetProfile)
+    }
+
+    await deleteProfile(targetProfile, route ? { connectionId: route.connectionId, profile: targetProfile } : undefined)
 
     // The profile rail paints from the shared $profiles cache; without a
     // refresh the deleted profile's badge survives and clicking it starts a
@@ -568,7 +600,8 @@ export const host = {
    *  also scope chrome onto that profile and collapse the sidebar. */
   openSession: async (storedSessionId: string, options: PluginOpenSessionOptions = {}): Promise<void> => {
     const generation = ++openSessionGeneration
-    const profile = (options.profile ?? '').trim()
+    const ownerRoute = options.route ? { ...options.route } : null
+    const profile = (ownerRoute?.profile ?? options.profile ?? '').trim()
     const targetProfile = normalizeProfileKey(profile || $activeGatewayProfile.get())
     const expectHistory = options.expectHistory ?? false
 
@@ -594,6 +627,20 @@ export const host = {
     // hydration-timeout race once and still be fine moments later, but this is
     // a caller-opt-in retry of the SAME wait, not a backoff loop.
     const maxAttempts = options.awaitHydration && options.retryHydrationTimeoutOnce ? 2 : 1
+    if (ownerRoute) {
+      // Routing hint only: the fork's plan below owns which backend to dial.
+      setSessionOwnerHint(storedSessionId, ownerRoute)
+    }
+
+    if (generation !== openSessionGeneration) {
+      throw new Error('Session open was superseded by a newer selection.')
+    }
+
+    if (options.awaitHydration) {
+      // Keep the target-specific overlay visible through transcript hydration,
+      // not merely through the gateway/profile activation that precedes it.
+      $gatewaySwapTarget.set(targetProfile)
+    }
 
     try {
       // WHICH backend to dial is the plan's call; HOW LONG to wait is the wake
@@ -666,11 +713,16 @@ export const host = {
             (!expectHistory || $messages.get().length > 0)
 
           if (options.awaitHydration && !surfaceHealthy) {
-            requestSessionResume(storedSessionId)
+            if (ownerRoute) {
+              requestSessionResume(storedSessionId, ownerRoute)
+            } else {
+              requestSessionResume(storedSessionId)
+            }
           }
 
           if (options.awaitHydration) {
             await waitForFocusedSessionHydration({
+              connectionId: ownerRoute?.connectionId,
               expectHistory,
               generation,
               profile: targetProfile,
@@ -794,8 +846,13 @@ export const host = {
   /** Start a fresh chat draft, optionally pointed at another profile (its
    *  backend spins up in the background — same door the sidebar's per-profile
    *  "+" uses). */
-  newChat: (profile?: null | string): void => {
-    newSessionInProfile((profile ?? '').trim() || $activeGatewayProfile.get())
+  newChat: (profile?: null | string | PluginProfileRoute): void => {
+    if (profile && typeof profile !== 'string') {
+      newSessionInAgent({ ...profile })
+    } else {
+      newSessionInProfile((profile ?? '').trim() || $activeGatewayProfile.get())
+    }
+
     window.location.hash = '#/'
   },
 
