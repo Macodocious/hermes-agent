@@ -2561,6 +2561,41 @@ def _fallback_entry_unavailable_without_network(agent, fb: dict) -> Optional[str
     return None
 
 
+def _fallback_reason_text(reason: "FailoverReason | None") -> str:
+    """Return a concise operator-facing explanation for a fallback switch."""
+    if reason is None:
+        return "provider failure"
+    labels = {
+        FailoverReason.auth: "authentication failed",
+        FailoverReason.auth_permanent: "authentication permanently failed",
+        FailoverReason.billing: "billing or quota exhausted",
+        FailoverReason.rate_limit: "rate limit",
+        FailoverReason.upstream_rate_limit: "upstream model rate limit",
+        FailoverReason.overloaded: "provider overloaded",
+        FailoverReason.server_error: "provider server error",
+        FailoverReason.timeout: "request timeout",
+        FailoverReason.ssl_cert_verification: "TLS certificate verification failed",
+        FailoverReason.context_overflow: "context window exceeded",
+        FailoverReason.payload_too_large: "request payload too large",
+        FailoverReason.image_too_large: "image payload too large",
+        FailoverReason.model_not_found: "model not found",
+        FailoverReason.provider_policy_blocked: "provider policy blocked the request",
+        FailoverReason.content_policy_blocked: "content policy blocked the request",
+        FailoverReason.format_error: "request format rejected",
+        FailoverReason.invalid_encrypted_content: "encrypted reasoning state rejected",
+        FailoverReason.multimodal_tool_content_unsupported: "multimodal tool content unsupported",
+        FailoverReason.thinking_signature: "thinking signature rejected",
+        FailoverReason.long_context_tier: "long-context tier unavailable",
+        FailoverReason.oauth_long_context_beta_forbidden: "OAuth long-context beta unavailable",
+        FailoverReason.llama_cpp_grammar_pattern: "grammar pattern rejected",
+        FailoverReason.unknown: "provider failure",
+    }
+    label = labels.get(reason)
+    if label:
+        return label
+    value = getattr(reason, "value", None)
+    return str(value or reason or "provider failure").replace("_", " ")
+
 
 def try_activate_fallback(agent, reason: "FailoverReason | None" = None) -> bool:
     """Switch to the next fallback model/provider in the chain.
@@ -2976,6 +3011,11 @@ def try_activate_fallback(agent, reason: "FailoverReason | None" = None) -> bool
             )
         else:
             agent._emit_status(notice_text)
+        # ``_fallback_activated`` is also reused by temporary `/model --once`
+        # restoration. Keep separate provenance so the restore path only emits
+        # a fallback-recovery notice after an actual provider fallback.
+        agent._provider_fallback_active = True
+        agent._provider_fallback_route = (str(fb_model), str(fb_provider))
 
         logger.info(
             "Fallback activated: %s → %s (%s)",
