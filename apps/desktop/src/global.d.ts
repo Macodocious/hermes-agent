@@ -229,6 +229,7 @@ declare global {
         write: (request: WorkspaceWriteRequest) => Promise<{ entry: unknown; path: string }>
         mkdir: (request: WorkspacePathRequest) => Promise<{ entry: unknown; path: string }>
         remove: (request: WorkspacePathRequest) => Promise<{ path: string }>
+        root: () => Promise<string>
       }
       updates: {
         check: () => Promise<DesktopUpdateStatus>

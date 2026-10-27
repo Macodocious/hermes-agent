@@ -15,11 +15,12 @@ import { ipcMain } from 'electron'
 import os from 'node:os'
 import path from 'node:path'
 
-import { assertWritablePath, resolveWorkspaceRoot } from './workspace-root'
+import { assertWritablePath, DEFAULT_WORKSPACE_ROOT, resolveWorkspaceRoot } from './workspace-root'
 
 export const WORKSPACE_CHANNELS = {
   mkdir: 'hermes:workspace:mkdir',
   remove: 'hermes:workspace:remove',
+  root: 'hermes:workspace:root',
   write: 'hermes:workspace:write'
 } as const
 
@@ -86,6 +87,8 @@ function toDataUrl(content: string): string {
 }
 
 export function registerWorkspaceFilesIpc(resolveConnection: WorkspaceConnectionResolver): void {
+  ipcMain.handle(WORKSPACE_CHANNELS.root, () => resolveWorkspaceRoot(DEFAULT_WORKSPACE_ROOT, os.homedir()))
+
   ipcMain.handle(WORKSPACE_CHANNELS.write, async (_event, request: WorkspaceWriteRequest) => {
     const fields = requireStrings(request, ['root', 'path'])
     const content = typeof request?.content === 'string' ? request.content : null

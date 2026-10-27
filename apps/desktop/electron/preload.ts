@@ -53,7 +53,8 @@ contextBridge.exposeInMainWorld('hermesDesktop', {
   workspace: {
     write: request => ipcRenderer.invoke('hermes:workspace:write', request),
     mkdir: request => ipcRenderer.invoke('hermes:workspace:mkdir', request),
-    remove: request => ipcRenderer.invoke('hermes:workspace:remove', request)
+    remove: request => ipcRenderer.invoke('hermes:workspace:remove', request),
+    root: () => ipcRenderer.invoke('hermes:workspace:root')
   },
   getBootProgress: () => ipcRenderer.invoke('hermes:boot-progress:get'),
   getConnectionConfig: profile => ipcRenderer.invoke('hermes:connection-config:get', profile),
