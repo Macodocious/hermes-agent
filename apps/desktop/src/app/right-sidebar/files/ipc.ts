@@ -153,6 +153,12 @@ function isUnderBox(dirPath: string): boolean {
   return target === boxRoot || target.startsWith(`${boxRoot}/`)
 }
 
+/** True for a path that lives on the box, which decides which reader and which
+ *  write path a tree action uses. */
+export function isBoxPath(target: string): boolean {
+  return isUnderBox(target)
+}
+
 export async function readProjectDir(dirPath: string, rootPath = dirPath): Promise<HermesReadDirResult> {
   if (!window.hermesDesktop) {
     return { entries: [], error: 'no-bridge' }

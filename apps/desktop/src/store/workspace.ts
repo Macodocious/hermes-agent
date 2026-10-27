@@ -47,3 +47,44 @@ export const deleteWorkspacePath = async (path: string): Promise<string> => {
 
   return result.path
 }
+
+function decodeBase64Utf8(encoded: string): string {
+  const binary = atob(encoded)
+  const bytes = Uint8Array.from(binary, char => char.charCodeAt(0))
+
+  return new TextDecoder().decode(bytes)
+}
+
+/** Read over the gateway. Reads are governed by the server's own policy; the
+ *  pin only has to guard writes. */
+export const readWorkspaceFile = async (path: string): Promise<string> => {
+  const connection = await window.hermesDesktop.getConnection()
+  const token = connection.token ? `&token=${encodeURIComponent(connection.token)}` : ''
+  const response = await fetch(`${connection.baseUrl}/api/files/read?path=${encodeURIComponent(path)}${token}`)
+
+  if (!response.ok) {
+    throw new Error(`Could not read ${path}: ${response.status}`)
+  }
+
+  const body = (await response.json()) as { data_url?: string }
+  const dataUrl = body.data_url ?? ''
+  const comma = dataUrl.indexOf(',')
+
+  return comma >= 0 ? decodeBase64Utf8(dataUrl.slice(comma + 1)) : ''
+}
+
+/**
+ * Rename on the box. The gateway has no move route, so this is a copy through
+ * the upload endpoint followed by a delete — which is also why a directory
+ * cannot be renamed here: reading one as a file is refused by the server.
+ */
+export const renameWorkspacePath = async (path: string, newName: string): Promise<string> => {
+  const separator = path.lastIndexOf('/')
+  const target = `${path.slice(0, separator)}/${newName}`
+  const content = await readWorkspaceFile(path)
+
+  await saveWorkspaceFile(target, content)
+  await deleteWorkspacePath(path)
+
+  return target
+}
