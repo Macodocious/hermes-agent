@@ -79,7 +79,6 @@ READ_FILE_DEFAULT_LIMIT = 500
 STALL_GUARD_REPEATABLE_TOOLS = frozenset(
     {
         "process",
-        "bfl_flux3_get_result",
     }
 )
 
