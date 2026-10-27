@@ -53,31 +53,52 @@ LIFECYCLE_WRITE_ACTION = {
     "completed": "complete",
 }
 
-# Row format for the always-on "[Active tasks]" block. The item id and the
-# live status are rendered explicitly instead of a status glyph: the id is
-# the addressing handle the model passes back in ``action`` + ``item_id``,
-# and a block that hides it lets the agent assert state about tasks it
-# cannot name (the "all five done / task 3 not done" incident).
-TASK_BLOCK_ROW_TEMPLATE = "- [{id}] [{status}] {content}"
+# Row format for the always-on "[Active tasks]" block. A task's external
+# identity is its position in the sequence the user counts — the plan's tasks
+# when the row belongs to a plan, the list itself when no plan is in play —
+# rendered as "position/total". The store id is an internal address only: it is
+# not a position a reader can follow (a replace-mode write renumbers it), and
+# printing it here handed the model a second counter to quote back at the user
+# ("task 4" for plan task 2), so the block no longer renders it.
+TASK_BLOCK_ROW_TEMPLATE = "- [{label}] [{status}] {content}"
+# A row outside every live plan's sequence is not counted at all. It renders
+# without a label rather than borrowing a number from the list it happens to
+# share with the plan.
+TASK_BLOCK_UNCOUNTED_ROW_TEMPLATE = "- [{status}] {content}"
+
+# A task's label: its 1-based position in the sequence it belongs to, over that
+# sequence's size. One template so every surface agrees on the form. The
+# separator is what tells a label from an id in a write payload.
+TASK_LABEL_TEMPLATE = "{position}/{total}"
+TASK_LABEL_SEPARATOR = "/"
+# A refusal names a row it cannot label by its content instead of by an id; the
+# content is capped because a task description can be a paragraph.
+TASK_REF_CONTENT_MAX_CHARS = 60
 
 
-def render_task_board_with_ids(items: List[Dict[str, Any]]) -> List[str]:
+def render_task_board(store: "TodoStore", items: List[Dict[str, Any]]) -> List[str]:
     """Render the always-on task block rows.
 
-    One ``"- [id] [status] content"`` line per item. The id is the
-    addressing handle the model passes back in ``action`` + ``item_id``;
-    the status is the live store status. Rendering both makes the injected
-    block truthful about what the store holds — the previous marker-only
-    line hid the id, so the agent could not name the task it described.
+    One ``"- [label] [status] content"`` line per item, where the label is the
+    task's position in the sequence the user counts (see
+    ``TodoStore.task_label``). The status is the live store status. A row
+    outside every plan's sequence renders without a label — it is not one of
+    the tasks the user is counting.
     """
-    return [
-        TASK_BLOCK_ROW_TEMPLATE.format(
-            id=item.get("id", "?"),
-            status=item.get("status", "?"),
-            content=item.get("content", ""),
+    rows = []
+    for item in items:
+        label = store.task_label(item.get("id", ""))
+        template = (
+            TASK_BLOCK_ROW_TEMPLATE if label else TASK_BLOCK_UNCOUNTED_ROW_TEMPLATE
         )
-        for item in items
-    ]
+        rows.append(
+            template.format(
+                label=label,
+                status=item.get("status", "?"),
+                content=item.get("content", ""),
+            )
+        )
+    return rows
 
 
 def _frozen_position(notice: Dict[str, Any]):
@@ -480,9 +501,16 @@ class TodoStore:
             # Merge mode: update existing items by id, append new ones
             existing = {item["id"]: item for item in self._items}
             for t in self._dedupe_by_id(todos):
-                item_id = str(t.get("id", "")).strip()
+                # A row may be named by its label (what the block renders) or by
+                # its id (what persistence and the plan seeder speak).
+                reference = str(t.get("id") or t.get("label") or "").strip()
+                item_id = self.resolve_item_id(reference)
                 if not item_id:
-                    continue  # Can't merge without an id
+                    if TASK_LABEL_SEPARATOR in reference:
+                        # A label that names no row must not become a new row:
+                        # the caller meant an existing task and got it wrong.
+                        continue
+                    item_id = reference  # a new row's own id
 
                 if item_id in existing:
                     # Update only the fields the LLM actually provided
@@ -545,6 +573,114 @@ class TodoStore:
     def has_items(self) -> bool:
         """Check if there are any items in the list."""
         return bool(self._items)
+
+    def _sequence_for(self, item: Dict[str, Any]) -> List[Dict[str, str]]:
+        """The ordered rows this item is counted against, or ``[]`` for none.
+
+        The user counts one sequence. A row carrying a plan reference belongs
+        to that plan's rows. A row carrying none belongs to the plain list —
+        but only while no row carries a plan reference: once a plan is in play,
+        a row outside it is not part of what the user is counting, so it gets no
+        position rather than borrowing one from the list it shares with the
+        plan. This is the same rule the lifecycle notices have always used.
+        """
+        ref = str(item.get("plan") or "").strip()
+        if ref:
+            return [
+                row
+                for row in self._items
+                if str(row.get("plan") or "").strip() == ref
+            ]
+        if any(str(row.get("plan") or "").strip() for row in self._items):
+            return []
+        return list(self._items)
+
+    def task_label(self, item_id: Any) -> str:
+        """The task's one external identity: ``"position/total"``, or ``""``.
+
+        Position is the row's place in the sequence it is counted against (see
+        ``_sequence_for``), never its id: replace-mode writes renumber ids, and
+        a second counter is what let the agent report plan task 2 as "task 4".
+        Returns ``""`` when the row is absent or outside every live plan's
+        sequence, so a caller renders it uncounted rather than inventing a
+        number for it.
+        """
+        with self._lock:
+            target = str(item_id or "").strip()
+            if not target:
+                return ""
+            item = next(
+                (row for row in self._items if str(row.get("id", "")) == target),
+                None,
+            )
+            if item is None:
+                return ""
+            sequence = self._sequence_for(item)
+            for position, row in enumerate(sequence, start=1):
+                if str(row.get("id", "")) == target:
+                    return TASK_LABEL_TEMPLATE.format(
+                        position=position, total=len(sequence)
+                    )
+            return ""
+
+    def _task_ref(self, item: Dict[str, Any]) -> str:
+        """How a refusal names a row: its label, or its quoted content.
+
+        A refusal is read by the user as often as by the model, so it names the
+        row the way the block does. A row with no label has no task number to
+        give, so it is named by what it says.
+        """
+        label = self.task_label(item.get("id", ""))
+        if label:
+            return f"task {label}"
+        content = str(item.get("content") or "")
+        if len(content) > TASK_REF_CONTENT_MAX_CHARS:
+            content = content[:TASK_REF_CONTENT_MAX_CHARS].rstrip() + "…"
+        return f'"{content}"'
+
+    def resolve_item_id(self, value: Any) -> str:
+        """The store id named by ``value``, which may be an id or a label.
+
+        The block renders labels, so a model addresses a row by the label it
+        reads there. An exact id still resolves first — persistence, the plan
+        seeder and internal callers speak ids. A label that names no row, or
+        more than one (two plans can each hold a position 2), resolves to
+        nothing so the caller refuses instead of guessing a row.
+        """
+        with self._lock:
+            raw = str(value or "").strip()
+            if not raw:
+                return ""
+            if any(str(row.get("id", "")) == raw for row in self._items):
+                return raw
+            matches = [
+                str(row.get("id", ""))
+                for row in self._items
+                if self.task_label(row.get("id", "")) == raw
+            ]
+            return matches[0] if len(matches) == 1 else ""
+
+    def apply_labels(self, todos: List[Any]) -> List[Any]:
+        """Map a write payload's ``label`` onto the row id it names.
+
+        The block shows labels, not ids, so editing or starting an existing row
+        names it by the label the model read. Resolving here keeps the store's
+        write path keyed by id, which is the address the store owns. Entries
+        without a label pass through untouched.
+        """
+        resolved: List[Any] = []
+        for entry in todos:
+            if not isinstance(entry, dict):
+                resolved.append(entry)
+                continue
+            label = str(entry.get("label") or "").strip()
+            if not label:
+                resolved.append(entry)
+                continue
+            copy = {key: val for key, val in entry.items() if key != "label"}
+            copy["id"] = self.resolve_item_id(label)
+            resolved.append(copy)
+        return resolved
 
     def _enforce_invariants(self, started_id: Optional[str] = None) -> None:
         """Enforce the single-current-task invariant.
@@ -737,12 +873,13 @@ class TodoStore:
     ) -> Dict[str, Any]:
         """``transition`` under the store lock: validate, mutate, return."""
         action = str(action or "").strip().lower()
-        item_id = str(item_id or "").strip()
+        requested = str(item_id or "").strip()
+        item_id = self.resolve_item_id(requested)
         if action not in LIFECYCLE_ACTIONS:
             return {"ok": False, "error": f"unknown lifecycle action: {action}"}
         item = next((i for i in self._items if i["id"] == item_id), None)
         if item is None:
-            return {"ok": False, "error": f"no task with id {item_id}"}
+            return {"ok": False, "error": f"no task with id or label {requested}"}
         if action == "begin" and item["status"] == "in_progress":
             # Already current: the promotion on the previous task's
             # ``complete`` began it. Idempotent, so the agent's own ``begin``
@@ -754,7 +891,7 @@ class TodoStore:
             return {
                 "ok": False,
                 "error": (
-                    f"cannot {action} task {item_id} in status "
+                    f"cannot {action} {self._task_ref(item)} in status "
                     f"'{item['status']}' (allowed from: {sorted(allowed) or 'none'})"
                 ),
             }
@@ -764,9 +901,10 @@ class TodoStore:
                 return {
                     "ok": False,
                     "error": (
-                        f"cannot {action} task {item_id}: task {earlier['id']} "
-                        f"is still open ('{earlier['status']}') — complete it, "
-                        f"cancel it with a reason, or move task {item_id} above it"
+                        f"cannot {action} {self._task_ref(item)}: "
+                        f"{self._task_ref(earlier)} is still open "
+                        f"('{earlier['status']}') — complete it, cancel it with "
+                        f"a reason, or move {self._task_ref(item)} above it"
                     ),
                 }
             # One task executes at a time: another in_progress task is the
@@ -776,8 +914,9 @@ class TodoStore:
                     return {
                         "ok": False,
                         "error": (
-                            f"cannot {action} task {item_id}: task {other['id']} "
-                            "is still in_progress — complete or cancel it first"
+                            f"cannot {action} {self._task_ref(item)}: "
+                            f"{self._task_ref(other)} is still in_progress — "
+                            "complete or cancel it first"
                         ),
                     }
             item["status"] = "in_progress"
@@ -796,7 +935,7 @@ class TodoStore:
                 return {
                     "ok": False,
                     "error": (
-                        f"cannot cancel task {item_id}: a reason is required "
+                        f"cannot cancel {self._task_ref(item)}: a reason is required "
                         "(it renders beneath the cancelled item)"
                     ),
                 }
@@ -822,9 +961,10 @@ class TodoStore:
             return {
                 "ok": False,
                 "error": (
-                    f"cannot complete task {item_id}: task {earlier['id']} is "
+                    f"cannot complete {self._task_ref(item)}: "
+                    f"{self._task_ref(earlier)} is "
                     f"still open ('{earlier['status']}') — complete it, cancel "
-                    f"it with a reason, or move task {item_id} above it"
+                    f"it with a reason, or move {self._task_ref(item)} above it"
                 ),
             }
         # A close the lifecycle did not see happen is refused. The row must
@@ -835,9 +975,9 @@ class TodoStore:
             return {
                 "ok": False,
                 "error": (
-                    f"cannot complete task {item_id}: no work under it — make a "
-                    f"call other than todo while it is current, or cancel it "
-                    f"with a reason"
+                    f"cannot complete {self._task_ref(item)}: no work under it "
+                    f"— make a call other than todo while it is current, or "
+                    f"cancel it with a reason"
                 ),
             }
         request_id = str(request_id or "").strip()
@@ -845,8 +985,8 @@ class TodoStore:
             return {
                 "ok": False,
                 "error": (
-                    f"cannot complete task {item_id}: a task was already closed "
-                    f"in this message — tick each task in its own step"
+                    f"cannot complete {self._task_ref(item)}: a task was already "
+                    f"closed in this message — tick each task in its own step"
                 ),
             }
         item["status"] = "completed"
@@ -1175,12 +1315,15 @@ class TodoStore:
             return None
 
         lines = ["[Active tasks]"]
-        lines.extend(render_task_board_with_ids(active_items))
+        lines.extend(render_task_board(self, active_items))
         for item in cancelled_items:
             # A cancelled task is shown struck through, its reason on the
             # line beneath — the agent's own record of what it set aside and
-            # why, visible to the user reading the block.
-            lines.append(f"- [{item['id']}] [cancelled] ~~{item['content']}~~")
+            # why, visible to the user reading the block. It is named by its
+            # label like every other row.
+            label = self.task_label(item["id"])
+            prefix = f"[{label}] " if label else ""
+            lines.append(f"- {prefix}[cancelled] ~~{item['content']}~~")
             if item.get("reason"):
                 lines.append(f"  reason: {item['reason']}")
         if completed_items:
@@ -1536,10 +1679,11 @@ def _lifecycle_write_violation(todos: List[Any], store: "TodoStore") -> Optional
             and prev.get("source") == USER_SOURCE
         ):
             continue  # the user marks their own task done
+        target = current.get(item_id)
+        named = store._task_ref(target) if target is not None else (item_id or "(new)")
         return (
-            f"cannot write status '{status}' for task "
-            f"{item_id or '(new)'} through the todos list — use "
-            f"action={action} to change a task's lifecycle status"
+            f"cannot write status '{status}' for {named} through the todos list "
+            f"— use action={action} to change a task's lifecycle status"
         )
     return None
 
@@ -1599,6 +1743,9 @@ def todo_tool(
             return tool_error(
                 f"todos must be a list, got {type(todos).__name__}"
             )
+        # A write may name an existing row by the label the block renders;
+        # resolve it onto the id before anything inspects the payload.
+        todos = store.apply_labels(todos)
         violation = _lifecycle_write_violation(todos, store)
         if violation is not None:
             return tool_error(violation)
@@ -1609,23 +1756,30 @@ def todo_tool(
     if dispositions is not None:
         store.disposition_captures(dispositions)
 
-    # Build summary counts
-    pending = sum(1 for i in items if i["status"] == "pending")
-    in_progress = sum(1 for i in items if i["status"] == "in_progress")
-    completed = sum(1 for i in items if i["status"] == "completed")
-    cancelled = sum(1 for i in items if i["status"] == "cancelled")
-    paused = sum(1 for i in items if i["status"] == "paused")
+    # The user counts one sequence: the plan's tasks when the row belongs to a
+    # plan, the list itself when no plan is in play. Summary counts are taken
+    # over those rows, so every surface that reports progress — the block, the
+    # lifecycle lines, the CLI tool preview — prints the same count. Rows
+    # outside every live plan's sequence are still returned (they are real
+    # rows) but they are not part of the number.
+    counted = [item for item in items if store.task_label(item["id"])]
+
+    def _count(status: str) -> int:
+        return sum(1 for item in counted if item["status"] == status)
 
     return json.dumps({
-        "todos": items,
+        "todos": [
+            {**item, "task": store.task_label(item["id"])} for item in items
+        ],
         "captures": store.pending_captures(),
         "summary": {
-            "total": len(items),
-            "pending": pending,
-            "in_progress": in_progress,
-            "completed": completed,
-            "cancelled": cancelled,
-            "paused": paused,
+            "total": len(counted),
+            "rows": len(items),
+            "pending": _count("pending"),
+            "in_progress": _count("in_progress"),
+            "completed": _count("completed"),
+            "cancelled": _count("cancelled"),
+            "paused": _count("paused"),
         },
     }, ensure_ascii=False)
 
@@ -1659,24 +1813,29 @@ TODO_SCHEMA = {
         "in_progress task.\n"
         "- pause: hold the current task (it becomes paused; resume later).\n"
         "- resume: continue a paused task (it becomes in_progress).\n"
-        "Use action + item_id to apply a lifecycle action.\n\n"
+        "Use action + item_id to apply a lifecycle action, naming the task by "
+        "the label the task block shows it under (\"2/11\").\n\n"
         "Writing:\n"
         "- Provide 'todos' array to add or edit items\n"
         "- To add a task, write one new item (merge=true, or a fresh list)\n"
-        "- To edit one item's content, write that item by id with merge=true\n"
+        "- To edit one item's content, write that item by its label with "
+        "merge=true\n"
         "- Never overwrite the whole list to change one item — write only "
         "the item you mean\n"
         "Lifecycle statuses (in_progress, paused, completed, cancelled) are "
         "driven by the action parameter — a write that changes one is "
         "refused. User-sourced items (source=user) may be marked "
         "completed/cancelled directly.\n\n"
-        "Each item: {id: string, content: string, "
+        "Each item: {label?: string, content: string, "
         "status: pending|in_progress|completed|cancelled, "
         "source?: user, plan?: string}\n"
-        "Ids are store-assigned: replace-mode writes renumber the list to "
-        "1..N in list order; merge-mode writes keep existing ids stable and "
-        "assign new items the next integer. Pass any unique placeholder "
-        "and read back the assigned id.\n"
+        "A task's label is its position in the sequence the user counts — the "
+        "plan's tasks when the row belongs to a plan, the task list itself "
+        "otherwise — and it is the ONLY task number there is. Report progress "
+        "by that label. A row with no label is outside every plan's sequence "
+        "and is not counted. The store id is internal plumbing: it is not a "
+        "position the user reads, so never describe a task to the user by its "
+        "id.\n"
         "Items tagged source=user are the user's own tasks: you may mark "
         "them completed/cancelled but never silently drop them.\n"
         "List order is priority. Only ONE item in_progress at a time, and "
@@ -1699,9 +1858,20 @@ TODO_SCHEMA = {
                 "items": {
                     "type": "object",
                     "properties": {
+                        "label": {
+                            "type": "string",
+                            "description": (
+                                "The task's label as the task block renders "
+                                "it (e.g. \"2/11\"). Use it to target an "
+                                "existing row in a merge write."
+                            )
+                        },
                         "id": {
                             "type": "string",
-                            "description": "Unique item identifier"
+                            "description": (
+                                "Internal store id. Omit it and pass 'label' "
+                                "instead; it is not a task number."
+                            )
                         },
                         "content": {
                             "type": "string",
@@ -1744,13 +1914,13 @@ TODO_SCHEMA = {
                             )
                         }
                     },
-                    "required": ["id", "content", "status"]
+                    "required": ["content", "status"]
                 }
             },
             "merge": {
                 "type": "boolean",
                 "description": (
-                    "true: update existing items by id, add new ones. "
+                    "true: update existing items by label, add new ones. "
                     "false (default): replace the entire list."
                 ),
                 "default": False
@@ -1766,7 +1936,10 @@ TODO_SCHEMA = {
             },
             "item_id": {
                 "type": "string",
-                "description": "Id of the task a lifecycle action targets."
+                "description": (
+                    "Label of the task a lifecycle action targets, exactly as "
+                    "the task block renders it (e.g. \"2/11\")."
+                )
             },
             "reason": {
                 "type": "string",
