@@ -72,8 +72,8 @@ import {
   setSessionOwnerHint,
   requestSessionResume,
   sessionMatchesStoredId,
-  setSessionOwnerHint,
-  setResumeExhaustedSessionId
+  setResumeExhaustedSessionId,
+  setSessionOwnerHint
 } from '@/store/session'
 import {
   $focusedRuntimeId,
@@ -136,6 +136,7 @@ const $focusedSessionOwner = computed(
     const activeConnectionId = String(
       connection?.connectionId || (connection?.mode === 'local' ? 'local' : '')
     ).trim()
+
     const fallback = {
       connectionId: activeConnectionId,
       profile: normalizeProfileKey(activeProfile)
@@ -159,6 +160,7 @@ const $focusedSessionOwner = computed(
     }
 
     const owners = new Map<string, PluginFocusedSessionOwner>()
+
     for (const row of sessions.filter(session => sessionMatchesStoredId(session, focused))) {
       const connectionId = String(row.connection_id || '').trim()
       const profile = normalizeProfileKey(row.profile)
@@ -544,6 +546,7 @@ export const host = {
             profile: String(profile.profile || '').trim(),
             targetProfile: String(profile.targetProfile || '').trim()
           }
+
     const name = typeof profile === 'string' ? profile.trim() : route?.profile || ''
 
     if (route && (!route.connectionId || !route.profile || !route.targetProfile)) {
