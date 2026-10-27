@@ -2,6 +2,7 @@
 
 import json
 from contextlib import contextmanager
+from contextvars import copy_context
 from pathlib import Path
 from unittest.mock import patch
 
@@ -1750,35 +1751,77 @@ class TestCuratorConsolidationDeleteGuard:
         # Skill must remain active on disk — fail closed, no archive.
         assert (skills_root / "active-skill").exists()
 
-    def test_omitted_absorbed_into_during_curator_pass_refused(self, tmp_path, monkeypatch):
-        with _curator_pass(tmp_path, monkeypatch=monkeypatch) as skills_root:
-            _create_curator_skill("active-skill", VALID_SKILL_CONTENT)
-            result = _delete_skill("active-skill")  # absorbed_into omitted
-        assert result["success"] is False
-        assert result.get("_fail_closed") is True
-        assert (skills_root / "active-skill").exists()
+    def test_background_review_read_survives_copied_tool_contexts(
+        self, tmp_path, monkeypatch
+    ):
+        """A view in one tool worker authorizes a patch in the next worker."""
+        from tools.skills_tool import skill_view
+        from tools.skill_manager_tool import _reset_background_review_read_marks
 
-    def test_whitespace_absorbed_into_during_curator_pass_refused(self, tmp_path, monkeypatch):
-        with _curator_pass(tmp_path, monkeypatch=monkeypatch) as skills_root:
-            _create_curator_skill("active-skill", VALID_SKILL_CONTENT)
-            result = _delete_skill("active-skill", absorbed_into="   ")
-        assert result["success"] is False
-        assert result.get("_fail_closed") is True
-        assert (skills_root / "active-skill").exists()
+        _reset_background_review_read_marks()
+        with _curator_pass(tmp_path, monkeypatch=monkeypatch):
+            _create_curator_skill("reviewed", _skill_content("reviewed"))
 
-    def test_verified_consolidation_archives_recoverably(self, tmp_path, monkeypatch):
-        with _curator_pass(tmp_path, monkeypatch=monkeypatch) as skills_root:
-            _create_curator_skill("umbrella", _skill_content("umbrella"))
-            _create_curator_skill("narrow", _skill_content("narrow"))
-            result = _delete_skill("narrow", absorbed_into="umbrella")
-        assert result["success"] is True, result
-        assert result.get("_archived") is True
-        assert "absorbed into 'umbrella'" in result["message"]
-        # Recoverable: moved to .archive/, NOT permanently rmtree'd.
-        assert not (skills_root / "narrow").exists()
-        assert (skills_root / ".archive" / "narrow").exists()
-        # Umbrella untouched.
-        assert (skills_root / "umbrella").exists()
+            viewed = copy_context().run(skill_view, "reviewed")
+            assert json.loads(viewed)["success"] is True
+
+            patched = copy_context().run(
+                skill_manage,
+                action="patch",
+                name="reviewed",
+                old_string="Step 1: Do the thing.",
+                new_string="Step 1: Do the thing safely.",
+            )
+            assert json.loads(patched)["success"] is True
+
+        _reset_background_review_read_marks()
+
+    def test_background_review_read_marks_stay_isolated_between_reviews(
+        self, tmp_path, monkeypatch
+    ):
+        """Copied tool contexts share only their own review's read marks."""
+        from tools.skills_tool import skill_view
+        from tools.skill_manager_tool import _reset_background_review_read_marks
+
+        _reset_background_review_read_marks()
+        with _curator_pass(tmp_path, monkeypatch=monkeypatch):
+            _create_curator_skill("reviewed", _skill_content("reviewed"))
+
+            first_review = copy_context()
+            _reset_background_review_read_marks()
+            second_review = copy_context()
+
+            viewed = first_review.run(skill_view, "reviewed")
+            assert json.loads(viewed)["success"] is True
+
+            blocked = second_review.run(
+                skill_manage,
+                action="patch",
+                name="reviewed",
+                old_string="Step 1: Do the thing.",
+                new_string="Step 1: Do the thing safely.",
+            )
+            result = json.loads(blocked)
+            assert result["success"] is False
+            assert result.get("_read_before_write_required") is True
+
+        _reset_background_review_read_marks()
+
+    def test_dispatcher_preserves_usage_record_on_curator_archive(self, tmp_path, monkeypatch):
+        # skill_manage(delete) post-action telemetry must NOT forget a
+        # recoverable curator archive — the record persists as archived so
+        # `hermes curator restore` can bring it back.
+        from tools import skill_usage
+        with _curator_pass(tmp_path, monkeypatch=monkeypatch):
+            _create_skill("umbrella", _skill_content("umbrella"))
+            _create_skill("narrow", _skill_content("narrow"))
+            skill_usage.mark_agent_created("narrow")
+            raw = skill_manage("delete", "narrow", absorbed_into="umbrella")
+            result = json.loads(raw)
+            assert result["success"] is True, result
+            rec = skill_usage.get_record("narrow")
+        # Record kept (not forgotten) and marked archived.
+        assert rec.get("state") == skill_usage.STATE_ARCHIVED
 
     def test_consolidation_into_missing_umbrella_still_rejected(self, tmp_path, monkeypatch):
         # The pre-existing target-existence check fires before the recoverable
@@ -1801,21 +1844,35 @@ class TestCuratorConsolidationDeleteGuard:
         assert result.get("_archived") is None
         assert not (tmp_path / "user-skill").exists()
 
-    def test_dispatcher_preserves_usage_record_on_curator_archive(self, tmp_path, monkeypatch):
-        # skill_manage(delete) post-action telemetry must NOT forget a
-        # recoverable curator archive — the record persists as archived so
-        # `hermes curator restore` can bring it back.
-        from tools import skill_usage
-        with _curator_pass(tmp_path, monkeypatch=monkeypatch):
-            _create_skill("umbrella", _skill_content("umbrella"))
-            _create_skill("narrow", _skill_content("narrow"))
-            skill_usage.mark_agent_created("narrow")
-            raw = skill_manage("delete", "narrow", absorbed_into="umbrella")
-            result = json.loads(raw)
-            assert result["success"] is True, result
-            rec = skill_usage.get_record("narrow")
-        # Record kept (not forgotten) and marked archived.
-        assert rec.get("state") == skill_usage.STATE_ARCHIVED
+    def test_verified_consolidation_archives_recoverably(self, tmp_path, monkeypatch):
+        with _curator_pass(tmp_path, monkeypatch=monkeypatch) as skills_root:
+            _create_curator_skill("umbrella", _skill_content("umbrella"))
+            _create_curator_skill("narrow", _skill_content("narrow"))
+            result = _delete_skill("narrow", absorbed_into="umbrella")
+        assert result["success"] is True, result
+        assert result.get("_archived") is True
+        assert "absorbed into 'umbrella'" in result["message"]
+        # Recoverable: moved to .archive/, NOT permanently rmtree'd.
+        assert not (skills_root / "narrow").exists()
+        assert (skills_root / ".archive" / "narrow").exists()
+        # Umbrella untouched.
+        assert (skills_root / "umbrella").exists()
+
+    def test_whitespace_absorbed_into_during_curator_pass_refused(self, tmp_path, monkeypatch):
+        with _curator_pass(tmp_path, monkeypatch=monkeypatch) as skills_root:
+            _create_curator_skill("active-skill", VALID_SKILL_CONTENT)
+            result = _delete_skill("active-skill", absorbed_into="   ")
+        assert result["success"] is False
+        assert result.get("_fail_closed") is True
+        assert (skills_root / "active-skill").exists()
+
+    def test_omitted_absorbed_into_during_curator_pass_refused(self, tmp_path, monkeypatch):
+        with _curator_pass(tmp_path, monkeypatch=monkeypatch) as skills_root:
+            _create_curator_skill("active-skill", VALID_SKILL_CONTENT)
+            result = _delete_skill("active-skill")  # absorbed_into omitted
+        assert result["success"] is False
+        assert result.get("_fail_closed") is True
+        assert (skills_root / "active-skill").exists()
 
     def test_background_review_patch_requires_skill_view_first(self, tmp_path, monkeypatch):
         from tools.skills_tool import skill_view
