@@ -10229,6 +10229,9 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                 return sanitize_context(content).strip()
             return content
 
+        expected_active_ids = self._session_db.get_active_message_ids(
+            self.session_id
+        )
         durable = self._session_db.get_messages_as_conversation(
             self.session_id,
             include_row_ids=True,
@@ -10272,12 +10275,6 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         target_row_id = durable_target.get("_row_id")
         if not isinstance(target_row_id, int):
             raise RuntimeError("persisted rewind target has no row identity")
-        expected_active_ids = [
-            int(message["_row_id"])
-            for message in durable
-            if isinstance(message.get("_row_id"), int)
-        ]
-
         scaffold, _ = split_user_originated_turn(durable_target)
         result = self._session_db.rewind_to_message(
             self.session_id,
@@ -10308,7 +10305,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         
         # Walk backwards to the last *real* user message. Timeline bookkeeping
         # rows (display_kind set) are role=user but are not user turns — match
-        # CLI resume counting and list_recent_user_messages. Compaction
+        # CLI resume counting and user_originated_turn_view. Compaction
         # handoffs are excluded too (durable role=user, sometimes without
         # display_kind on legacy sessions; #80622).
         from agent.context_compressor import (
@@ -10409,7 +10406,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
 
         # Walk backwards collecting the indices of the last N *real* user
         # messages (exclude display_kind timeline rows and compaction
-        # handoffs — same predicate as list_recent_user_messages, resume
+        # handoffs — same predicate as user_originated_turn_view, resume
         # turn counting, and /retry; #80622).
         from agent.context_compressor import (
             history_before_user_originated_turn,
