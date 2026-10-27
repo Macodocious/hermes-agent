@@ -354,7 +354,11 @@ export async function runRewindSubmit(
         ...(resolvedOrdinal === undefined && truncateOrdinal === 0 ? { confirm_empty_truncate: true } : {}),
         // The gateway rebinds surviving user turns after the cut; send the
         // ids the caller resolved so a rewind cannot leave stale stamps.
-        ...(rebindRowIds ? { rebind_survivor_row_ids: [...new Set(rebindRowIds.filter(Number.isInteger))] } : {}),
+        // Omit the field entirely when nothing resolved: an empty array reads
+        // as "rebind requested" and the gateway then rejects the cut.
+        ...(rebindRowIds?.length
+          ? { rebind_survivor_row_ids: [...new Set(rebindRowIds.filter(Number.isInteger))] }
+          : {}),
       },
       PROMPT_SUBMIT_REQUEST_TIMEOUT_MS
     )
