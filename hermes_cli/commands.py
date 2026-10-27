@@ -212,6 +212,8 @@ COMMAND_REGISTRY: list[CommandDef] = [
                busy_policy="dispatch"),
     CommandDef("refine", "Review this conversation now and save lessons to memory/skills", "Session",
                args_hint="[focus instructions]"),
+    CommandDef("review", "Spawn an independent subagent to review the work just discussed (PR, code, docs)", "Session",
+               args_hint="[review instructions]"),
     CommandDef("loop", "Re-run a prompt on a recurring interval in this session", "Session",
                aliases=("proactive",),
                args_hint="[interval] <prompt> [--times N] [--until <condition>] | status | pause | resume | stop",
@@ -1371,7 +1373,10 @@ _SLACK_PRIORITY_ALIASES = ("btw", "bg")
 #   - insights: usage/cost rollup; reached via /hermes insights on Slack.
 #     Added at the 50-cap — a native slot would clamp an existing native
 #     slash, so it rides the /hermes catchall instead.
-_SLACK_VIA_HERMES_ONLY = frozenset({"topup", "moa", "debug", "egress", "init", "version", "diff", "update", "platform", "heartbeat", "refine", "pause", "whoami", "insights"})
+#   - review: independent reviewer subagent; a rare, deliberate invocation
+#     that rides the /hermes catchall so its native slot stays free for a
+#     higher-traffic slash command.
+_SLACK_VIA_HERMES_ONLY = frozenset({"topup", "moa", "debug", "egress", "init", "version", "diff", "update", "platform", "heartbeat", "refine", "review", "pause", "whoami", "insights"})
 
 
 def _sanitize_slack_name(raw: str) -> str:
