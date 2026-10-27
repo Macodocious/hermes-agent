@@ -245,9 +245,39 @@ class TestMergeTodoStores:
 
         merged = _merge_todo_stores(memory, persisted)
         by_content = {i["content"]: i["status"] for i in merged.read()}
-        # Advanced status wins for the shared id (db-old completed beats
-        # mem-new in_progress); db-only items are restored.
-        assert by_content == {"db-old": "completed", "db-only": "completed"}
+        # The shared id names a different row now: the list's row survives and
+        # the stored row it displaced is not restored. A row the list does not
+        # hold at all is still restored.
+        assert by_content == {"mem-new": "in_progress", "db-only": "completed"}
+
+    def test_renumbered_write_is_not_overwritten_by_replaced_rows(self, hermes_home):
+        """A replace write renumbers rows 1..N, so a stored id can point at a
+        different logical row. The list the write produced must survive."""
+        from hermes_cli.tasks import _merge_todo_stores
+        from tools.todo_tool import TodoStore
+
+        memory = TodoStore()
+        memory.write(
+            [
+                {"id": "1", "content": "scaffold", "status": "pending"},
+                {"id": "2", "content": "sign-in", "status": "pending"},
+                {"id": "3", "content": "container", "status": "cancelled"},
+            ]
+        )
+        persisted = TodoStore()
+        persisted.write(
+            [
+                {"id": "1", "content": "old bridge", "status": "cancelled"},
+                {"id": "2", "content": "meta connect", "status": "in_progress"},
+            ]
+        )
+
+        merged = _merge_todo_stores(memory, persisted)
+        assert [i["content"] for i in merged.read()] == [
+            "scaffold",
+            "sign-in",
+            "container",
+        ]
 
     def test_persist_does_not_regress_db_finalization(self, hermes_home):
         """Fix 3 end-to-end: write-through with a stale in-memory store

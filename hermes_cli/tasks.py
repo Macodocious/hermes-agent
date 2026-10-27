@@ -119,32 +119,42 @@ def _merge_todo_stores(memory: Any, persisted: Any) -> Any:
 
     The task-lifecycle judge finalizes the persisted row (closing →
     completed) without touching the agent's in-memory store, so a naive
-    write-through clobbers the finalization. For every item present in both
-    stores the more advanced lifecycle status wins; items only in the DB
-    are restored; items only in memory (fresh writes) are kept. Returns a
-    new TodoStore; never mutates either input.
+    write-through clobbers the finalization. A persisted row joins an
+    in-memory row only when both its id and its content match: a replace-mode
+    write renumbers rows 1..N, so an id on its own can name a different
+    logical row, and merging on id alone let a row the write had replaced
+    overwrite the row now holding that id. A genuine match takes the more
+    advanced status; items only in the DB are restored; items only in memory
+    (fresh writes) are kept. Returns a new TodoStore; never mutates either
+    input.
     """
     from tools.todo_tool import TodoStore
 
-    memory_items = {item["id"]: item for item in memory.read()}
-    persisted_items = {item["id"]: item for item in persisted.read()}
+    memory_items = memory.read()
+    persisted_items = persisted.read()
+    persisted_by_id = {item["id"]: item for item in persisted_items}
     merged_items = []
-    seen = set()
-    for item_id in list(memory_items) + list(persisted_items):
-        if item_id in seen:
-            continue
-        seen.add(item_id)
-        mem = memory_items.get(item_id)
-        per = persisted_items.get(item_id)
-        if mem is not None and per is not None:
+    claimed_ids = set()
+    for mem in memory_items:
+        item_id = mem["id"]
+        claimed_ids.add(item_id)
+        per = persisted_by_id.get(item_id)
+        if per is not None and per.get("content") == mem.get("content"):
             if _LIFECYCLE_RANK.get(per["status"], 0) > _LIFECYCLE_RANK.get(mem["status"], 0):
                 merged_items.append(per)
-            else:
-                merged_items.append(mem)
-        elif per is not None:
-            merged_items.append(per)
-        else:
-            merged_items.append(mem)
+                continue
+        merged_items.append(mem)
+    # Rows the list does not hold at all are still restored: a store rebuilt
+    # from history, or a row another writer added, must survive. A stored row
+    # whose content already appears under a different id is the same logical
+    # row, and adding it would duplicate it.
+    memory_content = {item.get("content") for item in memory_items}
+    for per in persisted_items:
+        if per["id"] in claimed_ids:
+            continue
+        if per.get("content") in memory_content:
+            continue
+        merged_items.append(per)
     merged = TodoStore()
     merged.write(merged_items, merge=False)
     # The merge reconciles ITEMS; it is not a lifecycle transition, so it must

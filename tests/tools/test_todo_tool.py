@@ -38,6 +38,18 @@ class TestWriteAndRead:
             {"id": "2", "content": "Latest version", "status": "in_progress"},
         ]
 
+    def test_write_keeps_every_id_less_row(self):
+        store = TodoStore()
+        result = store.write([
+            {"content": f"task {n}", "status": "pending"} for n in range(1, 13)
+        ])
+        # Id-less rows are new rows, not duplicates of one another: a
+        # twelve-row write stores twelve rows.
+        assert [item["content"] for item in result] == [
+            f"task {n}" for n in range(1, 13)
+        ]
+        assert [item["id"] for item in result] == [str(n) for n in range(1, 13)]
+
 
 class TestHasItems:
     def test_empty_store(self):
