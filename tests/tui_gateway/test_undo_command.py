@@ -74,7 +74,7 @@ def session_with_history(server, db):
     for i in range(1, 4):
         db.append_message(session_key, "user", f"question {i}")
         db.append_message(session_key, "assistant", f"answer {i}")
-    history = db.get_messages_as_conversation(session_key)
+    history = db.get_messages_as_conversation(session_key, include_row_ids=True)
     agent = MagicMock()
     agent._memory_manager = MagicMock()
     agent._last_flushed_db_idx = len(history)

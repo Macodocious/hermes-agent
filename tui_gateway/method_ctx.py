@@ -18,6 +18,22 @@ level — server imports them and passes itself to ``register()``.
 import types
 
 
+def _history_without_ephemeral_scaffolding(history: list[dict]) -> list[dict]:
+    """Return the durable transcript shape without transient recovery rows.
+
+    Shared by the tui_gateway method modules and the rewind helper in
+    ``server``: a bare name in each module could not resolve across the
+    split, so the definition lives here and each caller imports it.
+    """
+    from run_agent import _is_ephemeral_scaffolding
+
+    return [
+        message.copy()
+        for message in history
+        if not _is_ephemeral_scaffolding(message)
+    ]
+
+
 class HandlerRegistry:
     """Deferred @method registrar used by the methods_* split modules."""
 
