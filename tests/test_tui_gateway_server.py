@@ -12356,6 +12356,7 @@ def test_prompt_submit_truncate_translates_display_prefix_ordinal(monkeypatch):
             archive_dropped=False,
             reject_active_turn_lease=False,
         ):
+            assert reject_active_turn_lease is True
             self.replaced.append((session_id, list(messages)))
 
     stub_db = _StubDb()
@@ -12440,6 +12441,12 @@ def test_prompt_submit_row_id_accepts_full_lineage_ordinal(monkeypatch):
     reconcile cross-check must treat `tip_ordinal + prefix_user_count` as
     agreement, not #82756 drift — and the cut stays aimed by the row id.
     """
+    from agent.context_compressor import (
+        HISTORICAL_TASK_HEADING,
+        SUMMARY_PREFIX,
+        _SUMMARY_END_MARKER,
+    )
+
     tip_history = [
         {"_row_id": 501, "role": "user", "content": "post-compress A"},
         {"_row_id": 502, "role": "assistant", "content": "reply A"},
@@ -12449,6 +12456,16 @@ def test_prompt_submit_row_id_accepts_full_lineage_ordinal(monkeypatch):
     display_prefix = [
         {"role": "user", "content": "pre-compress 1"},
         {"role": "assistant", "content": "pre reply 1"},
+        {
+            # Legacy pure handoffs did not always carry display_kind=hidden.
+            # They are physically user rows but not visible/user-originated
+            # turns, so they must not shift the Desktop lineage ordinal.
+            "role": "user",
+            "content": (
+                f"{SUMMARY_PREFIX}\n{HISTORICAL_TASK_HEADING}\nold task\n\n"
+                f"{_SUMMARY_END_MARKER}"
+            ),
+        },
         {"role": "user", "content": "pre-compress 2"},
         {"role": "assistant", "content": "pre reply 2"},
     ]
@@ -12464,6 +12481,7 @@ def test_prompt_submit_row_id_accepts_full_lineage_ordinal(monkeypatch):
             archive_dropped=False,
             reject_active_turn_lease=False,
         ):
+            assert reject_active_turn_lease is True
             replaced.append((key, list(messages)))
 
     sess = _session(history=list(tip_history), display_history_prefix=display_prefix)
@@ -20325,6 +20343,7 @@ def test_prompt_submit_row_id_misaligned_memory_refuses_content_swap(
         db._insert_message_rows(db._conn, session_key, msgs)
         db._conn.commit()
     rid_b = msgs[2]["_row_id"]
+    original_row_ids = [message["_row_id"] for message in msgs]
 
     # Same length + same role pattern, but content positions swapped: a
     # positional stamp would mark live "B" with durable A's row id and the
@@ -20356,6 +20375,7 @@ def test_prompt_submit_row_id_misaligned_memory_refuses_content_swap(
                     "session_id": sid,
                     "text": "rewind B",
                     "truncate_before_row_id": rid_b,
+                    "rebind_survivor_row_ids": [*original_row_ids, 999_999],
                     "confirm_truncate": True,
                 },
             }
@@ -20394,6 +20414,7 @@ def test_prompt_submit_row_id_misaligned_memory_role_shift_targets_real_turn(
         db._insert_message_rows(db._conn, session_key, msgs)
         db._conn.commit()
     rid_b = msgs[2]["_row_id"]
+    original_row_ids = [message["_row_id"] for message in msgs]
 
     live_history = [
         {"role": "user", "content": "A"},
@@ -20417,6 +20438,7 @@ def test_prompt_submit_row_id_misaligned_memory_role_shift_targets_real_turn(
                     "session_id": sid,
                     "text": "rewind B",
                     "truncate_before_row_id": rid_b,
+                    "rebind_survivor_row_ids": [*original_row_ids, 999_999],
                     "confirm_truncate": True,
                 },
             }
@@ -20433,6 +20455,13 @@ def test_prompt_submit_row_id_misaligned_memory_role_shift_targets_real_turn(
             ("assistant", "ra"),
             ("assistant", "rb"),
         ]
+        # The live list was too misaligned to bind old survivors to their new
+        # physical rows safely. All requested IDs known to the pre-write active
+        # transcript are therefore cleared; an unrelated archived/ancestor ID
+        # remains absent from the bounded map and keeps its identity.
+        assert resp["result"]["survivor_row_id_map"] == {
+            str(row_id): None for row_id in original_row_ids
+        }
     finally:
         server._sessions.pop(sid, None)
 
@@ -20513,8 +20542,9 @@ def test_prompt_submit_row_id_db_fallback_ordinal_mapping_verifies_content(
         server._sessions.pop(sid, None)
 
 
+@pytest.mark.parametrize("turn_isolation", [False, True])
 def test_prompt_submit_consecutive_rewinds_with_returned_survivor_row_ids(
-    monkeypatch, tmp_path
+    monkeypatch, tmp_path, turn_isolation
 ):
     """#83202 review (consecutive-rewind staleness): replace_messages re-inserts
     the surviving prefix as NEW rows, so the pre-rewind client row ids die on
@@ -20543,6 +20573,16 @@ def test_prompt_submit_consecutive_rewinds_with_returned_survivor_row_ids(
     sid = "real-db-consec-rewind-sid"
     server._sessions[sid] = sess
     monkeypatch.setattr(server, "_get_db", lambda: db)
+    monkeypatch.setattr(
+        server,
+        "_load_cfg",
+        lambda: {"dashboard": {"turn_isolation": turn_isolation}},
+    )
+    monkeypatch.setattr(
+        server,
+        "_submit_prompt_to_compute_host",
+        lambda *_args, **_kwargs: server._ok("host", {"status": "streaming"}),
+    )
     monkeypatch.setattr(server, "_start_agent_build", lambda *a, **k: None)
     monkeypatch.setattr(server, "_start_inflight_turn", lambda *a, **k: None)
 
@@ -20558,17 +20598,30 @@ def test_prompt_submit_consecutive_rewinds_with_returned_survivor_row_ids(
                     "text": "rewound third",
                     "truncate_before_row_id": original_row_ids[4],
                     "truncate_before_user_ordinal": 2,
+                    "rebind_survivor_row_ids": [*original_row_ids, 999_999],
                     "confirm_truncate": True,
                 },
             }
         )
         assert resp1.get("error") is None, resp1
-        survivors = resp1["result"].get("survivor_user_row_ids")
-        # Fresh ids for the two surviving user turns, in visible-user order.
-        assert isinstance(survivors, list) and len(survivors) == 2
-        assert all(isinstance(r, int) for r in survivors)
+        assert "survivor_user_row_ids" not in resp1["result"]
+        row_id_map = resp1["result"].get("survivor_row_id_map")
+        assert isinstance(row_id_map, dict)
+        survivors = [
+            row_id_map[str(original_row_ids[0])],
+            row_id_map[str(original_row_ids[2])],
+        ]
         # They must be NEW rows — the old ids are archived (active=0) now.
         assert set(survivors).isdisjoint(set(original_row_ids))
+        assert row_id_map == {
+            str(original_row_ids[0]): survivors[0],
+            str(original_row_ids[1]): sess["history"][1]["_row_id"],
+            str(original_row_ids[2]): survivors[1],
+            str(original_row_ids[3]): sess["history"][3]["_row_id"],
+            str(original_row_ids[4]): None,
+            str(original_row_ids[5]): None,
+        }
+        assert "999999" not in row_id_map
         sess["running"] = False
 
         # Rewind 2a: the STALE pre-rewind id for "second" must fail closed.

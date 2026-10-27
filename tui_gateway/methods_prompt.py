@@ -381,6 +381,17 @@ def _(rid, params: dict) -> dict:
     # the fresh post-rewrite row ids of the surviving user turns, for client
     # rowId rebinding (see comment at the assignment site).
     survivor_user_row_ids = None
+    survivor_row_id_map = None
+    raw_rebind_ids = params.get("rebind_survivor_row_ids")
+    requested_rebind_ids = (
+        {
+            row_id
+            for row_id in raw_rebind_ids
+            if isinstance(row_id, int) and not isinstance(row_id, bool)
+        }
+        if isinstance(raw_rebind_ids, list)
+        else None
+    )
     with session["history_lock"]:
         # A watch session's run lives in the PARENT turn, so its own running
         # flag is False — without this, typing mid-run builds a second agent
@@ -466,12 +477,10 @@ def _(rid, params: dict) -> dict:
             # ordinal and a tip-relative ordinal below can translate, instead
             # of loading ancestors into the tip (which would duplicate
             # compressed history on later resumes).
-            prefix_user_count = sum(
-                1
-                for message in session.get("display_history_prefix") or []
-                if isinstance(message, dict)
-                and message.get("role") == "user"
-                and not message.get("display_kind")
+            prefix_user_count = len(
+                _history_user_indices(
+                    session.get("display_history_prefix") or []
+                )
             )
 
             user_indices = _history_user_indices(history)
@@ -611,7 +620,12 @@ def _(rid, params: dict) -> dict:
             # truncating history to everything before it and persisting that loss
             # via replace_messages — an unrecoverable overwrite of the session DB.
             if ordinal < 0 or ordinal >= len(user_indices):
-                return _err(rid, 4018, "target user message is no longer in session history")
+                return _err(
+                    rid,
+                    4018,
+                    "target user message is no longer in session history",
+                    data=_stale_target_data(resolved_ordinal=ordinal),
+                )
             from agent.context_compressor import history_before_user_originated_turn
 
             truncated, _live_view = history_before_user_originated_turn(
@@ -685,6 +699,36 @@ def _(rid, params: dict) -> dict:
                         # sessions created before the session_key default fix have no
                         # key, and replace_messages(None) triggers an FK violation.
                         truncation_key = session.get("session_key") or sid
+                        old_active_row_ids = {
+                            row_id
+                            for message in history
+                            if isinstance((row_id := _message_row_id(message)), int)
+                        }
+                        if requested_rebind_ids is not None and any(
+                            _message_row_id(message) is None for message in history
+                        ):
+                            # Row-id fallback can resolve a durable target even
+                            # when the live list is too misaligned to stamp safely.
+                            # Read the authoritative pre-write active-id set so a
+                            # rewritten row is never mistaken for an untouched
+                            # archived/ancestor row by the bounded client map.
+                            durable_rebind_history = _load_durable_truncation_history(
+                                session, truncation_key
+                            )
+                            if durable_rebind_history is None:
+                                raise RuntimeError(
+                                    "could not load durable row identities for truncation"
+                                )
+                            old_active_row_ids.update(
+                                row_id
+                                for message in durable_rebind_history
+                                if isinstance(
+                                    (row_id := _message_row_id(message)), int
+                                )
+                            )
+                        old_survivor_row_ids = [
+                            _message_row_id(message) for message in truncated
+                        ]
                         db.replace_messages(
                             truncation_key,
                             truncated,
@@ -714,6 +758,21 @@ def _(rid, params: dict) -> dict:
                     _message_row_id(truncated[i])
                     for i in _history_user_indices(truncated)
                 ]
+                if requested_rebind_ids is not None:
+                    survivor_row_id_map = {
+                        str(old_row_id): new_row_id
+                        for old_row_id, new_row_id in zip(
+                            old_survivor_row_ids,
+                            (_message_row_id(message) for message in truncated),
+                        )
+                        if isinstance(old_row_id, int)
+                        and isinstance(new_row_id, int)
+                        and old_row_id in requested_rebind_ids
+                    }
+                    for dropped_row_id in requested_rebind_ids.intersection(
+                        old_active_row_ids
+                    ):
+                        survivor_row_id_map.setdefault(str(dropped_row_id), None)
         session["running"] = True
         session["_turn_cancel_requested"] = False
         session["last_active"] = time.time()
@@ -724,13 +783,15 @@ def _(rid, params: dict) -> dict:
             rid, sid, session, text, display_kind=display_kind
         )
         if not isolated_response.get("error"):
-            if survivor_user_row_ids is not None:
+            if survivor_user_row_ids is not None and requested_rebind_ids is None:
                 # The truncation already happened inline above (memory + DB),
                 # before compute-host dispatch — the rebind payload applies to
                 # this path exactly as it does to the inline one.
                 isolated_response["result"][
                     "survivor_user_row_ids"
                 ] = survivor_user_row_ids
+            if survivor_row_id_map is not None:
+                isolated_response["result"]["survivor_row_id_map"] = survivor_row_id_map
             return isolated_response
         logger.warning(
             "compute-host dispatch failed for session %s; falling back inline: %s",
@@ -825,6 +886,12 @@ def _(rid, params: dict) -> dict:
             **(
                 {"survivor_user_row_ids": survivor_user_row_ids}
                 if survivor_user_row_ids is not None
+                and requested_rebind_ids is None
+                else {}
+            ),
+            **(
+                {"survivor_row_id_map": survivor_row_id_map}
+                if survivor_row_id_map is not None
                 else {}
             ),
         },

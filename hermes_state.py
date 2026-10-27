@@ -10347,6 +10347,7 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
         turn_lease_holder: Optional[str] = None,
         turn_lease_ttl_seconds: float = 300.0,
         reject_active_turn_lease: bool = False,
+        reject_active_compression_lock: bool = False,
     ) -> None:
         """Transcript-write admission checks, run INSIDE the write txn.
 
@@ -11086,6 +11087,7 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
                     session_id,
                     None,
                     reject_active_turn_lease=True,
+                    reject_active_compression_lock=True,
                 )
             else:
                 session = conn.execute(
@@ -11435,13 +11437,30 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
                 all_rows = cursor.fetchall()
             seen: dict = {}
             for row in all_rows:
+                dedupe_content = row["content"]
+                if row["role"] == "user":
+                    from agent.context_compressor import split_user_originated_turn
+
+                    candidate = {
+                        "role": "user",
+                        "content": self._decode_content(row["content"]),
+                        "display_kind": row["display_kind"],
+                        "display_metadata": self._decode_display_metadata(
+                            row["display_metadata"]
+                        ),
+                    }
+                    handoff, live_view = split_user_originated_turn(candidate)
+                    if handoff is not None and live_view is not None:
+                        dedupe_content = self._encode_content(
+                            live_view.get("content")
+                        )
                 # Tool fields participate in the dedupe key: compaction copies
                 # them verbatim, so identical tool messages across generations
                 # still collapse, while distinct tool calls that happen to
                 # share role/content/timestamp are never merged.
                 key = (
                     row["role"],
-                    row["content"],
+                    dedupe_content,
                     row["timestamp"],
                     row["tool_call_id"],
                     row["tool_calls"],
@@ -11766,6 +11785,11 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
         desired session set / active state by the caller.
         """
         messages = []
+        # Watermark rotation column-clones concurrent tail rows into the child
+        # after the new summary, so the copies need not be adjacent. Index the
+        # exact durable clone identity while decoding instead of rescanning the
+        # whole accumulated lineage for every user row.
+        exact_user_clones: Dict[Tuple[Any, str], Dict[str, Any]] = {}
         for row in rows:
             content = self._decode_content(row["content"])
             if row["role"] in {"user", "assistant"} and isinstance(content, str):
@@ -11856,9 +11880,47 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
                     except (json.JSONDecodeError, TypeError):
                         logger.warning("Failed to deserialize codex_message_items, falling back to None")
                         msg["codex_message_items"] = None
-            if include_ancestors and self._is_duplicate_replayed_user_message(messages, msg):
-                continue
+            if include_ancestors:
+                canonical_content, _is_composite = (
+                    self._canonical_replayed_user_content(msg)
+                )
+                exact_clone_key = self._exact_replayed_user_clone_key(
+                    msg.get("timestamp"), canonical_content
+                )
+                previous_exact = (
+                    exact_user_clones.get(exact_clone_key)
+                    if exact_clone_key is not None
+                    else None
+                )
+                duplicate = None
+                if previous_exact is not None:
+                    previous_index = next(
+                        (
+                            index
+                            for index, candidate in enumerate(messages)
+                            if candidate is previous_exact
+                        ),
+                        None,
+                    )
+                    if previous_index is not None:
+                        duplicate = (previous_index, True)
+                if duplicate is None:
+                    duplicate = self._find_duplicate_replayed_user_message(
+                        messages, msg
+                    )
+                if duplicate is not None:
+                    duplicate_index, prefer_current = duplicate
+                    if prefer_current:
+                        # A rotated compression child can carry the same live
+                        # ask as the parent row plus the only surviving summary
+                        # scaffold. Keep the child carrier (and its durable row
+                        # id), not the simpler ancestor copy.
+                        messages.pop(duplicate_index)
+                    else:
+                        continue
             messages.append(msg)
+            if include_ancestors and exact_clone_key is not None:
+                exact_user_clones[exact_clone_key] = msg
         # DEFENSE-IN-DEPTH against background-review session pollution: a forked
         # skill/memory review that (in older builds, before the _persist_disabled
         # fix) shared the parent's session_id wrote its harness turn into this
@@ -12069,15 +12131,28 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
                 "ORDER BY id",
                 tuple(session_ids),
             ).fetchall()
-        ancestor_rows = [r for r in rows if r["session_id"] != session_id]
-        if not ancestor_rows:
+        ancestor_ids = {
+            int(row["id"])
+            for row in rows
+            if row["session_id"] != session_id and row["id"] is not None
+        }
+        if not ancestor_ids:
             return []
-        return self._rows_to_conversation(
-            ancestor_rows,
+        lineage = self._rows_to_conversation(
+            rows,
             session_id=session_id,
             include_ancestors=True,
             repair_alternation=False,
+            include_row_ids=True,
         )
+        prefix: List[Dict[str, Any]] = []
+        for message in lineage:
+            if message.get("_row_id") not in ancestor_ids:
+                continue
+            projected = message.copy()
+            projected.pop("_row_id", None)
+            prefix.append(projected)
+        return prefix
 
     def _is_explicit_branch_session(self, session_id: str) -> bool:
         """Return whether *session_id* is a copied user-facing branch.
@@ -12143,18 +12218,82 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
         return list(reversed(chain)) or [session_id]
 
     @staticmethod
-    def _is_duplicate_replayed_user_message(messages: List[Dict[str, Any]], msg: Dict[str, Any]) -> bool:
+    def _canonical_replayed_user_content(
+        msg: Dict[str, Any],
+    ) -> Tuple[Any, bool]:
+        """Return canonical live content and whether *msg* is composite."""
         if msg.get("role") != "user":
-            return False
-        content = msg.get("content")
-        if not isinstance(content, str) or not content:
-            return False
-        for prev in reversed(messages):
-            if prev.get("role") == "user" and prev.get("content") == content:
-                return True
+            return None, False
+
+        from agent.context_compressor import split_user_originated_turn
+
+        handoff, live_view = split_user_originated_turn(msg)
+        is_composite = handoff is not None and live_view is not None
+        return (
+            live_view.get("content")
+            if is_composite and live_view is not None
+            else msg.get("content"),
+            is_composite,
+        )
+
+    @staticmethod
+    def _exact_replayed_user_clone_key(
+        timestamp: Any, content: Any
+    ) -> Optional[Tuple[Any, str]]:
+        """Return a hashable key for a column-exact rotation clone."""
+        if timestamp is None or content in (None, "", []):
+            return None
+        try:
+            encoded = json.dumps(
+                content,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+        except (TypeError, ValueError):
+            return None
+        return timestamp, encoded
+
+    @staticmethod
+    def _find_duplicate_replayed_user_message(
+        messages: List[Dict[str, Any]], msg: Dict[str, Any]
+    ) -> Optional[Tuple[int, bool]]:
+        """Return an adjacent replay duplicate and whether *msg* must win.
+
+        Compression rotation may persist the current ask once in the parent
+        and again inside a composite child carrier. Compare the canonical live
+        payload for that carrier, while retaining the historical exact-string
+        dedupe for ordinary replayed users. The child carrier wins because it
+        owns both the current durable row identity and the retained scaffold.
+        """
+        if msg.get("role") != "user":
+            return None
+
+        content, prefer_current = SessionDB._canonical_replayed_user_content(msg)
+        if content in (None, "", []):
+            return None
+
+        for index in range(len(messages) - 1, -1, -1):
+            prev = messages[index]
+            if prev.get("role") == "user":
+                prev_content, prev_is_composite = (
+                    SessionDB._canonical_replayed_user_content(prev)
+                )
+                if prev_content == content and (
+                    prefer_current
+                    or prev_is_composite
+                    or isinstance(content, str)
+                ):
+                    return index, prefer_current
             if prev.get("role") == "assistant" and (prev.get("content") or prev.get("tool_calls")):
-                return False
-        return False
+                return None
+        return None
+
+    @staticmethod
+    def _is_duplicate_replayed_user_message(
+        messages: List[Dict[str, Any]], msg: Dict[str, Any]
+    ) -> bool:
+        return SessionDB._find_duplicate_replayed_user_message(messages, msg) is not None
 
     # =========================================================================
     # Rewind (soft-delete) — see /rewind slash command + issue #21910
@@ -12239,6 +12378,7 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
                 session_id,
                 None,
                 reject_active_turn_lease=True,
+                reject_active_compression_lock=True,
             )
 
             if expected_active_ids is not None:

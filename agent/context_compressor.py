@@ -8364,6 +8364,16 @@ def reference_handoff_would_drive_next_model_call(
             and message.get("finish_reason") == "stop"
             and not message.get("tool_calls")
         )
+        in_flight_tool_carrier = (
+            isinstance(message, dict)
+            and message.get("role") == "assistant"
+            and bool(message.get("tool_calls"))
+        )
+        if in_flight_tool_carrier:
+            # Pending tool calls mean the carrier is the assistant's own
+            # unfinished turn: the next model call continues that tool loop, so
+            # the row never acts as a sole-handoff driver.
+            continue
         if (
             _handoff_carries_live_user_content(message)
             and not merged_completed_assistant

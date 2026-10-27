@@ -42,6 +42,7 @@ import {
   planReload,
   planRestore,
   rebindSurvivorRowIds,
+  durableRowIdsForRebind,
   runRewindSubmit,
   type SurvivorUserRowIds
 } from '../session/hooks/use-prompt-actions/rewind'
@@ -415,7 +416,8 @@ export function useSessionTileActions({ requestGateway, runtimeId, scope, stored
       interruptFirst: boolean,
       truncateMessageId?: string,
       truncateRowId?: number,
-      sourceText?: string
+      sourceText?: string,
+      rebindRowIds?: readonly number[]
     ) =>
       runRewindSubmit(
         requestGateway,
@@ -429,7 +431,8 @@ export function useSessionTileActions({ requestGateway, runtimeId, scope, stored
           onSessionRecovered: bindRecoveredRuntime
         },
         truncateRowId,
-        sourceText
+        sourceText,
+        rebindRowIds
       ),
     [bindRecoveredRuntime, requestGateway]
   )
@@ -477,7 +480,8 @@ export function useSessionTileActions({ requestGateway, runtimeId, scope, stored
             false,
             plan.truncateMessageId,
             plan.truncateRowId,
-            plan.sourceText
+            plan.sourceText,
+            durableRowIdsForRebind(state.messages)
           )
         )
       } catch (err) {
@@ -513,7 +517,8 @@ export function useSessionTileActions({ requestGateway, runtimeId, scope, stored
             interruptFirst,
             plan.truncateMessageId,
             plan.truncateRowId,
-            plan.sourceText
+            plan.sourceText,
+            durableRowIdsForRebind(messages)
           )
         )
       } catch (err) {
@@ -561,7 +566,8 @@ export function useSessionTileActions({ requestGateway, runtimeId, scope, stored
             interruptFirst,
             plan.truncateMessageId,
             plan.truncateRowId,
-            plan.sourceText
+            plan.sourceText,
+            durableRowIdsForRebind(messages)
           )
         )
       } catch (err) {

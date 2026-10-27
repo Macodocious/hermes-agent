@@ -49,7 +49,6 @@ def _standalone_handoff(task: str = "finish the already-done refactor") -> dict:
     }
 
 
-<<<<<<< HEAD
 def _merged_assistant_carrier(
     *, finish_reason: str = "stop", tool_calls: list[dict] | None = None
 ) -> dict:
@@ -71,12 +70,12 @@ def _merged_assistant_carrier(
     if tool_calls is not None:
         carrier["tool_calls"] = tool_calls
     return carrier
-=======
+
+
 def _composite_handoff(ask: str = "REAL ASK") -> dict:
     handoff = _standalone_handoff()
     handoff["content"] += f"\n\n{ask}"
     return handoff
->>>>>>> 3e5e4c5d20006e0f29f5389224ee0265e444dd3f
 
 
 class TestReferenceHandoffWouldDriveNextModelCall:
