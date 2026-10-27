@@ -225,6 +225,11 @@ declare global {
         restart: () => Promise<{ restarting: boolean }>
         onPending: (callback: (build: PendingMainBuild | null) => void) => () => void
       }
+      workspace: {
+        write: (request: WorkspaceWriteRequest) => Promise<{ entry: unknown; path: string }>
+        mkdir: (request: WorkspacePathRequest) => Promise<{ entry: unknown; path: string }>
+        remove: (request: WorkspacePathRequest) => Promise<{ path: string }>
+      }
       updates: {
         check: () => Promise<DesktopUpdateStatus>
         apply: (opts?: DesktopUpdateApplyOptions) => Promise<DesktopUpdateApplyResult>
@@ -246,6 +251,19 @@ declare global {
       }
     }
   }
+}
+
+export interface WorkspaceWriteRequest {
+  content: string
+  path: string
+  profile?: string
+  root: string
+}
+
+export interface WorkspacePathRequest {
+  path: string
+  profile?: string
+  root: string
 }
 
 export interface PendingMainBuild {

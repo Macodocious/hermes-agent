@@ -31,6 +31,7 @@ import {
 import nodePty from 'node-pty'
 
 import { registerApplyLoopIpc, wireDevServerResilience } from './apply-loop'
+import { registerWorkspaceFilesIpc } from './workspace-files'
 import { stopBackendChild as stopBackendChildImpl } from './backend-child'
 import { dashboardFallbackArgs, sourceDeclaresServe } from './backend-command'
 import { createBackendConnectionState } from './backend-connection-state'
@@ -10358,6 +10359,7 @@ app.on('open-url', (event, url) => {
 
 app.whenReady().then(() => {
   registerApplyLoopIpc()
+  registerWorkspaceFilesIpc(profile => ensureBackend(profile))
 
   const systemCa = installWindowsSystemCaTrust(tls)
 

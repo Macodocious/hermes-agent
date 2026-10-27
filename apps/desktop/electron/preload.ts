@@ -48,6 +48,13 @@ contextBridge.exposeInMainWorld('hermesDesktop', {
       return () => ipcRenderer.removeListener('hermes:apply-loop:pending', listener)
     }
   },
+  // Workspace writes leave through the main process so the pinned checkout is
+  // checked before any request is formed.
+  workspace: {
+    write: request => ipcRenderer.invoke('hermes:workspace:write', request),
+    mkdir: request => ipcRenderer.invoke('hermes:workspace:mkdir', request),
+    remove: request => ipcRenderer.invoke('hermes:workspace:remove', request)
+  },
   getBootProgress: () => ipcRenderer.invoke('hermes:boot-progress:get'),
   getConnectionConfig: profile => ipcRenderer.invoke('hermes:connection-config:get', profile),
   saveConnectionConfig: payload => ipcRenderer.invoke('hermes:connection-config:save', payload),
