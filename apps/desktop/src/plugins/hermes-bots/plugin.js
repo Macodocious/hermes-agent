@@ -835,125 +835,6 @@ function persistGroupChatRooms(all = $groupChats.get()) {
   }
 }
 
-// ── deleted-connection roster hygiene (#93492 root cause) ───────────────────
-// Deleting a cloud/remote connection used to leave every persisted group-chat
-// member descriptor that referenced it behind untouched. Those orphaned rows
-// (remoteSource: true, connection gone) are exactly the shape that made
-// render-path route lookups throw "Bot X has no connection owner" on every
-// group open, permanently — the poisoned row lives in plugin storage. The
-// sweep below runs on the registry's 'removed' push (and its annotate helper
-// again at hydrate for rows orphaned before this build). It never hard-deletes
-// user data: the member row is kept and marked, so panes render the existing
-// degraded 'Gateway removed' botSourceStatus state instead of crashing.
-
-/** Keep the member's identity; mark it so botSourceStatus reads
- *  'Gateway removed' and no render-path route lookup can throw on it. */
-function markOrphanedGroupMemberDescriptor(member) {
-  return {
-    ...member,
-    sourceMissing: true,
-    sourceReachable: false
-  }
-}
-
-function groupMemberReferencesConnection(member, connectionId) {
-  const id = String(connectionId || '').trim()
-
-  if (!id) {
-    return false
-  }
-
-  return (
-    String(member?.connectionId || '').trim() === id ||
-    String(member?.route?.connectionId || '').trim() === id
-  )
-}
-
-/** Register-removed sweep: annotate (not delete) every persisted group-chat
- *  member owned by the deleted connection, in the atom AND plugin storage.
- *  Writes ride updateGroupChat so the durable record keeps its full shape
- *  (sessionOwners, holds — durableGroupChatRooms would drop them).
- *  Returns whether anything changed. */
-function sweepGroupChatMembersForRemovedConnection(connectionId) {
-  const id = String(connectionId || '').trim()
-
-  if (!id) {
-    return false
-  }
-
-  let changed = false
-
-  for (const [name, room] of Object.entries($groupChats.get())) {
-    const members = Array.isArray(room?.members) ? room.members : []
-
-    if (!members.some(member => groupMemberReferencesConnection(member, id) && !member?.sourceMissing)) {
-      continue
-    }
-
-    changed = true
-    updateGroupChat(name, current => ({
-      ...current,
-      members: (Array.isArray(current.members) ? current.members : []).map(member =>
-        groupMemberReferencesConnection(member, id) ? markOrphanedGroupMemberDescriptor(member) : member
-      )
-    }))
-  }
-
-  return changed
-}
-
-/** Hydrate-time pass for rows orphaned BEFORE this build (the poisoned rows
- *  that made #93492 survive app restarts). Two shapes are annotated, never
- *  deleted:
- *  - a descriptor that already lost its connectionId (route unresolvable —
- *    exactly what a stale row looks like once its connection was deleted);
- *  - a descriptor whose connectionId is absent from the live registry, when
- *    the caller could obtain one (liveConnectionIds === null means "registry
- *    unavailable", which must NOT read as "everything is orphaned").
- *  Pure on the rooms map; returns { rooms, changed }. */
-function annotateOrphanedGroupChatMembers(rooms, liveConnectionIds = null) {
-  // Duck-typed, not instanceof: callers (and vm-based tests) may hand a Set
-  // constructed in another realm.
-  const live = liveConnectionIds && typeof liveConnectionIds.has === 'function' ? liveConnectionIds : null
-  const next = {}
-  let changed = false
-
-  for (const [name, room] of Object.entries(rooms || {})) {
-    const members = Array.isArray(room?.members) ? room.members : []
-    const orphaned = member => {
-      if (!member || member.sourceMissing) {
-        return false
-      }
-
-      if (!member.sourceScoped && !member.remoteSource) {
-        return false
-      }
-
-      const id = String(member.route?.connectionId || member.connectionId || '').trim()
-
-      if (!id) {
-        // Route unresolvable: this is the row shape that threw on render.
-        return true
-      }
-
-      return live ? !live.has(id) : false
-    }
-
-    if (!members.some(orphaned)) {
-      next[name] = room
-      continue
-    }
-
-    changed = true
-    next[name] = {
-      ...room,
-      members: members.map(member => (orphaned(member) ? markOrphanedGroupMemberDescriptor(member) : member))
-    }
-  }
-
-  return { rooms: next, changed }
-}
-
 function groupChatSyncConnectionId() {
   return String(host.state.connectionId?.get?.() || host.activeConnectionId?.() || '')
 }
@@ -11878,35 +11759,6 @@ export default {
             }
 
             $groupChats.set({ ...rooms, ...$groupChats.get() })
-
-            // #93492: annotate rows orphaned before this build (their
-            // connection was deleted while an older Desktop ran, so no
-            // 'removed' push ever swept them). Registry read is
-            // feature-detected; when unavailable only the unresolvable-route
-            // shape (lost connectionId) is annotated.
-            try {
-              const registry =
-                typeof window !== 'undefined'
-                  ? await Promise.resolve(window.hermesDesktop?.connections?.list?.()).catch(() => null)
-                  : null
-              const liveIds = Array.isArray(registry?.connections)
-                ? new Set(registry.connections.map(connection => String(connection?.id || '').trim()).filter(Boolean))
-                : null
-              const annotated = annotateOrphanedGroupChatMembers($groupChats.get(), liveIds)
-
-              if (annotated.changed) {
-                // Per-room updateGroupChat keeps the durable record's full
-                // shape (sessionOwners, holds) in storage; sync:false —
-                // the scheduleGroupChatServerSync below publishes once.
-                for (const [roomName, room] of Object.entries(annotated.rooms)) {
-                  if (room !== $groupChats.get()[roomName]) {
-                    updateGroupChat(roomName, () => room, { sync: false })
-                  }
-                }
-              }
-            } catch {
-              /* registry unavailable — the lost-connectionId shape is still safe to render */
-            }
           }
 
           // Receive before publish. A fresh Desktop with no local room cache
@@ -11931,28 +11783,6 @@ export default {
     const unbindProfileListener = bindProfileSync($focusedBotProfile)
     const unbindGatewayListener = host.state.gateway.listen(handleSessionsGatewayTransition)
 
-    // #93492 root fix: the registry pushes a lifecycle event when a
-    // connection is removed. The gateway store already disposes the dead
-    // sockets; the persisted group-chat rosters referencing that connection
-    // were never touched, which is what left panes throwing "Bot X has no
-    // connection owner" forever. Annotate (never silently delete) those
-    // member rows the moment the connection goes away. Feature-detected:
-    // older Electron mains don't emit it, and bare vm test harnesses have
-    // no window global.
-    let unbindConnectionsChanged = null
-    try {
-      if (typeof window !== 'undefined') {
-        unbindConnectionsChanged =
-          window.hermesDesktop?.connections?.onChanged?.(payload => {
-            if (payload?.reason === 'removed') {
-              sweepGroupChatMembersForRemovedConnection(payload.connectionId)
-            }
-          }) || null
-      }
-    } catch {
-      /* registry lifecycle push unavailable — hydrate-time annotate still covers it */
-    }
-
     if (typeof ctx.onDispose === 'function') {
       ctx.onDispose(() => {
         stopGroupChatServerSync()
@@ -11961,9 +11791,6 @@ export default {
         }
         if (typeof unbindGatewayListener === 'function') {
           unbindGatewayListener()
-        }
-        if (typeof unbindConnectionsChanged === 'function') {
-          unbindConnectionsChanged()
         }
       })
     }
