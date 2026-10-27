@@ -3618,6 +3618,21 @@ def _rewind_active_session_history(
                 durable_prefix[-1]["_row_id"] = replacement_id
                 durable_prefix[-1]["_db_persisted"] = True
                 installed[-1] = durable_prefix[-1]
+            # Current clients address destructive follow-ups by durable row id.
+            # Preserve the richer warm content (for example image parts), but
+            # copy row identities when the retained warm/durable shapes align.
+            if len(installed) == len(durable_prefix) and all(
+                warm.get("role") == durable_message.get("role")
+                and bool(warm.get("display_kind"))
+                == bool(durable_message.get("display_kind"))
+                and _comparison_content(warm)
+                == _comparison_content(durable_message)
+                for warm, durable_message in zip(installed, durable_prefix)
+            ):
+                for warm, durable_message in zip(installed, durable_prefix):
+                    row_id = durable_message.get("_row_id")
+                    if isinstance(row_id, int):
+                        warm["_row_id"] = row_id
             live_view = durable_live_view
             rewound_count = int(result.get("rewound_count", 0))
             persisted = True

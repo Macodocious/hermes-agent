@@ -121,30 +121,8 @@ def _resolve_truncate_row_id(session: dict, history: list, target_row_id: int):
     if hit is not None:
         return hit
 
-    session_key = str(session.get("session_key") or "")
-    if not session_key:
-        return None
-
-    try:
-        with _session_db(session) as db:
-            if db is None:
-                return None
-            get_conv = getattr(db, "get_messages_as_conversation", None)
-            if not callable(get_conv):
-                return None
-            db_history = get_conv(
-                session_key, repair_alternation=True, include_row_ids=True
-            )
-    except Exception:
-        logger.debug(
-            "prompt.submit: failed loading DB history for row_id %s session %s",
-            target_row_id,
-            session_key,
-            exc_info=True,
-        )
-        return None
-
-    if not isinstance(db_history, list):
+    db_history = _load_durable_truncation_history(session)
+    if db_history is None:
         return None
 
     # Heal missing in-memory stamps when the live list still lines up 1:1 with
@@ -682,6 +660,10 @@ def _(rid, params: dict) -> dict:
             # zombie history on resume, and the edit/regenerate never sticks.
             # Fail closed: refuse the turn and leave memory/DB unchanged.
             try:
+                # _session_db, not _get_db(): the truncation has to land in the
+                # db that owns this session's row. A profile session keeps its
+                # transcript in its own profile's state.db, so writing through
+                # the launch handle hits the FK on session_id.
                 with _session_db(session) as db:
                     if db is not None:
                         # active_only=True: replace only the live (active=1) rows.
