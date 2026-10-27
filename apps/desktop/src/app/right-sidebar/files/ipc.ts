@@ -154,3 +154,41 @@ export function clearProjectDirCache(rootPath?: string) {
   gitRootCache.delete(key)
   gitignoreCache.delete(key)
 }
+
+/**
+ * The box's checkout is listed through the gateway, not the local bridge: those
+ * files live on the server, so nothing on this PC can read the directory.
+ * Shapes map 1:1 onto the local reader so the tree does not care which it got.
+ */
+export async function readGatewayDir(dirPath: string): Promise<HermesReadDirResult> {
+  const bridge = window.hermesDesktop
+
+  if (!bridge) {
+    return { entries: [], error: 'no-bridge' }
+  }
+
+  const connection = await bridge.getConnection()
+
+  if (!connection?.baseUrl) {
+    return { entries: [], error: 'no-connection' }
+  }
+
+  const token = connection.token ? `&token=${encodeURIComponent(connection.token)}` : ''
+  const response = await fetch(`${connection.baseUrl}/api/files?path=${encodeURIComponent(dirPath)}${token}`)
+
+  if (!response.ok) {
+    return { entries: [], error: `http-${response.status}` }
+  }
+
+  const body = (await response.json()) as {
+    entries?: { is_directory?: boolean; name?: string; path?: string }[]
+  }
+
+  const entries = (body.entries ?? []).flatMap(entry =>
+    typeof entry.path === 'string' && typeof entry.name === 'string'
+      ? [{ isDirectory: entry.is_directory === true, name: entry.name, path: entry.path }]
+      : []
+  )
+
+  return { entries }
+}
