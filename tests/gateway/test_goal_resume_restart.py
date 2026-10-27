@@ -45,7 +45,7 @@ def _exhaust_budget(session_id: str, goal_text: str = "ship the benchmark"):
     mgr.set(goal_text, max_turns=1)
     with patch(
         "hermes_cli.goals.judge_goal",
-        return_value=("continue", "needs more steps", False, None, False),
+        return_value=("continue", "needs more steps", False, None, False, False, False),
     ):
         decision = mgr.evaluate_after_turn("worked a bit")
     assert decision["status"] == "paused"

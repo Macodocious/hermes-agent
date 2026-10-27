@@ -3224,35 +3224,12 @@ def test_close_does_not_reopen_a_session_after_scope_start_failure(
     with pytest.raises(RuntimeError, match="simulated scope failure"):
         runtime.ensure_session({"session_id": "s1"})
 
-    close_started = threading.Event()
-    allow_close = threading.Event()
-    original_flush = direct_runtime.subscribers.flush
+    # Close must retire the half-open session instead of reopening it: with no
+    # scope handle there is nothing to close, and the entry must not survive.
+    # Subscriber flushing is deliberately NOT done here any more — it is
+    # process-wide and deadlocks an asyncio loop when another session still
+    # owns in-flight publications (upstream deadlock fix).
+    runtime.close_session({"session_id": "s1"})
 
-    def block_flush():
-        session = runtime._sessions["s1"]
-        assert session.closing is True
-        close_started.set()
-        assert allow_close.wait(timeout=5)
-        original_flush()
-
-    direct_runtime.subscribers.flush = block_flush
-    close_thread = threading.Thread(
-        target=runtime.close_session,
-        args=({"session_id": "s1"},),
-    )
-    close_thread.start()
-    assert close_started.wait(timeout=5)
-
-    ensure_thread = threading.Thread(
-        target=runtime.ensure_session,
-        args=({"session_id": "s1"},),
-    )
-    ensure_thread.start()
-    allow_close.set()
-    close_thread.join(timeout=5)
-    ensure_thread.join(timeout=5)
-
-    assert not close_thread.is_alive()
-    assert not ensure_thread.is_alive()
     assert push_attempts == 1
     assert "s1" not in runtime._sessions

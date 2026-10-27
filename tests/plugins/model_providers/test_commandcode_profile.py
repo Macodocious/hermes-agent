@@ -257,14 +257,20 @@ class TestCommandCodeFetchModelsPickerContract:
         assert profile is not None
         assert "base_url" in inspect.signature(profile.fetch_models).parameters
 
-    def test_resolve_provider_full(self):
+    def test_resolve_provider_full(self, monkeypatch):
         """Both profiles must resolve through the model-switch path.
 
         Regression: ``resolve_provider_full`` only knew models.dev + overlay
         providers, so plugin-only providers (commandcode) failed with
         "Unknown provider" on /model switches even though the picker listed
         them.
+
+        The catalog is pinned empty on purpose: this asserts the *plugin-only*
+        path, and a live models.dev catalog that happens to list commandcode
+        would resolve through models.dev instead (CMD_API_KEY) and never reach
+        the plugin profile the fork ships (COMMANDCODE_API_KEY).
         """
+        monkeypatch.setattr("agent.models_dev.fetch_models_dev", lambda: {})
         from hermes_cli.providers import resolve_provider_full
 
         chat = resolve_provider_full("commandcode", {}, [])
