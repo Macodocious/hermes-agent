@@ -7252,10 +7252,6 @@ function HubSkillsSection({ forProfile, onInstalled }) {
             value: query,
             onChange: event => setQuery(event.target.value),
             onKeyDown: event => {
-              // IME guard: Enter confirming a composed word must not search.
-              if (event.nativeEvent?.isComposing || event.keyCode === 229) {
-                return
-              }
               if (event.key === 'Enter') {
                 event.preventDefault()
                 void search()
@@ -9965,14 +9961,6 @@ function GroupMentionInput({ members, onChange, onSubmitDraft, value, ...inputPr
         },
         onClick: event => refreshToken(event.target),
         onKeyDown: event => {
-          // IME composition guard (same as the core composer): Enter here
-          // confirms the composed Chinese/Japanese/Korean text — it must not
-          // insert a mention nor submit the draft. nativeEvent.isComposing
-          // covers Chromium; keyCode 229 covers macOS Chinese IMEs that fire
-          // Enter after compositionend with isComposing already false.
-          if (event.nativeEvent?.isComposing || event.keyCode === 229) {
-            return
-          }
           if (open) {
             if (event.key === 'ArrowDown') {
               event.preventDefault()
@@ -10159,10 +10147,6 @@ function GroupClarifyCard({ entry, members }) {
                     setDrafts(prev => ({ ...prev, [q.qid]: value }))
                   },
                   onKeyDown: event => {
-                    // IME guard: Enter confirming a composed word must not submit.
-                    if (event.nativeEvent?.isComposing || event.keyCode === 229) {
-                      return
-                    }
                     if (event.key === 'Enter' && questions.length === 1) {
                       event.preventDefault()
                       void submit()
