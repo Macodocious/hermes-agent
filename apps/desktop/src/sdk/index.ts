@@ -67,9 +67,12 @@ import {
   $messages,
   $selectedStoredSessionId,
   $sessions,
+  getSessionOwnerHints,
   rememberedSessionProfile,
   setSessionOwnerHint,
   requestSessionResume,
+  sessionMatchesStoredId,
+  setSessionOwnerHint,
   setResumeExhaustedSessionId
 } from '@/store/session'
 import {
@@ -111,20 +114,68 @@ const $focusedAwaitingResponse = focusedTurnFlag(
   PRIMARY_SESSION_VIEW.$awaitingResponse
 )
 
+export interface PluginFocusedSessionOwner {
+  connectionId: string
+  profile: string
+}
+
 /**
- * Owner profile of the FOCUSED chat. The gateway-routing atom
+ * Connection-qualified owner of the FOCUSED chat. The gateway-routing atom
  * (`$activeGatewayProfile`) answers "which backend is the live socket homed
  * on" — but tab/tile focus moves without swapping the socket, and a cold
  * start can restore a route into a session the booting gateway doesn't own.
- * Any per-bot readout (roster highlight, a bot-scoped panel) must follow the
- * chat the user is LOOKING AT, so this resolves the focused stored session to
- * the owner stamped on its session row (the cross-profile aggregator tags
- * every row) and only falls back to the gateway profile for a draft or an
- * uncached id — the same ladder the remembered-navigation key and the HUD use.
+ * Any per-bot readout must follow the chat the user is LOOKING AT, so this
+ * resolves the focused stored session to a unique immutable owner hint or a
+ * unique connection-qualified aggregated row. Ambiguous or unresolved focused
+ * ids fail closed with null; only a draft/no focused id uses the active gateway
+ * owner. `focusedSessionProfile` remains the profile-only compatibility ladder.
  */
+const $focusedSessionOwner = computed(
+  [$focusedStoredSessionId, $sessions, $activeGatewayProfile, $connection],
+  (focused, sessions, activeProfile, connection): PluginFocusedSessionOwner | null => {
+    const activeConnectionId = String(
+      connection?.connectionId || (connection?.mode === 'local' ? 'local' : '')
+    ).trim()
+    const fallback = {
+      connectionId: activeConnectionId,
+      profile: normalizeProfileKey(activeProfile)
+    }
+
+    if (!focused) {
+      return fallback
+    }
+
+    const hints = getSessionOwnerHints(focused)
+
+    if (hints.length === 1) {
+      return {
+        connectionId: hints[0].connectionId,
+        profile: normalizeProfileKey(hints[0].profile)
+      }
+    }
+
+    if (hints.length > 1) {
+      return null
+    }
+
+    const owners = new Map<string, PluginFocusedSessionOwner>()
+    for (const row of sessions.filter(session => sessionMatchesStoredId(session, focused))) {
+      const connectionId = String(row.connection_id || '').trim()
+      const profile = normalizeProfileKey(row.profile)
+
+      if (connectionId) {
+        owners.set(`${connectionId}::${profile}`, { connectionId, profile })
+      }
+    }
+
+    return owners.size === 1 ? [...owners.values()][0] : null
+  }
+)
+
 const $focusedSessionProfile = computed(
-  [$focusedStoredSessionId, $sessions, $activeGatewayProfile],
-  (focused, sessions, activeProfile) => normalizeProfileKey(rememberedSessionProfile(sessions, focused, activeProfile))
+  [$focusedSessionOwner, $focusedStoredSessionId, $sessions, $activeGatewayProfile],
+  (owner, focused, sessions, activeProfile) => owner?.profile ||
+    rememberedSessionProfile(sessions, focused, activeProfile)
 )
 
 export interface PluginProfileRoute {
@@ -414,10 +465,12 @@ export const host = {
      *  primary. Prefer this over `activeSessionId` for any readout that
      *  should follow the user between tiles (context, tokens, cost). */
     focusedSessionId: readonlyAtom<null | string>($focusedRuntimeId),
+    /** Connection-qualified owner of the focused chat. Prefer this for any
+     *  readout or mutation where separate sources can share a profile name. */
+    focusedSessionOwner: readonlyAtom<PluginFocusedSessionOwner | null>($focusedSessionOwner),
     /** Owner profile of the focused chat (session-row stamp, falling back to
-     *  the gateway profile for drafts/uncached ids). Prefer this over
-     *  `profile` for any readout keyed to the bot/profile the user is looking
-     *  at — tab focus moves without swapping the gateway socket. */
+     *  the gateway profile for drafts/uncached ids). Compatibility projection
+     *  of `focusedSessionOwner`; use the complete owner for source routing. */
     focusedSessionProfile: readonlyAtom<string>($focusedSessionProfile),
     /** Stored (durable) id of the focused session — for navigation and
      *  session-list matching, where runtime ids don't survive reloads. */
