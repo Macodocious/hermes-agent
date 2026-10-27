@@ -1611,14 +1611,21 @@ class TodoStore:
 
     @staticmethod
     def _dedupe_by_id(todos: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Collapse duplicate ids, keeping the last occurrence in its position."""
+        """Collapse duplicate ids, keeping the last occurrence in its position.
+
+        A row carrying no id is a new row, not a duplicate of another one:
+        keying every id-less row to a single placeholder collapsed a whole
+        list written without ids into its last row (session
+        20261027_165657_87243318, message 615174 — twelve rows in, one row
+        out). Each id-less row therefore gets its own key.
+        """
         last_index: Dict[str, int] = {}
         for i, item in enumerate(todos):
             if not isinstance(item, dict):
                 # Non-dict items get a synthetic key so _validate can handle them
                 last_index[f"__invalid_{i}"] = i
                 continue
-            item_id = str(item.get("id", "")).strip() or "?"
+            item_id = str(item.get("id", "")).strip() or f"__new_{i}"
             last_index[item_id] = i
         return [todos[i] for i in sorted(last_index.values())]
 
