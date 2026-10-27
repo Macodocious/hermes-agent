@@ -129,6 +129,10 @@ test('pin: preferred_session present opens the resolved session and keeps the pi
       intent: 'main',
       awaitHydration: true,
       expectHistory: true,
+      // An explicit bot switch always re-requests the resume: the SDK's
+      // surface-health check cannot tell a fresh transcript from a stale
+      // cached snapshot (#93604).
+      forceResume: true,
       keepAllProfilesScope: true,
       retryHydrationTimeoutOnce: true
     }
