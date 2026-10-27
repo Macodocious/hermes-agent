@@ -3999,6 +3999,7 @@ class SessionStore:
         session_id: str,
         messages: List[Dict[str, Any]],
         active_only: bool = False,
+        reject_active_turn_lease: bool = False,
     ) -> bool:
         """Replace the entire transcript for a session with new messages.
 
@@ -4019,12 +4020,21 @@ class SessionStore:
         change on top of a failed write — e.g. /compress repointing the live
         session onto a fresh session_id — must check it so they can surface an
         error instead of silently dropping the conversation.
+
+        ``reject_active_turn_lease`` is for user-initiated rewrites that do not
+        own the cross-process turn lease. It leaves internal rewrite policy
+        unchanged for existing callers unless they opt in explicitly.
         """
         if not self._db:
             return True
         self._clear_dirty_transcript(session_id)
         try:
-            self._db.replace_messages(session_id, messages, active_only=active_only)
+            self._db.replace_messages(
+                session_id,
+                messages,
+                active_only=active_only,
+                reject_active_turn_lease=reject_active_turn_lease,
+            )
             return True
         except Exception as e:
             logger.debug("Failed to rewrite transcript in DB: %s", e)

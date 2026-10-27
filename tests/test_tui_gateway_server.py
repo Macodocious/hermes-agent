@@ -5876,7 +5876,14 @@ def test_prompt_submit_rejects_negative_truncate_ordinal(monkeypatch):
     replaced = []
 
     class _FakeDB:
-        def replace_messages(self, key, messages, active_only=False, archive_dropped=False):
+        def replace_messages(
+            self,
+            key,
+            messages,
+            active_only=False,
+            archive_dropped=False,
+            reject_active_turn_lease=False,
+        ):
             replaced.append((key, list(messages)))
 
     history = [
@@ -6013,7 +6020,14 @@ def test_prompt_submit_refuses_unconfirmed_nonempty_truncation(monkeypatch):
     replaced = []
 
     class _FakeDB:
-        def replace_messages(self, key, messages, active_only=False, archive_dropped=False):
+        def replace_messages(
+            self,
+            key,
+            messages,
+            active_only=False,
+            archive_dropped=False,
+            reject_active_turn_lease=False,
+        ):
             replaced.append((key, list(messages)))
 
     history = [
@@ -6071,7 +6085,14 @@ def test_prompt_submit_truncates_by_message_id(monkeypatch):
     replaced = []
 
     class _FakeDB:
-        def replace_messages(self, key, messages, active_only=False, archive_dropped=False):
+        def replace_messages(
+            self,
+            key,
+            messages,
+            active_only=False,
+            archive_dropped=False,
+            reject_active_turn_lease=False,
+        ):
             replaced.append((key, list(messages)))
 
     history = [
@@ -6121,7 +6142,14 @@ def test_prompt_submit_truncation_falls_back_to_sid_when_session_key_null(monkey
     replaced = []
 
     class _FakeDB:
-        def replace_messages(self, key, messages, active_only=False, archive_dropped=False):
+        def replace_messages(
+            self,
+            key,
+            messages,
+            active_only=False,
+            archive_dropped=False,
+            reject_active_turn_lease=False,
+        ):
             replaced.append((key, list(messages)))
 
     history = [
@@ -6202,7 +6230,14 @@ def test_prompt_submit_refuses_ordinal_only_when_history_has_row_ids(monkeypatch
     replaced = []
 
     class _FakeDB:
-        def replace_messages(self, key, messages, active_only=False, archive_dropped=False):
+        def replace_messages(
+            self,
+            key,
+            messages,
+            active_only=False,
+            archive_dropped=False,
+            reject_active_turn_lease=False,
+        ):
             replaced.append((key, list(messages)))
 
     history = [
@@ -6259,7 +6294,14 @@ def test_prompt_submit_refuses_ordinal_only_when_durable_history_is_unstamped(mo
             assert kwargs["include_row_ids"] is True
             return [dict(message, _row_id=100 + index) for index, message in enumerate(history)]
 
-        def replace_messages(self, key, messages, active_only=False, archive_dropped=False):
+        def replace_messages(
+            self,
+            key,
+            messages,
+            active_only=False,
+            archive_dropped=False,
+            reject_active_turn_lease=False,
+        ):
             replaced.append((key, list(messages)))
 
     server._sessions["unstamped-durable-sid"] = _session(history=list(history))
@@ -6298,7 +6340,14 @@ def test_prompt_submit_truncates_by_row_id(monkeypatch):
     replaced = []
 
     class _FakeDB:
-        def replace_messages(self, key, messages, active_only=False, archive_dropped=False):
+        def replace_messages(
+            self,
+            key,
+            messages,
+            active_only=False,
+            archive_dropped=False,
+            reject_active_turn_lease=False,
+        ):
             replaced.append((key, list(messages)))
 
     history = [
@@ -6343,7 +6392,14 @@ def test_prompt_submit_truncates_by_string_row_id(monkeypatch):
     replaced = []
 
     class _FakeDB:
-        def replace_messages(self, key, messages, active_only=False, archive_dropped=False):
+        def replace_messages(
+            self,
+            key,
+            messages,
+            active_only=False,
+            archive_dropped=False,
+            reject_active_turn_lease=False,
+        ):
             replaced.append((key, list(messages)))
 
     history = [
@@ -6497,7 +6553,14 @@ def test_prompt_submit_refuses_empty_truncation_without_confirm(monkeypatch):
     replaced = []
 
     class _FakeDB:
-        def replace_messages(self, key, messages, active_only=False, archive_dropped=False):
+        def replace_messages(
+            self,
+            key,
+            messages,
+            active_only=False,
+            archive_dropped=False,
+            reject_active_turn_lease=False,
+        ):
             replaced.append((key, list(messages)))
 
     history = [
@@ -6586,7 +6649,14 @@ def test_prompt_submit_empty_truncation_allowed_with_confirm(monkeypatch):
             self._target()
 
     class _FakeDB:
-        def replace_messages(self, key, messages, active_only=False, archive_dropped=False):
+        def replace_messages(
+            self,
+            key,
+            messages,
+            active_only=False,
+            archive_dropped=False,
+            reject_active_turn_lease=False,
+        ):
             replaced.append((key, list(messages)))
 
     history = [
@@ -11999,7 +12069,14 @@ def test_prompt_submit_can_truncate_before_user_ordinal(monkeypatch):
         def get_messages_as_conversation(self, *_args, **_kwargs):
             return []
 
-        def replace_messages(self, session_id, messages, active_only=False, archive_dropped=False):
+        def replace_messages(
+            self,
+            session_id,
+            messages,
+            active_only=False,
+            archive_dropped=False,
+            reject_active_turn_lease=False,
+        ):
             self.replaced.append((session_id, list(messages)))
 
     stub_db = _StubDb()
@@ -12059,7 +12136,14 @@ def test_prompt_submit_refuses_turn_when_truncate_persist_fails(monkeypatch):
         def get_messages_as_conversation(self, *_args, **_kwargs):
             return []
 
-        def replace_messages(self, session_id, messages, active_only=False, archive_dropped=False):
+        def replace_messages(
+            self,
+            session_id,
+            messages,
+            active_only=False,
+            archive_dropped=False,
+            reject_active_turn_lease=False,
+        ):
             raise OSError("disk full")
 
     monkeypatch.setattr(server, "_get_db", lambda: _FailDb())
@@ -12154,7 +12238,14 @@ def test_prompt_submit_truncate_ordinal_skips_display_kind_rows(monkeypatch):
         def get_messages_as_conversation(self, *_args, **_kwargs):
             return []
 
-        def replace_messages(self, session_id, messages, active_only=False, archive_dropped=False):
+        def replace_messages(
+            self,
+            session_id,
+            messages,
+            active_only=False,
+            archive_dropped=False,
+            reject_active_turn_lease=False,
+        ):
             self.replaced.append((session_id, list(messages)))
 
     stub_db = _StubDb()
@@ -12257,7 +12348,14 @@ def test_prompt_submit_truncate_translates_display_prefix_ordinal(monkeypatch):
             # may take the ordinal-only path past the durability gate.
             return []
 
-        def replace_messages(self, session_id, messages, active_only=False, archive_dropped=False):
+        def replace_messages(
+            self,
+            session_id,
+            messages,
+            active_only=False,
+            archive_dropped=False,
+            reject_active_turn_lease=False,
+        ):
             self.replaced.append((session_id, list(messages)))
 
     stub_db = _StubDb()
@@ -12358,7 +12456,14 @@ def test_prompt_submit_row_id_accepts_full_lineage_ordinal(monkeypatch):
     replaced = []
 
     class _FakeDB:
-        def replace_messages(self, key, messages, active_only=False, archive_dropped=False):
+        def replace_messages(
+            self,
+            key,
+            messages,
+            active_only=False,
+            archive_dropped=False,
+            reject_active_turn_lease=False,
+        ):
             replaced.append((key, list(messages)))
 
     sess = _session(history=list(tip_history), display_history_prefix=display_prefix)
@@ -19724,7 +19829,14 @@ def test_personality_marker_does_not_shift_truncate_ordinal(monkeypatch):
         def get_messages_as_conversation(self, *_args, **_kwargs):
             return []
 
-        def replace_messages(self, session_id, messages, active_only=False, archive_dropped=False):
+        def replace_messages(
+            self,
+            session_id,
+            messages,
+            active_only=False,
+            archive_dropped=False,
+            reject_active_turn_lease=False,
+        ):
             self.replaced.append((session_id, list(messages)))
 
     session = _session(
@@ -19835,10 +19947,16 @@ def test_prompt_submit_truncation_archives_instead_of_deleting(monkeypatch):
             return []
 
         def replace_messages(
-            self, session_id, messages, active_only=False, archive_dropped=False
+            self,
+            session_id,
+            messages,
+            active_only=False,
+            archive_dropped=False,
+            reject_active_turn_lease=False,
         ):
             captured["active_only"] = active_only
             captured["archive_dropped"] = archive_dropped
+            captured["reject_active_turn_lease"] = reject_active_turn_lease
 
     server._sessions["archive-trunc-sid"] = _session(
         agent=_Agent(),
@@ -19877,6 +19995,7 @@ def test_prompt_submit_truncation_archives_instead_of_deleting(monkeypatch):
         )
         # #80216: still must not touch rows archived by an earlier compaction.
         assert captured.get("active_only") is True
+        assert captured.get("reject_active_turn_lease") is True
     finally:
         server._sessions.pop("archive-trunc-sid", None)
 
@@ -19898,7 +20017,14 @@ def test_prompt_submit_unmatched_row_id_refuses_even_with_ordinal(monkeypatch):
     replaced = []
 
     class _FakeDB:
-        def replace_messages(self, key, messages, active_only=False, archive_dropped=False):
+        def replace_messages(
+            self,
+            key,
+            messages,
+            active_only=False,
+            archive_dropped=False,
+            reject_active_turn_lease=False,
+        ):
             replaced.append((key, list(messages)))
 
     history = [
@@ -19942,7 +20068,14 @@ def test_prompt_submit_unmatched_message_id_refuses_even_with_ordinal(monkeypatc
     replaced = []
 
     class _FakeDB:
-        def replace_messages(self, key, messages, active_only=False, archive_dropped=False):
+        def replace_messages(
+            self,
+            key,
+            messages,
+            active_only=False,
+            archive_dropped=False,
+            reject_active_turn_lease=False,
+        ):
             replaced.append((key, list(messages)))
 
     # Production-shaped history: no renderer "id" keys on user dicts.
@@ -20000,7 +20133,14 @@ def test_prompt_submit_row_id_resolves_via_db_when_memory_lacks_stamps(monkeypat
     ]
 
     class _FakeDB:
-        def replace_messages(self, key, messages, active_only=False, archive_dropped=False):
+        def replace_messages(
+            self,
+            key,
+            messages,
+            active_only=False,
+            archive_dropped=False,
+            reject_active_turn_lease=False,
+        ):
             replaced.append((key, list(messages)))
 
         def get_messages_as_conversation(self, key, repair_alternation=False, include_row_ids=False):
@@ -20326,7 +20466,14 @@ def test_prompt_submit_row_id_db_fallback_ordinal_mapping_verifies_content(
     ]
 
     class _FakeDB:
-        def replace_messages(self, key, messages, active_only=False, archive_dropped=False):
+        def replace_messages(
+            self,
+            key,
+            messages,
+            active_only=False,
+            archive_dropped=False,
+            reject_active_turn_lease=False,
+        ):
             replaced.append((key, list(messages)))
 
         def get_messages_as_conversation(self, key, repair_alternation=False, include_row_ids=False):

@@ -10346,13 +10346,15 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
         compression_lock_holder: Optional[str],
         turn_lease_holder: Optional[str] = None,
         turn_lease_ttl_seconds: float = 300.0,
+        reject_active_turn_lease: bool = False,
     ) -> None:
-        """Transcript-append admission checks, run INSIDE the write txn.
+        """Transcript-write admission checks, run INSIDE the write txn.
 
         Shared by :meth:`append_message` and :meth:`append_messages_batch` so
         the two writers can never diverge on these correctness invariants
-        (this guard has already needed targeted fixes — see the #74478
-        patience note below).
+        (this guard has already needed targeted fixes — see the #74478 patience
+        note below). User-initiated transcript mutations may opt in to rejecting
+        an active unowned turn lease in that same transaction.
         """
         # NOTE (#75316 redesign): appends do NOT check compression_locks.
         # The lock's job is to stop two COMPRESSIONS colliding, not to fence
@@ -10364,33 +10366,53 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
         # symptom family — turns dying as session_persistence_failed while a
         # slow provider summary held the lease (#74568, #77386), including
         # stale locks from dead PIDs blocking writes for the full TTL.
-        if turn_lease_holder:
+        if turn_lease_holder or reject_active_turn_lease:
             conversation_id = self._session_turn_lease_key_on_conn(conn, session_id)
             lease = conn.execute(
                 "SELECT holder, expires_at FROM session_turn_leases "
                 "WHERE conversation_id = ?",
                 (conversation_id,),
             ).fetchone()
-            if lease is None or lease["holder"] != turn_lease_holder:
-                raise SessionTurnLeaseLostError(
-                    f"Session turn lease lost; refusing transcript write "
-                    f"for {session_id!r}"
-                )
             now = time.time()
-            if float(lease["expires_at"]) <= now:
-                # Expiry makes the row reclaimable; it does not prove that a
-                # takeover occurred. BEGIN IMMEDIATE serializes this renewal
-                # with acquisition, so a still-matching owner can recover from
-                # a starved refresher without weakening the foreign-holder fence.
-                conn.execute(
-                    "UPDATE session_turn_leases SET expires_at = ? "
-                    "WHERE conversation_id = ? AND holder = ?",
-                    (
-                        now + max(0.1, float(turn_lease_ttl_seconds)),
-                        conversation_id,
-                        turn_lease_holder,
-                    ),
-                )
+            if turn_lease_holder:
+                if lease is None or lease["holder"] != turn_lease_holder:
+                    raise SessionTurnLeaseLostError(
+                        f"Session turn lease lost; refusing transcript write "
+                        f"for {session_id!r}"
+                    )
+                if float(lease["expires_at"]) <= now:
+                    # Expiry makes the row reclaimable; it does not prove that a
+                    # takeover occurred. BEGIN IMMEDIATE serializes this renewal
+                    # with acquisition, so a still-matching owner can recover from
+                    # a starved refresher without weakening the foreign-holder fence.
+                    conn.execute(
+                        "UPDATE session_turn_leases SET expires_at = ? "
+                        "WHERE conversation_id = ? AND holder = ?",
+                        (
+                            now + max(0.1, float(turn_lease_ttl_seconds)),
+                            conversation_id,
+                            turn_lease_holder,
+                        ),
+                    )
+            elif lease is not None:
+                current_holder = lease["holder"]
+                if (
+                    float(lease["expires_at"]) <= now
+                    or _compression_lock_holder_process_is_dead(current_holder)
+                ):
+                    # Match acquisition semantics: an expired or provably dead
+                    # owner is reclaimable. Deleting it inside this BEGIN IMMEDIATE
+                    # transaction also fences a stale late flush after the mutation.
+                    conn.execute(
+                        "DELETE FROM session_turn_leases "
+                        "WHERE conversation_id = ? AND holder = ?",
+                        (conversation_id, current_holder),
+                    )
+                else:
+                    raise SessionTurnLeaseLostError(
+                        f"Session has an active turn lease; refusing transcript "
+                        f"mutation for {session_id!r}"
+                    )
         session = conn.execute(
             "SELECT ended_at, end_reason FROM sessions WHERE id = ?",
             (session_id,),
@@ -11013,6 +11035,7 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
         messages: List[Dict[str, Any]],
         active_only: bool = False,
         archive_dropped: bool = False,
+        reject_active_turn_lease: bool = False,
     ) -> None:
         """Atomically replace the stored messages for a session.
 
@@ -11047,21 +11070,34 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
         fresh active rows exactly as in the destructive path, so the live view
         is identical either way; only the durability of the dropped turns
         differs.
+
+        Pass ``reject_active_turn_lease=True`` for user-initiated rewrites that
+        do not already own the cross-process turn lease. The lease check and
+        transcript mutation then share one write transaction, so a second
+        process cannot archive or replace a turn that is still being produced.
         """
 
         active_clause = " AND active = 1" if active_only else ""
 
         def _do(conn):
-            session = conn.execute(
-                "SELECT ended_at, end_reason FROM sessions WHERE id = ?",
-                (session_id,),
-            ).fetchone()
-            if (
-                session is not None
-                and session["ended_at"] is not None
-                and session["end_reason"] == "compression"
-            ):
-                raise CompressionSessionClosedError(session_id)
+            if reject_active_turn_lease:
+                self._check_transcript_write_guards(
+                    conn,
+                    session_id,
+                    None,
+                    reject_active_turn_lease=True,
+                )
+            else:
+                session = conn.execute(
+                    "SELECT ended_at, end_reason FROM sessions WHERE id = ?",
+                    (session_id,),
+                ).fetchone()
+                if (
+                    session is not None
+                    and session["ended_at"] is not None
+                    and session["end_reason"] == "compression"
+                ):
+                    raise CompressionSessionClosedError(session_id)
             if archive_dropped:
                 # Content-preserving UPDATE: the rows keep their FTS entries
                 # (the messages_fts triggers fire on INSERT / DELETE / UPDATE
@@ -12184,6 +12220,8 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
         live-user payload.  Both checks run inside the write transaction before
         any row or counter mutation.  Presentation-only metadata changes (for
         example Desktop reactions) deliberately do not invalidate a rewind.
+        A live cross-process turn lease always refuses the rewind; expired or
+        provably dead holders are reclaimed inside the mutation transaction.
 
         Always increments ``sessions.rewind_count`` — even when the
         target is already inactive — so the counter accurately reflects
@@ -12194,8 +12232,14 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
 
         def _do(conn):
             # Rewind changes the active transcript and must honor the same
-            # compression ownership/closed-parent guards as append writers.
-            self._check_transcript_write_guards(conn, session_id, None)
+            # compression/closed-parent and cross-process turn guards as
+            # append writers.
+            self._check_transcript_write_guards(
+                conn,
+                session_id,
+                None,
+                reject_active_turn_lease=True,
+            )
 
             if expected_active_ids is not None:
                 active_rows = conn.execute(

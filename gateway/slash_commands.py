@@ -2848,7 +2848,10 @@ class GatewaySlashCommandsMixin:
             # preserves that archive; a separate existence probe could fail
             # open or race with the write.
             if not await self.async_session_store.rewrite_transcript(
-                session_entry.session_id, truncated, active_only=True
+                session_entry.session_id,
+                truncated,
+                active_only=True,
+                reject_active_turn_lease=True,
             ):
                 return "Retry failed; transcript was not changed."
         # Reset stored token count — transcript was truncated

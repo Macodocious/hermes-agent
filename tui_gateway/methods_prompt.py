@@ -684,17 +684,31 @@ def _(rid, params: dict) -> dict:
             try:
                 with _session_db(session) as db:
                     if db is not None:
-                        # Keep main's durable row-id contract: this rewrite
-                        # stamps fresh row ids onto the same surviving dicts,
-                        # and the response below lets Desktop rebind them.
-                        # ``truncated`` is carrier-aware, so a composite target
-                        # becomes its pure hidden scaffold in the same atomic
-                        # replace that archives the selected row and tail.
+                        # active_only=True: replace only the live (active=1) rows.
+                        # In-place compaction (#38763) keeps the pre-compaction
+                        # transcript as active=0/compacted=1 rows under this same
+                        # session key; a bare replace_messages() would DELETE that
+                        # durable archive on every edit/regenerate — the same bug
+                        # class #80216 fixed for /retry. On an uncompacted session
+                        # all rows are active=1, so this is behaviorally identical
+                        # to the full replace.
+                        # archive_dropped: a rewind overwrites turns the user may
+                        # not have meant to drop, and this write is the last step
+                        # before they are gone — three reported incidents ended
+                        # here with nothing to restore from (#70516, #80763,
+                        # #82756). Soft-archiving keeps them on disk (active=0) and
+                        # in the FTS index, so a mis-aimed cut is recoverable
+                        # instead of terminal. The live transcript is unchanged.
+                        # Fall back to session id when session_key is NULL — CLI-origin
+                        # sessions created before the session_key default fix have no
+                        # key, and replace_messages(None) triggers an FK violation.
+                        truncation_key = session.get("session_key") or sid
                         db.replace_messages(
-                            session["session_key"],
+                            truncation_key,
                             truncated,
                             active_only=True,
                             archive_dropped=True,
+                            reject_active_turn_lease=True,
                         )
             except Exception as exc:
                 logger.error(
