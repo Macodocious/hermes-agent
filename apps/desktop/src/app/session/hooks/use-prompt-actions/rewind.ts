@@ -93,6 +93,7 @@ export function rebindSurvivorRowIds(messages: ChatMessage[], survivorRowIds: Su
       if (message.rowId === undefined) {
         return message
       }
+
       if (!survivorRowIds.has(message.rowId)) {
         // Requested rows outside the active tip (compacted/ancestor history)
         // were not rewritten and keep their durable identity.
@@ -297,12 +298,16 @@ export async function runRewindSubmit(
     typeof truncateRowId === 'number' ||
     (typeof truncateMessageId === 'string' && truncateMessageId.length > 0 && !isSyntheticRendererId(truncateMessageId))
 
-  if (typeof resolvedRowId === 'number' && Number.isInteger(resolvedRowId)) {
-    // A durable row id is globally stable, while the rendered ordinal can be
-    // relative to a paged transcript tail. Do not cross-check those different
-    // spaces; the gateway still validates the row against its full transcript.
+  if (wantsTruncation && hasDurableAddress) {
+    // A durable row or platform-message id is globally stable, while the
+    // rendered ordinal can be relative to a paged transcript tail. Do not
+    // cross-check those different spaces; the gateway still validates the
+    // durable address against its full transcript.
     resolvedOrdinal = undefined
-    resolvedMessageId = undefined
+
+    if (typeof resolvedRowId === 'number' && Number.isInteger(resolvedRowId)) {
+      resolvedMessageId = undefined
+    }
   }
 
   if (wantsTruncation && !hasDurableAddress) {
@@ -317,18 +322,6 @@ export async function runRewindSubmit(
     // gateway's 4030 cross-check. Unresolved: plain resubmit, no truncation.
     resolvedOrdinal = undefined
     resolvedMessageId = undefined
-  }
-
-  // Durable id present (#88082, #89244): drop the client ordinal. Renderer
-  // ordinals and gateway tip ordinals are different spaces — tail-only
-  // prefetch (window-relative), in-place compact (display-lineage scrollback
-  // vs tip, prefix_user_count structurally 0), and any later visibility
-  // skew. The cut is aimed by the resolved durable id; sending a divergent
-  // ordinal trips the gateway's 4030 cross-check. Unknown ids still fail
-  // closed at 4018. The ordinal is only a tripwire, and it is calibrated in
-  // a space the gateway cannot reliably compute.
-  if (wantsTruncation && hasDurableAddress) {
-    resolvedOrdinal = undefined
   }
 
   const interrupt = async () => {
@@ -347,18 +340,17 @@ export async function runRewindSubmit(
         text,
         ...truncateSubmitParams(resolvedOrdinal, resolvedMessageId, resolvedRowId),
         // A first-turn rewind resolves to an empty transcript, which the
-        // gateway additionally gates behind confirm_empty_truncate. When the
-        // client ordinal is dropped (durable-id path), carry the flag from
-        // the caller's ordinal-0 belief: required when right, ignored by the
-        // gateway when the cut isn't actually empty.
-        ...(resolvedOrdinal === undefined && truncateOrdinal === 0 ? { confirm_empty_truncate: true } : {}),
-        // The gateway rebinds surviving user turns after the cut; send the
-        // ids the caller resolved so a rewind cannot leave stale stamps.
-        // Omit the field entirely when nothing resolved: an empty array reads
-        // as "rebind requested" and the gateway then rejects the cut.
+        // gateway additionally gates behind confirm_empty_truncate. In
+        // resolved-row-id mode the tail-local ordinal was dropped (see
+        // above). The durable target is authoritative, so explicitly allow a
+        // first-active-tip cut; the gateway ignores this when the prefix is
+        // non-empty.
+        ...(resolvedOrdinal === undefined && (resolvedRowId !== undefined || truncateOrdinal === 0)
+          ? { confirm_empty_truncate: true }
+          : {}),
         ...(rebindRowIds?.length
           ? { rebind_survivor_row_ids: [...new Set(rebindRowIds.filter(Number.isInteger))] }
-          : {}),
+          : {})
       },
       PROMPT_SUBMIT_REQUEST_TIMEOUT_MS
     )

@@ -240,6 +240,7 @@ describe('rebindSurvivorRowIds', () => {
       assistant('tail-a298', 902),
       user('edited', 903)
     ]
+
     const rebound = rebindSurvivorRowIds(
       messages,
       new Map([
@@ -535,6 +536,8 @@ describe('runRewindSubmit durable-address discipline (#87059)', () => {
 
     expect(submit?.params?.truncate_before_row_id).toBe(13)
     expect(submit?.params?.truncate_before_user_ordinal).toBeUndefined()
+    expect(submit?.params?.confirm_empty_truncate).toBe(true)
+    expect(submit?.params?.rebind_survivor_row_ids).toEqual([11, 12, 13])
   })
 
   it('drops the client ordinal whenever a durable row id is present, including a complete live transcript (#88082, #89244)', async () => {
