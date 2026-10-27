@@ -121,6 +121,7 @@ const {
 
 const { $focusedRuntimeId, $focusedSessionState, $focusedStoredSessionId, $sessionStates, $sessionTiles } =
   await import('@/store/session-states')
+
 const { setWorkspaceScope } = await import('@/components/pane-shell/workspace-scope')
 
 const {
