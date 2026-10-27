@@ -293,8 +293,6 @@ def ensure_windows_bin_launchers(
         return []
     relocatable = _venv_is_relocatable(venv_dir)
 
-    import shutil
-
     restored: list[str] = []
     for target in targets:
         try:
