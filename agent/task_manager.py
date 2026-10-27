@@ -124,8 +124,19 @@ LIFECYCLE_TOOL_REMINDER = (
 # the work. This line names the current row and the tenure's call count on
 # every worked call, so the count climbs with the work and a task cannot
 # accumulate a pile unseen.
+#
+# It names the row by its label — its position in the sequence the user counts
+# — and never by the store id. This line ships on every tool result, so an id
+# here is the number the model quotes back at the user: it reported plan task 2
+# as "task 4" because the tracker's id said 4 while the plan said 2.
 TASK_PACING_TOOL_REMINDER = (
-    "[Task lifecycle] Task {task_id} \"{content}\" is current — {work_count} "
+    "[Task lifecycle] Task {label} \"{content}\" is current — {work_count} "
+    "tool calls under it. Close it with todo action=complete when its work is done."
+)
+# A row outside every plan's sequence has no label and no task number; it is
+# named by what it says rather than given a number of its own.
+TASK_PACING_TOOL_REMINDER_UNLABELLED = (
+    "[Task lifecycle] \"{content}\" is current — {work_count} "
     "tool calls under it. Close it with todo action=complete when its work is done."
 )
 # A task content can be a paragraph; the line ships on every turn, so its
@@ -133,13 +144,17 @@ TASK_PACING_TOOL_REMINDER = (
 PACING_CONTENT_MAX_CHARS = 60
 
 
-def _pacing_reminder(item: Dict[str, Any], work_count: int) -> str:
-    """The pacing line for one active row: id, capped content, tenure count."""
+def _pacing_reminder(store: Any, item: Dict[str, Any], work_count: int) -> str:
+    """The pacing line for one active row: label, capped content, tenure count."""
     content = str(item.get("content") or "")
     if len(content) > PACING_CONTENT_MAX_CHARS:
         content = content[:PACING_CONTENT_MAX_CHARS].rstrip() + "…"
-    return TASK_PACING_TOOL_REMINDER.format(
-        task_id=item.get("id", ""),
+    label = store.task_label(item.get("id", ""))
+    template = (
+        TASK_PACING_TOOL_REMINDER if label else TASK_PACING_TOOL_REMINDER_UNLABELLED
+    )
+    return template.format(
+        label=label,
         content=content,
         work_count=work_count,
     )
@@ -168,7 +183,7 @@ def tool_result_reminder(agent: Any, tool_name: str) -> str:
             return ""
         agent._lifecycle_reminder_issued = True
         return LIFECYCLE_TOOL_REMINDER
-    return _pacing_reminder(current, store.work_count())
+    return _pacing_reminder(store, current, store.work_count())
 
 
 # =============================================================================

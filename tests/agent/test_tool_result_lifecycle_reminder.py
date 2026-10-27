@@ -50,7 +50,7 @@ def test_pacing_fires_on_every_worked_call_and_the_count_climbs() -> None:
 
     store.mark_work()
     first = tool_result_reminder(agent, "read_file")
-    assert first.startswith('[Task lifecycle] Task 1 "Build the thing" is current — ')
+    assert first.startswith('[Task lifecycle] Task 1/1 "Build the thing" is current — ')
     assert "— 1 tool calls under it" in first
     assert "Close it with todo action=complete when its work is done." in first
 
@@ -70,13 +70,13 @@ def test_pacing_restarts_for_a_task_promoted_in_the_same_turn() -> None:
     ])
     store.transition("begin", "1")
     agent = _agent(store)
-    assert "Task 1 " in tool_result_reminder(agent, "read_file")
+    assert "Task 1/2 " in tool_result_reminder(agent, "read_file")
 
     store.mark_work()
     store.transition("complete", "1")
 
     line = tool_result_reminder(agent, "read_file")
-    assert "Task 2 " in line
+    assert "Task 2/2 " in line
     assert "— 0 tool calls under it" in line
 
 
