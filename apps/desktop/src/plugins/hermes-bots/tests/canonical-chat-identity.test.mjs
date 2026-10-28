@@ -133,6 +133,9 @@ test('pin: preferred_session present opens the resolved session and keeps the pi
       // surface-health check cannot tell a fresh transcript from a stale
       // cached snapshot (#93604).
       forceResume: true,
+      // The bounded hydration budget travels with every open so the SDK waits
+      // the same window the plugin budgeted for (upstream 77b5bb39e7b).
+      hydrationTimeoutMs: 60000,
       keepAllProfilesScope: true,
       retryHydrationTimeoutOnce: true
     }
