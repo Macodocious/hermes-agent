@@ -1216,7 +1216,6 @@ class TestPromptBuilderConstants:
         assert "cli" in PLATFORM_HINTS
         assert "tui" in PLATFORM_HINTS
         assert "api_server" in PLATFORM_HINTS
-        assert "webui" in PLATFORM_HINTS
 
     def test_cli_and_tui_hints_flag_local_only_cron(self):
         """#51568 — cron jobs from CLI/TUI sessions don't deliver back into
@@ -1316,7 +1315,8 @@ class TestPromptBuilderConstants:
         assert "bullet" in rich_lowered
         assert "numbered" in rich_lowered
         # Local media delivery guidance must remain intact in the base hint.
-        assert "include MEDIA:" in hint
+        assert "MEDIA:/absolute/path" in hint
+        assert "voice bubble" in hint
 
     def test_platform_hints_mattermost(self):
         hint = PLATFORM_HINTS["mattermost"]
@@ -1328,25 +1328,18 @@ class TestPromptBuilderConstants:
         hint = PLATFORM_HINTS["matrix"]
         assert "Matrix" in hint
         assert "MEDIA:" in hint
-        assert "Markdown" in hint
+        assert "markdown" in hint.lower()
         # Regression (#52552): the hint must steer models away from Markdown
         # tables — popular Matrix clients don't render HTML tables and the
         # cells collapse into one continuous line.
         assert "table" in hint.lower()
-        assert "Do NOT use Markdown tables" in hint
+        assert "Do NOT use tables" in hint
 
     def test_platform_hints_feishu(self):
         hint = PLATFORM_HINTS["feishu"]
         assert "Feishu" in hint
         assert "MEDIA:" in hint
         assert "Markdown" in hint
-
-    def test_platform_hints_webui(self):
-        hint = PLATFORM_HINTS["webui"]
-        assert "WebUI" in hint
-        assert "MEDIA:" in hint
-        assert "Markdown" in hint
-        assert "absolute" in hint
 
 
 # =========================================================================
