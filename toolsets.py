@@ -276,7 +276,7 @@ TOOLSETS = {
             "read_window_below",
             "focus_pane", "react_to_message",
             "apply_layout",
-            "setup_mcp", "tour",
+            "setup_mcp", "tour", "tip",
         ],
         "includes": []
     },
