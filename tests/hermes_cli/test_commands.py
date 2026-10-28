@@ -134,12 +134,11 @@ class TestCommandRegistry:
 class TestResolveCommand:
     def test_canonical_name_resolves(self):
         assert resolve_command("help").name == "help"
-        assert resolve_command("background").name == "background"
+        assert resolve_command("bg").name == "bg"
         assert resolve_command("copy").name == "copy"
         assert resolve_command("agents").name == "agents"
 
     def test_alias_resolves_to_canonical(self):
-        assert resolve_command("bg").name == "background"
         assert resolve_command("reset").name == "new"
         assert resolve_command("q").name == "queue"
         assert resolve_command("exit").name == "quit"
@@ -314,30 +313,26 @@ class TestSlackNativeSlashes:
     def test_includes_canonical_commands(self):
         names = {n for n, _d, _h in slack_native_slashes()}
         # Sample of gateway-available canonical commands
-        for expected in ("new", "stop", "background", "model", "help"):
+        for expected in ("new", "stop", "bg", "model", "help"):
             assert expected in names, f"missing canonical /{expected}"
 
 
     def test_includes_aliases_as_first_class_slashes(self):
-        """Aliases (/btw, /bg, …) must be registered as standalone
-        slashes — this is the whole point of native-slashes parity.
+        """``/btw`` and ``/bg`` must be registered as standalone slashes.
 
-        Asserts the contract (aliases are surfaced as first-class slashes),
-        not a specific alias's survival of Slack's 50-slash clamp — which alias
-        lands last shifts whenever a canonical command is added. Only the
-        explicitly pinned ``_SLACK_PRIORITY_ALIASES`` are guaranteed slots;
-        every other alias (e.g. ``reset``) may be clamped once the registry
-        fills the cap — canonical commands win the contest, and clamped
-        aliases stay reachable via ``/hermes <alias>``.
+        Both are canonical commands now (``/background`` was retired and
+        ``/btw`` split out with its own side-question semantics), so they win
+        slots outright instead of competing as aliases. The registry carries
+        far more commands than Slack's 50-slash cap, so no plain alias is
+        guaranteed a slot — clamped aliases stay reachable via
+        ``/hermes <alias>``; asserting an "Alias for /…" entry exists would
+        pin the clamp's ordering rather than the contract.
         """
         slashes = slack_native_slashes()
         names = {n for n, _d, _h in slashes}
-        # The pinned priority aliases are guaranteed to survive the clamp.
         assert "btw" in names
         assert "bg" in names
-        # And at least one alias is surfaced as an alias entry (description
-        # carries the "Alias for /…" marker), proving the alias pass ran.
-        assert any(d.startswith("Alias for /") for _n, d, _h in slashes)
+        assert len(slashes) <= 50
 
     def test_telegram_parity(self):
         """Every Telegram bot command must be registerable on Slack too.
