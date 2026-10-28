@@ -18,8 +18,9 @@ import { RightSidebarPane } from '@/app/right-sidebar'
 import { ReviewPane } from '@/app/right-sidebar/review'
 import type { GroupSetter } from '@/app/shell/group-setter'
 import type { StatusbarItem } from '@/app/shell/statusbar-controls'
+import { WorkspaceEditor } from '@/app/editor/workspace-editor'
 import { isBoxPath } from '@/app/right-sidebar/files/ipc'
-import { openEditorTab } from '@/store/editor-tabs'
+import { $editorTabs, activeEditorTab, openEditorTab } from '@/store/editor-tabs'
 import { setPaneOpen } from '@/store/panes'
 import { readWorkspaceFile } from '@/store/workspace'
 import { TITLEBAR_HEIGHT } from '@/app/shell/titlebar'
@@ -75,10 +76,26 @@ export function LogsPane() {
  *  Atom-bridged: this module can't import contrib-wiring (it imports us). */
 export const $restartPreviewServer = atom<((url: string, context?: string) => Promise<string>) | null>(null)
 
+/** Which consumer owns the rail: a file opened for editing, or the preview
+ *  pipeline (webviews, images, directories). Set by the two entry points below
+ *  so the last action wins, instead of a second pane duplicating the rail. */
+const $railShowsEditor = atom(false)
+
 export function PreviewRailPane() {
   const previewTarget = useStore($previewTarget)
   const fileTarget = useStore($filePreviewTarget)
   const restartPreviewServer = useStore($restartPreviewServer)
+  const showEditor = useStore($railShowsEditor)
+  const editorState = useStore($editorTabs)
+  const editorTab = activeEditorTab(editorState)
+
+  if (showEditor && editorTab) {
+    return (
+      <div className={cn(ZONE_CONTENT, 'min-h-0 w-full overflow-hidden')}>
+        <WorkspaceEditor />
+      </div>
+    )
+  }
 
   if (!previewTarget && !fileTarget) {
     return (
@@ -110,6 +127,8 @@ export function PreviewRailPane() {
 
 /** Open a file from the tree in the real preview pipeline. */
 function previewFile(path: string) {
+  $railShowsEditor.set(false)
+
   void normalizeOrLocalPreviewTarget(path, $currentCwd.get() || undefined)
     .then(target => {
       if (target) {
@@ -135,7 +154,8 @@ async function activateFile(path: string) {
 
   try {
     openEditorTab(path, await readWorkspaceFile(path))
-    setPaneOpen('editor', true)
+    $railShowsEditor.set(true)
+    setPaneOpen('preview', true)
   } catch (error) {
     console.warn(`[editor] could not open ${path}: ${String(error)}`)
     previewFile(path)
