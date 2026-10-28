@@ -56,10 +56,10 @@ vi.mock('@/store/session-states', async () => {
     $focusedStoredSessionId: atom(null),
     $sessionTiles: atom([]),
     $sessionStates: atom({}),
-    sessionTileDelegate: vi.fn(() => null),
-    dropTilesForProfile: vi.fn(),
     $stalledSessionIds: atom([]),
-    $workingSessionIds: atom([])
+    $workingSessionIds: atom([]),
+    dropTilesForProfile: vi.fn(),
+    sessionTileDelegate: vi.fn(() => null)
   }
 })
 vi.mock('@/store/profile', async () => {
