@@ -1258,7 +1258,8 @@ export function useSessionActions({
                   pendingClarify?.requestId ??
                     pendingClarifyState.cleared?.requestId ??
                     $clarifyRequests.get()[cachedRuntimeId]?.requestId
-                )
+                ),
+                sessionRestScope
               )
 
               return
@@ -1313,7 +1314,7 @@ export function useSessionActions({
       let cachedTailPaint: ChatMessage[] | null = null
 
       if (!resumedSameSelectedSession && $messages.get().length === 0) {
-        const cachedTail = loadTranscriptTail(storedSessionId)
+        const cachedTail = loadTranscriptTail(storedSessionId, sessionRestScope)
 
         if (cachedTail && selectedStoredSessionIdRef.current === storedSessionId) {
           cachedTailPaint = cachedTail
@@ -1550,7 +1551,7 @@ export function useSessionActions({
           // mislead the retry (or the next wake).
           if (cachedTailPaint !== null && $messages.get() === cachedTailPaint) {
             setMessages([])
-            dropTranscriptTail(storedSessionId)
+            dropTranscriptTail(storedSessionId, sessionRestScope)
           }
 
           setActiveSessionId(null)
@@ -1654,7 +1655,8 @@ export function useSessionActions({
             pendingClarify?.requestId ??
               pendingClarifyState.cleared?.requestId ??
               $clarifyRequests.get()[resumed.session_id]?.requestId
-          )
+          ),
+          sessionRestScope
         )
       } catch (err) {
         if (!isCurrentResume()) {
@@ -2111,7 +2113,7 @@ export function useSessionActions({
 
         await deleteSession(storedSessionId, removedOwner)
         // A deleted session's cached tail must not resurrect on a recycled id.
-        dropTranscriptTail(storedSessionId)
+        dropTranscriptTail(storedSessionId, removedOwner)
         // Only after the RPC lands — the optimistic eviction above can roll
         // back, and a rolled-back row must keep its watermark/marker.
         forgetSessionUnread(removedIds, profile)
