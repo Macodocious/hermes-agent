@@ -70,9 +70,17 @@ class TestDelegateRequirements(unittest.TestCase):
     def test_schema_valid(self):
         self.assertEqual(DELEGATE_TASK_SCHEMA["name"], "delegate_task")
         props = DELEGATE_TASK_SCHEMA["parameters"]["properties"]
-        self.assertIn("goal", props)
+        # tasks[] is the only advertised spawn shape (single task = one-entry
+        # array); legacy top-level goal/context/output_schema stay
+        # handler-accepted but unadvertised.
         self.assertIn("tasks", props)
-        self.assertIn("context", props)
+        self.assertNotIn("goal", props)
+        self.assertNotIn("context", props)
+        self.assertNotIn("output_schema", props)
+        task_props = props["tasks"]["items"]["properties"]
+        self.assertIn("goal", task_props)
+        self.assertIn("context", task_props)
+        self.assertIn("output_schema", task_props)
         # toolsets is intentionally NOT exposed to the model — subagents always
         # inherit the parent's toolsets. Letting the model name toolsets was a
         # capability-selection surface the model should not control.
@@ -107,17 +115,22 @@ class TestDelegateRequirements(unittest.TestCase):
 
         desc = overrides["description"]
         tasks_desc = overrides["parameters"]["properties"]["tasks"]["description"]
-        role_desc = overrides["parameters"]["properties"]["role"]["description"]
 
         # After the top-level compaction the limits live in the parameter
         # descriptions; the model still sees the user's real caps there, and
         # the top-level text points at them.
         self.assertIn(f"up to {max_children}", tasks_desc)
-        self.assertIn(f"max_spawn_depth={max_depth}", role_desc)
-        self.assertIn("limits and nesting rules are in the parameter descriptions", desc)
+        # The nesting rule rides on the top-level restrictions block and is
+        # only stated when nesting is actually reachable; at the flat default
+        # the same block says children cannot delegate at all.
+        if max_depth > 1:
+            self.assertIn(f"max_spawn_depth={max_depth}", desc)
+        else:
+            self.assertIn("Children cannot call delegate_task", desc)
+        self.assertIn("limit in the tasks description", desc)
         # The misleading "default 3" / "default 2" wording is gone from
         # every dynamic surface (model-facing).
-        for surface in (desc, tasks_desc, role_desc):
+        for surface in (desc, tasks_desc):
             self.assertNotIn("default 3", surface)
             self.assertNotIn("default 2", surface)
 
@@ -136,7 +149,11 @@ class TestDelegateRequirements(unittest.TestCase):
         )
         props = fn["parameters"]["properties"]
         self.assertIn(f"up to {_get_max_concurrent_children()}", props["tasks"]["description"])
-        self.assertIn(f"max_spawn_depth={_get_max_spawn_depth()}", props["role"]["description"])
+        max_depth = _get_max_spawn_depth()
+        if max_depth > 1:
+            self.assertIn(f"max_spawn_depth={max_depth}", fn["description"])
+        else:
+            self.assertIn("Children cannot call delegate_task", fn["description"])
 
     def test_top_level_description_compact_and_complete(self):
         """The top-level description must stay compact while keeping every
@@ -157,17 +174,18 @@ class TestDelegateRequirements(unittest.TestCase):
             "context",             # pass-everything-via-context rule
             "respond in Chinese",  # language example (weak models regress without it)
             "SELF-REPORTS",        # verification contract
-            "fetch the URL",       # concrete verification verbs
-            "clarify",             # leaf blocked-tool list
-            "send_message",
+            "clarify",             # child blocked-tool list
             "delegation.provider", # model inheritance / pinning
         ):
             self.assertIn(keyword, desc, f"top-level description lost: {keyword!r}")
+        # send_message must NOT be named: gateway-internal vocabulary most
+        # sessions never see (still enforced via DELEGATE_BLOCKED_TOOLS).
+        self.assertNotIn("send_message", desc)
 
     def test_dynamic_limits_moved_to_param_descriptions(self):
-        """Concurrency and nesting ceilings must reach the model through the
-        tasks/role parameter descriptions (the top-level text no longer
-        carries them)."""
+        """Concurrency reaches the model through the tasks parameter
+        description; the depth ceiling lives in the top-level description's
+        depth-derived recursion rule (role param is gone)."""
         from tools.delegate_tool import _build_dynamic_schema_overrides
         from tools.registry import registry
 
@@ -181,12 +199,11 @@ class TestDelegateRequirements(unittest.TestCase):
 
         for parameters in (overrides["parameters"], definition["parameters"]):
             self.assertIn("up to 7", parameters["properties"]["tasks"]["description"])
-            self.assertIn(
-                "max_spawn_depth=4", parameters["properties"]["role"]["description"]
-            )
-        # Static top-level text must not embed stale limits.
+            self.assertNotIn("role", parameters["properties"])
+        # Depth ceiling now rides the depth-derived recursion rule in the
+        # top-level text (only rendered when nesting is available).
+        self.assertIn("max_spawn_depth=4", overrides["description"])
         self.assertNotIn("up to 7", overrides["description"])
-        self.assertNotIn("max_spawn_depth", overrides["description"])
 
 class TestChildSystemPrompt(unittest.TestCase):
     def test_goal_only(self):
@@ -3102,33 +3119,23 @@ class TestOrchestratorRoleSchema(unittest.TestCase):
             delegate_task(**kwargs)
             return mock_child
 
-    def test_default_role_is_leaf(self):
+    def test_role_is_depth_derived_not_caller_declared(self):
+        """With max_spawn_depth=2 (mocked), a depth-1 child has depth budget
+        left, so it becomes an orchestrator automatically — no role arg
+        needed, and a passed legacy role arg is ignored either way."""
         child = self._run_with_mock_child(_SENTINEL)
-        self.assertEqual(child._delegate_role, "leaf")
-
-    def test_explicit_orchestrator_role_stashed(self):
-        """role='orchestrator' reaches _build_child_agent and is stashed.
-        Full behavior (toolset re-add) lands in commit 3; commit 2 only
-        verifies the plumbing."""
-        child = self._run_with_mock_child("orchestrator")
+        self.assertEqual(child._delegate_role, "orchestrator")
+        # Legacy explicit role='leaf' does not override the depth derivation.
+        child = self._run_with_mock_child("leaf")
         self.assertEqual(child._delegate_role, "orchestrator")
 
-    def test_unknown_role_coerces_to_leaf(self):
-        """role='nonsense' → _normalize_role warns and returns 'leaf'."""
-        import logging
-        with self.assertLogs("tools.delegate_tool", level=logging.WARNING) as cm:
-            child = self._run_with_mock_child("nonsense")
-        self.assertEqual(child._delegate_role, "leaf")
-        self.assertTrue(any("coercing" in m.lower() for m in cm.output))
-
-    def test_schema_has_role_top_level_and_per_task(self):
+    def test_schema_no_longer_advertises_role(self):
+        """`role` left the advertised schema (capability is depth-derived);
+        the handler still accepts it for wire compat."""
         from tools.delegate_tool import DELEGATE_TASK_SCHEMA
         props = DELEGATE_TASK_SCHEMA["parameters"]["properties"]
-        self.assertIn("role", props)
-        self.assertEqual(props["role"]["enum"], ["leaf", "orchestrator"])
-        task_props = props["tasks"]["items"]["properties"]
-        self.assertIn("role", task_props)
-        self.assertEqual(task_props["role"]["enum"], ["leaf", "orchestrator"])
+        self.assertNotIn("role", props)
+        self.assertNotIn("role", props["tasks"]["items"]["properties"])
 
     def test_schema_omits_acp_transport_fields(self):
         from tools.delegate_tool import DELEGATE_TASK_SCHEMA
@@ -3298,42 +3305,6 @@ class TestOrchestratorRoleBehavior(unittest.TestCase):
         self.assertIn("can themselves be orchestrators", prompt)
 
     # ── Batch mode and intersection ─────────────────────────────────────
-
-    @patch("tools.delegate_tool._resolve_delegation_credentials")
-    @patch("tools.delegate_tool._load_config",
-           return_value={"max_spawn_depth": 2})
-    def test_batch_mode_per_task_role_override(self, mock_cfg, mock_creds):
-        """Per-task role beats top-level; no top-level role → "leaf".
-
-        tasks=[{role:'orchestrator'},{role:'leaf'},{}] → first gets
-        delegation, second and third don't.  Requires max_spawn_depth>=2
-        (raised explicitly here) since the new default is 1 (flat).
-        """
-        mock_creds.return_value = {
-            "provider": None, "base_url": None,
-            "api_key": None, "api_mode": None, "model": None,
-        }
-        parent = _make_mock_parent(depth=0)
-        parent.enabled_toolsets = ["terminal", "file", "delegation"]
-        built_toolsets = []
-
-        def _factory(*a, **kw):
-            m = _make_role_mock_child()
-            built_toolsets.append(kw.get("enabled_toolsets"))
-            return m
-
-        with patch("run_agent.AIAgent", side_effect=_factory):
-            delegate_task(
-                tasks=[
-                    {"goal": "Plan the migration workstream", "role": "orchestrator"},
-                    {"goal": "Collect the migration inventory", "role": "leaf"},
-                    {"goal": "Draft the rollback checklist"},  # no role → falls back to top_role (leaf)
-                ],
-                parent_agent=parent,
-            )
-        self.assertIn("delegation", built_toolsets[0])
-        self.assertNotIn("delegation", built_toolsets[1])
-        self.assertNotIn("delegation", built_toolsets[2])
 
     @patch("tools.delegate_tool._resolve_delegation_credentials")
     @patch("tools.delegate_tool._load_config",
