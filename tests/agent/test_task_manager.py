@@ -349,3 +349,81 @@ def test_on_todo_write_writes_completion_mark(tmp_path, monkeypatch) -> None:
 # starts the task it is working on with its own ``begin``. Its tests went with
 # it rather than being rewritten against behaviour the code no longer has.
 
+
+# ── audit_turn_end: a completion inside a live plan continues ─────────
+
+
+def _agent_mid_plan(tasks: int, plan: str = "P") -> SimpleNamespace:
+    """One task closed, the next promoted, the completion stamped for the turn."""
+    store = TodoStore()
+    store.write(
+        [
+            {"id": str(i + 1), "content": f"Task {i + 1}", "status": "pending", "plan": plan}
+            for i in range(tasks)
+        ]
+    )
+    store.transition("begin", "1")
+    store.mark_work()
+    store.transition("complete", "1")
+    agent = _make_agent(store)
+    agent._task_lifecycle_action_issued = True
+    agent._task_lifecycle_last_action = "complete"
+    return agent
+
+
+def test_completion_in_a_live_plan_continues_into_the_next_task() -> None:
+    agent = _agent_mid_plan(2)
+
+    nudge = task_manager.audit_turn_end(
+        agent, final_response="Task 1 done. Tests pass.", interrupted=False, tool_call_count=5
+    )
+    assert nudge == task_manager.LIFECYCLE_CONTINUATION_NUDGE
+
+
+def test_completion_of_the_plans_last_task_ends_the_turn() -> None:
+    agent = _agent_mid_plan(1)
+
+    nudge = task_manager.audit_turn_end(
+        agent, final_response="The plan is done.", interrupted=False, tool_call_count=5
+    )
+    assert nudge is None
+
+
+def test_completion_outside_a_plan_ends_the_turn() -> None:
+    agent = _agent_mid_plan(2, plan="")
+    agent._todo_store.write(
+        [
+            {"id": "1", "content": "Task 1", "status": "pending"},
+            {"id": "2", "content": "Task 2", "status": "pending"},
+        ]
+    )
+
+    nudge = task_manager.audit_turn_end(
+        agent, final_response="Task 1 done.", interrupted=False, tool_call_count=5
+    )
+    assert nudge is None
+
+
+def test_other_actions_keep_their_exemption() -> None:
+    agent = _agent_mid_plan(2)
+    agent._task_lifecycle_last_action = "begin"
+
+    nudge = task_manager.audit_turn_end(
+        agent, final_response="Starting task 2.", interrupted=False, tool_call_count=1
+    )
+    assert nudge is None
+
+
+def test_the_hand_off_fires_once_per_completion() -> None:
+    """The action is read and cleared, so the following turn ends cleanly."""
+    agent = _agent_mid_plan(2)
+
+    first = task_manager.audit_turn_end(
+        agent, final_response="Task 1 done.", interrupted=False, tool_call_count=5
+    )
+    second = task_manager.audit_turn_end(
+        agent, final_response="Continuing.", interrupted=False, tool_call_count=1
+    )
+    assert first == task_manager.LIFECYCLE_CONTINUATION_NUDGE
+    assert second is None
+
