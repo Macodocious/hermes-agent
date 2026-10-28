@@ -36,6 +36,27 @@ contextBridge.exposeInMainWorld('hermesDesktop', {
       return () => ipcRenderer.removeListener('hermes:pet-overlay:control', listener)
     }
   },
+  // Apply loop: a main-process build pulled from the box waits for a click.
+  applyLoop: {
+    status: () => ipcRenderer.invoke('hermes:apply-loop:status'),
+    dismiss: () => ipcRenderer.invoke('hermes:apply-loop:dismiss'),
+    restart: () => ipcRenderer.invoke('hermes:apply-loop:restart'),
+    onPending: callback => {
+      const listener = (_event, build) => callback(build)
+      ipcRenderer.on('hermes:apply-loop:pending', listener)
+
+      return () => ipcRenderer.removeListener('hermes:apply-loop:pending', listener)
+    }
+  },
+  // Workspace writes leave through the main process so the pinned checkout is
+  // checked before any request is formed.
+  workspace: {
+    write: request => ipcRenderer.invoke('hermes:workspace:write', request),
+    mkdir: request => ipcRenderer.invoke('hermes:workspace:mkdir', request),
+    remove: request => ipcRenderer.invoke('hermes:workspace:remove', request),
+    root: () => ipcRenderer.invoke('hermes:workspace:root'),
+    home: () => ipcRenderer.invoke('hermes:workspace:home')
+  },
   getBootProgress: () => ipcRenderer.invoke('hermes:boot-progress:get'),
   getConnectionConfig: profile => ipcRenderer.invoke('hermes:connection-config:get', profile),
   saveConnectionConfig: payload => ipcRenderer.invoke('hermes:connection-config:save', payload),

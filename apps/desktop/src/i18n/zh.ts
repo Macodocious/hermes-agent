@@ -56,6 +56,7 @@ export const zh: Translations = {
     delete: '删除',
     renameTitle: '重命名',
     renameLabel: '新名称',
+    newFile: '新建文件',
     deleteTitle: name => `删除 ${name}？`,
     deleteBody: '将移至废纸篓，你可以从那里恢复。',
     pathCopied: '已复制路径'
@@ -170,6 +171,15 @@ export const zh: Translations = {
 
   remoteDisplayBanner: {
     message: reason => `软件渲染已启用 — 检测到远程显示（${reason}）。为防止画面闪烁，已禁用 GPU 加速。`
+  },
+
+  pendingBuild: {
+    changed: count => `主进程有 ${count} 个文件已更改`,
+    dismiss: '稍后',
+    failed: '最近一次主进程构建失败',
+    failedHint: '当前运行的构建未受影响。在服务器上修复错误后重新构建，此控件会再次出现。',
+    ready: '重启以应用新构建',
+    restart: '立即重启'
   },
 
   titlebar: {
@@ -870,6 +880,9 @@ export const zh: Translations = {
       sshHermesPathTitle: 'Atlas 路径（可选）',
       sshHermesPathDesc: '远程 hermes 可执行文件的完整路径。留空 = 自动检测。',
       sshHermesPathPlaceholder: '自动检测',
+      workspaceRootTitle: '工作区根目录',
+      workspaceRootDesc: 'Atlas 在服务器上编辑和提交的检出路径。默认为 ~/.hermes/repos/hermes-agent。',
+      workspaceRootPlaceholder: '~/.hermes/repos/hermes-agent',
       sshTestConnection: '测试 SSH',
       sshConnect: '连接',
       sshButtonsHint: '“保存”将在下次启动时生效，“连接”则立即重新连接。',

@@ -56,6 +56,7 @@ export const ja = defineLocale({
     delete: '削除',
     renameTitle: '名前を変更',
     renameLabel: '新しい名前',
+    newFile: '新規ファイル',
     deleteTitle: name => `${name} を削除しますか？`,
     deleteBody: 'ゴミ箱に移動します。そこから復元できます。',
     pathCopied: 'パスをコピーしました'
@@ -176,6 +177,15 @@ export const ja = defineLocale({
   remoteDisplayBanner: {
     message: reason =>
       `ソフトウェアレンダリングが有効です — リモートディスプレイを検出しました（${reason}）。ちらつきを防ぐため GPU アクセラレーションは無効化されています。`
+  },
+
+  pendingBuild: {
+    changed: count => `メインプロセスで ${count} 件のファイルが変更されました`,
+    dismiss: 'あとで',
+    failed: '前回のメインプロセスビルドに失敗しました',
+    failedHint: '実行中のビルドは変更されていません。ボックス側でエラーを修正して再ビルドすると、このコントロールが再び表示されます。',
+    ready: '再起動して新しいビルドを適用',
+    restart: '今すぐ再起動'
   },
 
   titlebar: {
@@ -748,6 +758,9 @@ export const ja = defineLocale({
       sshHermesPathTitle: 'Atlas パス（任意）',
       sshHermesPathDesc: 'リモートの hermes バイナリへのフルパス。空欄 = 自動検出。',
       sshHermesPathPlaceholder: '自動検出',
+      workspaceRootTitle: 'ワークスペースルート',
+      workspaceRootDesc: 'Atlas が編集・コミットするボックス上のチェックアウト。既定は ~/.hermes/repos/hermes-agent。',
+      workspaceRootPlaceholder: '~/.hermes/repos/hermes-agent',
       sshTestConnection: 'SSH をテスト',
       sshConnect: '接続',
       sshButtonsHint: '「保存」は次回起動時に適用され、「接続」は今すぐ再接続します。',

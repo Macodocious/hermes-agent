@@ -1,5 +1,5 @@
 import { useStore } from '@nanostores/react'
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 
 import type { CommandCenterSection } from '@/app/command-center'
 import { $terminalTakeover, setTerminalTakeover } from '@/app/right-sidebar/store'
@@ -13,6 +13,7 @@ import { Activity, AlertCircle, Clock, Command, FolderOpen, Hash, Loader2, Termi
 import type { RuntimeReadinessResult } from '@/lib/runtime-readiness'
 import { contextBarLabel, LiveDuration, usageContextLabel } from '@/lib/statusbar'
 import { cn } from '@/lib/utils'
+import { $pendingMainBuild, subscribeToPendingBuild } from '@/store/apply-loop'
 import { copyFilePath, revealFile } from '@/store/file-actions'
 import { revealFileInTree } from '@/store/layout'
 import { $activeGatewayProfile } from '@/store/profile'
@@ -43,6 +44,7 @@ import {
 import type { StatusResponse } from '@/types/hermes'
 
 import { CRON_ROUTE, SETTINGS_ROUTE } from '../../routes'
+import { PendingBuildPill } from '../pending-build-pill'
 import type { StatusbarItem } from '../statusbar-controls'
 
 const EMPTY_USAGE = { calls: 0, input: 0, output: 0, total: 0 } as const
@@ -108,7 +110,13 @@ export function useStatusbarItems({
   const backendUpdateStatus = useStore($backendUpdateStatus)
   const backendUpdateApply = useStore($backendUpdateApply)
   const desktopVersion = useStore($desktopVersion)
+  const pendingMainBuild = useStore($pendingMainBuild)
   const connection = useStore($connection)
+
+  // Follow the apply-loop marker for the life of the shell: the pill renders
+  // only while a build is pending, but the state has to be current before it
+  // appears, so the subscription lives here rather than in the pill.
+  useEffect(() => subscribeToPendingBuild(), [])
 
   // The FOCUSED session (interacted tile, else the primary — the same
   // derivation the titlebar title follows): every session-scoped readout
@@ -436,6 +444,11 @@ export function useStatusbarItems({
     ]
   )
 
+  const pendingBuildItem = useMemo<StatusbarItem>(
+    () => ({ hidden: !pendingMainBuild, id: 'pending-main-build', render: () => <PendingBuildPill /> }),
+    [pendingMainBuild]
+  )
+
   const coreRightStatusbarItems = useMemo<readonly StatusbarItem[]>(
     () => [
       {
@@ -482,6 +495,7 @@ export function useStatusbarItems({
         title: terminalTakeover ? copy.hideTerminal : copy.showTerminal,
         variant: 'action'
       },
+      pendingBuildItem,
       clientVersionItem,
       ...(backendVersionItem ? [backendVersionItem] : [])
     ],
@@ -495,6 +509,7 @@ export function useStatusbarItems({
       contextBar,
       contextUsage,
       copy,
+      pendingBuildItem,
       currentUsage,
       requestGateway,
       sessionStartedAt,

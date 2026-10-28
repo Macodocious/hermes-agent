@@ -68,6 +68,7 @@ import { $terminalTakeover, setTerminalTakeover } from '../right-sidebar/store'
 import { $workspaceIsPage } from '../routes'
 
 import { FilesPane, LogsPane, PreviewRailPane, ReviewPaneContent } from './panes'
+import { WorkspaceEditor } from '@/app/editor/workspace-editor'
 import { ContribWiring, WiredPane } from './wiring'
 
 /**
@@ -189,6 +190,22 @@ registry.registerMany([
       maxWidth: FILE_BROWSER_MAX_WIDTH
     },
     render: () => idle(<FilesPane />)
+  },
+  {
+    id: 'editor',
+    area: 'panes',
+    title: 'editor',
+    // Opens when a file from the box is activated. Its own tab strip manages
+    // what is inside, so the pane exists only while files are open.
+    data: {
+      placement: 'right',
+      collapsible: true,
+      dock: { pane: 'preview', pos: 'left' },
+      width: FILE_BROWSER_DEFAULT_WIDTH,
+      minWidth: FILE_BROWSER_MIN_WIDTH,
+      maxWidth: FILE_BROWSER_MAX_WIDTH
+    },
+    render: () => idle(<WorkspaceEditor />)
   },
   {
     id: 'preview',

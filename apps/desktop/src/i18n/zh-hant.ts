@@ -56,6 +56,7 @@ export const zhHant = defineLocale({
     delete: '刪除',
     renameTitle: '重新命名',
     renameLabel: '新名稱',
+    newFile: '新增檔案',
     deleteTitle: name => `刪除 ${name}？`,
     deleteBody: '將移至垃圾桶，你可以從那裡還原。',
     pathCopied: '已複製路徑'
@@ -170,6 +171,15 @@ export const zhHant = defineLocale({
 
   remoteDisplayBanner: {
     message: reason => `軟體繪圖已啟用 — 偵測到遠端顯示（${reason}）。為防止畫面閃爍，已停用 GPU 加速。`
+  },
+
+  pendingBuild: {
+    changed: count => `主程序有 ${count} 個檔案已變更`,
+    dismiss: '稍後',
+    failed: '最近一次主程序建置失敗',
+    failedHint: '目前執行的建置未受影響。在伺服器上修正錯誤後重新建置，此控制項會再次出現。',
+    ready: '重新啟動以套用新建置',
+    restart: '立即重新啟動'
   },
 
   titlebar: {
@@ -727,6 +737,9 @@ export const zhHant = defineLocale({
       sshHermesPathTitle: 'Atlas 路徑（選用）',
       sshHermesPathDesc: '遠端 hermes 執行檔的完整路徑。留空 = 自動偵測。',
       sshHermesPathPlaceholder: '自動偵測',
+      workspaceRootTitle: '工作區根目錄',
+      workspaceRootDesc: 'Atlas 在伺服器上編輯與提交的檢出路徑。預設為 ~/.hermes/repos/hermes-agent。',
+      workspaceRootPlaceholder: '~/.hermes/repos/hermes-agent',
       sshTestConnection: '測試 SSH',
       sshConnect: '連線',
       sshButtonsHint: '「儲存」會在下次啟動時生效，「連線」則立即重新連線。',

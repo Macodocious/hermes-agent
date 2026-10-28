@@ -56,6 +56,7 @@ export const en: Translations = {
     delete: 'Delete',
     renameTitle: 'Rename',
     renameLabel: 'New name',
+    newFile: 'New file',
     deleteTitle: name => `Delete ${name}?`,
     deleteBody: 'It will be moved to the Trash — you can restore it from there.',
     pathCopied: 'Path copied'
@@ -175,6 +176,15 @@ export const en: Translations = {
   remoteDisplayBanner: {
     message: reason =>
       `Software rendering active — remote display detected (${reason}). GPU acceleration is disabled to prevent flickering.`
+  },
+
+  pendingBuild: {
+    changed: count => `${count} file${count === 1 ? '' : 's'} changed in the main process`,
+    dismiss: 'Later',
+    failed: 'The last main-process build failed',
+    failedHint: 'The running build is unchanged. Fix the error on the box, build again, and this control returns.',
+    ready: 'Restart to apply the new build',
+    restart: 'Restart now'
   },
 
   titlebar: {
@@ -666,6 +676,9 @@ export const en: Translations = {
       sshHermesPathTitle: 'Atlas path (optional)',
       sshHermesPathDesc: 'Full path to the remote hermes binary. Blank = auto-detect.',
       sshHermesPathPlaceholder: 'auto-detect',
+      workspaceRootTitle: 'Workspace root',
+      workspaceRootDesc: 'The checkout on the box that Atlas edits and commits. Defaults to ~/.hermes/repos/hermes-agent.',
+      workspaceRootPlaceholder: '~/.hermes/repos/hermes-agent',
       sshTestConnection: 'Test SSH',
       sshConnect: 'Connect',
       sshButtonsHint: 'Save applies on the next launch. Connect reconnects now.',

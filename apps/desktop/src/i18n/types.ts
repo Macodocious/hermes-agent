@@ -101,6 +101,7 @@ export interface Translations {
     delete: string
     renameTitle: string
     renameLabel: string
+    newFile: string
     deleteTitle: (name: string) => string
     deleteBody: string
     pathCopied: string
@@ -216,6 +217,15 @@ export interface Translations {
 
   remoteDisplayBanner: {
     message: (reason: string) => string
+  }
+
+  pendingBuild: {
+    changed: (count: number) => string
+    dismiss: string
+    failed: string
+    failedHint: string
+    ready: string
+    restart: string
   }
 
   titlebar: {
@@ -568,6 +578,9 @@ export interface Translations {
       sshHermesPathTitle: string
       sshHermesPathDesc: string
       sshHermesPathPlaceholder: string
+      workspaceRootTitle: string
+      workspaceRootDesc: string
+      workspaceRootPlaceholder: string
       sshTestConnection: string
       sshConnect: string
       sshButtonsHint: string
