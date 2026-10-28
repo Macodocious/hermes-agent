@@ -9,11 +9,30 @@
 import { atom } from 'nanostores'
 
 import type { WorkspacePathRequest, WorkspaceWriteRequest } from '@/global'
+import { persistString, storedString } from '@/lib/storage'
+import { $connection } from '@/store/session'
 
 /** Where the checkout lives on the box. Editable per connection in settings. */
 export const DEFAULT_WORKSPACE_ROOT = '~/.hermes/repos/hermes-agent'
 
 export const $workspaceRoot = atom<string>(DEFAULT_WORKSPACE_ROOT)
+
+// Persisted per connection: the same app pointed at two boxes can hold two
+// different checkouts, and neither may bleed into the other.
+const storageKey = () => `hermes:workspace-root:${$connection.get()?.baseUrl ?? 'local'}`
+
+export const loadWorkspaceRoot = (): string => {
+  const stored = storedString(storageKey()) || DEFAULT_WORKSPACE_ROOT
+  $workspaceRoot.set(stored)
+
+  return stored
+}
+
+export const setWorkspaceRoot = (root: string): void => {
+  const trimmed = root.trim() || DEFAULT_WORKSPACE_ROOT
+  $workspaceRoot.set(trimmed)
+  persistString(storageKey(), trimmed)
+}
 
 const workspaceApi = () => window.hermesDesktop?.workspace
 
