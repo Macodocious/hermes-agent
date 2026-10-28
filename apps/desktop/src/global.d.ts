@@ -232,6 +232,19 @@ declare global {
         root: () => Promise<string>
         home: () => Promise<string>
       }
+      build?: {
+        start: (profile?: string) => Promise<{ started_at: number | null; state: string }>
+        status: (profile?: string) => Promise<{
+          artifacts: { bytes: number; name: string }[]
+          error: string | null
+          finished_at: number | null
+          log: string
+          returncode: number | null
+          started_at: number | null
+          state: 'idle' | 'running' | 'done' | 'failed'
+        }>
+        save: (request: { name: string; profile?: string }) => Promise<{ bytes: number; saved: string | null }>
+      }
       updates: {
         check: () => Promise<DesktopUpdateStatus>
         apply: (opts?: DesktopUpdateApplyOptions) => Promise<DesktopUpdateApplyResult>
