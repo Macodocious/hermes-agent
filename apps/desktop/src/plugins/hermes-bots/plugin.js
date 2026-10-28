@@ -4326,6 +4326,12 @@ async function openStoredBotChat(name, storedId, summary) {
   const hasAuthoritativeCount =
     typeof summary?.message_count === 'number' && Number.isFinite(summary.message_count)
   const expectHistory = hasAuthoritativeCount ? summary.message_count > 0 : true
+  // Current SDKs export the Bot-specific budget. The fallback preserves
+  // compatibility with older hosts and isolated plugin test harnesses.
+  const hydrationTimeoutMs =
+    typeof sdk !== 'undefined' && Number.isFinite(sdk.BOT_CHAT_SESSION_HYDRATION_TIMEOUT_MS)
+      ? sdk.BOT_CHAT_SESSION_HYDRATION_TIMEOUT_MS
+      : 60_000
 
   // A profile backend that just woke up can lose the hydration-timeout race
   // even though the session is fine (hermes-agent#89617) — clicking Retry
@@ -4346,6 +4352,7 @@ async function openStoredBotChat(name, storedId, summary) {
     awaitHydration: true,
     expectHistory,
     forceResume: true,
+    hydrationTimeoutMs,
     keepAllProfilesScope: true,
     retryHydrationTimeoutOnce: true
   })
