@@ -54,6 +54,16 @@ LIFECYCLE_AUDIT_NUDGE = (
     "itself — there is nothing to ask."
 )
 
+# The completion hand-off, delivered once per completed task. Same instruction
+# the plan's approval sends to start the work: a completion that leaves the
+# plan with more work must not end the turn. A plan that is over, and the
+# completion that closed its last task, end the turn exactly as before.
+LIFECYCLE_CONTINUATION_NUDGE = (
+    "[Task lifecycle] Task complete; the plan has more work.\n"
+    "Begin the next task immediately — call a tool relevant to its first step "
+    "now."
+)
+
 # Task-status grouping for the one status-query owner (_items_with_status).
 # Single-sourced here so the lifecycle's notion of "current" cannot drift
 # between the helpers that ask the same question.
@@ -539,8 +549,13 @@ def on_todo_write(agent: Any, args: Dict[str, Any]) -> None:
     store = getattr(agent, "_todo_store", None)
     if store is None:
         return
-    if args.get("action") is not None:
+    action = args.get("action")
+    if action is not None:
         agent._task_lifecycle_action_issued = True
+        # Which action, not merely that one ran: a completion is the one
+        # transition that leaves work behind, so the audit reads it to decide
+        # whether the turn may end.
+        agent._task_lifecycle_last_action = action
     _write_plan_completion_mark(store)
     _emit_pending_notices(agent)
     _persist(agent)
@@ -559,7 +574,9 @@ def audit_turn_end(
     Returns a continuation nudge (to be enqueued as a user-role message)
     when the turn did substantive work — a real response, tool calls, or
     file mutations — while no task is ``in_progress`` and no lifecycle
-    action transitioned a task. Returns None when the turn is clean.
+    action transitioned a task. A completion inside a live plan is the one
+    transition that continues instead: the next task is already current,
+    so the turn starts it. Returns None when the turn is clean.
 
     The audit is the mechanical boundary: the model cannot be prevented
     from acting without the tool, but it cannot get away with it — the
@@ -579,7 +596,24 @@ def audit_turn_end(
         # has to leave the list current, so the flag is cleared as it is
         # read — the next turn must earn its own exemption.
         agent._task_lifecycle_action_issued = False
-        return None
+        last_action = getattr(agent, "_task_lifecycle_last_action", "")
+        agent._task_lifecycle_last_action = ""
+        if last_action != "complete":
+            return None
+        # A completion that leaves a live plan with more work is not a stop:
+        # the close promoted the next task to current, so the turn continues
+        # on it. Once per completion, by construction — the action is read and
+        # cleared here. A plan that is over, a completion that closed the
+        # plan's last task (no successor), and a task outside any plan all end
+        # the turn exactly as before.
+        store = getattr(agent, "_todo_store", None)
+        current = _current_item(agent)
+        if store is None or current is None:
+            return None
+        plan_ref = task_plan_ref(store, str(current.get("id") or ""))
+        if not plan_ref or plan_is_complete(store, plan_ref):
+            return None
+        return LIFECYCLE_CONTINUATION_NUDGE
     # An open task is the lifecycle being in control: the current task is set,
     # so the turn is working on it by definition. The audit exists for the
     # other case — substantive work with nothing open — and it must not fire
