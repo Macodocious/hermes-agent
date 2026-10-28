@@ -646,7 +646,7 @@ export const en: Translations = {
       savedTitle: 'Gateway settings saved',
       restartingMessage: 'Atlas Desktop will reconnect using the saved settings — the shell stays open.',
       savedMessage: 'Saved for the next restart.',
-      connectedTo: (baseUrl, version) => `Connected to ${baseUrl}${version ? ` · Hermes ${version}` : ''}`,
+      connectedTo: (baseUrl, version) => `Connected to ${baseUrl}${version ? ` · Atlas ${version}` : ''}`,
       reachableTitle: 'Remote gateway reachable',
       signedOutTitle: 'Signed out',
       signedOutMessage: 'Cleared the remote gateway session.',
@@ -2038,7 +2038,7 @@ export const en: Translations = {
     installTo: 'Will install to',
     retryAfterRun: 'I’ve run it -- retry',
     failedTitle: 'Installation failed',
-    settingUpTitle: 'Setting up Hermes Agent',
+    settingUpTitle: 'Setting up Atlas Agent',
     finishingTitle: 'Finishing up',
     failedDesc:
       'One of the install steps failed. On Windows, this can happen if another Atlas CLI or desktop instance is running. Stop any running Atlas instances, then retry. Check the details below or the desktop log for the full transcript.',
@@ -2061,7 +2061,7 @@ export const en: Translations = {
   },
 
   onboarding: {
-    headerTitle: "Let's get you setup with Hermes Agent",
+    headerTitle: "Let's get you setup with Atlas Agent",
     headerDesc: 'Connect a model provider to start chatting. Most options take one click.',
     preparingInstall: 'Atlas is finishing install. This usually takes under a minute on first run.',
     starting: 'Starting Atlas…',
