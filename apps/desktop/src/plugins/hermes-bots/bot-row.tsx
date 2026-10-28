@@ -335,7 +335,7 @@ export function BotRow({ bot, onDelete, onEdit, onGroup, showHandle }: BotRowPro
               .catch(error => host.notifyError?.(error, 'Could not load bot'))
           }
         >
-          {b.bot.editTitle}
+          {b.bot.editMenu}
         </ContextMenuItem>
         <ContextMenuItem
           onSelect={() =>

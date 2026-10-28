@@ -63,6 +63,7 @@ type BotsMessages = {
   bot: {
     newTitle: string
     editTitle: string
+    editMenu: string
     helpPromptPlaceholder: string
     descriptionHint: string
     newChatWith: string
@@ -182,8 +183,9 @@ const en: BotsMessages = {
       'Waiting for the gateway connection… (remote gateways can take a few seconds; retries automatically)'
   },
   bot: {
-    newTitle: 'New Bot',
-    editTitle: 'Edit Profile',
+    newTitle: 'New bot',
+    editTitle: 'Edit profile',
+    editMenu: 'Edit…',
     helpPromptPlaceholder: 'What should this bot help with?',
     descriptionHint: 'Leave blank to generate from the bot’s name and description.',
     newChatWith: 'New chat with this bot',
@@ -221,7 +223,7 @@ const en: BotsMessages = {
     savedLocallyDescriptionFailed: 'Saved look locally; description update failed'
   },
   group: {
-    newTitle: 'New Group Chat',
+    newTitle: 'New group chat',
     manageDesc: 'A bot can join multiple group chats. Memberships sync to every machine.',
     manageTitle: 'Manage groups',
     settingsTitle: 'Group settings',
@@ -232,7 +234,7 @@ const en: BotsMessages = {
     removeFromSelection: 'Remove from selection',
     disbandTitle: 'Disband group chat?',
     deleteTitle: 'Delete group chat?',
-    deleteAction: 'Delete Group',
+    deleteAction: 'Delete',
     composerPlaceholder: 'Say something — every bot in this group hears the room.',
     attachHint: 'Attach files — every responding bot sees them',
     newThread: 'New Thread',
@@ -300,6 +302,7 @@ const ja: BotsMessages = {
   bot: {
     newTitle: '新しいボット',
     editTitle: 'プロファイルを編集',
+    editMenu: '編集…',
     helpPromptPlaceholder: 'このボットは何を手伝いますか？',
     descriptionHint: '空欄のままにすると、ボットの名前と説明から生成します。',
     newChatWith: 'このボットと新しいチャット',
@@ -350,7 +353,7 @@ const ja: BotsMessages = {
     removeFromSelection: '選択から外す',
     disbandTitle: 'グループチャットを解散しますか？',
     deleteTitle: 'グループチャットを削除しますか？',
-    deleteAction: 'グループを削除',
+    deleteAction: '削除',
     composerPlaceholder: '何か書いてください — このグループのすべてのボットが部屋の内容を受け取ります。',
     attachHint: 'ファイルを添付 — 応答するすべてのボットが見ます',
     newThread: '新しいスレッド',
@@ -417,6 +420,7 @@ const zh: BotsMessages = {
   bot: {
     newTitle: '新建机器人',
     editTitle: '编辑配置档案',
+    editMenu: '编辑…',
     helpPromptPlaceholder: '这个机器人应该帮你做什么？',
     descriptionHint: '留空则根据机器人的名称和描述生成。',
     newChatWith: '与此机器人开新聊天',
@@ -467,7 +471,7 @@ const zh: BotsMessages = {
     removeFromSelection: '从选择中移除',
     disbandTitle: '解散群聊？',
     deleteTitle: '删除群聊？',
-    deleteAction: '删除群组',
+    deleteAction: '删除',
     composerPlaceholder: '说点什么 — 这个群里的每个机器人都会听到。',
     attachHint: '附加文件 — 每个回应的机器人都能看到',
     newThread: '新帖子',
@@ -534,6 +538,7 @@ const zhHant: BotsMessages = {
   bot: {
     newTitle: '新增機器人',
     editTitle: '編輯設定檔',
+    editMenu: '編輯…',
     helpPromptPlaceholder: '這個機器人應該幫你做什麼？',
     descriptionHint: '留空則依機器人的名稱和描述產生。',
     newChatWith: '與此機器人開新聊天',
@@ -584,7 +589,7 @@ const zhHant: BotsMessages = {
     removeFromSelection: '從選取中移除',
     disbandTitle: '解散群組聊天？',
     deleteTitle: '刪除群組聊天？',
-    deleteAction: '刪除群組',
+    deleteAction: '刪除',
     composerPlaceholder: '說點什麼 — 這個群組裡的每個機器人都會聽到。',
     attachHint: '附加檔案 — 每個回應的機器人都能看到',
     newThread: '新討論串',
