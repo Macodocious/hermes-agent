@@ -230,6 +230,7 @@ declare global {
         mkdir: (request: WorkspacePathRequest) => Promise<{ entry: unknown; path: string }>
         remove: (request: WorkspacePathRequest) => Promise<{ path: string }>
         root: () => Promise<string>
+        home: () => Promise<string>
       }
       updates: {
         check: () => Promise<DesktopUpdateStatus>
