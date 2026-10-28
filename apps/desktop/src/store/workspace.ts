@@ -67,6 +67,16 @@ export const deleteWorkspacePath = async (path: string): Promise<string> => {
   return result.path
 }
 
+/** Create an empty file in a directory on the box, then hand it to the inline
+ *  rename editor so the name is chosen the same way a rename is. */
+export const createWorkspaceFile = async (directory: string, name = 'untitled'): Promise<string> => {
+  const target = `${directory.replace(/\/+$/, '')}/${name}`
+
+  await saveWorkspaceFile(target, '')
+
+  return target
+}
+
 function decodeBase64Utf8(encoded: string): string {
   const binary = atob(encoded)
   const bytes = Uint8Array.from(binary, char => char.charCodeAt(0))

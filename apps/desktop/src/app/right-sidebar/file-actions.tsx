@@ -14,6 +14,7 @@ import { isDesktopFsRemoteMode } from '@/lib/desktop-fs'
 import { IS_MAC } from '@/lib/keybinds/combo'
 import { cn } from '@/lib/utils'
 import { isBoxPath } from './files/ipc'
+import { createWorkspaceFile } from '@/store/workspace'
 import {
   $fileActionDialog,
   beginInlineRename,
@@ -53,6 +54,12 @@ interface FileEntryContextMenuProps {
   relativeTo?: null | string
 }
 
+async function createFileHere(directory: string) {
+  const created = await createWorkspaceFile(directory)
+
+  beginInlineRename(created)
+}
+
 /** Right-click menu shared by both file trees (browser + review/git). */
 export function FileEntryContextMenu({ children, isDirectory, name, path, relativeTo }: FileEntryContextMenuProps) {
   const { t } = useI18n()
@@ -87,6 +94,9 @@ export function FileEntryContextMenu({ children, isDirectory, name, path, relati
         {canMutate && (
           <>
             <ContextMenuSeparator />
+            {isDirectory && isBoxPath(path) ? (
+              <ContextMenuItem onSelect={() => void createFileHere(path)}>{m.newFile}</ContextMenuItem>
+            ) : null}
             <ContextMenuItem onSelect={() => beginInlineRename(path)}>{m.rename}</ContextMenuItem>
             <ContextMenuItem onSelect={() => requestFileDelete(target)} variant="destructive">
               {m.delete}

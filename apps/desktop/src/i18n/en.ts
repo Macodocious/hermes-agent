@@ -56,6 +56,7 @@ export const en: Translations = {
     delete: 'Delete',
     renameTitle: 'Rename',
     renameLabel: 'New name',
+    newFile: 'New file',
     deleteTitle: name => `Delete ${name}?`,
     deleteBody: 'It will be moved to the Trash — you can restore it from there.',
     pathCopied: 'Path copied'

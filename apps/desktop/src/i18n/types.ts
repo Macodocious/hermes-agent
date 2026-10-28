@@ -101,6 +101,7 @@ export interface Translations {
     delete: string
     renameTitle: string
     renameLabel: string
+    newFile: string
     deleteTitle: (name: string) => string
     deleteBody: string
     pathCopied: string

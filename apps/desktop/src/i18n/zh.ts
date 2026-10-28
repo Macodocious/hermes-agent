@@ -56,6 +56,7 @@ export const zh: Translations = {
     delete: '删除',
     renameTitle: '重命名',
     renameLabel: '新名称',
+    newFile: '新建文件',
     deleteTitle: name => `删除 ${name}？`,
     deleteBody: '将移至废纸篓，你可以从那里恢复。',
     pathCopied: '已复制路径'

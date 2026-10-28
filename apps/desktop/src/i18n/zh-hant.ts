@@ -56,6 +56,7 @@ export const zhHant = defineLocale({
     delete: '刪除',
     renameTitle: '重新命名',
     renameLabel: '新名稱',
+    newFile: '新增檔案',
     deleteTitle: name => `刪除 ${name}？`,
     deleteBody: '將移至垃圾桶，你可以從那裡還原。',
     pathCopied: '已複製路徑'

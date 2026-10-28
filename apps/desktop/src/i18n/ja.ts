@@ -56,6 +56,7 @@ export const ja = defineLocale({
     delete: '削除',
     renameTitle: '名前を変更',
     renameLabel: '新しい名前',
+    newFile: '新規ファイル',
     deleteTitle: name => `${name} を削除しますか？`,
     deleteBody: 'ゴミ箱に移動します。そこから復元できます。',
     pathCopied: 'パスをコピーしました'
