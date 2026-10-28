@@ -17,6 +17,28 @@ export const DEFAULT_WORKSPACE_ROOT = '~/.hermes/repos/hermes-agent'
 
 export const $workspaceRoot = atom<string>(DEFAULT_WORKSPACE_ROOT)
 
+/** The checkout resolved in the box's own path space (an absolute POSIX path).
+ *  The configured value may be `~`-relative, and only the main process can
+ *  expand that against the box's home rather than this PC's, so the explorer
+ *  roots at this value and never at the client-side string. */
+export const $resolvedWorkspaceRoot = atom<string>('')
+
+export const loadResolvedWorkspaceRoot = async (): Promise<string> => {
+  try {
+    const resolved = (await window.hermesDesktop?.workspace?.root?.()) ?? ''
+    const value = typeof resolved === 'string' ? resolved : ''
+
+    $resolvedWorkspaceRoot.set(value)
+
+    return value
+  } catch (error) {
+    console.warn(`[workspace] could not resolve the box checkout: ${String(error)}`)
+    $resolvedWorkspaceRoot.set('')
+
+    return ''
+  }
+}
+
 // Persisted per connection: the same app pointed at two boxes can hold two
 // different checkouts, and neither may bleed into the other.
 const storageKey = () => `hermes:workspace-root:${$connection.get()?.baseUrl ?? 'local'}`

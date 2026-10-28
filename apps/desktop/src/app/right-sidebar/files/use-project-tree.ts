@@ -175,18 +175,6 @@ async function fallbackRootFor(cwd: string): Promise<string | null> {
   }
 }
 
-/** This PC's home directory, as the second root of the one tree. Null when the
- *  bridge is missing, which leaves the tree single-rooted. */
-async function localHome(): Promise<string | null> {
-  try {
-    return (await window.hermesDesktop?.workspace?.home?.()) ?? null
-  } catch (error) {
-    console.warn(`[workspace] could not read this PC's home: ${String(error)}`)
-
-    return null
-  }
-}
-
 async function loadRoot(cwd: string, { force = false }: { force?: boolean } = {}) {
   if (!cwd) {
     clearProjectTree()
@@ -237,20 +225,12 @@ async function loadRoot(cwd: string, { force = false }: { force?: boolean } = {}
     }
   }
 
-  const home = await localHome()
-
   setProjectTree(latest => {
     if (latest.cwd !== cwd || latest.requestId !== requestId) {
       return latest
     }
 
     const nodes = error ? [] : entries.map(e => makeNode(e.path, e.name, e.isDirectory))
-
-    // One tree, two roots: the checkout on the box and this PC. The PC root is
-    // read-only — every write aimed at it is refused before a request exists.
-    if (!error && home && home !== resolvedCwd) {
-      nodes.push(makeNode(home, home.split(/[\\/]/).filter(Boolean).pop() ?? home, true))
-    }
 
     return {
       ...latest,

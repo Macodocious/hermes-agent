@@ -15,7 +15,7 @@ import { ipcMain } from 'electron'
 import os from 'node:os'
 import path from 'node:path'
 
-import { assertWritablePath, DEFAULT_WORKSPACE_ROOT, resolveWorkspaceRoot } from './workspace-root'
+import { assertWritablePath, DEFAULT_WORKSPACE_ROOT, resolveWorkspaceRoot, WorkspaceEscapeError } from './workspace-root'
 
 export const WORKSPACE_CHANNELS = {
   home: 'hermes:workspace:home',
@@ -87,8 +87,61 @@ function toDataUrl(content: string): string {
   return `data:text/plain;charset=utf-8;base64,${Buffer.from(content, 'utf8').toString('base64')}`
 }
 
+/** The box's home directory, as the gateway reports it. The client's own home
+ *  lives in a different path space and must never stand in for it: resolving
+ *  `~` against the Windows home produced `C:\Users\…\.hermes\…`, which the
+ *  gateway then rejected and which never matched a box path in isBoxPath. */
+async function boxHome(connection: WorkspaceConnection): Promise<string> {
+  const response = await fetch(`${connection.baseUrl}/api/files`, {
+    headers: { 'X-Hermes-Session-Token': connection.token }
+  })
+
+  if (!response.ok) {
+    throw new Error(`could not read the box root: ${response.status}`)
+  }
+
+  const body = (await response.json()) as { path?: string }
+
+  if (typeof body?.path !== 'string' || !body.path.startsWith('/')) {
+    throw new Error('the gateway did not report an absolute box path')
+  }
+
+  return body.path
+}
+
+/** Resolve the configured checkout against the BOX home, in POSIX terms. */
+export async function resolveBoxRoot(configured: string, connection: WorkspaceConnection): Promise<string> {
+  const root = configured.trim() || DEFAULT_WORKSPACE_ROOT
+
+  if (root === '~') {
+    return boxHome(connection)
+  }
+
+  if (root.startsWith('~/')) {
+    return path.posix.join(await boxHome(connection), root.slice(2))
+  }
+
+  return path.posix.normalize(root)
+}
+
+/** Refuse a write that escapes the pinned checkout, in the box's path space. */
+function assertInsideBox(root: string, candidate: string): string {
+  const normalizedRoot = path.posix.normalize(root)
+  const normalized = path.posix.normalize(candidate)
+
+  if (normalized !== normalizedRoot && !normalized.startsWith(`${normalizedRoot}/`)) {
+    throw new WorkspaceEscapeError(normalized, normalizedRoot)
+  }
+
+  return normalized
+}
+
 export function registerWorkspaceFilesIpc(resolveConnection: WorkspaceConnectionResolver): void {
-  ipcMain.handle(WORKSPACE_CHANNELS.root, () => resolveWorkspaceRoot(DEFAULT_WORKSPACE_ROOT, os.homedir()))
+  ipcMain.handle(WORKSPACE_CHANNELS.root, async (_event, profile?: string) => {
+    const connection = await resolveConnection(profile)
+
+    return resolveBoxRoot(DEFAULT_WORKSPACE_ROOT, connection)
+  })
   ipcMain.handle(WORKSPACE_CHANNELS.home, () => os.homedir())
 
   ipcMain.handle(WORKSPACE_CHANNELS.write, async (_event, request: WorkspaceWriteRequest) => {
@@ -100,9 +153,9 @@ export function registerWorkspaceFilesIpc(resolveConnection: WorkspaceConnection
     }
 
     // Refused here, before a request exists to send.
-    const pinnedRoot = resolveWorkspaceRoot(fields.root, os.homedir())
-    const target = assertWritablePath(pinnedRoot, fields.path)
     const connection = await resolveConnection(request.profile)
+    const pinnedRoot = await resolveBoxRoot(fields.root, connection)
+    const target = assertInsideBox(pinnedRoot, fields.path)
     const result = (await postJson(connection, '/api/files/upload', {
       data_url: toDataUrl(content),
       overwrite: true,
@@ -114,9 +167,9 @@ export function registerWorkspaceFilesIpc(resolveConnection: WorkspaceConnection
 
   ipcMain.handle(WORKSPACE_CHANNELS.mkdir, async (_event, request: WorkspacePathRequest) => {
     const fields = requireStrings(request, ['root', 'path'])
-    const pinnedRoot = resolveWorkspaceRoot(fields.root, os.homedir())
-    const target = assertWritablePath(pinnedRoot, fields.path)
     const connection = await resolveConnection(request.profile)
+    const pinnedRoot = await resolveBoxRoot(fields.root, connection)
+    const target = assertInsideBox(pinnedRoot, fields.path)
     const result = (await postJson(connection, '/api/files/mkdir', { path: target })) as { entry?: unknown }
 
     return { entry: result?.entry ?? null, path: target }
@@ -124,9 +177,9 @@ export function registerWorkspaceFilesIpc(resolveConnection: WorkspaceConnection
 
   ipcMain.handle(WORKSPACE_CHANNELS.remove, async (_event, request: WorkspacePathRequest) => {
     const fields = requireStrings(request, ['root', 'path'])
-    const pinnedRoot = resolveWorkspaceRoot(fields.root, os.homedir())
-    const target = assertWritablePath(pinnedRoot, fields.path)
     const connection = await resolveConnection(request.profile)
+    const pinnedRoot = await resolveBoxRoot(fields.root, connection)
+    const target = assertInsideBox(pinnedRoot, fields.path)
     const response = await fetch(`${connection.baseUrl}/api/files`, {
       body: JSON.stringify({ path: target }),
       headers: {
