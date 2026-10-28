@@ -2,6 +2,8 @@ import { atom } from 'nanostores'
 
 import { translateNow } from '@/i18n'
 import { copyTextToClipboard, renameDesktopPath, revealDesktopPath, trashDesktopPath } from '@/lib/desktop-fs'
+import { isBoxPath } from '@/app/right-sidebar/files/ipc'
+import { deleteWorkspacePath, renameWorkspacePath } from '@/store/workspace'
 import { notify, notifyError } from '@/store/notifications'
 import { notifyWorkspaceChanged } from '@/store/workspace-events'
 
@@ -79,11 +81,21 @@ export function toRelativePath(path: string, relativeTo: string): string {
 // ── Dialog-confirmed mutations (called by FileActionDialogs) ──────────────────
 
 export async function executeFileRename(path: string, newName: string): Promise<void> {
-  await renameDesktopPath(path, newName)
+  if (isBoxPath(path)) {
+    await renameWorkspacePath(path, newName)
+  } else {
+    await renameDesktopPath(path, newName)
+  }
+
   notifyWorkspaceChanged()
 }
 
 export async function executeFileDelete(path: string): Promise<void> {
-  await trashDesktopPath(path)
+  if (isBoxPath(path)) {
+    await deleteWorkspacePath(path)
+  } else {
+    await trashDesktopPath(path)
+  }
+
   notifyWorkspaceChanged()
 }

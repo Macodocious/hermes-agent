@@ -23,6 +23,7 @@ import {
 } from '@/lib/icons'
 import { selectableCardClass } from '@/lib/selectable-card'
 import { cn } from '@/lib/utils'
+import { loadWorkspaceRoot, setWorkspaceRoot } from '@/store/workspace'
 import { notify, notifyError } from '@/store/notifications'
 import { $profiles, refreshActiveProfile } from '@/store/profile'
 
@@ -1414,6 +1415,18 @@ export function GatewaySettings({ embedded = false }: { embedded?: boolean } = {
             }
             description={g.sshHermesPathDesc}
             title={g.sshHermesPathTitle}
+          />
+          <ListRow
+            action={
+              <Input
+                className={cn('h-8 font-mono', CONTROL_TEXT)}
+                defaultValue={loadWorkspaceRoot()}
+                onChange={event => setWorkspaceRoot(event.target.value)}
+                placeholder={g.workspaceRootPlaceholder}
+              />
+            }
+            description={g.workspaceRootDesc}
+            title={g.workspaceRootTitle}
           />
         </div>
       ) : null}

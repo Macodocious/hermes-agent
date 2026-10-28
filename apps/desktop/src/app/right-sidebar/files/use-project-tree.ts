@@ -230,9 +230,11 @@ async function loadRoot(cwd: string, { force = false }: { force?: boolean } = {}
       return latest
     }
 
+    const nodes = error ? [] : entries.map(e => makeNode(e.path, e.name, e.isDirectory))
+
     return {
       ...latest,
-      data: error ? [] : entries.map(e => makeNode(e.path, e.name, e.isDirectory)),
+      data: nodes,
       loaded: true,
       resolvedCwd,
       rootError: error || null,

@@ -1,5 +1,6 @@
 import { useStore } from '@nanostores/react'
 import type { ComponentProps } from 'react'
+import { useEffect } from 'react'
 
 import { TreeSkeleton } from '@/components/chat/skeletons'
 import { ErrorBoundary } from '@/components/error-boundary'
@@ -14,6 +15,7 @@ import { $panesFlipped } from '@/store/layout'
 import { notifyError } from '@/store/notifications'
 import { setCurrentSessionPreviewTarget } from '@/store/preview'
 import { $currentCwd } from '@/store/session'
+import { $resolvedWorkspaceRoot, loadResolvedWorkspaceRoot } from '@/store/workspace'
 
 import { SidebarPanelLabel } from '../shell/sidebar-label'
 
@@ -30,6 +32,11 @@ export function RightSidebarPane({ onActivateFile, onActivateFolder }: RightSide
   const r = t.rightSidebar
   const panesFlipped = useStore($panesFlipped)
   const currentCwd = useStore($currentCwd).trim()
+  const resolvedRoot = useStore($resolvedWorkspaceRoot)
+
+  useEffect(() => {
+    void loadResolvedWorkspaceRoot()
+  }, [])
 
   // The file tree is simply "browse the session's working directory". If the
   // session has a cwd — a repo, a sibling worktree, or any folder — show it. A
@@ -48,7 +55,7 @@ export function RightSidebarPane({ onActivateFile, onActivateFolder }: RightSide
     rootError,
     rootLoading,
     setNodeOpen
-  } = useProjectTree(hasWorkspace ? currentCwd : '')
+  } = useProjectTree(resolvedRoot || (hasWorkspace ? currentCwd : ''))
 
   const cwdName =
     effectiveCwd

@@ -20,6 +20,7 @@ import {
 
 import { ListRow, SectionHeading, SettingsContent } from './primitives'
 import { UninstallSection } from './uninstall-section'
+import { BuildSection } from './build-section'
 
 const RELEASE_NOTES_URL = 'https://github.com/NousResearch/hermes-agent/releases'
 
@@ -176,6 +177,7 @@ export function AboutSettings() {
           title={a.automaticUpdates}
         />
 
+        <BuildSection />
         <UninstallSection />
       </div>
     </SettingsContent>

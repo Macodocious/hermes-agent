@@ -131,12 +131,52 @@ async function filterIgnored(entries: HermesReadDirEntry[], rootPath: string, di
   return rules.length > 0 ? entries.filter(entry => !ignoredBy(rules, entry)) : entries
 }
 
+/**
+ * The box checkout, once resolved by the main process. Until it is set the tree
+ * is purely local, which is the app's behaviour today.
+ */
+let boxRoot: string | null = null
+let boxRootInitialized = false
+
+export function setBoxRoot(root: string | null) {
+  boxRoot = root ? clean(root) : null
+  boxRootInitialized = true
+}
+
+function isUnderBox(dirPath: string): boolean {
+  if (!boxRoot) {
+    return false
+  }
+
+  const target = clean(dirPath)
+
+  return target === boxRoot || target.startsWith(`${boxRoot}/`)
+}
+
+/** True for a path that lives on the box, which decides which reader and which
+ *  write path a tree action uses. */
+export function isBoxPath(target: string): boolean {
+  return isUnderBox(target)
+}
+
 export async function readProjectDir(dirPath: string, rootPath = dirPath): Promise<HermesReadDirResult> {
   if (!window.hermesDesktop) {
     return { entries: [], error: 'no-bridge' }
   }
 
-  const result = await readDesktopDir(dirPath)
+  // Files on the box are not on this PC: read them over the gateway. Everything
+  // else is local, and stays read-only at the write boundary.
+  if (!boxRootInitialized) {
+    try {
+      const resolved = await window.hermesDesktop.workspace?.root?.()
+      setBoxRoot(typeof resolved === 'string' ? resolved : null)
+    } catch (error) {
+      console.warn(`[workspace] could not resolve the box root: ${String(error)}`)
+      boxRootInitialized = true
+    }
+  }
+
+  const result = isUnderBox(dirPath) ? await readGatewayDir(dirPath) : await readDesktopDir(dirPath)
   const entries = (result?.entries ?? []).filter(entry => !ALWAYS_EXCLUDED.has(entry.name))
 
   return { ...result, entries: await filterIgnored(entries, rootPath, dirPath) }
@@ -153,4 +193,42 @@ export function clearProjectDirCache(rootPath?: string) {
   const key = `${desktopFsCacheKey()}:${clean(rootPath)}`
   gitRootCache.delete(key)
   gitignoreCache.delete(key)
+}
+
+/**
+ * The box's checkout is listed through the gateway, not the local bridge: those
+ * files live on the server, so nothing on this PC can read the directory.
+ * Shapes map 1:1 onto the local reader so the tree does not care which it got.
+ */
+export async function readGatewayDir(dirPath: string): Promise<HermesReadDirResult> {
+  const bridge = window.hermesDesktop
+
+  if (!bridge) {
+    return { entries: [], error: 'no-bridge' }
+  }
+
+  const connection = await bridge.getConnection()
+
+  if (!connection?.baseUrl) {
+    return { entries: [], error: 'no-connection' }
+  }
+
+  const token = connection.token ? `&token=${encodeURIComponent(connection.token)}` : ''
+  const response = await fetch(`${connection.baseUrl}/api/files?path=${encodeURIComponent(dirPath)}${token}`)
+
+  if (!response.ok) {
+    return { entries: [], error: `http-${response.status}` }
+  }
+
+  const body = (await response.json()) as {
+    entries?: { is_directory?: boolean; name?: string; path?: string }[]
+  }
+
+  const entries = (body.entries ?? []).flatMap(entry =>
+    typeof entry.path === 'string' && typeof entry.name === 'string'
+      ? [{ isDirectory: entry.is_directory === true, name: entry.name, path: entry.path }]
+      : []
+  )
+
+  return { entries }
 }
