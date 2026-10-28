@@ -1384,68 +1384,34 @@ def check_todo_requirements() -> bool:
 
 TODO_SCHEMA = {
     "name": "todo",
+    # Dieted (#95681): the item shape and merge semantics live ONLY in the
+    # parameter schema below — the description teaches behavior, not
+    # structure the params already define.
     "description": (
         "Manage your task list for the current session. Use for complex tasks "
         "with 3+ steps or when the user provides multiple tasks. "
         "For 'all N items' tasks, enumerate every instance as its own checklist "
         "item so none are silently dropped. "
-        "Call with no parameters to read the current list.\n\n"
-        "Lifecycle (task state machine):\n"
-        "- begin: start the earliest unfinished task (it becomes "
-        "in_progress). Refused while any earlier task is still open — "
-        "complete it, cancel it with a reason, or move this task above it.\n"
-        "- complete: finish the current task (it becomes completed); the "
-        "task after it then becomes in_progress automatically, whether it "
-        "was pending or paused.\n"
-        "- cancel: set a task aside (it becomes cancelled). Requires a "
-        "reason, which is shown beneath the item. Works on a pending or "
-        "in_progress task.\n"
-        "- pause: hold the current task (it becomes paused; resume later).\n"
-        "- resume: continue a paused task (it becomes in_progress).\n"
-        "Use action + item_id to apply a lifecycle action.\n\n"
-        "Writing:\n"
-        "- Provide 'todos' array to add or edit items\n"
-        "- To add a task, write one new item (merge=true, or a fresh list)\n"
-        "- To edit one item's content, write that item by id with merge=true\n"
-        "- Never overwrite the whole list to change one item — write only "
-        "the item you mean\n"
-        "Lifecycle statuses (in_progress, paused, completed, cancelled) are "
-        "driven by the action parameter — a write that changes one is "
-        "refused. User-sourced items (source=user) may be marked "
-        "completed/cancelled directly.\n\n"
-        "Each item: {id: string, content: string, "
-        "status: pending|in_progress|completed|cancelled, "
-        "source?: user, plan?: string}\n"
-        "Ids are store-assigned: replace-mode writes renumber the list to "
-        "1..N in list order; merge-mode writes keep existing ids stable and "
-        "assign new items the next integer. Pass any unique placeholder "
-        "and read back the assigned id.\n"
-        "Items tagged source=user are the user's own tasks: you may mark "
-        "them completed/cancelled but never silently drop them.\n"
-        "List order is priority. Only ONE item in_progress at a time, and "
-        "it must be the earliest unfinished task — the store refuses a "
-        "start on any later task while an earlier one is open.\n"
-        "Mark an item completed immediately once the work is verified done, "
-        "never on intent. If something fails, "
-        "cancel it and add a revised item.\n\n"
-        "Captured requests: when the response includes 'captures', "
-        "disposition each one explicitly via the 'dispositions' parameter "
-        "(merge into your plan, mark addressed, or reject). "
-        "Never leave a captured request undispositioned.\n\n"
-        "Always returns the full current list."
+        "Call with no parameters to read the current list.\n"
+        "List order is priority. Only ONE item in_progress at a time. "
+        "Mark an item completed only after the work is verified done, never "
+        "based on intent. If something fails, cancel it and add a revised "
+        "item. Always returns the full current list. "
+        "Optional item fields: `plan` / `spec` (paths to the plan and "
+        "specification documents the task implements) and `source: 'user'` "
+        "for user-authored items."
     ),
     "parameters": {
         "type": "object",
         "properties": {
             "todos": {
                 "type": "array",
-                "description": "Task items to write. Omit to read current list.",
+                "description": "Task items to write.",
                 "items": {
                     "type": "object",
                     "properties": {
                         "id": {
-                            "type": "string",
-                            "description": "Unique item identifier"
+                            "type": "string"
                         },
                         "content": {
                             "type": "string",
@@ -1453,39 +1419,7 @@ TODO_SCHEMA = {
                         },
                         "status": {
                             "type": "string",
-                            "enum": ["pending", "in_progress", "completed", "cancelled"],
-                            "description": "Current status"
-                        },
-                        "source": {
-                            "type": "string",
-                            "enum": ["user"],
-                            "description": (
-                                "Provenance tag. Only 'user' is recognized; "
-                                "omit for agent-authored items."
-                            )
-                        },
-                        "plan": {
-                            "type": "string",
-                            "description": (
-                                "Optional plan file path produced by "
-                                "writing_plan for this task. When set, the "
-                                "plan is the approved work contract: the "
-                                "judge evaluates the task against the plan, "
-                                "the audit checks work advances it, and the "
-                                "post-close probe verifies against its "
-                                "attached spec."
-                            )
-                        },
-                        "spec": {
-                            "type": "string",
-                            "description": (
-                                "Optional specification file path for this "
-                                "task. The spec artifact is named "
-                                "<plan>-<spec>.md, so it cannot be derived "
-                                "from the plan ref alone; set this when the "
-                                "task was authored from a spec so the "
-                                "post-close probe verifies against it."
-                            )
+                            "enum": ["pending", "in_progress", "completed", "cancelled"]
                         }
                     },
                     "required": ["id", "content", "status"]
@@ -1495,7 +1429,7 @@ TODO_SCHEMA = {
                 "type": "boolean",
                 "description": (
                     "true: update existing items by id, add new ones. "
-                    "false (default): replace the entire list."
+                    "false (default): replace the entire list with a fresh plan."
                 ),
                 "default": False
             },
