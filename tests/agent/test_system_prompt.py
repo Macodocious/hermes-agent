@@ -458,7 +458,7 @@ class TestTelegramRichMessagesHint:
                 "gateway": {"platforms": {"telegram": {"extra": {"rich_messages": False}}}}
             }
             stable = _stable_prompt(agent)
-        assert "Standard Markdown is automatically converted" in stable
+        assert "Standard Markdown auto-converts" in stable
         assert "lean into it" not in stable
         assert "task lists" not in stable
 
@@ -517,7 +517,7 @@ class TestTelegramRichMessagesHint:
         with patch("hermes_cli.config.load_config_readonly") as mock_cfg:
             mock_cfg.return_value = {}
             stable = _stable_prompt(agent)
-        assert "Standard Markdown is automatically converted" in stable
+        assert "Standard Markdown auto-converts" in stable
         assert "lean into it" not in stable
 
 
@@ -586,7 +586,7 @@ class TestAssistantDefinition:
                 "gateway": {"platforms": {"telegram": {"extra": "not-a-map"}}}
             }
             stable = _stable_prompt(agent)
-        assert "Standard Markdown is automatically converted" in stable
+        assert "Standard Markdown auto-converts" in stable
         assert "lean into it" not in stable
 
 
