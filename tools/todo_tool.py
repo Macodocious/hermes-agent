@@ -2,10 +2,11 @@
 """
 Todo Tool Module - Planning & Task Management
 
-Provides an in-memory task list the agent uses to decompose complex tasks,
-track progress, and maintain focus across long conversations. The state
-lives on the AIAgent instance (one per session) and is re-injected into
-the conversation after context compression events.
+Provides an in-memory, revisioned task list the agent uses to decompose
+complex tasks, track progress, and maintain focus across long conversations.
+The state lives on the AIAgent instance (one per session), is re-injected into
+the conversation after context compression events, and every write bumps a
+monotonic revision so UI clients can reject stale updates.
 
 Design:
 - Single `todo` tool: provide `todos` param to write, omit to read
@@ -380,6 +381,10 @@ class TodoStore:
         # cancel transition, drained by the emitter (see drain_notices). The
         # store records them because the store owns the transition.
         self._notices: List[Dict[str, Any]] = []
+        # Monotonic state revision. Bumped only when a write actually changes
+        # the list, so clients can tell a real update from a no-op echo and
+        # reconcile a snapshot against history without guessing.
+        self._revision = 0
         # Serializes every mutation and the notice append that follows it.
         # Multi-call assistant messages run their tool calls on a thread pool
         # (agent/tool_executor.py), so two todo calls can reach this store at
@@ -513,6 +518,12 @@ class TodoStore:
         self._enforce_invariants(started_id=self._started_id(before))
         if not merge:
             self._renumber_items(self._items)
+        # Revision bump sits on the committed state, after invariants and
+        # renumbering. Compared through _snapshot(): it normalises the same
+        # empty reason/plan keys as `before`, so an unchanged echo of the
+        # current list does not advance the revision.
+        if self._snapshot() != before:
+            self._revision += 1
         self._commit(before)
         return self.read()
 
@@ -716,6 +727,8 @@ class TodoStore:
             before = self._snapshot()
             result = self._transition_locked(action, item_id, reason)
             if result.get("ok"):
+                if self._snapshot() != before:
+                    self._revision += 1
                 self._commit(before)
             return result
 
@@ -943,6 +956,26 @@ class TodoStore:
         """
         with self._lock:
             self._notices = list(notices)
+    def snapshot(self) -> Dict[str, Any]:
+        """Return the full state clients can reconcile atomically."""
+        return {"todos": self.read(), "revision": self._revision}
+
+    def restore(
+        self,
+        todos: List[Dict[str, Any]],
+        *,
+        revision: Any = 0,
+    ) -> List[Dict[str, str]]:
+        """Restore a trusted snapshot without manufacturing a new revision."""
+        self._items = [
+            self._validate(t) for t in self._dedupe_by_id(todos)
+        ][:MAX_TODO_ITEMS]
+        self._sanitize_parents(self._items)
+        try:
+            self._revision = max(0, int(revision or 0))
+        except (TypeError, ValueError):
+            self._revision = 0
+        return self.read()
 
     def format_for_injection(self) -> Optional[str]:
         """
@@ -1421,6 +1454,7 @@ def todo_tool(
     return json.dumps({
         "todos": items,
         "captures": store.pending_captures(),
+        "revision": store.snapshot()["revision"],
         "summary": {
             "total": len(items),
             "pending": pending,

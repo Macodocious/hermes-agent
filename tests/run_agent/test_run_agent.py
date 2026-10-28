@@ -1392,6 +1392,56 @@ class TestHydrateTodoStore:
         with patch("run_agent._set_interrupt"):
             agent._hydrate_todo_store(history)
         assert agent._todo_store.has_items()
+    def test_newer_live_revision_wins_over_history(self, agent):
+        agent._todo_store.restore(
+            [{"id": "db", "content": "Current", "status": "in_progress"}],
+            revision=5,
+        )
+        history = [
+            self._assistant_todo_call(),
+            {
+                "role": "tool",
+                "tool_call_id": "c1",
+                "content": json.dumps(
+                    {
+                        "todos": [
+                            {"id": "old", "content": "Old", "status": "pending"}
+                        ],
+                        "revision": 4,
+                    }
+                ),
+            },
+        ]
+
+        with patch("run_agent._set_interrupt"):
+            agent._hydrate_todo_store(history)
+
+        assert agent._todo_store.snapshot()["revision"] == 5
+        assert agent._todo_store.read()[0]["id"] == "db"
+
+    def test_history_recovers_newer_snapshot(self, agent):
+        history = [
+            self._assistant_todo_call(),
+            {
+                "role": "tool",
+                "tool_call_id": "c1",
+                "content": json.dumps(
+                    {
+                        "todos": [
+                            {"id": "new", "content": "Recovered", "status": "pending"}
+                        ],
+                        "revision": 2,
+                    }
+                ),
+            },
+        ]
+
+        with patch("run_agent._set_interrupt"):
+            agent._hydrate_todo_store(history)
+
+        assert agent._todo_store.snapshot()["revision"] == 2
+        assert agent._todo_store.read()[0]["id"] == "new"
+
 
     def test_prefers_persisted_row_over_history(self, agent):
         """Fix 2: the persisted state_meta row is the single source of
