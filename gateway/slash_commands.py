@@ -2100,6 +2100,7 @@ class GatewaySlashCommandsMixin:
                                     api_key=result.api_key,
                                     base_url=result.base_url,
                                     api_mode=result.api_mode,
+                                    capabilities=result.runtime_capabilities,
                                 )
                             except Exception as exc:
                                 # The in-place swap rolled the agent back to the
@@ -2414,6 +2415,7 @@ class GatewaySlashCommandsMixin:
                         api_key=result.api_key,
                         base_url=result.base_url,
                         api_mode=result.api_mode,
+                        capabilities=result.runtime_capabilities,
                     )
                 except Exception as exc:
                     # In-place swap rolled the agent back to the OLD working
