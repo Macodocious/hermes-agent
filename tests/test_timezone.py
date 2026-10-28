@@ -26,6 +26,7 @@ def _reset_hermes_time_cache():
     hermes_time._cached_tz = None
     hermes_time._cached_tz_name = None
     hermes_time._cache_resolved = False
+    hermes_time._cache_identity = None
 
 
 # =========================================================================
@@ -119,6 +120,7 @@ class TestGetTimezone:
         result = hermes_time.get_timezone()
         assert result is not None
         assert isinstance(result, ZoneInfo)
+        assert str(result) == "Europe/London"
 
     def test_returns_none_for_empty(self):
         os.environ["HERMES_TIMEZONE"] = ""
@@ -131,8 +133,28 @@ class TestGetTimezone:
             result = hermes_time.get_timezone()
         assert result is None
 
+    def test_cache_isolated_by_active_profile_config(self, tmp_path, monkeypatch):
+        """Switching HERMES_HOME must not reuse another profile's timezone."""
+        first_home = tmp_path / "first"
+        second_home = tmp_path / "second"
+        first_home.mkdir()
+        second_home.mkdir()
+        (first_home / "config.yaml").write_text("timezone: Asia/Tokyo\n", encoding="utf-8")
+        (second_home / "config.yaml").write_text(
+            "timezone: America/New_York\n", encoding="utf-8"
+        )
+        monkeypatch.delenv("HERMES_TIMEZONE", raising=False)
+
+        monkeypatch.setenv("HERMES_HOME", str(first_home))
+        assert str(hermes_time.get_timezone()) == "Asia/Tokyo"
+
+        # Multiplexed profile runtime scopes switch HERMES_HOME in one process.
+        monkeypatch.setenv("HERMES_HOME", str(second_home))
+        assert str(hermes_time.get_timezone()) == "America/New_York"
+
 
 # =========================================================================
+
 # execute_code child env — TZ injection
 # =========================================================================
 
