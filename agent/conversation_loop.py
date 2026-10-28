@@ -7923,7 +7923,9 @@ def run_conversation(
                         agent,
                         messages,
                         active_system_prompt or "",
-                        estimate_messages_tokens_rough(messages),
+                        estimate_request_tokens_rough(
+                            messages, tools=agent.tools or None
+                        ),
                     )
 
                 if (
