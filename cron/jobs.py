@@ -1084,8 +1084,11 @@ def _ensure_aware(dt: datetime) -> datetime:
     """
     target_tz = _hermes_now().tzinfo
     if dt.tzinfo is None:
-        local_tz = datetime.now().astimezone().tzinfo
-        return dt.replace(tzinfo=local_tz).astimezone(target_tz)
+        # astimezone() on a naive value reads it as system-local wall time and
+        # attaches the offset in force ON THAT DATE. Reading the offset from
+        # datetime.now() instead would pin today's DST state onto a timestamp
+        # from another season, shifting the instant by an hour.
+        return dt.astimezone().astimezone(target_tz)
     return dt.astimezone(target_tz)
 
 

@@ -223,7 +223,7 @@ class TestCronTimezone:
         _reset_hermes_time_cache()
         from cron.jobs import parse_schedule
 
-        parsed = parse_schedule("30m")
+        parsed = parse_schedule("in 30m")
         assert parsed["kind"] == "once"
         run_at = datetime.fromisoformat(parsed["run_at"])
         assert run_at.tzinfo is not None
@@ -235,6 +235,15 @@ class TestCronTimezone:
 
         expected_offset = datetime.now(ZoneInfo("America/New_York")).utcoffset()
         assert run_at.utcoffset() == expected_offset
+
+    def test_parse_schedule_one_shot_duration_uses_tz_aware_now(self):
+        """parse_schedule('in 30m') should produce a tz-aware run_at."""
+        os.environ["HERMES_TIMEZONE"] = "Asia/Kolkata"
+        from cron.jobs import parse_schedule
+        result = parse_schedule("in 30m")
+        run_at = datetime.fromisoformat(result["run_at"])
+        # The stored timestamp should be tz-aware
+        assert run_at.tzinfo is not None
 
     def test_parse_schedule_every_is_recurring_interval(self):
         """A bare duration is a one-shot; 'every X' is a recurring interval."""
