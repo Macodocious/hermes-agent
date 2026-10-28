@@ -1324,10 +1324,13 @@ def seed_profile_skills(profile_dir: Path, quiet: bool = False) -> Optional[dict
 
     Profiles that opted out of bundled skills (via ``hermes profile create
     --no-skills`` — which writes ``.no-bundled-skills`` to the profile root)
-    still run the sync: ``sync_skills()`` detects the marker itself and seeds
-    only the essential skills (e.g. ``hermes-agent``), reporting
-    ``skipped_opt_out`` so callers can say "opted out" instead of "failed".
+    are skipped outright: seeding is what the opt-out opted out of, so this
+    reports ``skipped_opt_out`` without spawning a subprocess or touching the
+    profile's ``skills/`` directory. ``sync_skills()`` honours the same marker,
+    so the two paths cannot disagree.
     """
+    if has_bundled_skills_opt_out(profile_dir):
+        return {"skipped_opt_out": True, "copied": [], "created": [], "updated": []}
     project_root = Path(__file__).parent.parent.resolve()
     try:
         result = subprocess.run(

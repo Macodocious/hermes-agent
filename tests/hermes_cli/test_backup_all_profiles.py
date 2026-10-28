@@ -64,12 +64,12 @@ class TestAllProfileSnapshots:
         )
         assert set(result) == {"work", "sparks"}
         for name, snap_id in result.items():
-            snap_dir = profiles[name] / "state-snapshots" / snap_id
+            snap_dir = profiles[name] / backup._QUICK_SNAPSHOTS_DIR / snap_id
             assert snap_dir.is_dir()
             assert (snap_dir / "config.yaml").is_file()
             assert "pre-update" in snap_id
         # invoking profile untouched by THIS call
-        assert not (profiles["default"] / "state-snapshots").exists()
+        assert not (profiles["default"] / backup._QUICK_SNAPSHOTS_DIR).exists()
 
     def test_size_cap_forwarded(self, profiles):
         big = profiles["work"] / "state.db"
@@ -77,7 +77,7 @@ class TestAllProfileSnapshots:
         result = backup.create_pre_update_snapshots_all_profiles(
             invoking_home=profiles["default"], keep=1, max_file_size=1024
         )
-        snap_dir = profiles["work"] / "state-snapshots" / result["work"]
+        snap_dir = profiles["work"] / backup._QUICK_SNAPSHOTS_DIR / result["work"]
         assert not (snap_dir / "state.db").exists()  # capped out
         assert (snap_dir / "config.yaml").is_file()  # small files captured
 

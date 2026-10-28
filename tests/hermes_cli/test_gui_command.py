@@ -1012,16 +1012,17 @@ def test_gui_skips_desktop_entry_off_linux(tmp_path, monkeypatch):
     assert exc.value.code == 0
 def test_desktop_launch_options_defaults_when_no_config():
     with patch("hermes_cli.config.load_config", return_value={}):
-        flags, gpu, store = cli_main._desktop_launch_options()
+        flags, gpu, store, hint = cli_main._desktop_launch_options()
     assert flags == []
     assert gpu == "auto"
     assert store == "auto"
+    assert hint == "auto"
 
 
 def test_desktop_launch_options_reads_flags_list():
     cfg = {"desktop": {"electron_flags": ["--ozone-platform=x11", "--disable-gpu"]}}
     with patch("hermes_cli.config.load_config", return_value=cfg):
-        flags, gpu, _ = cli_main._desktop_launch_options()
+        flags, gpu, _, _ = cli_main._desktop_launch_options()
     assert flags == ["--ozone-platform=x11", "--disable-gpu"]
     assert gpu == "auto"
 
@@ -1029,7 +1030,7 @@ def test_desktop_launch_options_reads_flags_list():
 def test_desktop_launch_options_splits_flag_string():
     cfg = {"desktop": {"electron_flags": "--ozone-platform=x11 --disable-gpu"}}
     with patch("hermes_cli.config.load_config", return_value=cfg):
-        flags, _, _ = cli_main._desktop_launch_options()
+        flags, _, _, _ = cli_main._desktop_launch_options()
     assert flags == ["--ozone-platform=x11", "--disable-gpu"]
 
 
@@ -1047,7 +1048,7 @@ def test_desktop_launch_options_splits_flag_string():
 def test_desktop_launch_options_normalizes_disable_gpu(raw, expected):
     cfg = {"desktop": {"disable_gpu": raw}}
     with patch("hermes_cli.config.load_config", return_value=cfg):
-        _, gpu, _ = cli_main._desktop_launch_options()
+        _, gpu, _, _ = cli_main._desktop_launch_options()
     assert gpu == expected
 
 
@@ -1325,10 +1326,11 @@ def test_gui_password_store_bridge_is_linux_only(tmp_path, monkeypatch):
 
 def test_desktop_launch_options_survives_config_error():
     with patch("hermes_cli.config.load_config", side_effect=RuntimeError("boom")):
-        flags, gpu, store = cli_main._desktop_launch_options()
+        flags, gpu, store, hint = cli_main._desktop_launch_options()
     assert flags == []
     assert gpu == "auto"
     assert store == "auto"
+    assert hint == "auto"
 
 
 # ── electronDist (re)download helper tests (#47266) ───────────────────

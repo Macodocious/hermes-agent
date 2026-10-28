@@ -8329,10 +8329,12 @@ def run_conversation(
                 # Reset retry counter/signature on successful content
                 agent._empty_content_retries = 0
                 agent._thinking_prefill_retries = 0
-                # Successful content reached — drop the noisy retry buffer so
-                # retry chatter stays silent on the success path.  The durable
-                # fallback-switch / restored notifications ride notice_callback
-                # (see the fallback-notifications skill), not the buffer.
+                # Successful content reached — surface the one-shot fallback
+                # switch notice (if a fallback activated this turn) before the
+                # noisy retry buffer is cleared, so a provider/model switch on a
+                # plain surface stays visible even when the fallback succeeds.
+                # Sticky-capable surfaces already showed it via notice_callback.
+                agent._emit_pending_fallback_notice()
                 agent._clear_status_buffer()
 
                 from agent.agent_runtime_helpers import (

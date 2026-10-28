@@ -10433,6 +10433,31 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
         # symptom family — turns dying as session_persistence_failed while a
         # slow provider summary held the lease (#74568, #77386), including
         # stale locks from dead PIDs blocking writes for the full TTL.
+        # Destructive user mutations are different: a compressor that already
+        # captured its watermark can otherwise publish the pre-rewind snapshot
+        # after the mutation and resurrect the removed turn. Keep that narrow
+        # fence opt-in so ordinary appends retain the watermark behavior.
+        if reject_active_compression_lock:
+            active_lock = conn.execute(
+                "SELECT holder, expires_at FROM compression_locks "
+                "WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+            if active_lock is not None:
+                current_holder = active_lock["holder"]
+                if (
+                    float(active_lock["expires_at"]) <= time.time()
+                    or _compression_lock_holder_process_is_dead(current_holder)
+                ):
+                    conn.execute(
+                        "DELETE FROM compression_locks "
+                        "WHERE session_id = ? AND holder = ?",
+                        (session_id, current_holder),
+                    )
+                elif current_holder != compression_lock_holder:
+                    raise SessionCompressionInProgressError(
+                        f"Session {session_id!r} is being compressed by another writer"
+                    )
         if turn_lease_holder or reject_active_turn_lease:
             conversation_id = self._session_turn_lease_key_on_conn(conn, session_id)
             lease = conn.execute(

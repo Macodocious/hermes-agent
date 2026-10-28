@@ -237,8 +237,9 @@ class TestRuntimeFtsRebuild:
         proc_root = tmp_path / "proc"
         for pid in (111, 222):
             (proc_root / str(pid) / "fd").mkdir(parents=True)
-        # PID 222's fd dir is unreadable (PermissionError)
-        os.chmod(proc_root / "222" / "fd", 0o000)
+        # PID 222's fd dir is unreadable for an unprivileged process. Running
+        # as root bypasses the mode bits entirely, so the denial is simulated
+        # explicitly; the fallback under test is the cmdline inspection.
         # PID 222's cmdline is world-readable and looks like Hermes
         cmdline_path = proc_root / "222" / "cmdline"
         cmdline_path.write_bytes(b"python3\x00hermes_cli.main\x00chat\x00")
@@ -250,6 +251,8 @@ class TestRuntimeFtsRebuild:
         def _listdir(path):
             if isinstance(path, str):
                 path = path.replace("/proc", str(proc_root))
+                if path.endswith("/222/fd"):
+                    raise PermissionError(13, "Permission denied", path)
             return real_listdir(path)
         monkeypatch.setattr(hermes_state.os, "listdir", _listdir)
         # _read_proc_cmdline opens /proc/<pid>/cmdline directly; redirect

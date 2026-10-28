@@ -3010,7 +3010,25 @@ def try_activate_fallback(agent, reason: "FailoverReason | None" = None) -> bool
                 )
             )
         else:
-            agent._emit_status(notice_text)
+            # No sticky-capable surface (CLI, plain logs): keep the switch as a
+            # durable one-shot notice rather than a bare status line. Retry
+            # chatter is cleared the moment content arrives, so an immediate
+            # emit would be the only copy the user ever gets while a buffered
+            # one would be dropped by that same clear. ``_buffer_status`` keeps
+            # it in the terminal-failure trace, and ``_pending_fallback_notice``
+            # lets the success path surface it exactly once (run_agent.py).
+            switch_notice = (
+                f"⚠️ Model fallback: {old_model} via {old_provider} unavailable "
+                f"({_fallback_reason_text(reason)}); using {fb_model} via {fb_provider}."
+            )
+            agent._buffer_status(switch_notice)
+            pending = getattr(agent, "_pending_fallback_notice", None)
+            if isinstance(pending, list):
+                pending.append(switch_notice)
+            elif pending:
+                agent._pending_fallback_notice = [str(pending), switch_notice]
+            else:
+                agent._pending_fallback_notice = [switch_notice]
         # ``_fallback_activated`` is also reused by temporary `/model --once`
         # restoration. Keep separate provenance so the restore path only emits
         # a fallback-recovery notice after an actual provider fallback.
