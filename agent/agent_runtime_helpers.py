@@ -115,7 +115,7 @@ AGENT_RUNTIME_POST_HOOK_TOOL_NAMES = frozenset(
         "memory",
         "clarify",
         "read_terminal",
-        "read_preview",
+        "desktop_preview",
         "drive_preview",
         "annotate_preview",
         "read_window_below",
@@ -3556,17 +3556,22 @@ def invoke_tool(agent, function_name: str, function_args: dict, effective_task_i
                 ),
                 next_args,
             )
-    elif function_name == "read_preview":
+    elif function_name == "desktop_preview":
         def _execute(next_args: dict) -> Any:
-            from tools.read_preview_tool import read_preview_tool as _read_preview_tool
-            return _finish_agent_tool(
-                _read_preview_tool(
-                    start=next_args.get("start"),
-                    count=next_args.get("count"),
-                    callback=getattr(agent, "read_preview_callback", None),
-                ),
-                next_args,
-            )
+            # action=read needs the GUI callback (agent-level); open/close go
+            # through the registry handler like any other tool.
+            if (next_args.get("action") or "").strip() == "read":
+                from tools.read_preview_tool import read_preview_tool as _read_preview_tool
+                return _finish_agent_tool(
+                    _read_preview_tool(
+                        start=next_args.get("start"),
+                        count=next_args.get("count"),
+                        callback=getattr(agent, "read_preview_callback", None),
+                    ),
+                    next_args,
+                )
+            from tools.preview_tool import _handle_preview
+            return _finish_agent_tool(_handle_preview(next_args), next_args)
     elif function_name == "drive_preview":
         def _execute(next_args: dict) -> Any:
             from tools.drive_preview_tool import drive_preview_tool as _drive_preview_tool
