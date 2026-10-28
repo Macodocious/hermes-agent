@@ -360,6 +360,7 @@ class TodoStore:
       - id: sequential integer identifier (store-assigned, 1..N in list order)
       - content: task description
       - status: pending | in_progress | completed | cancelled
+      - parent: optional id of another item, for nested subtasks
     """
 
     def __init__(self):
@@ -470,6 +471,16 @@ class TodoStore:
                     for reference in ("plan", "spec"):
                         if isinstance(t.get(reference), str) and str(t[reference]).strip():
                             existing[item_id][reference] = str(t[reference]).strip()
+                    # Parent linkage is model-authorable too: a merge update
+                    # that omitted it could never re-file an item under a
+                    # different subtask, and clearing it must actually unset
+                    # the key rather than leave a stale pointer.
+                    if "parent" in t:
+                        parent = str(t["parent"] or "").strip()
+                        if parent:
+                            existing[item_id]["parent"] = parent
+                        else:
+                            existing[item_id].pop("parent", None)
                 else:
                     # New item -- validate fully, assign the next sequential
                     # id (merge mode keeps existing ids stable so merge-by-id
@@ -496,6 +507,9 @@ class TodoStore:
         # _enforce_invariants). The started task (if any) is the one that
         # stays current. Replace mode then renumbers to sequential ids;
         # merge mode keeps existing ids stable (merge-by-id stays safe).
+        # Parent refs are repaired first: a dangling or cyclic pointer would
+        # break both the invariant walk and any subtree rendering.
+        self._sanitize_parents(self._items)
         self._enforce_invariants(started_id=self._started_id(before))
         if not merge:
             self._renumber_items(self._items)
@@ -545,15 +559,55 @@ class TodoStore:
 
     @classmethod
     def _renumber_items(cls, items: List[Dict[str, str]]) -> List[Dict[str, str]]:
-        """Renumber a list of validated items to sequential ids (1..N)."""
-        for index, item in enumerate(items, start=1):
-            item["id"] = str(index)
+        """Renumber a list of validated items to sequential ids (1..N).
+
+        Parent refs are remapped through the same old→new table; a ref that
+        names no item in the list is dropped. Renumbering without the remap
+        would leave every ``parent`` pointing at the pre-renumber id, i.e. a
+        dangling pointer that renders the child as an orphan.
+        """
+        remap = {item["id"]: str(index) for index, item in enumerate(items, start=1)}
+        for item in items:
+            parent = item.get("parent")
+            if parent:
+                remapped = remap.get(parent)
+                if remapped:
+                    item["parent"] = remapped
+                else:
+                    item.pop("parent", None)
+            item["id"] = remap[item["id"]]
         return items
 
     def _next_item_id(self) -> str:
         """Next sequential id for merge-mode new items (max existing + 1)."""
         numeric_ids = [int(item["id"]) for item in self._items if item["id"].isdigit()]
         return str(max(numeric_ids, default=0) + 1)
+
+    @staticmethod
+    def _sanitize_parents(items: List[Dict[str, str]]) -> None:
+        """Drop dangling parent refs and break cycles (in place).
+
+        A parent pointing at a missing id, or a chain that loops back on
+        itself, would corrupt subtree rendering — such items become roots.
+        Called before the invariant walk so no later pass has to reason about
+        a broken tree.
+        """
+        by_id = {item["id"]: item for item in items}
+        for item in items:
+            parent = item.get("parent")
+            if not parent:
+                continue
+            seen = {item["id"]}
+            cursor = parent
+            while cursor and cursor in by_id:
+                if cursor in seen:
+                    item.pop("parent", None)
+                    break
+                seen.add(cursor)
+                cursor = by_id[cursor].get("parent")
+            else:
+                if parent not in by_id:
+                    item.pop("parent", None)
 
     def _snapshot(self) -> List[Dict[str, str]]:
         """The ordered state a commit diffs against.
@@ -1197,6 +1251,13 @@ class TodoStore:
             status = "pending"
 
         validated = {"id": item_id, "content": content, "status": status}
+        # Subtask linkage. A self-reference is not a cycle but a typo, and a
+        # dangling/cyclic parent is repaired later by _sanitize_parents — the
+        # write is accepted here so a two-step "create child, then point it at
+        # its parent" flow is possible.
+        parent = str(item.get("parent") or "").strip()
+        if parent and parent != item_id:
+            validated["parent"] = parent
         # Provenance (P4): only the user tag is recognized; agent-authored
         # items stay untagged for backward compatibility.
         if str(item.get("source", "")).strip().lower() == USER_SOURCE:
@@ -1394,6 +1455,7 @@ TODO_SCHEMA = {
         "item so none are silently dropped. "
         "Call with no parameters to read the current list.\n"
         "List order is priority. Only ONE item in_progress at a time. "
+        "Break large phases into subtasks via parent. "
         "Mark an item completed only after the work is verified done, never "
         "based on intent. If something fails, cancel it and add a revised "
         "item. Always returns the full current list. "
@@ -1420,6 +1482,10 @@ TODO_SCHEMA = {
                         "status": {
                             "type": "string",
                             "enum": ["pending", "in_progress", "completed", "cancelled"]
+                        },
+                        "parent": {
+                            "type": "string",
+                            "description": "Optional id of another item, making this a nested subtask. Omit for top-level."
                         }
                     },
                     "required": ["id", "content", "status"]
