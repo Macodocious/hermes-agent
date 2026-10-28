@@ -577,6 +577,9 @@ export interface Translations {
       sshHermesPathTitle: string
       sshHermesPathDesc: string
       sshHermesPathPlaceholder: string
+      workspaceRootTitle: string
+      workspaceRootDesc: string
+      workspaceRootPlaceholder: string
       sshTestConnection: string
       sshConnect: string
       sshButtonsHint: string
