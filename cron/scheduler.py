@@ -1571,6 +1571,34 @@ _terminal_cwd_lock = _ReadWriteLock()
 _CWD_LOCK_TIMEOUT_FLOOR_SECONDS = 120.0
 _CWD_LOCK_TIMEOUT_MARGIN_SECONDS = 60.0
 
+def _inactivity_watchdog_loop(
+    *,
+    get_idle_seconds: Callable[[], float],
+    limit_s: float,
+    poll_s: float,
+    stop: threading.Event,
+    future_done: Callable[[], bool],
+) -> bool:
+    """Poll job idle time until the limit, stop, or the watched future completes.
+
+    Driven by ``threading.Event.wait`` (a kernel timeout), not asyncio, so a
+    blocked event-loop / ``run_job`` thread cannot disable this watchdog the
+    way ``asyncio.sleep`` / ``wait_for`` would (family A of #94285 — the
+    4118s-idle-on-a-600s-limit cron hang). Returns True when *limit_s* of
+    inactivity was observed.
+    """
+    while not stop.wait(poll_s):
+        if future_done():
+            return False
+        try:
+            idle = float(get_idle_seconds() or 0.0)
+        except Exception:
+            idle = 0.0
+        if idle >= limit_s:
+            return True
+    return False
+
+
 
 def _cron_inactivity_seconds() -> float:
     """Parse HERMES_CRON_TIMEOUT (seconds). 0 = unlimited; bad input = 600.
