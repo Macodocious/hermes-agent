@@ -18,6 +18,10 @@ import { RightSidebarPane } from '@/app/right-sidebar'
 import { ReviewPane } from '@/app/right-sidebar/review'
 import type { GroupSetter } from '@/app/shell/group-setter'
 import type { StatusbarItem } from '@/app/shell/statusbar-controls'
+import { isBoxPath } from '@/app/right-sidebar/files/ipc'
+import { openEditorTab } from '@/store/editor-tabs'
+import { setPaneOpen } from '@/store/panes'
+import { readWorkspaceFile } from '@/store/workspace'
 import { TITLEBAR_HEIGHT } from '@/app/shell/titlebar'
 import type { TitlebarTool } from '@/app/shell/titlebar-controls'
 import { DecodeText } from '@/components/ui/decode-text'
@@ -120,10 +124,28 @@ function previewFile(path: string) {
 // and titlebar clearance are per-wrapper concerns.
 const ZONE_CONTENT = 'h-full [&>aside]:h-full [&>aside]:w-full [&>aside]:pt-0'
 
+/** A file on the box opens for editing; anything else keeps the read-only
+ *  preview, because this PC's root has no write path. */
+async function activateFile(path: string) {
+  if (!isBoxPath(path)) {
+    previewFile(path)
+
+    return
+  }
+
+  try {
+    openEditorTab(path, await readWorkspaceFile(path))
+    setPaneOpen('editor', true)
+  } catch (error) {
+    console.warn(`[editor] could not open ${path}: ${String(error)}`)
+    previewFile(path)
+  }
+}
+
 export function FilesPane() {
   return (
     <div className={ZONE_CONTENT}>
-      <RightSidebarPane onActivateFile={previewFile} onActivateFolder={previewFile} />
+      <RightSidebarPane onActivateFile={path => void activateFile(path)} onActivateFolder={previewFile} />
     </div>
   )
 }
