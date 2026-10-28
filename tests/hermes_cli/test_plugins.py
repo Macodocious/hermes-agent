@@ -2596,6 +2596,17 @@ class TestPluginCommands:
         assert len(mgr._plugin_commands) == 0
         assert "empty name" in caplog.text
 
+    def test_register_command_infers_text_argument_mode_from_args_hint(self):
+        mgr = PluginManager()
+        manifest = PluginManifest(name="test-plugin", source="user")
+        ctx = PluginContext(manifest, mgr)
+
+        ctx.register_command("lcm", lambda a: a, description="LCM", args_hint="<prompt>")
+        ctx.register_command("ping", lambda a: a, description="Ping")
+
+        assert mgr._plugin_commands["lcm"]["argument_mode"] == "text"
+        assert mgr._plugin_commands["ping"]["argument_mode"] is None
+
     def test_register_command_builtin_conflict_rejected(self, caplog):
         """Commands that conflict with built-in names are rejected."""
         mgr = PluginManager()
@@ -2615,7 +2626,6 @@ class TestPluginCommands:
 
         ctx.register_command("status-cmd", lambda a: a)
         assert mgr._plugin_commands["status-cmd"]["description"] == "Plugin command"
-
 
     def test_get_plugin_command_handler_not_found(self):
         """get_plugin_command_handler() returns None for unregistered commands."""
