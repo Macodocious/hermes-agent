@@ -101,11 +101,12 @@ class TestCommandRegistry:
         for cmd in COMMAND_REGISTRY:
             assert not (cmd.cli_only and cmd.gateway_only), \
                 f"{cmd.name} cannot be both cli_only and gateway_only"
-    def test_desktop_meta_marks_review_typeable_and_terminal_hidden(self):
+
+    def test_desktop_meta_lives_on_the_command_def(self):
         review = resolve_command("review")
         assert review is not None
-        assert review.argument_mode == "text"
-        assert review.desktop is None
+        assert review.argument_mode is None
+        assert infer_argument_mode(review) == "text"
         assert command_desktop_meta(review) == {"argument_mode": "text", "desktop": None}
 
         clear = resolve_command("clear")
@@ -116,9 +117,14 @@ class TestCommandRegistry:
         assert model is not None
         assert model.desktop == "hidden"
 
-    def test_argument_mode_infers_text_from_args_hint(self):
-        cmd = CommandDef("demo", "Demo", "Session", args_hint="<prompt>")
-        assert infer_argument_mode(cmd) == "text"
+        goal = resolve_command("goal")
+        assert goal is not None
+        assert goal.argument_mode == "mixed"
+
+    def test_argument_mode_infers_text_from_any_args_hint(self):
+        assert infer_argument_mode(CommandDef("demo", "Demo", "Session", args_hint="<prompt>")) == "text"
+        assert infer_argument_mode(CommandDef("ask", "Ask", "Session", args_hint="<query>")) == "text"
+        assert infer_argument_mode(CommandDef("note", "Note", "Session", args_hint="[message]")) == "text"
 
 
 # ---------------------------------------------------------------------------
