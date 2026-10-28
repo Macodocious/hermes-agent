@@ -706,8 +706,8 @@ class TestPreflightCompression:
 
         assert compressed is messages
         assert prompt == "You are helpful."
-        assert [event for event, _ in events] == ["lifecycle", "warn", "compacted"]
-        assert events[-1] == ("compacted", COMPACTION_DONE_STATUS)
+        assert [event for event, _ in events] == ["lifecycle", "warn"]
+        assert ("compacted", COMPACTION_DONE_STATUS) not in events
 
     def test_compression_reuses_cached_prompt_when_memory_snapshot_is_unchanged(self, agent):
         """A memory reload without new injected text must keep the cache prefix."""
