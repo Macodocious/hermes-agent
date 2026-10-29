@@ -2211,8 +2211,12 @@ export function useSessionActions({
         return
       }
 
-      const wasSelected = selectedStoredSessionId === storedSessionId
-      const closingRuntimeId = wasSelected ? activeSessionId : null
+      // Selection and runtime refs are updated synchronously at routing
+      // boundaries. React props can still describe the previous render when a
+      // delete lands in the same tick, which used to leave the doomed route in
+      // place and let the generic 4001 recovery rebind it.
+      const wasSelected = selectedStoredSessionIdRef.current === storedSessionId
+      const closingRuntimeId = wasSelected ? activeSessionIdRef.current : null
       const previousMessages = $messages.get()
       const previousPinned = $pinnedSessionIds.get()
       const previousArchived = $archivedSessions.get()
@@ -2315,13 +2319,11 @@ export function useSessionActions({
       }
     },
     [
-      activeSessionId,
       activeSessionIdRef,
       copy,
       navigate,
       requestGateway,
       runtimeIdByStoredSessionIdRef,
-      selectedStoredSessionId,
       selectedStoredSessionIdRef,
       sessionStateByRuntimeIdRef,
       startFreshSessionDraft
@@ -2348,7 +2350,7 @@ export function useSessionActions({
         return
       }
 
-      const wasSelected = selectedStoredSessionId === storedSessionId
+      const wasSelected = selectedStoredSessionIdRef.current === storedSessionId
       const previousPinned = $pinnedSessionIds.get()
       // Pins are keyed on the durable lineage-root id; the stored id may be the
       // live tip after compression. Drop both so the pin can't linger.
@@ -2393,7 +2395,13 @@ export function useSessionActions({
         endSessionMutation(archivedIds)
       }
     },
-    [copy, runtimeIdByStoredSessionIdRef, selectedStoredSessionId, sessionStateByRuntimeIdRef, startFreshSessionDraft]
+    [
+      copy,
+      runtimeIdByStoredSessionIdRef,
+      selectedStoredSessionIdRef,
+      sessionStateByRuntimeIdRef,
+      startFreshSessionDraft
+    ]
   )
 
   return {
