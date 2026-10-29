@@ -3480,7 +3480,9 @@ def list_authenticated_providers(
                     restrict_to_nous_policy as _nous_restrict,
                 )
 
-                model_ids = _nous_restrict(model_ids, _nous_policy())
+                model_ids = _nous_restrict(
+                    model_ids, _nous_policy(), rescue_empty=True,
+                )
             except Exception:
                 pass
         else:
