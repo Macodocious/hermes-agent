@@ -42,6 +42,8 @@ from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
+from hermes_cli._subprocess_compat import noninteractive_git_env
+
 logger = logging.getLogger(__name__)
 
 
@@ -551,6 +553,7 @@ def workspace_fingerprint(cwd: Optional[str] = None) -> str:
             ["git", "rev-parse", "HEAD"],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
             timeout=10, cwd=workdir,
+            stdin=subprocess.DEVNULL, env=noninteractive_git_env(),
         )
         if head.returncode != 0:
             return ""
@@ -558,6 +561,7 @@ def workspace_fingerprint(cwd: Optional[str] = None) -> str:
             ["git", "status", "--porcelain"],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
             timeout=30, cwd=workdir,
+            stdin=subprocess.DEVNULL, env=noninteractive_git_env(),
         )
         if status.returncode != 0:
             return ""
