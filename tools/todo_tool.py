@@ -574,6 +574,19 @@ class TodoStore:
         """Check if there are any items in the list."""
         return bool(self._items)
 
+    def has_startable(self) -> bool:
+        """Whether any row can still be worked: anything not closed.
+
+        ``has_items()`` stays true for the rest of a session once a row
+        completes, so a caller asking whether the lifecycle still has something
+        to demand of the agent must ask this instead. A list of finished rows
+        is not a live lifecycle, and the empty-case reminder must not speak
+        against one.
+        """
+        return any(
+            item.get("status") not in _CLOSED_STATUSES for item in self._items
+        )
+
     def _sequence_for(self, item: Dict[str, Any]) -> List[Dict[str, str]]:
         """The ordered rows this item is counted against, or ``[]`` for none.
 
