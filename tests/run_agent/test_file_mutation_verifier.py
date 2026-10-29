@@ -25,6 +25,11 @@ import pytest
 
 from run_agent import (
     AIAgent,
+)
+
+# The file-mutation verifier helpers moved out of run_agent into the dispatch
+# helper module during the 2026.9 refactor; import them from their new home.
+from agent.tool_dispatch_helpers import (
     _FILE_MUTATING_TOOLS,
     _extract_error_preview,
     _extract_file_mutation_targets,
