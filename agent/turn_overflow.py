@@ -323,7 +323,9 @@ def recover_from_overflow(
                 getattr(agent, "compression_enabled", True)
             ) and getattr(agent, "context_compressor", None) is not None
             if not _compress_on_output_cap_retry:
-                return _verdict("break")
+                # Retry at the trimmed output cap without compacting: the loop
+                # reissues the request with the smaller max_tokens.
+                return _verdict("continue")
             # Also compress history so the output-cap retry doesn't spin on
             # max_tokens alone; dropping the middle window makes the total
             # fit. (#55546)
