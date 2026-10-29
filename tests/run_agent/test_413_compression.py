@@ -1380,8 +1380,9 @@ class TestPreflightCompression:
         agent.compression_enabled = True
         agent.context_compressor.context_length = 200_000
         agent.context_compressor.threshold_tokens = 130_000
-        # Simulate a stale display value from an earlier, smaller turn.
-        agent.context_compressor.last_prompt_tokens = 74_400
+        # Fork contract: the preflight seed only fills a 0 baseline; a stored
+        # reading (and the -1 sentinel) is preserved, so start from 0 here.
+        agent.context_compressor.last_prompt_tokens = 0
 
         big_history = []
         for i in range(20):
@@ -1741,7 +1742,9 @@ class TestPreflightCompression:
         agent.compression_enabled = True
         agent.context_compressor.context_length = 200_000
         agent.context_compressor.threshold_tokens = 130_000
-        agent.context_compressor.last_prompt_tokens = 74_400
+        # Fork contract: the preflight seed only fills a 0 baseline, so the
+        # turn starts from 0 and the seed is what the rollback must preserve.
+        agent.context_compressor.last_prompt_tokens = 0
 
         big_history = []
         for i in range(20):
