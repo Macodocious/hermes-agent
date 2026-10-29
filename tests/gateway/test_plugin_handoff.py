@@ -95,12 +95,12 @@ def _stub_plugin(monkeypatch, handler):
     monkeypatch.setattr(
         _plugins_mod,
         "get_plugin_commands",
-        lambda: {"plan": {"description": "Plan", "args_hint": ""}},
+        lambda: {"stock": {"description": "Stock", "args_hint": ""}},
     )
     monkeypatch.setattr(
         _plugins_mod,
         "get_plugin_command_handler",
-        lambda name: handler if name == "plan" else None,
+        lambda name: handler if name == "stock" else None,
     )
 
 
@@ -122,7 +122,7 @@ async def test_plugin_handoff_rewrites_event_and_falls_through(monkeypatch):
 
     runner._handle_message_with_agent = _capture  # noqa: SLF001
 
-    result = await runner._handle_message(_make_event("/plan"))
+    result = await runner._handle_message(_make_event("/stock"))
 
     assert result == "agent reply"
     assert seen["text"] == "seed message"
@@ -148,7 +148,7 @@ async def test_plugin_handoff_without_ack_skips_send(monkeypatch):
 
     runner._handle_message_with_agent = _capture  # noqa: SLF001
 
-    result = await runner._handle_message(_make_event("/plan"))
+    result = await runner._handle_message(_make_event("/stock"))
 
     assert result == "agent reply"
     assert seen["text"] == "seed message"
@@ -166,7 +166,7 @@ async def test_plugin_handoff_plain_result_returns_string(monkeypatch):
         side_effect=AssertionError("plain plugin result leaked to the agent")
     )
 
-    result = await runner._handle_message(_make_event("/plan"))
+    result = await runner._handle_message(_make_event("/stock"))
 
     assert result == "plain result"
     adapter.send.assert_not_awaited()
@@ -192,7 +192,7 @@ async def test_plugin_handoff_async_handler_awaited(monkeypatch):
 
     runner._handle_message_with_agent = _capture  # noqa: SLF001
 
-    result = await runner._handle_message(_make_event("/plan"))
+    result = await runner._handle_message(_make_event("/stock"))
 
     assert result == "agent reply"
     assert seen["text"] == "seed from async"

@@ -131,7 +131,13 @@ async def test_reaped_session_message_reaches_cold_path(tmp_path):
     cold_path = AsyncMock(return_value="COLD_PATH_REPLY")
     with (
         patch.object(GatewayRunner, "_handle_message_with_agent", cold_path),
-        patch.object(GatewayRunner, "_run_post_turn_hooks", AsyncMock()),
+        # The hook chain returns the (possibly rewritten) agent result, so the
+        # stub has to pass its input through instead of returning a fresh mock.
+        patch.object(
+            GatewayRunner,
+            "_run_post_turn_hooks",
+            AsyncMock(side_effect=lambda **kwargs: kwargs["agent_result"]),
+        ),
         patch.object(GatewayRunner, "_clear_durable_active_turn", AsyncMock()),
         patch.object(GatewayRunner, "_persist_active_agents", lambda self: None),
     ):

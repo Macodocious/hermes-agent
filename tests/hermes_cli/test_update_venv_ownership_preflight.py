@@ -18,6 +18,19 @@ import pytest
 from hermes_cli import update_cmd
 
 
+@pytest.fixture(autouse=True)
+def _non_root_runner(monkeypatch, request):
+    """Simulate a normal user: the preflight returns [] for root by design, so a
+    root test runner would never exercise the scan at all. Files are also
+    reported as owned by that same fake user, so only the paths a test
+    explicitly re-owns come back as foreign. Tests that exercise _path_uid
+    itself keep the real implementation."""
+    monkeypatch.setattr(os, "geteuid", lambda: 1000)
+    if "path_uid" in request.node.name:
+        return
+    monkeypatch.setattr(update_cmd, "_path_uid", lambda path: 1000)
+
+
 def _make_fake_venv(tmp_path):
     """Minimal POSIX venv layout with a dist-info directory."""
     venv = tmp_path / "venv"

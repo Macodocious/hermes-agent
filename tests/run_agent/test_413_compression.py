@@ -883,13 +883,23 @@ class TestPreflightCompression:
         # The compressor returned only the user-role summary; the human-anchor
         # repair restores the real user turn after it (same contract as
         # test_compress_context_emits_lifecycle_status_before_work above).
-        assert compressed == [
+        # The anchor carries the in-process ``_db_persisted`` marker so the
+        # persistence layer does not write it twice; wire sanitizers strip
+        # underscore keys before the API call. Compare the visible
+        # role/content pairs, not that private metadata.
+        visible = [
+            {key: value for key, value in message.items() if not key.startswith("_")}
+            for message in compressed
+        ]
+        assert visible == [
             {"role": "user", "content": f"{SUMMARY_PREFIX}\nPrevious conversation"},
             {"role": "user", "content": "hello"},
         ]
-        # Memory snapshot unchanged → the cached prompt is retained (same
-        # contract as test_compress_context_emits_lifecycle_status_before_work).
-        assert new_system_prompt == "You are helpful."
+        # The admitted-commit boundary ALWAYS rebuilds the prompt (#95681):
+        # a long-lived session has to pick up builder/guidance changes, and a
+        # byte-identical rebuild keeps the KV prefix anyway. The rebuilt value
+        # is what the caller must store, not the stale cached snapshot.
+        assert new_system_prompt == "new system prompt"
         assert events == [("compress", "started")]
 
     def test_compress_context_force_keeps_manual_status_when_engine_opts_out(self, agent):

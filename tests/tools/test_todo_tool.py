@@ -85,15 +85,25 @@ class TestFormatForInjection:
             {"id": "3", "content": "Working", "status": "in_progress"},
         ])
         text = store.format_for_injection()
-        # Completed items persist visibly, marked done (never re-proposed)
-        assert "[x] Do thing" in text
-        assert "Completed — do not redo" in text
+        assert text is not None
+        # Only actionable work is injected: completed rows are restated by the
+        # todo tool itself, so the snapshot stays a task anchor, not a log.
+        assert "Do thing" not in text
+        assert "Completed — do not redo" not in text
         # Active items are included
         assert "[ ]" in text
         assert "[>]" in text
         assert "Next" in text
         assert "Working" in text
         assert "context compression" in text.lower()
+
+    def test_retired_items_render_nothing(self):
+        store = TodoStore()
+        store.write([
+            {"id": "1", "content": "Do thing", "status": "completed"},
+            {"id": "2", "content": "Dropped", "status": "cancelled"},
+        ])
+        assert store.format_for_injection() is None
 
 
 class TestMergeMode:

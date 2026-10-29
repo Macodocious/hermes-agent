@@ -981,15 +981,18 @@ class TodoStore:
         """
         Render the task list for post-compression injection.
 
-        Completed items are injected alongside active ones under a
-        "Completed — do not redo" header, so the full list survives
-        compression instead of vanishing when nothing is active. Cancelled
-        items are injected struck through with their reason, so abandoned
-        work stays visible as abandoned rather than silently vanishing. An
-        all-completed list still renders (the compressed history keeps a
-        visible task anchor). Returns None only when the store is empty.
+        Only actionable work is injected. Completed and cancelled items are
+        restated by the todo tool itself, and dragging a "Completed — do not
+        redo" block through every compaction spends tokens on state the model
+        cannot act on. Returning None for a non-empty but fully retired store
+        is what lets the compression path treat it as authoritative and clear
+        the snapshot it injected at an earlier boundary.
         """
-        if not self._items:
+        active_items = [
+            item for item in self._items
+            if item["status"] in {"pending", "in_progress", "paused"}
+        ]
+        if not active_items:
             return None
 
         # Status markers for compact display
@@ -1000,34 +1003,10 @@ class TodoStore:
             "paused": "[‖]",
         }
 
-        # Completed items are visible (marked [x]) so finished work
-        # persists across compression without being re-proposed; the
-        # header explicitly flags them as done to prevent redoing.
-        active_items = [
-            item for item in self._items
-            if item["status"] in {"pending", "in_progress", "paused"}
-        ]
-        completed_items = [
-            item for item in self._items if item["status"] == "completed"
-        ]
-        cancelled_items = [
-            item for item in self._items if item["status"] == "cancelled"
-        ]
-
         lines = [TODO_INJECTION_HEADER]
         for item in active_items:
             marker = markers.get(item["status"], "[?]")
             lines.append(f"- {marker} {item['content']} ({item['status']})")
-        if completed_items:
-            lines.append("Completed — do not redo:")
-            for item in completed_items:
-                lines.append(f"- [x] {item['content']}")
-        if cancelled_items:
-            lines.append("Cancelled:")
-            for item in cancelled_items:
-                lines.append(f"- ~~{item['content']}~~")
-                if item.get("reason"):
-                    lines.append(f"  reason: {item['reason']}")
 
         return "\n".join(lines)
 

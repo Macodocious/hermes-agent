@@ -5179,6 +5179,15 @@ DELEGATE_TASK_SCHEMA = {
             # (object) — wrapped into a one-entry batch at dispatch. Legacy,
             # unadvertised (old transcripts/callers only); tasks=[...] is the
             # only advertised shape. Do not re-add these to the schema.
+            # Default fork behaviour for every task in the batch; a per-task
+            # {"fork": ...} overrides it (see the task-level `fork` doc).
+            "fork": {
+                "type": "boolean",
+                "description": (
+                    "Fork the parent conversation into each child's context "
+                    "by default. A per-task `fork` overrides this for one task."
+                ),
+            },
             "tasks": {
                 "type": "array",
                 "minItems": 1,

@@ -14869,8 +14869,8 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
         """List keys in the state_meta key/value store matching a prefix."""
         if self._conn is None:
             return []
-        with self._lock:
-            rows = self._conn.execute(
+        with self._read_ctx() as conn:
+            rows = conn.execute(
                 "SELECT key FROM state_meta WHERE key LIKE ? ORDER BY key",
                 (prefix + "%",),
             ).fetchall()

@@ -964,15 +964,25 @@ class TestReviewRound3:
         import tools.browser_tool as bt
         bt._real_profile_cdp_cache.clear()
         proc = Mock(returncode=0, stdout="", stderr="")
+
+        def _fake_popen(*args, **kwargs):
+            # Real Chrome writes DevToolsActivePort into the copied profile dir.
+            # The launch path unlinks a stale file first, so the stub has to
+            # create it during the launch rather than before it.
+            (tmp_path / "DevToolsActivePort").write_text("9251\n", encoding="utf-8")
+            return Mock(pid=4242, poll=Mock(return_value=None))
+
         with patch.object(bt, "_use_real_profile", return_value=True), \
              patch.object(bt, "_using_lightpanda_engine", return_value=False), \
              patch("hermes_cli.browser_connect.detect_default_chromium", return_value="chrome"), \
+             patch("hermes_cli.browser_connect.chromium_executable", return_value="/usr/bin/chrome"), \
              patch("hermes_cli.browser_connect.real_profile_copy_dir", return_value=str(tmp_path)), \
              patch("hermes_cli.browser_connect.snapshot_real_profile",
                    return_value=(str(tmp_path), None)) as snap, \
              patch.object(bt, "_agent_browser_get_cdp",
                           side_effect=[None, "http://127.0.0.1:9251"]), \
              patch.object(bt, "_find_agent_browser", return_value="/usr/bin/agent-browser"), \
+             patch.object(bt.subprocess, "Popen", side_effect=_fake_popen), \
              patch.object(bt.subprocess, "run", return_value=proc), \
              patch.object(bt, "_is_headed_mode", return_value=False):
             cdp, err = bt._real_profile_cdp()

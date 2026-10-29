@@ -1490,7 +1490,7 @@ _SLACK_PRIORITY_ALIASES: tuple[str, ...] = ()
 #     /hermes platform. Demoted when /save became gateway-available — without
 #     this entry /save tips the registry past the 50-cap and silently clamps
 #     /platform, breaking parity.
-_SLACK_VIA_HERMES_ONLY = frozenset({"topup", "moa", "debug", "egress", "init", "version", "diff", "update", "platform", "heartbeat", "refine", "review", "pause", "whoami", "insights"})
+_SLACK_VIA_HERMES_ONLY = frozenset({"topup", "moa", "debug", "egress", "init", "version", "diff", "update", "platform", "heartbeat", "refine", "review", "pause", "whoami", "insights", "usage"})
 
 
 def _sanitize_slack_name(raw: str) -> str:

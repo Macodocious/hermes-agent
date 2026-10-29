@@ -2025,11 +2025,14 @@ class TestSafeCopyDb:
         conn.close()
         assert is_zeroed_sqlite_file(p) is False
 
-    def test_is_zeroed_sqlite_file_empty_file(self, tmp_path):
+    def test_is_zeroed_sqlite_file_empty_file_counts_as_total_loss(self, tmp_path):
         from hermes_cli.backup import is_zeroed_sqlite_file
         p = tmp_path / "empty.db"
         p.write_bytes(b"")
-        assert is_zeroed_sqlite_file(p) is False
+        # A 0-byte state.db is the #97568 total-loss case, not a healthy DB:
+        # it carries no SQLite header and no data, so it must be quarantined
+        # exactly like an all-NUL file.
+        assert is_zeroed_sqlite_file(p) is True
 
 
 # ---------------------------------------------------------------------------
