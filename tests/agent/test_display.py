@@ -149,27 +149,27 @@ class TestBuildToolPreview:
 
     def test_process_tool_with_none_args(self):
         """Process tool special case should also handle None args."""
-        assert build_tool_preview("process", None) is None
+        assert build_tool_preview("process_manage", None) is None
 
     def test_process_tool_normal(self):
-        result = build_tool_preview("process", {"action": "poll", "session_id": "abc123"})
+        result = build_tool_preview("process_manage", {"action": "poll", "session_id": "abc123"})
         assert result is not None
         assert "poll" in result
 
     def test_todo_tool_read(self):
-        result = build_tool_preview("todo", {"merge": False})
+        result = build_tool_preview("todo_list", {"merge": False})
         assert result is not None
         assert "Reading the task list" in result
 
     def test_todo_tool_no_args(self):
         """A bare todo() call (no args) reads the task list — it must render
         the standalone phrase, not fall through to the bare "todo..." bubble."""
-        result = build_tool_preview("todo", {})
+        result = build_tool_preview("todo_list", {})
         assert result is not None
         assert result == "Reading the task list"
 
     def test_todo_tool_with_todos(self):
-        result = build_tool_preview("todo", {"todos": [{"id": "1", "content": "test", "status": "pending"}]})
+        result = build_tool_preview("todo_list", {"todos": [{"id": "1", "content": "test", "status": "pending"}]})
         assert result is not None
         assert "Planning 1 task" in result
         assert "task(s)" not in result
@@ -555,25 +555,25 @@ class TestToolActionPhrases:
         from agent.display import build_tool_label
         # The regression: "⏰ Scheduling list" implied creation for a read-only
         # listing.  The label must state what the call actually does.
-        label = build_tool_label("cronjob", {"action": "list"})
+        label = build_tool_label("cronjob_manage", {"action": "list"})
         assert label == "Reading scheduled jobs"
 
     def test_cronjob_create_schedules_job(self):
         from agent.display import build_tool_label
-        label = build_tool_label("cronjob", {"action": "create", "name": "daily-brief"})
+        label = build_tool_label("cronjob_manage", {"action": "create", "name": "daily-brief"})
         assert label == "Creating a scheduled job"
 
     def test_cronjob_run_aliases(self):
         from agent.display import build_tool_label
         for action in ("run", "run_now", "trigger"):
-            label = build_tool_label("cronjob", {"action": action, "job_id": "42"})
+            label = build_tool_label("cronjob_manage", {"action": action, "job_id": "42"})
             assert label == "Running a scheduled job", f"{action} → {label}"
 
     def test_cronjob_unknown_action_falls_back(self):
         from agent.display import build_tool_label, build_tool_preview
         args = {"action": "frobnicate"}
-        label = build_tool_label("cronjob", args)
-        assert label == build_tool_preview("cronjob", args)
+        label = build_tool_label("cronjob_manage", args)
+        assert label == build_tool_preview("cronjob_manage", args)
 
     def test_skill_manage_action_phrases(self):
         from agent.display import build_tool_label
@@ -604,20 +604,20 @@ class TestToolActionPhrases:
         )
         set_friendly_tool_labels(False)
         args = {"action": "list"}
-        label = build_tool_label("cronjob", args)
-        assert label == build_tool_preview("cronjob", args)
+        label = build_tool_label("cronjob_manage", args)
+        assert label == build_tool_preview("cronjob_manage", args)
         assert "Reading scheduled jobs" not in (label or "")
 
     def test_status_phrase_uses_action_phrase(self):
         from agent.display import build_status_phrase
-        assert build_status_phrase("cronjob", {"action": "list"}) == "is reading scheduled jobs…"
+        assert build_status_phrase("cronjob_manage", {"action": "list"}) == "is reading scheduled jobs…"
         assert build_status_phrase("skill_manage", {"action": "delete", "name": "x"}) == "is deleting skill x…"
         assert build_status_phrase("memory", {"action": "add"}) == "is saving to memory…"
 
     def test_status_phrase_verb_mode_falls_back_generic(self):
         from agent.display import build_status_phrase
         # args=None (live_status "verb") cannot resolve an action phrase.
-        phrase = build_status_phrase("cronjob", None)
+        phrase = build_status_phrase("cronjob_manage", None)
         assert phrase == "is working…"
 
 

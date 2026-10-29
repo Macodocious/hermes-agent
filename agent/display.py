@@ -477,7 +477,7 @@ def build_tool_preview(tool_name: str, args: dict, max_len: int | None = None) -
         # todo() with no args reads the task list, and its preview is a
         # complete standalone phrase.  Returning None here would render the
         # bare "todo..." fallback in the gateway bubble.
-        if tool_name == "todo":
+        if tool_name == "todo_list":
             return "Reading the task list"
         return None
     args = redact_tool_args_for_display(tool_name, args) or args
@@ -489,7 +489,7 @@ def build_tool_preview(tool_name: str, args: dict, max_len: int | None = None) -
         "image_generate": "prompt", "text_to_speech": "text",
         "vision_analyze": "question",
         "skill_view": "name", "skills_list": "category",
-        "cronjob": "action",
+        "cronjob_manage": "action",
         "execute_code": "code", "browser_exec": "code", "delegate_task": "goal",
         "clarify": "question", "skill_manage": "name",
     }
@@ -523,7 +523,7 @@ def build_tool_preview(tool_name: str, args: dict, max_len: int | None = None) -
         preview = _oneline(str(goal))
         return _truncate_preview(preview, max_len) if preview else None
 
-    if tool_name == "process":
+    if tool_name == "process_manage":
         action = args.get("action", "")
         sid = args.get("session_id", "")
         data = args.get("data", "")
@@ -538,7 +538,7 @@ def build_tool_preview(tool_name: str, args: dict, max_len: int | None = None) -
         parts = [p for p in parts if p]
         return " ".join(parts) if parts else None
 
-    if tool_name == "todo":
+    if tool_name == "todo_list":
         todos_arg = args.get("todos")
         merge = args.get("merge", False)
         if todos_arg is None:
@@ -702,7 +702,7 @@ _TOOL_VERBS: dict[str, str] = {
 # Phrases are capitalized standalone lines, rendered like todo's preview
 # (no verb prefix).  Keyed by normalized tool action (lowercased).
 _TOOL_ACTION_PHRASES: dict[str, dict[str, str]] = {
-    "cronjob": {
+    "cronjob_manage": {
         "list": "Reading scheduled jobs",
         "create": "Creating a scheduled job",
         "update": "Updating a scheduled job",
@@ -844,7 +844,7 @@ def build_status_phrase(tool_name: str, args: dict | None, max_len: int = 49) ->
         return None
 
     verb = _TOOL_VERBS.get(tool_name)
-    if tool_name == "todo":
+    if tool_name == "todo_list":
         # todo has no curated verb: its preview is a complete capitalized
         # phrase ("Reading the task list"), so the preview becomes the status
         # itself, lowercased to follow the "is …" phrasing.
@@ -1564,7 +1564,7 @@ def _get_cute_tool_message(
         return _wrap(f"┊ 📄 fetch     pages  {dur}")
     if tool_name == "terminal":
         return _wrap(f"┊ 💻 $         {_trunc(build_tool_preview(tool_name, args) or args.get('command', ''), 42)}  {dur}")
-    if tool_name == "process":
+    if tool_name == "process_manage":
         action = args.get("action", "?")
         sid = args.get("session_id", "")[:12]
         labels = {"list": "ls processes", "poll": f"poll {sid}", "log": f"log {sid}",
@@ -1604,7 +1604,7 @@ def _get_cute_tool_message(
         return _wrap(f"┊ 🖼️  images    extracting  {dur}")
     if tool_name == "browser_vision":
         return _wrap(f"┊ 👁️  vision    analyzing page  {dur}")
-    if tool_name == "todo":
+    if tool_name == "todo_list":
         todos_arg = args.get("todos")
         merge = args.get("merge", False)
         # Parse result for completion progress
@@ -1668,7 +1668,7 @@ def _get_cute_tool_message(
         return _wrap(f"┊ 👁️  vision    {_trunc(args.get('question', ''), 30)}  {dur}")
     if tool_name == "send_message":
         return _wrap(f"┊ 📨 send      {args.get('target', '?')}: \"{_trunc(args.get('message', ''), 25)}\"  {dur}")
-    if tool_name == "cronjob":
+    if tool_name == "cronjob_manage":
         action = args.get("action", "?")
         if action == "create":
             skills = args.get("skills") or ([] if not args.get("skill") else [args.get("skill")])
