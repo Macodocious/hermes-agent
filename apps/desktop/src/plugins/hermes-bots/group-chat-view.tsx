@@ -1254,10 +1254,8 @@ export function GroupChatWorkspace({ group, members, onBack, visible = true }: G
             <div className="px-2 py-1 text-[0.7rem] italic text-(--ui-text-quaternary)" key={'working'}>
               {roomClarifies.length
                 ? 'Waiting for your answer…'
-                : Object.keys(room.turns || {}).length
-                  ? `${Object.values(room.turns || {})
-                      .map(name => groupSpeakerLabel(name))
-                      .join(', ')} is thinking…`
+                : room.turn
+                  ? `${groupSpeakerLabel(room.turn)} is thinking…`
                   : 'The room is working…'}
             </div>
           ) : null}
