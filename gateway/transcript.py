@@ -23,6 +23,21 @@ from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
+# Role and kind of a clarify record. A clarify prompt is not a delivered reply,
+# so it never reaches ``post_gateway_delivery``, and a button answer is not a
+# message at all — both would be missing from the file without a record of
+# their own.
+CLARIFY_ROLE: str = "clarify"
+CLARIFY_KIND_QUESTION: str = "question"
+CLARIFY_KIND_ANSWER: str = "answer"
+CLARIFY_SOURCE_BUTTON: str = "button"
+CLARIFY_SOURCE_TYPED: str = "typed"
+
+# The writer installed by ``install_transcript_hooks``. It stays None in the CLI
+# and whenever transcripts are disabled, which is what makes every
+# ``record_clarify_*`` call a no-op there.
+_writer: Optional["ThreadTranscriptWriter"] = None
+
 
 def install_transcript_hooks(manager: Any, config: Any) -> None:
     """Register transcript persistence hooks when enabled in *config*.
@@ -38,6 +53,8 @@ def install_transcript_hooks(manager: Any, config: Any) -> None:
     if _dir is None:
         _dir = Path.home() / ".hermes" / "transcripts"
     writer = ThreadTranscriptWriter(Path(_dir))
+    global _writer
+    _writer = writer
 
     manager._hooks.setdefault("pre_gateway_dispatch", []).append(
         lambda **kw: _on_inbound(writer, **kw)
@@ -108,6 +125,10 @@ class ThreadTranscriptWriter:
         timestamp: Optional[float] = None,
         model: Optional[str] = None,
         session_id: Optional[str] = None,
+        kind: Optional[str] = None,
+        clarify_id: Optional[str] = None,
+        choices: Optional[list] = None,
+        source: Optional[str] = None,
     ) -> None:
         """Append a single message record to its thread file.
 
@@ -134,6 +155,14 @@ class ThreadTranscriptWriter:
             record["model"] = model
         if session_id is not None:
             record["session_id"] = session_id
+        if kind is not None:
+            record["kind"] = str(kind)
+        if clarify_id is not None:
+            record["clarify_id"] = str(clarify_id)
+        if choices:
+            record["choices"] = [str(choice) for choice in choices]
+        if source is not None:
+            record["source"] = str(source)
 
         _target_id = thread_id or chat_id or "unknown"
         _file = self._directory / f"{_target_id}.jsonl"
@@ -182,3 +211,65 @@ def build_transcript_writer(config: Any) -> Optional[ThreadTranscriptWriter]:
     if _dir is None:
         _dir = Path.home() / ".hermes" / "transcripts"
     return ThreadTranscriptWriter(Path(_dir))
+
+
+def record_clarify_question(
+    *,
+    clarify_id: str,
+    question: str,
+    choices: Optional[list] = None,
+    thread_id: Optional[str] = None,
+    chat_id: Optional[str] = None,
+    platform: Optional[str] = None,
+) -> None:
+    """Write the clarify question as its own record, where it was asked.
+
+    No-op when no transcript writer is installed.
+    """
+    if _writer is None:
+        return
+    _writer.write(
+        role=CLARIFY_ROLE,
+        user_id=None,
+        message_id=None,
+        thread_id=thread_id,
+        chat_id=chat_id,
+        platform=platform,
+        content=question,
+        kind=CLARIFY_KIND_QUESTION,
+        clarify_id=clarify_id,
+        choices=choices,
+    )
+
+
+def record_clarify_answer(
+    *,
+    clarify_id: str,
+    answer: str,
+    source: str,
+    thread_id: Optional[str] = None,
+    chat_id: Optional[str] = None,
+    platform: Optional[str] = None,
+) -> None:
+    """Write the clarify answer as its own record, tagged with how it arrived.
+
+    ``source`` is ``button`` for a tap and ``typed`` for a text reply. A typed
+    answer is also an ordinary user message, already in the file; this record
+    keeps the clarify linkage that message cannot carry.
+
+    No-op when no transcript writer is installed.
+    """
+    if _writer is None:
+        return
+    _writer.write(
+        role=CLARIFY_ROLE,
+        user_id=None,
+        message_id=None,
+        thread_id=thread_id,
+        chat_id=chat_id,
+        platform=platform,
+        content=answer,
+        kind=CLARIFY_KIND_ANSWER,
+        clarify_id=clarify_id,
+        source=source,
+    )
