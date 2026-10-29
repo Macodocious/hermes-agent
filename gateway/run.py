@@ -21531,6 +21531,11 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     session_key=session_key or "",
                     question=question,
                     choices=list(choices) if choices else None,
+                    transcript={
+                        "thread_id": _progress_thread_id,
+                        "chat_id": _status_chat_id,
+                        "platform": getattr(source.platform, "value", None),
+                    },
                 )
 
                 # Pause typing — like approval, we don't want a "thinking..."
@@ -21572,6 +21577,17 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     # default rather than hanging.
                     _clarify_mod.clear_session(session_key or "")
                     return "[clarify prompt could not be delivered]"
+
+                from gateway.transcript import record_clarify_question
+
+                record_clarify_question(
+                    clarify_id=clarify_id,
+                    question=question,
+                    choices=list(choices) if choices else None,
+                    thread_id=_progress_thread_id,
+                    chat_id=_status_chat_id,
+                    platform=getattr(source.platform, "value", None),
+                )
 
                 timeout = _clarify_mod.get_clarify_timeout()
                 response = _clarify_mod.wait_for_response(clarify_id, timeout=float(timeout))

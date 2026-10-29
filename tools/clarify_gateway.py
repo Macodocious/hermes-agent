@@ -54,6 +54,9 @@ class _ClarifyEntry:
     event: threading.Event = field(default_factory=threading.Event)
     response: Optional[str] = None
     awaiting_text: bool = False  # set when user picked "Other" or clarify is open-ended
+    # Where the record of this exchange belongs, filled by the gateway when it
+    # registers the request. Absent in the CLI, so no record is written there.
+    transcript: Optional[Dict[str, str]] = None
 
     def signature(self) -> Dict[str, object]:
         return {
@@ -80,8 +83,13 @@ def register(
     session_key: str,
     question: str,
     choices: Optional[List[str]],
+    transcript: Optional[Dict[str, str]] = None,
 ) -> _ClarifyEntry:
     """Register a pending clarify request and return the entry.
+
+    ``transcript`` names where the exchange's records belong — ``thread_id``,
+    ``chat_id``, ``platform``. The gateway passes it; a caller that omits it
+    writes no transcript record.
 
     The caller (gateway clarify_callback) will then send the prompt to the
     user and block on ``wait_for_response(clarify_id, timeout)``.
@@ -93,6 +101,7 @@ def register(
         choices=list(choices) if choices else None,
         # Open-ended (no choices) → next message IS the response, no buttons needed.
         awaiting_text=not bool(choices),
+        transcript=dict(transcript) if transcript else None,
     )
     with _lock:
         _entries[clarify_id] = entry
@@ -147,8 +156,12 @@ def wait_for_response(clarify_id: str, timeout: float) -> Optional[str]:
 # Public API — gateway / adapter side
 # =========================================================================
 
-def resolve_gateway_clarify(clarify_id: str, response: str) -> bool:
+def resolve_gateway_clarify(clarify_id: str, response: str, *, source: str = "button") -> bool:
     """Unblock the agent thread waiting on ``clarify_id``.
+
+    ``source`` records how the answer arrived — ``button`` for a tap, ``typed``
+    for a text reply. Both paths land here, so this is the one place the
+    transcript answer is written.
 
     Returns True if an entry was found and resolved, False otherwise
     (already resolved, expired, or never existed).
@@ -158,8 +171,31 @@ def resolve_gateway_clarify(clarify_id: str, response: str) -> bool:
         if entry is None:
             return False
     entry.response = str(response) if response is not None else ""
+    _record_answer(entry, source)
     entry.event.set()
     return True
+
+
+def _record_answer(entry: _ClarifyEntry, source: str) -> None:
+    """Write the clarify answer to the thread transcript, when one is installed."""
+    if not entry.transcript:
+        return
+    try:
+        from gateway.transcript import record_clarify_answer
+    except Exception as error:
+        logger.warning(
+            "transcript unavailable for clarify answer %s (%s: %s)",
+            entry.clarify_id, type(error).__name__, error,
+        )
+        return
+    record_clarify_answer(
+        clarify_id=entry.clarify_id,
+        answer=str(entry.response or ""),
+        source=source,
+        thread_id=entry.transcript.get("thread_id"),
+        chat_id=entry.transcript.get("chat_id"),
+        platform=entry.transcript.get("platform"),
+    )
 
 
 def get_pending_for_session(
@@ -211,6 +247,7 @@ def resolve_text_response_for_session(session_key: str, response: str) -> bool:
     return resolve_gateway_clarify(
         entry.clarify_id,
         _coerce_text_response(entry, response),
+        source="typed",
     )
 
 
