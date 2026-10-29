@@ -297,27 +297,27 @@ class TestTodoInjectionFiltering(unittest.TestCase):
             {"id": "4", "content": "Abandoned", "status": "cancelled"},
         ])
         injection = store.format_for_injection()
-        # Completed items persist visibly, marked done, never re-proposed.
-        self.assertIn("[x] Read codebase", injection)
-        self.assertIn("Completed — do not redo", injection)
+        assert injection is not None
+        # Only actionable work is injected; completed rows stay in the todo
+        # tool's own read path instead of riding along every compaction.
+        self.assertNotIn("Read codebase", injection)
+        self.assertNotIn("Completed — do not redo", injection)
         # Cancelled items are excluded — deliberately abandoned.
         self.assertNotIn("Abandoned", injection)
         self.assertIn("[>] Write fix", injection)
         self.assertIn("[ ] Run tests", injection)
 
-    def test_all_completed_still_renders(self):
+    def test_all_completed_renders_nothing(self):
         from tools.todo_tool import TodoStore
         store = TodoStore()
         store.write([
             {"id": "1", "content": "Done", "status": "completed"},
             {"id": "2", "content": "Also done", "status": "completed"},
         ])
-        # An all-completed list must still inject a visible task anchor
-        # after compression — this is the empty-frame regression case.
-        injection = store.format_for_injection()
-        self.assertIsNotNone(injection)
-        self.assertIn("[x] Done", injection)
-        self.assertIn("[x] Also done", injection)
+        # A fully retired store is authoritative and injects no snapshot: the
+        # compression path clears the one an earlier boundary injected rather
+        # than dragging finished work forward.
+        self.assertIsNone(store.format_for_injection())
 
     def test_empty_store_returns_none(self):
         from tools.todo_tool import TodoStore
