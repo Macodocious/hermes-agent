@@ -185,7 +185,7 @@ def tool_result_reminder(agent: Any, tool_name: str) -> str:
     if not _lifecycle_enabled():
         return ""
     store = getattr(agent, "_todo_store", None)
-    if store is None or not store.has_items():
+    if store is None or not store.has_startable():
         return ""
     current = _current_item(agent)
     if current is None:

@@ -37,9 +37,39 @@ def _store_with(status: str) -> TodoStore:
     return store
 
 
-def test_reminder_fires_once_when_no_task_is_current() -> None:
-    agent = _agent(_store_with("completed"))
+def test_reminder_fires_once_when_a_startable_task_is_not_current() -> None:
+    agent = _agent(_store_with("pending"))
 
+    assert tool_result_reminder(agent, "read_file") == LIFECYCLE_TOOL_REMINDER
+    assert tool_result_reminder(agent, "read_file") == ""
+
+
+def test_no_reminder_once_every_row_is_closed() -> None:
+    store = TodoStore()
+    store.write(
+        [
+            {"id": str(index), "content": f"Closed {index}", "status": "pending"}
+            for index in range(1, 6)
+        ]
+        + [{"id": "6", "content": "Dropped", "status": "pending"}]
+    )
+    for item_id in ("1", "2", "3", "4", "5"):
+        store.transition("begin", item_id)
+        store.mark_work()
+        store.transition("complete", item_id)
+    store.transition("cancel", "6", reason="not needed")
+
+    agent = _agent(store)
+    assert tool_result_reminder(agent, "read_file") == ""
+    assert tool_result_reminder(agent, "read_file") == ""
+
+
+def test_reminder_still_fires_for_a_paused_row() -> None:
+    store = _store_with("in_progress")
+    store.mark_work()
+    store.transition("pause", "1")
+
+    agent = _agent(store)
     assert tool_result_reminder(agent, "read_file") == LIFECYCLE_TOOL_REMINDER
     assert tool_result_reminder(agent, "read_file") == ""
 
