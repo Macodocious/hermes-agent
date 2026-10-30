@@ -2316,9 +2316,7 @@ def _endpoint_speaks_anthropic_messages(base_url: str) -> bool:
     hostname = base_url_hostname(normalized)
     if hostname == "api.anthropic.com":
         return True
-    if hostname == "api.kimi.com" and "/coding" in normalized:
-        return True
-    return False
+    return bool(hostname == "api.kimi.com" and "/coding" in normalized)
 
 
 def _is_specialized_aux_client(client_obj: Any) -> bool:
@@ -4010,9 +4008,7 @@ def _is_auth_error(exc: Exception) -> bool:
     # — semantically a 401.
     if status == 403 and "bad-credentials" in err_lower:
         return True
-    if "unauthenticated" in err_lower and "bad-credentials" in err_lower:
-        return True
-    return False
+    return bool("unauthenticated" in err_lower and "bad-credentials" in err_lower)
 
 
 def _is_unsupported_parameter_error(exc: Exception, param: str) -> bool:
@@ -6591,22 +6587,17 @@ def resolve_vision_provider_client(
                 rpc_api_key = None
                 rpc_api_mode = resolved_api_mode
                 if main_provider == "custom" or main_provider.startswith("custom:"):
-                    runtime_base_url = runtime.get("base_url")
-                    if runtime_base_url:
-                        rpc_base_url = runtime_base_url
-                        rpc_api_key = runtime.get("api_key") or None
-                        rpc_api_mode = (
-                            resolved_api_mode
-                            or runtime.get("api_mode")
-                            or None
+                    if runtime.get("base_url"):
+                        custom_base, custom_key, custom_mode = (
+                            runtime.get("base_url"), runtime.get("api_key") or None, runtime.get("api_mode"),
                         )
                     else:
                         # Non-gateway caller: no live runtime recorded.
                         custom_base, custom_key, custom_mode = _resolve_custom_runtime()
-                        if custom_base:
-                            rpc_base_url = custom_base
-                            rpc_api_key = custom_key
-                            rpc_api_mode = resolved_api_mode or custom_mode or None
+                    if custom_base:
+                        rpc_base_url = custom_base
+                        rpc_api_key = custom_key
+                        rpc_api_mode = resolved_api_mode or custom_mode or None
                 rpc_client, rpc_model = resolve_provider_client(
                     main_provider, vision_model,
                     api_mode=rpc_api_mode,
