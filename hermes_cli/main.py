@@ -13454,6 +13454,250 @@ def _advertise_agent_env() -> None:
     os.environ.setdefault("HERMES_AGENT", "true")
 
 
+def _attach_plugin_cli_command(subparsers, cmd_info) -> None:
+    """Register one plugin-provided top-level command from its descriptor."""
+    plugin_parser = subparsers.add_parser(
+        cmd_info["name"],
+        help=cmd_info["help"],
+        description=cmd_info.get("description", ""),
+        formatter_class=__import__("argparse").RawDescriptionHelpFormatter,
+    )
+    cmd_info["setup_fn"](plugin_parser)
+    if cmd_info.get("handler_fn") is not None:
+        plugin_parser.set_defaults(func=cmd_info["handler_fn"])
+
+
+def _register_plugin_cli_commands(subparsers) -> None:
+    """Plugin CLI commands — dynamically registered by memory/general plugins.
+
+    Plugins provide a register_cli(subparser) function that builds their own
+    argparse tree; no hardcoded plugin commands in main.py. Skipped when the
+    invocation already targets a known built-in subcommand (``hermes --help``,
+    ``hermes logs``, ...) — eagerly importing every bundled plugin module
+    (google.cloud.pubsub_v1, aiohttp, grpc, PIL …) costs 500-650ms.
+    """
+    if not _plugin_cli_discovery_needed():
+        return
+    try:
+        from plugins.memory import discover_plugin_cli_commands
+        from hermes_cli.plugins import discover_plugins, get_plugin_manager
+
+        seen_plugin_commands = set()
+        for cmd_info in discover_plugin_cli_commands():
+            _attach_plugin_cli_command(subparsers, cmd_info)
+            seen_plugin_commands.add(cmd_info["name"])
+
+        discover_plugins()
+        # A bundled platform whose top-level CLI command is the one being
+        # invoked is still only a deferred entry at this point; import it
+        # so its register_cli_command side effect runs before we read
+        # _cli_commands (issue #54678).
+        _resolve_deferred_platform_cli_command(_first_positional_argv())
+        for cmd_info in get_plugin_manager()._cli_commands.values():
+            if cmd_info["name"] not in seen_plugin_commands:
+                _attach_plugin_cli_command(subparsers, cmd_info)
+    except Exception as _exc:
+        logging.getLogger(__name__).debug("Plugin CLI discovery failed: %s", _exc)
+
+
+def _build_cli_parser():
+    """Build the full ``hermes`` argparse tree. Returns ``(parser, subparsers)``.
+
+    Registration ORDER is the order subcommands appear in ``hermes --help``;
+    keep it stable. Each group lives in ``hermes_cli/subcommands/<group>.py``
+    (handlers injected so those modules never import main) or exposes its own
+    ``register_cli``/``build_parser`` from a sibling module.
+    """
+    from hermes_cli._parser import build_top_level_parser
+
+    parser, subparsers, chat_parser = build_top_level_parser()
+    chat_parser.set_defaults(func=cmd_chat)
+
+    build_model_parser(subparsers, cmd_model=cmd_model)
+    build_moa_parser(subparsers)
+    build_fallback_parser(subparsers)
+    build_worktree_parser(subparsers)
+    build_browser_parser(subparsers)
+    build_secrets_parser(subparsers)
+    # OUTBOUND iron-proxy egress firewall; ``hermes proxy`` (gateway group) is
+    # the separate INBOUND OAuth-aggregator reverse proxy.
+    build_egress_parser(subparsers)
+    build_migrate_parser(subparsers)
+    build_gateway_parser(
+        subparsers, cmd_gateway=cmd_gateway, cmd_proxy=cmd_proxy, cmd_gateway_enroll=cmd_gateway_enroll
+    )
+
+    # LSP is optional infrastructure — never let a registration failure
+    # break the CLI overall.
+    try:
+        from agent.lsp.cli import register_subparser as _lsp_register
+        _lsp_register(subparsers)
+    except Exception as _lsp_err:  # noqa: BLE001
+        logger.debug("LSP CLI registration failed: %s", _lsp_err)
+
+    build_setup_parser(subparsers, cmd_setup=cmd_setup)
+    build_whatsapp_parser(subparsers, cmd_whatsapp=cmd_whatsapp)
+    build_whatsapp_cloud_parser(subparsers, cmd_whatsapp_cloud=cmd_whatsapp_cloud)
+    build_slack_parser(subparsers, cmd_slack=cmd_slack)
+
+    # send command — pipe shell-script output to any configured platform
+    from hermes_cli.send_cmd import register_send_subparser
+    register_send_subparser(subparsers)
+
+    build_login_parser(subparsers, cmd_login=cmd_login)
+    build_logout_parser(subparsers, cmd_logout=cmd_logout)
+    build_auth_parser(subparsers, cmd_auth=cmd_auth)
+    build_status_parser(subparsers, cmd_status=cmd_status)
+    build_pause_parser(subparsers)
+    build_cron_parser(subparsers, cmd_cron=cmd_cron)
+    build_sync_parser(subparsers, cmd_sync=cmd_sync)
+    build_webhook_parser(subparsers, cmd_webhook=cmd_webhook)
+
+    # peer command — bot-to-bot DMs across machines (peer Hermes gateways)
+    from hermes_cli.subcommands.peer import build_peer_parser
+    build_peer_parser(subparsers)
+
+    # portal command — Nous Portal status + Tool Gateway routing
+    from hermes_cli.portal_cli import add_parser as _add_portal_parser
+    _add_portal_parser(subparsers)
+
+    # kanban command — multi-profile collaboration board
+    from hermes_cli.kanban import build_parser as _build_kanban_parser
+    _build_kanban_parser(subparsers).set_defaults(func=cmd_kanban)
+
+    # project command — named, multi-folder workspaces
+    from hermes_cli.projects_cmd import build_parser as _build_project_parser
+    _build_project_parser(subparsers).set_defaults(func=cmd_project)
+
+    build_hooks_parser(subparsers, cmd_hooks=cmd_hooks)
+    build_doctor_parser(subparsers, cmd_doctor=cmd_doctor)
+    build_verify_parser(subparsers, cmd_verify=cmd_verify)
+    build_security_parser(subparsers, cmd_security=cmd_security)
+    build_approvals_parser(subparsers, cmd_approvals=cmd_approvals)
+    build_dump_parser(subparsers, cmd_dump=cmd_dump)
+    build_debug_parser(subparsers, cmd_debug=cmd_debug)
+    build_backup_parser(subparsers, cmd_backup=cmd_backup)
+    build_checkpoints_parser(subparsers)
+    build_import_cmd_parser(subparsers, cmd_import=cmd_import)
+    build_import_agent_parser(subparsers, cmd_import_agent=cmd_import_agent)
+    build_config_parser(subparsers, cmd_config=cmd_config)
+    build_skin_parser(subparsers, cmd_skin=cmd_skin)
+    build_console_parser(subparsers, cmd_console=cmd_console)
+    build_pairing_parser(subparsers, cmd_pairing=cmd_pairing)
+    build_skills_parser(subparsers, cmd_skills=cmd_skills)
+    build_bundles_parser(subparsers)
+    build_plugins_parser(subparsers, cmd_plugins=cmd_plugins)
+
+    _register_plugin_cli_commands(subparsers)
+
+    build_curator_parser(subparsers)
+    build_pets_parser(subparsers)
+    build_journey_parser(subparsers)
+    build_memory_parser(subparsers, cmd_memory=cmd_memory)
+    build_tools_parser(subparsers, cmd_tools=cmd_tools)
+    build_computer_use_parser(subparsers)
+    build_mcp_parser(subparsers, cmd_mcp=cmd_mcp)
+    # Lazy indirection: sessions_cmd is only imported when the subcommand
+    # runs, and monkeypatches on hermes_cli.main.cmd_sessions keep working.
+    build_sessions_parser(subparsers, cmd_sessions=lambda a, **kw: _self().cmd_sessions(a, **kw))
+    build_insights_parser(subparsers, cmd_insights=cmd_insights)
+    build_monitoring_parser(subparsers, cmd_monitoring=cmd_monitoring)
+    build_claw_parser(subparsers, cmd_claw=cmd_claw)
+    # NOTE: the `hermes version` subcommand was removed — `hermes --version`
+    # / `-V` now carries the full output including update status.
+    build_update_parser(subparsers, cmd_update=cmd_update)
+    build_uninstall_parser(subparsers, cmd_uninstall=cmd_uninstall)
+    build_acp_parser(subparsers, cmd_acp=cmd_acp)
+    build_profile_parser(subparsers, cmd_profile=cmd_profile)
+    build_completion_parser(subparsers, cmd_completion=cmd_completion, parser=parser)
+    build_dashboard_parser(
+        subparsers,
+        cmd_dashboard=cmd_dashboard,
+        cmd_dashboard_register=cmd_dashboard_register,
+    )
+    # desktop (a.k.a. gui): the canonical name is "desktop"; "gui" is kept as
+    # a deprecated alias for one release. The Hermes-Setup.exe success screen
+    # tells users to run `hermes desktop`, so that name must be the one shown
+    # in --help (argparse promotes the primary name; aliases stay hidden).
+    build_gui_parser(subparsers, cmd_gui=cmd_gui)
+    build_logs_parser(subparsers, cmd_logs=cmd_logs)
+    build_prompt_size_parser(subparsers, cmd_prompt_size=cmd_prompt_size)
+    return parser, subparsers
+
+
+def _parse_cli_args(parser, subparsers, argv):
+    """Parse ``argv`` with the bpo-9338 subparser-routing workaround.
+
+    argv is first pre-processed so unquoted multi-word session names after
+    -c / -r merge into one token (``hermes -c Pokemon Agent Dev`` →
+    ``hermes -c 'Pokemon Agent Dev'``).
+
+    On some Python versions (notably <3.11), argparse fails to route
+    subcommand tokens when the parent parser has nargs='?' optional arguments
+    (--continue): "unrecognized arguments: model" even though 'model' is a
+    registered subcommand. Fix: when argv contains a token matching a known
+    subcommand, set subparsers.required=True to force deterministic routing.
+    If that fails (e.g. 'hermes -c model' where 'model' is consumed as the
+    session name for --continue), fall back to the default behaviour.
+    """
+    import io as _io
+
+    _processed_argv = _coalesce_session_name_args(argv)
+    _known_cmds = (
+        set(subparsers.choices.keys()) if hasattr(subparsers, "choices") else set()
+    )
+    _has_cmd_token = any(
+        t in _known_cmds for t in _processed_argv if not t.startswith("-")
+    )
+    if not _has_cmd_token:
+        subparsers.required = False
+        return parser.parse_args(_processed_argv)
+
+    subparsers.required = True
+    _saved_stderr = sys.stderr
+    try:
+        sys.stderr = _io.StringIO()
+        args = parser.parse_args(_processed_argv)
+        sys.stderr = _saved_stderr
+    except SystemExit as exc:
+        sys.stderr = _saved_stderr
+        # Help/version flags (exit code 0) already printed output —
+        # re-raise immediately to avoid a second parse_args printing
+        # the same help text again (#10230).
+        if exc.code == 0:
+            raise
+        # Subcommand name was consumed as a flag value (e.g. -c model).
+        # Fall back to optional subparsers so argparse handles it normally.
+        subparsers.required = False
+        args = parser.parse_args(_processed_argv)
+    return args
+
+
+def _default_to_chat(args) -> None:
+    """No subcommand given: run chat, filling the chat-parser attrs it expects."""
+    # Top-level --resume / --continue is a shortcut to chat.
+    if args.resume or args.continue_last:
+        args.command = "chat"
+    for attr, default in [
+        ("query", None),
+        ("model", None),
+        ("provider", None),
+        ("toolsets", None),
+        ("verbose", None),
+        ("resume", None),
+        ("continue_last", None),
+        ("worktree", False),
+    ]:
+        if not hasattr(args, attr):
+            setattr(args, attr, default)
+    cmd_chat(args)
+
+
+def cmd_import_agent(args):
+    from hermes_cli.agent_import import import_agent_command
+    import_agent_command(args)
+
+
 def main():
     """Main entry point for hermes CLI."""
     # Cosmetic: make the process show up as 'hermes' instead of 'python3.11'
@@ -13519,582 +13763,8 @@ def main():
     if _try_fast_chat_launch():
         return
 
-    from hermes_cli._parser import build_top_level_parser
+    parser, subparsers = _build_cli_parser()
 
-    parser, subparsers, chat_parser = build_top_level_parser()
-    chat_parser.set_defaults(func=cmd_chat)
-
-    # =========================================================================
-    # model command  (parser built in hermes_cli/subcommands/model.py)
-    # =========================================================================
-    build_model_parser(subparsers, cmd_model=cmd_model)
-
-    build_moa_parser(subparsers)
-
-    # =========================================================================
-    # fallback command — manage the fallback provider chain
-    # =========================================================================
-    build_fallback_parser(subparsers)
-
-    # =========================================================================
-    # worktree command — audit/reclaim accumulated git worktrees + branches
-    # =========================================================================
-    build_worktree_parser(subparsers)
-
-
-    # =========================================================================
-    # browser command — real-profile helpers (agent-invoked, user-approved)
-    # =========================================================================
-    build_browser_parser(subparsers)
-
-
-    # =========================================================================
-    # secrets command — external secret managers (Bitwarden, 1Password)
-    # =========================================================================
-    build_secrets_parser(subparsers)
-
-    # =========================================================================
-    # egress command — iron-proxy outbound credential-injection firewall
-    # =========================================================================
-    build_egress_parser(subparsers)
-
-    # =========================================================================
-    # migrate command
-    # =========================================================================
-    build_migrate_parser(subparsers)
-
-    # =========================================================================
-    # gateway + proxy commands  (parsers built in hermes_cli/subcommands/gateway.py)
-    # =========================================================================
-    build_gateway_parser(
-        subparsers, cmd_gateway=cmd_gateway, cmd_proxy=cmd_proxy, cmd_gateway_enroll=cmd_gateway_enroll
-    )
-
-    # =========================================================================
-    # lsp command
-    # =========================================================================
-    try:
-        from agent.lsp.cli import register_subparser as _lsp_register
-        _lsp_register(subparsers)
-    except Exception as _lsp_err:  # noqa: BLE001
-        # LSP is optional infrastructure — never let a registration
-        # failure break the CLI overall.
-        logger.debug("LSP CLI registration failed: %s", _lsp_err)
-
-    # =========================================================================
-    # setup command  (parser built in hermes_cli/subcommands/setup.py)
-    # =========================================================================
-    build_setup_parser(subparsers, cmd_setup=cmd_setup)
-
-
-    # =========================================================================
-    # whatsapp command  (parser built in hermes_cli/subcommands/whatsapp.py)
-    # =========================================================================
-    build_whatsapp_parser(subparsers, cmd_whatsapp=cmd_whatsapp)
-
-    # =========================================================================
-    # whatsapp-cloud command (official Meta Cloud API; complement to Baileys)
-    # =========================================================================
-    build_whatsapp_cloud_parser(subparsers, cmd_whatsapp_cloud=cmd_whatsapp_cloud)
-
-    # =========================================================================
-    # slack command  (parser built in hermes_cli/subcommands/slack.py)
-    # =========================================================================
-    build_slack_parser(subparsers, cmd_slack=cmd_slack)
-
-    # =========================================================================
-    # send command — pipe shell-script output to any configured platform
-    # =========================================================================
-    from hermes_cli.send_cmd import register_send_subparser
-    register_send_subparser(subparsers)
-
-    # =========================================================================
-    # login command  (parser built in hermes_cli/subcommands/login.py)
-    # =========================================================================
-    build_login_parser(subparsers, cmd_login=cmd_login)
-
-    # =========================================================================
-    # logout command  (parser built in hermes_cli/subcommands/logout.py)
-    # =========================================================================
-    build_logout_parser(subparsers, cmd_logout=cmd_logout)
-
-    # =========================================================================
-    # auth command  (parser built in hermes_cli/subcommands/auth.py)
-    # =========================================================================
-    build_auth_parser(subparsers, cmd_auth=cmd_auth)
-
-    # =========================================================================
-    # status command  (parser built in hermes_cli/subcommands/status.py)
-    # =========================================================================
-    build_status_parser(subparsers, cmd_status=cmd_status)
-
-    # =========================================================================
-    # pause / resume commands  (parser built in hermes_cli/subcommands/pause.py)
-    # =========================================================================
-    build_pause_parser(subparsers)
-
-    # =========================================================================
-    # cron command  (parser built in hermes_cli/subcommands/cron.py)
-    # =========================================================================
-    build_cron_parser(subparsers, cmd_cron=cmd_cron)
-    build_sync_parser(subparsers, cmd_sync=cmd_sync)
-
-    # =========================================================================
-    # webhook command  (parser built in hermes_cli/subcommands/webhook.py)
-    # =========================================================================
-    build_webhook_parser(subparsers, cmd_webhook=cmd_webhook)
-
-    # =========================================================================
-    # peer command — bot-to-bot DMs across machines (peer Hermes gateways)
-    # =========================================================================
-    from hermes_cli.subcommands.peer import build_peer_parser
-
-    build_peer_parser(subparsers)
-
-    # =========================================================================
-    # portal command — Nous Portal status + Tool Gateway routing
-    # =========================================================================
-    from hermes_cli.portal_cli import add_parser as _add_portal_parser
-    _add_portal_parser(subparsers)
-
-    # =========================================================================
-    # kanban command — multi-profile collaboration board
-    # =========================================================================
-    from hermes_cli.kanban import build_parser as _build_kanban_parser
-
-    kanban_parser = _build_kanban_parser(subparsers)
-    kanban_parser.set_defaults(func=cmd_kanban)
-
-    # =========================================================================
-    # project command — named, multi-folder workspaces
-    # =========================================================================
-    from hermes_cli.projects_cmd import build_parser as _build_project_parser
-
-    project_parser = _build_project_parser(subparsers)
-    project_parser.set_defaults(func=cmd_project)
-
-    # =========================================================================
-    # hooks command — shell-hook inspection and management
-    # =========================================================================
-    # hooks command  (parser built in hermes_cli/subcommands/hooks.py)
-    # =========================================================================
-    build_hooks_parser(subparsers, cmd_hooks=cmd_hooks)
-
-    # =========================================================================
-    # doctor command  (parser built in hermes_cli/subcommands/doctor.py)
-    # =========================================================================
-    build_doctor_parser(subparsers, cmd_doctor=cmd_doctor)
-
-    # =========================================================================
-    # verify command  (parser built in hermes_cli/subcommands/verify.py)
-    # =========================================================================
-    build_verify_parser(subparsers, cmd_verify=cmd_verify)
-
-    # =========================================================================
-    # security command — on-demand supply-chain audit
-    # =========================================================================
-    # security command  (parser built in hermes_cli/subcommands/security.py)
-    # =========================================================================
-    build_security_parser(subparsers, cmd_security=cmd_security)
-
-    # =========================================================================
-    # approvals command  (parser built in hermes_cli/subcommands/approvals.py)
-    # =========================================================================
-    build_approvals_parser(subparsers, cmd_approvals=cmd_approvals)
-
-    # =========================================================================
-    # dump command  (parser built in hermes_cli/subcommands/dump.py)
-    # =========================================================================
-    build_dump_parser(subparsers, cmd_dump=cmd_dump)
-
-    # =========================================================================
-    # debug command  (parser built in hermes_cli/subcommands/debug.py)
-    # =========================================================================
-    build_debug_parser(subparsers, cmd_debug=cmd_debug)
-
-    # =========================================================================
-    # backup command  (parser built in hermes_cli/subcommands/backup.py)
-    # =========================================================================
-    build_backup_parser(subparsers, cmd_backup=cmd_backup)
-
-    # =========================================================================
-    # checkpoints command
-    # =========================================================================
-    build_checkpoints_parser(subparsers)
-
-    # =========================================================================
-    # import command  (parser built in hermes_cli/subcommands/import_cmd.py)
-    # =========================================================================
-    build_import_cmd_parser(subparsers, cmd_import=cmd_import)
-
-    # =========================================================================
-    # import-agent command  (parser: hermes_cli/subcommands/import_agent.py)
-    # =========================================================================
-    def cmd_import_agent(args):
-        from hermes_cli.agent_import import import_agent_command
-        import_agent_command(args)
-
-    build_import_agent_parser(subparsers, cmd_import_agent=cmd_import_agent)
-
-    # =========================================================================
-    # config command  (parser built in hermes_cli/subcommands/config.py)
-    # =========================================================================
-    build_config_parser(subparsers, cmd_config=cmd_config)
-
-    # =========================================================================
-    # skin command  (parser built in hermes_cli/subcommands/skin.py)
-    # =========================================================================
-    build_skin_parser(subparsers, cmd_skin=cmd_skin)
-
-    # =========================================================================
-    # console command  (parser built in hermes_cli/subcommands/console.py)
-    # =========================================================================
-    build_console_parser(subparsers, cmd_console=cmd_console)
-
-    # =========================================================================
-    # pairing command  (parser built in hermes_cli/subcommands/pairing.py)
-    # =========================================================================
-    build_pairing_parser(subparsers, cmd_pairing=cmd_pairing)
-
-    # =========================================================================
-    # skills command  (parser built in hermes_cli/subcommands/skills.py)
-    # =========================================================================
-    build_skills_parser(subparsers, cmd_skills=cmd_skills)
-
-    # =========================================================================
-    # bundles command — skill bundles (alias /<name> for multiple skills)
-    # =========================================================================
-    build_bundles_parser(subparsers)
-
-    # =========================================================================
-    # plugins command  (parser built in hermes_cli/subcommands/plugins.py)
-    # =========================================================================
-    build_plugins_parser(subparsers, cmd_plugins=cmd_plugins)
-
-    # =========================================================================
-    # Plugin CLI commands — dynamically registered by memory/general plugins.
-    # Plugins provide a register_cli(subparser) function that builds their
-    # own argparse tree.  No hardcoded plugin commands in main.py.
-    #
-    # Skipped when the invocation is already targeting a known built-in
-    # subcommand — ``hermes --help``, ``hermes logs``,
-    # etc.  This avoids eagerly importing every bundled plugin module
-    # (google.cloud.pubsub_v1, aiohttp, grpc, PIL …) which costs
-    # 500-650ms on typical installs.
-    # =========================================================================
-    if _plugin_cli_discovery_needed():
-        try:
-            from plugins.memory import discover_plugin_cli_commands
-            from hermes_cli.plugins import discover_plugins, get_plugin_manager
-
-            seen_plugin_commands = set()
-            for cmd_info in discover_plugin_cli_commands():
-                plugin_parser = subparsers.add_parser(
-                    cmd_info["name"],
-                    help=cmd_info["help"],
-                    description=cmd_info.get("description", ""),
-                    formatter_class=__import__("argparse").RawDescriptionHelpFormatter,
-                )
-                cmd_info["setup_fn"](plugin_parser)
-                if cmd_info.get("handler_fn") is not None:
-                    plugin_parser.set_defaults(func=cmd_info["handler_fn"])
-                seen_plugin_commands.add(cmd_info["name"])
-
-            discover_plugins()
-            # A bundled platform whose top-level CLI command is the one being
-            # invoked is still only a deferred entry at this point; import it
-            # so its register_cli_command side effect runs before we read
-            # _cli_commands (issue #54678).
-            _resolve_deferred_platform_cli_command(_first_positional_argv())
-            for cmd_info in get_plugin_manager()._cli_commands.values():
-                if cmd_info["name"] in seen_plugin_commands:
-                    continue
-                plugin_parser = subparsers.add_parser(
-                    cmd_info["name"],
-                    help=cmd_info["help"],
-                    description=cmd_info.get("description", ""),
-                    formatter_class=__import__("argparse").RawDescriptionHelpFormatter,
-                )
-                cmd_info["setup_fn"](plugin_parser)
-                if cmd_info.get("handler_fn") is not None:
-                    plugin_parser.set_defaults(func=cmd_info["handler_fn"])
-        except Exception as _exc:
-            logging.getLogger(__name__).debug("Plugin CLI discovery failed: %s", _exc)
-
-    # =========================================================================
-    # curator command — background skill maintenance
-    # =========================================================================
-    build_curator_parser(subparsers)
-
-    # =========================================================================
-    # pets command — petdex animated mascots (CLI / TUI / desktop display)
-    # =========================================================================
-    build_pets_parser(subparsers)
-
-    # =========================================================================
-    # journey command — learned skills + memories over time, in the terminal
-    # =========================================================================
-    build_journey_parser(subparsers)
-
-    # =========================================================================
-    # memory command  (parser built in hermes_cli/subcommands/memory.py)
-    # =========================================================================
-    build_memory_parser(subparsers, cmd_memory=cmd_memory)
-
-    # =========================================================================
-    # tools command  (parser built in hermes_cli/subcommands/tools.py)
-    # =========================================================================
-    build_tools_parser(subparsers, cmd_tools=cmd_tools)
-
-    # =========================================================================
-    # computer-use command — manage Computer Use (cua-driver)
-    # =========================================================================
-    build_computer_use_parser(subparsers)
-    # =========================================================================
-    # mcp command  (parser built in hermes_cli/subcommands/mcp.py)
-    # =========================================================================
-    build_mcp_parser(subparsers, cmd_mcp=cmd_mcp)
-
-    # =========================================================================
-    # sessions command
-    # =========================================================================
-    build_sessions_parser(subparsers, cmd_sessions=lambda a, **kw: _self().cmd_sessions(a, **kw))
-
-    # =========================================================================
-    # tasks command
-    # =========================================================================
-    tasks_parser = subparsers.add_parser(
-        "tasks",
-        help="Manage persisted task state (list, show, clear)",
-        description="View and manage the persistent todo store "
-        "(state_meta todo:<session_id> rows)",
-    )
-    tasks_subparsers = tasks_parser.add_subparsers(dest="tasks_action")
-
-    tasks_list = tasks_subparsers.add_parser(
-        "list", help="List sessions with persisted task state"
-    )
-    tasks_list.add_argument(
-        "--session-id",
-        help="Show the full task list for one session (id or unique prefix)",
-    )
-
-    tasks_clear = tasks_subparsers.add_parser(
-        "clear", help="Delete persisted task state"
-    )
-    tasks_clear.add_argument(
-        "session_id", nargs="?", help="Session id (or unique prefix) to clear"
-    )
-    tasks_clear.add_argument(
-        "--all", action="store_true", help="Clear persisted task state for every session"
-    )
-    tasks_clear.add_argument(
-        "--yes", "-y", action="store_true", help="Skip confirmation"
-    )
-
-    def cmd_tasks(args):
-        from hermes_cli.tasks import clear_todo, load_todo
-
-        action = args.tasks_action
-
-        try:
-            from hermes_state import SessionDB
-
-            db = SessionDB()
-        except Exception as e:
-            print(f"Error: Could not open session database: {e}")
-            return
-
-        def _resolve_session(session_id: str) -> Optional[str]:
-            """Resolve a session id or unique prefix to a todo: key."""
-            keys = db.list_meta_keys("todo:")
-            if f"todo:{session_id}" in keys:
-                return session_id
-            matches = [
-                k[len("todo:"):]
-                for k in keys
-                if k.startswith(f"todo:{session_id}")
-            ]
-            if len(matches) == 1:
-                return matches[0]
-            return None
-
-        def _confirm(prompt: str) -> bool:
-            try:
-                return input(prompt).strip().lower() in {"y", "yes"}
-            except (EOFError, KeyboardInterrupt):
-                return False
-
-        if action == "list":
-            if args.session_id:
-                resolved = _resolve_session(args.session_id)
-                if resolved is None:
-                    print(f"No persisted task state for session {args.session_id}.")
-                    db.close()
-                    return
-                store = load_todo(resolved)
-                if store is None:
-                    print(f"No persisted task state for session {resolved}.")
-                    db.close()
-                    return
-                items = store.read()
-                if not items:
-                    print(f"Session {resolved}: no task items.")
-                for item in items:
-                    source = " (user)" if item.get("source") == "user" else ""
-                    print(f"  [{item['status']}] {item['id']}. {item['content']}{source}")
-                captures = store.pending_captures()
-                if captures:
-                    print("Captured requests:")
-                    for c in captures:
-                        print(f"  [captured] {c['id']}. {c['content']}")
-                db.close()
-                return
-
-            keys = db.list_meta_keys("todo:")
-            if not keys:
-                print("No persisted task state found.")
-                db.close()
-                return
-            print(f"{'Session':<24} {'Active':<8} {'Captures':<10} Preview")
-            print("─" * 90)
-            for key in keys:
-                session_id = key[len("todo:"):]
-                store = load_todo(session_id)
-                if store is None:
-                    continue
-                items = store.read()
-                active = [
-                    i for i in items if i["status"] in {"pending", "in_progress"}
-                ]
-                preview = active[0]["content"][:40] if active else "(no active items)"
-                print(
-                    f"{session_id:<24} {len(active):<8} "
-                    f"{len(store.pending_captures()):<10} {preview}"
-                )
-            db.close()
-            return
-
-        if action == "clear":
-            if args.all:
-                keys = db.list_meta_keys("todo:")
-                if not keys:
-                    print("No persisted task state found.")
-                    db.close()
-                    return
-                if not args.yes and not _confirm(
-                    f"Clear task state for {len(keys)} session(s)? [y/N] "
-                ):
-                    print("Aborted.")
-                    db.close()
-                    return
-                cleared = 0
-                for key in keys:
-                    if clear_todo(key[len("todo:"):]):
-                        cleared += 1
-                print(f"Cleared task state for {cleared} session(s).")
-                db.close()
-                return
-
-            if not args.session_id:
-                tasks_parser.print_help()
-                db.close()
-                return
-            resolved = _resolve_session(args.session_id)
-            if resolved is None:
-                print(f"No persisted task state for session {args.session_id}.")
-                db.close()
-                return
-            if clear_todo(resolved):
-                print(f"Cleared task state for session {resolved}.")
-            else:
-                print(f"No persisted task state for session {resolved}.")
-            db.close()
-            return
-
-        tasks_parser.print_help()
-        db.close()
-
-    tasks_parser.set_defaults(func=cmd_tasks)
-
-    # =========================================================================
-    # insights command  (parser built in hermes_cli/subcommands/insights.py)
-    # =========================================================================
-    build_insights_parser(subparsers, cmd_insights=cmd_insights)
-    build_monitoring_parser(subparsers, cmd_monitoring=cmd_monitoring)
-
-    # =========================================================================
-    # claw command  (parser built in hermes_cli/subcommands/claw.py)
-    # =========================================================================
-    build_claw_parser(subparsers, cmd_claw=cmd_claw)
-
-    # NOTE: the `hermes version` subcommand was removed — `hermes --version`
-    # / `-V` now carries the full output including update status.
-
-    # =========================================================================
-    # update command  (parser built in hermes_cli/subcommands/update.py)
-    # =========================================================================
-    build_update_parser(subparsers, cmd_update=cmd_update)
-
-    # =========================================================================
-    # uninstall command  (parser built in hermes_cli/subcommands/uninstall.py)
-    # =========================================================================
-    build_uninstall_parser(subparsers, cmd_uninstall=cmd_uninstall)
-
-    # =========================================================================
-    # acp command  (parser built in hermes_cli/subcommands/acp.py)
-    # =========================================================================
-    build_acp_parser(subparsers, cmd_acp=cmd_acp)
-
-    # =========================================================================
-    # profile command  (parser built in hermes_cli/subcommands/profile.py)
-    # =========================================================================
-    build_profile_parser(subparsers, cmd_profile=cmd_profile)
-
-    # =========================================================================
-    # completion command
-    # =========================================================================
-    build_completion_parser(subparsers, cmd_completion=cmd_completion, parser=parser)
-
-    # =========================================================================
-    # dashboard command  (parser built in hermes_cli/subcommands/dashboard.py)
-    # =========================================================================
-    build_dashboard_parser(
-        subparsers,
-        cmd_dashboard=cmd_dashboard,
-        cmd_dashboard_register=cmd_dashboard_register,
-    )
-
-
-    # =========================================================================
-    # desktop (a.k.a. gui) command
-    #
-    # The canonical name is "desktop"; "gui" is kept as a deprecated alias
-    # for one release. The Hermes-Setup.exe success screen tells users to
-    # run `hermes desktop` from a terminal, so the canonical name needs
-    # to be the one that appears in --help (argparse promotes the primary
-    # name; aliases stay hidden).
-    # =========================================================================
-    # gui command  (parser built in hermes_cli/subcommands/gui.py)
-    # =========================================================================
-    build_gui_parser(subparsers, cmd_gui=cmd_gui)
-
-    # =========================================================================
-    # logs command  (parser built in hermes_cli/subcommands/logs.py)
-    # =========================================================================
-    build_logs_parser(subparsers, cmd_logs=cmd_logs)
-
-    # =========================================================================
-    # prompt-size command  (parser built in hermes_cli/subcommands/prompt_size.py)
-    # =========================================================================
-    build_prompt_size_parser(subparsers, cmd_prompt_size=cmd_prompt_size)
-
-    # =========================================================================
-    # Parse and execute
-    # =========================================================================
-    # Pre-process argv so unquoted multi-word session names after -c / -r
-    # are merged into a single token before argparse sees them.
-    # e.g. ``hermes -c Pokemon Agent Dev`` → ``hermes -c 'Pokemon Agent Dev'``
     # ── Container-aware routing ────────────────────────────────────────
     # When NixOS container mode is active, route ALL subcommands into
     # the managed container.  This MUST run before parse_args() so that
@@ -14109,50 +13779,8 @@ def main():
         # and raises OSError on failure (which propagates as a traceback).
         sys.exit(1)
 
-    _processed_argv = _coalesce_session_name_args(sys.argv[1:])
+    args = _parse_cli_args(parser, subparsers, sys.argv[1:])
 
-    # ── Defensive subparser routing (bpo-9338 workaround) ───────────
-    # On some Python versions (notably <3.11), argparse fails to route
-    # subcommand tokens when the parent parser has nargs='?' optional
-    # arguments (--continue).  The symptom: "unrecognized arguments: model"
-    # even though 'model' is a registered subcommand.
-    #
-    # Fix: when argv contains a token matching a known subcommand, set
-    # subparsers.required=True to force deterministic routing.  If that
-    # fails (e.g. 'hermes -c model' where 'model' is consumed as the
-    # session name for --continue), fall back to the default behaviour.
-    import io as _io
-
-    _known_cmds = (
-        set(subparsers.choices.keys()) if hasattr(subparsers, "choices") else set()
-    )
-    _has_cmd_token = any(
-        t in _known_cmds for t in _processed_argv if not t.startswith("-")
-    )
-
-    if _has_cmd_token:
-        subparsers.required = True
-        _saved_stderr = sys.stderr
-        try:
-            sys.stderr = _io.StringIO()
-            args = parser.parse_args(_processed_argv)
-            sys.stderr = _saved_stderr
-        except SystemExit as exc:
-            sys.stderr = _saved_stderr
-            # Help/version flags (exit code 0) already printed output —
-            # re-raise immediately to avoid a second parse_args printing
-            # the same help text again (#10230).
-            if exc.code == 0:
-                raise
-            # Subcommand name was consumed as a flag value (e.g. -c model).
-            # Fall back to optional subparsers so argparse handles it normally.
-            subparsers.required = False
-            args = parser.parse_args(_processed_argv)
-    else:
-        subparsers.required = False
-        args = parser.parse_args(_processed_argv)
-
-    # Handle --version flag
     if args.version:
         cmd_version(args)
         return
@@ -14186,37 +13814,9 @@ def main():
             usage_file=getattr(args, "usage_file", None),
         )
 
-    # Handle top-level --resume / --continue as shortcut to chat
-    if (args.resume or args.continue_last) and args.command is None:
-        args.command = "chat"
-        for attr, default in [
-            ("query", None),
-            ("model", None),
-            ("provider", None),
-            ("toolsets", None),
-            ("verbose", None),
-            ("worktree", False),
-        ]:
-            if not hasattr(args, attr):
-                setattr(args, attr, default)
-        cmd_chat(args)
-        return
-
-    # Default to chat if no command specified
+    # No subcommand (optionally with top-level --resume / --continue) → chat.
     if args.command is None:
-        for attr, default in [
-            ("query", None),
-            ("model", None),
-            ("provider", None),
-            ("toolsets", None),
-            ("verbose", None),
-            ("resume", None),
-            ("continue_last", None),
-            ("worktree", False),
-        ]:
-            if not hasattr(args, attr):
-                setattr(args, attr, default)
-        cmd_chat(args)
+        _default_to_chat(args)
         return
 
     # Execute the command.  Propagate the handler's return code as the
