@@ -441,8 +441,8 @@ class TestSlackThreadContext:
         )
 
         assert "[Thread context" in context
-        assert "[thread parent] Alice: This is the parent message" in context
-        assert "Bob: I think we should refactor" in context
+        assert "[thread parent] [user: Alice] This is the parent message" in context
+        assert "[user: Bob] I think we should refactor" in context
         # Current message should be excluded
         assert "what do you think" not in context
         # Bot mention should be stripped from context
@@ -488,7 +488,7 @@ class TestSlackThreadContext:
         )
 
         assert "Previous bot self-reply" not in context
-        assert "Alice: Parent" in context
+        assert "[user: Alice] Parent" in context
         # Third-party bot message must now be included
         assert "Deploy succeeded" in context
 
@@ -645,7 +645,7 @@ class TestSlackThreadContext:
             channel_id="C1", thread_ts="1000.0", current_ts="1000.1", team_id="T1"
         )
 
-        assert "Parent" in context
+        assert "[user: Alice] Parent" in context
         assert "DO NOT INCLUDE THIS" not in context
 
     @pytest.mark.asyncio

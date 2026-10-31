@@ -37,7 +37,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from gateway.platforms.base import MessageEvent, MessageType
-from gateway.session import SessionSource
+from gateway.session import SessionSource, sender_label
 from gateway.relay.descriptor import CapabilityDescriptor
 from gateway.relay.transport import InboundHandler
 
@@ -122,7 +122,7 @@ def _render_relay_context(context: Any) -> Optional[str]:
         author = ""
         if isinstance(src, dict):
             author = src.get("user_name") or src.get("user_id") or ""
-        lines.append(f"{author}: {text}" if author else str(text))
+        lines.append(f"{sender_label(author)} {text}" if author else str(text))
     if not lines:
         return None
     body = "\n".join(lines)

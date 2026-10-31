@@ -6090,7 +6090,9 @@ class DiscordAdapter(BasePlatformAdapter):
                     if is_authorized is False:
                         trust_tag = "[unverified] "
                         has_unverified = True
-                return f"{trust_tag}[{name}] {content}"
+                from gateway.session import sender_label
+
+                return f"{trust_tag}{sender_label(name)} {content}"
 
             # ── Primary window: recent channel activity since the last bot turn ──
             collected: List[Tuple[str, str]] = []  # (message_id, line)
