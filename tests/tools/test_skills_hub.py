@@ -1162,84 +1162,15 @@ class TestQuarantineBundleBinaryAssets:
 # ---------------------------------------------------------------------------
 # GitHubSource._download_directory — tree API + fallback (#2940)
 # ---------------------------------------------------------------------------
-
-
-class TestDownloadDirectoryViaTree:
-    """Tests for the Git Trees API path in _download_directory."""
-
-    def _source(self):
-        auth = MagicMock(spec=GitHubAuth)
-        auth.get_headers.return_value = {}
-        return GitHubSource(auth=auth)
-
-    @patch.object(GitHubSource, "_fetch_file_content")
-    @patch("tools.skills_hub.httpx.get")
-    def test_tree_api_downloads_subdirectories(self, mock_get, mock_fetch):
-        """Tree API returns files from nested subdirectories."""
-        repo_resp = MagicMock(status_code=200, json=lambda: {"default_branch": "main"})
-        tree_resp = MagicMock(status_code=200, json=lambda: {
-            "truncated": False,
-            "tree": [
-                {"type": "blob", "path": "skills/my-skill/SKILL.md"},
-                {"type": "blob", "path": "skills/my-skill/scripts/run.py"},
-                {"type": "blob", "path": "skills/my-skill/references/api.md"},
-                {"type": "tree", "path": "skills/my-skill/scripts"},
-                {"type": "blob", "path": "other/file.txt"},
-            ],
-        })
-        mock_get.side_effect = [repo_resp, tree_resp]
-        mock_fetch.side_effect = lambda repo, path: f"content-of-{path}"
-
-        src = self._source()
-        files = src._download_directory("owner/repo", "skills/my-skill")
-
-        assert "SKILL.md" in files
-        assert "scripts/run.py" in files
-        assert "references/api.md" in files
-        assert "other/file.txt" not in files  # outside target path
-        assert len(files) == 3
-
-    @patch.object(GitHubSource, "_download_directory_recursive", return_value={"SKILL.md": "# ok"})
-    @patch("tools.skills_hub.httpx.get")
-    def test_falls_back_on_truncated_tree(self, mock_get, mock_fallback):
-        """When tree is truncated, fall back to recursive Contents API."""
-        repo_resp = MagicMock(status_code=200, json=lambda: {"default_branch": "main"})
-        tree_resp = MagicMock(status_code=200, json=lambda: {"truncated": True, "tree": []})
-        mock_get.side_effect = [repo_resp, tree_resp]
-
-        src = self._source()
-        files = src._download_directory("owner/repo", "skills/my-skill")
-
-        assert files == {"SKILL.md": "# ok"}
-        mock_fallback.assert_called_once_with("owner/repo", "skills/my-skill")
-
-class TestDownloadDirectoryRecursive:
-    """Tests for the Contents API fallback path."""
-
-    def _source(self):
-        auth = MagicMock(spec=GitHubAuth)
-        auth.get_headers.return_value = {}
-        return GitHubSource(auth=auth)
-
-    @patch.object(GitHubSource, "_fetch_file_content")
-    @patch("tools.skills_hub.httpx.get")
-    def test_recursive_downloads_subdirectories(self, mock_get, mock_fetch):
-        """Contents API recursion includes subdirectories."""
-        root_resp = MagicMock(status_code=200, json=lambda: [
-            {"name": "SKILL.md", "type": "file", "path": "skill/SKILL.md"},
-            {"name": "scripts", "type": "dir", "path": "skill/scripts"},
-        ])
-        sub_resp = MagicMock(status_code=200, json=lambda: [
-            {"name": "run.py", "type": "file", "path": "skill/scripts/run.py"},
-        ])
-        mock_get.side_effect = [root_resp, sub_resp]
-        mock_fetch.side_effect = lambda repo, path: f"content-of-{path}"
-
-        src = self._source()
-        files = src._download_directory_recursive("owner/repo", "skill")
-
-        assert "SKILL.md" in files
-        assert "scripts/run.py" in files
+#
+# The ``_download_directory`` / ``_download_directory_recursive`` seam these
+# classes exercised was deleted upstream when fetch() moved to
+# ``_get_repo_tree`` + ``_collect_tree_files``. The behaviour they pinned is
+# covered through the bundle path: nested support files
+# (``test_fetch_falls_back_to_tree_search_for_deeply_nested_skills``),
+# path safety (``test_fetch_rejects_sibling_directory_traversal``,
+# ``test_fetch_rejects_unsafe_file_paths_from_well_known_endpoint``), binary
+# assets, and missing-referenced-file handling.
 
 # ---------------------------------------------------------------------------
 # Install-path safety (lock-file → uninstall rmtree boundary)
