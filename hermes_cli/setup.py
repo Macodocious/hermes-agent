@@ -121,6 +121,21 @@ from hermes_cli.cli_output import (  # noqa: E402
 from hermes_cli.secret_prompt import masked_secret_prompt  # noqa: E402
 
 
+def _current_reasoning_effort(config: dict) -> str:
+    agent_cfg = config.get("agent")
+    if isinstance(agent_cfg, dict):
+        return str(agent_cfg.get("reasoning_effort") or "").strip().lower()
+    return ""
+
+
+def _set_reasoning_effort(config: dict, effort: str) -> None:
+    agent_cfg = config.get("agent")
+    if not isinstance(agent_cfg, dict):
+        agent_cfg = {}
+        config["agent"] = agent_cfg
+    agent_cfg["reasoning_effort"] = effort
+
+
 def is_interactive_stdin() -> bool:
     """Return True when stdin looks like a usable interactive TTY."""
     stdin = getattr(sys, "stdin", None)
