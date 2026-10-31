@@ -1669,7 +1669,7 @@ class TestSubagentCostRollup(unittest.TestCase):
 
 class TestBlockedTools(unittest.TestCase):
     def test_blocked_tools_constant(self):
-        for tool in ["delegate_task", "clarify", "memory", "send_message", "cronjob"]:
+        for tool in ["delegate_task", "clarify", "memory", "send_message", "cronjob_manage"]:
             self.assertIn(tool, DELEGATE_BLOCKED_TOOLS)
 
     def test_execute_code_not_blocked(self):
