@@ -119,7 +119,7 @@ class TestFeishuMessageNormalization(unittest.TestCase):
         self.assertEqual(normalized.relation_kind, "merge_forward")
         self.assertEqual(
             normalized.text_content,
-            "Sprint recap\n- Alice: Please review PR-128\n- Bob: Ship it",
+            "Sprint recap\n- [user: Alice] Please review PR-128\n- [user: Bob] Ship it",
         )
 
     def test_normalize_share_chat_exposes_summary_and_metadata(self):
@@ -1388,7 +1388,7 @@ class TestAdapterBehavior(unittest.TestCase):
 
         self.assertEqual(
             text,
-            "Forwarded updates\n- Alice: Investigating the incident\n- Bob: ETA 10 minutes",
+            "Forwarded updates\n- [user: Alice] Investigating the incident\n- [user: Bob] ETA 10 minutes",
         )
         self.assertEqual(msg_type.value, "text")
         self.assertEqual(media_urls, [])

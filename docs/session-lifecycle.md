@@ -285,7 +285,7 @@ def is_shared_multi_user_session(source, *, group_sessions_per_user, thread_sess
 ### Impact on System Prompt
 
 When `shared_multi_user_session=True`, the system prompt omits a fixed user name and instead
-states: *"Multi-user {thread|session} — messages are prefixed with [sender name]. Multiple
+states: *"Multi-user {thread|session} — messages are prefixed with [user: name]. Multiple
 users may participate."* Individual sender names are prefixed on each user message by the
 gateway at runtime, preserving prompt caching (the system prompt doesn't change per-turn).
 

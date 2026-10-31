@@ -2022,6 +2022,7 @@ from gateway.session import (
     build_session_key,
     is_shared_multi_user_session,
     neutralize_untrusted_inline_text,
+    sender_label,
 )
 from gateway.delivery import DeliveryRouter, looks_like_telegram_private_chat_id
 from gateway.turn_lease import SessionTurnLeaseRegistry
@@ -12102,7 +12103,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             # carries GOAL_CONTINUATION_MARKER as its head, so its machine
             # origin stays visible without the name.
             _safe_user_name = neutralize_untrusted_inline_text(source.user_name)
-            message_text = f"[{_safe_user_name}] {message_text}"
+            message_text = f"{sender_label(_safe_user_name)} {message_text}"
 
         # Prepend channel context from history backfill (if any).  This
         # happens after sender-prefix so the prefix only applies to the

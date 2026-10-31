@@ -401,6 +401,16 @@ def neutralize_untrusted_inline_text(value: Any, *, max_chars: int = _MAX_PROMPT
     return text
 
 
+def sender_label(name: Any) -> str:
+    """Render a sender attribution for model context as ``[user: name]``.
+
+    The tag states what the token is. A bare ``[Mac]`` sits in the same slot
+    as machine annotations (``[Active tasks]``, ``[unverified]``) and has been
+    mistaken for the sender's operating system instead of their handle.
+    """
+    return f"[user: {name}]"
+
+
 def build_session_context_prompt(
     context: SessionContext,
     *,
@@ -503,7 +513,7 @@ def build_session_context_prompt(
         session_label = "Multi-user thread" if context.source.thread_id else "Multi-user session"
         lines.append(
             f"**Session type:** {session_label} — messages are prefixed "
-            "with [sender name]. Multiple users may participate."
+            "with [user: name]. Multiple users may participate."
         )
     elif context.source.user_name:
         lines.append(

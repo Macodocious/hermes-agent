@@ -80,8 +80,8 @@ class TestRenderRelayContext:
         ]
         out = _render_relay_context(ctx)
         assert out is not None
-        assert "alice: first" in out
-        assert "bob: second" in out
+        assert "[user: alice] first" in out
+        assert "[user: bob] second" in out
         # order preserved (oldest -> newest)
         assert out.index("first") < out.index("second")
 
@@ -91,7 +91,7 @@ class TestRenderRelayContext:
             {"text": "no author", "source": {}},
         ]
         out = _render_relay_context(ctx)
-        assert "u123: has id" in out
+        assert "[user: u123] has id" in out
         assert "no author" in out
 
     def test_skips_malformed_items_without_raising(self):
@@ -125,7 +125,7 @@ class TestEventFromWireContext:
             )
         )
         assert ev.channel_context is not None
-        assert "alice: earlier" in ev.channel_context
+        assert "[user: alice] earlier" in ev.channel_context
 
     def test_no_context_leaves_channel_context_unset(self):
         ev = _event_from_wire(self._wire())

@@ -1024,7 +1024,9 @@ def _collect_forward_entries(payload: Dict[str, Any]) -> List[str]:
             )
         body = _normalize_feishu_text(body)
         if sender and body:
-            entries.append(f"- {sender}: {body}")
+            from gateway.session import sender_label
+
+            entries.append(f"- {sender_label(sender)} {body}")
         elif body:
             entries.append(f"- {body}")
     return _unique_lines(entries)

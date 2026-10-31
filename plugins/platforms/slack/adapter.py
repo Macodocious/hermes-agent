@@ -4425,7 +4425,9 @@ class SlackAdapter(BasePlatformAdapter):
                     if is_authorized is False:
                         trust_tag = "[unverified] "
 
-                context_parts.append(f"{prefix}{trust_tag}{name}: {msg_text}")
+                from gateway.session import sender_label
+
+                context_parts.append(f"{prefix}{trust_tag}{sender_label(name)} {msg_text}")
                 if is_parent:
                     parent_text = msg_text
 
