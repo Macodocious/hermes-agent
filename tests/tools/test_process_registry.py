@@ -2509,10 +2509,15 @@ def _patch_delegation_config(
     monkeypatch, model="upstage/solar-pro-4", provider="openrouter", **over
 ):
     import tools.process_registry as _pr
+    import tools.process_registry_notifications as _prn
 
     cfg = {"model": model, "provider": provider}
     cfg.update(over)
-    monkeypatch.setattr(_pr, "_delegation_config", lambda: cfg)
+    # The renderer runs in the notifications module since the registry split, so
+    # the notification-side lookup is the one that has to see the patched config;
+    # the registry copy stays patched for any call path that goes through it.
+    monkeypatch.setattr(_pr, "_delegation_config", lambda: cfg, raising=False)
+    monkeypatch.setattr(_prn, "_delegation_config", lambda: cfg)
     return cfg
 
 

@@ -67,6 +67,11 @@ WATCH_GLOBAL_MAX_PER_WINDOW = 15
 WATCH_GLOBAL_WINDOW_SECONDS = 10
 WATCH_GLOBAL_COOLDOWN_SECONDS = 30
 
+# Default age after which a still-"active" background process is ignored on
+# session reset, so a forgotten process cannot block the reset forever. The
+# gateway overrides it from ``session_reset.bg_process_max_age_hours``.
+MAX_ACTIVE_PROCESS_AGE = 86400
+
 
 # ---------------------------------------------------------------------------
 # systemd cgroup isolation for gateway-spawned local executors
