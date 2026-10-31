@@ -1642,6 +1642,144 @@ def play_audio_file(file_path: str) -> bool:
         mark_audio_output_active(False)
 
 
+def _play_wav_via_sounddevice(file_path: str) -> bool:
+    """Play a WAV through sounddevice; False if the audio libs are unavailable
+    or playback failed (caller falls through to system players)."""
+    try:
+        sd, np = _import_audio()
+        with wave.open(file_path, "rb") as wf:
+            frames = wf.readframes(wf.getnframes())
+            audio_data = np.frombuffer(frames, dtype=np.int16)
+            sample_rate = wf.getframerate()
+
+        # WSLg RDP audio needs a warmup to avoid crackling at the start: the
+        # RDP virtual channel takes ~100 ms to stabilise, and the small default
+        # blocksize exasperates clock-adjustment jitter (microsoft/wslg#1257).
+        if _is_wsl():
+            silence_samples = int(0.1 * sample_rate)
+            fade_samples = int(0.1 * sample_rate)
+            fade = np.linspace(0.0, 1.0, fade_samples, dtype=np.float64)
+            audio_float = audio_data.astype(np.float64)
+            audio_float[:fade_samples] *= fade
+            tail = np.zeros(int(0.05 * sample_rate), dtype=np.int16)
+            audio_data = np.concatenate([
+                np.zeros(silence_samples, dtype=np.int16),
+                audio_float.astype(np.int16),
+                tail,
+            ])
+            blocksize = 4096
+        else:
+            blocksize = 0  # default (auto)
+
+        _sd_play_blocking(
+            sd, audio_data, sample_rate,
+            timeout=len(audio_data) / sample_rate + 2.0, blocksize=blocksize,
+        )
+        return True
+    except (ImportError, OSError):
+        return False  # audio libs not available, fall through to system players
+    except Exception as e:
+        logger.debug("sounddevice playback failed: %s", e)
+        return False
+
+
+def _wsl_powershell_player_cmd(file_path: str) -> Optional[List[str]]:
+    """Build the WSL2 PowerShell fallback player command, or None.
+
+    In WSL without a PulseAudio bridge ffplay/aplay have no device, but
+    Media.SoundPlayer on the Windows host always does: convert to a
+    uniquely-named WAV in Windows %TEMP% (so concurrent TTS calls don't
+    collide) and play it. The WAV is deleted unconditionally, and the ORIGINAL
+    ffmpeg/powershell exit status is re-raised past that cleanup (rm -f always
+    exits 0) so the player loop can fall through to the next player.
+    """
+    if not (shutil.which("powershell.exe") and shutil.which("ffmpeg") and _is_wsl2_env()):
+        return None
+    try:
+        import uuid
+
+        def _out(cmd):
+            return subprocess.check_output(cmd, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
+                                           timeout=3).decode(errors="replace").strip()
+
+        win_tmp_wsl = _out(["wslpath", "-u", _out(["cmd.exe", "/c", "echo %TEMP%"])])
+        if not win_tmp_wsl:
+            return None
+        wsl_wav = os.path.join(win_tmp_wsl, f"hermes-tts-{uuid.uuid4().hex[:8]}.wav")
+        win_wav = _out(["wslpath", "-w", wsl_wav])
+        if not win_wav:
+            return None
+        win_wav_safe = win_wav.replace("'", "''")
+        ps_script = f"(New-Object Media.SoundPlayer '{win_wav_safe}').PlaySync()"
+        ps_cmd = " && ".join([
+            shlex.join(["ffmpeg", "-i", file_path, "-f", "wav", wsl_wav, "-loglevel", "quiet", "-y"]),
+            shlex.join(["powershell.exe", "-NoProfile", "-Command", ps_script]),
+        ])
+        cleanup = shlex.join(["rm", "-f", wsl_wav])
+        # Full path so the which(cmd[0]) check in the player loop passes.
+        return ["/bin/sh", "-c", f"( {ps_cmd} ); rc=$?; {cleanup}; exit $rc"]
+    except Exception:
+        return None  # WSL path resolution failed; fall through to ffplay/aplay
+
+
+def _system_player_candidates(file_path: str) -> List[List[str]]:
+    """Ordered system-player commands for this platform."""
+    system = platform.system()
+    players: List[List[str]] = []
+    if system == "Darwin":
+        players.append(["afplay", file_path])
+    if system == "Linux":
+        ps_cmd = _wsl_powershell_player_cmd(file_path)
+        if ps_cmd:
+            players.append(ps_cmd)
+    players.append(["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", file_path])
+    if system == "Linux":
+        players.append(["aplay", "-q", file_path])
+    return players
+
+
+def _set_active_playback(proc) -> None:
+    global _active_playback
+    with _playback_lock:
+        _active_playback = proc
+
+
+def _run_system_player(cmd: List[str]) -> bool:
+    """Run one player to completion (interruptible via stop_playback)."""
+    proc = None
+    try:
+        # Sibling of the TTS/STT credential scrub: system audio players must
+        # not inherit gateway tokens / API keys.
+        from tools.environments.local import hermes_subprocess_env
+
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            env=hermes_subprocess_env(inherit_credentials=False),
+        )
+        _set_active_playback(proc)
+        proc.wait(timeout=300)
+        rc = proc.returncode
+        _set_active_playback(None)
+        if rc == 0:
+            return True
+        # Non-zero exit: e.g. WSL ffplay/aplay with no audio device, or the
+        # PowerShell fallback failing. Fall through to the next player.
+        logger.debug("System player %s exited with code %d, trying next", cmd[0], rc)
+    except subprocess.TimeoutExpired:
+        logger.warning("System player %s timed out, killing process", cmd[0])
+        if proc is not None:
+            proc.kill()
+            proc.wait()
+        _set_active_playback(None)
+    except Exception as e:
+        logger.debug("System player %s failed: %s", cmd[0], e)
+        _set_active_playback(None)
+    return False
+
+
 def _play_audio_file_impl(file_path: str) -> bool:
     global _active_playback
 
