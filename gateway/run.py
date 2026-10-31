@@ -12102,7 +12102,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             # carries GOAL_CONTINUATION_MARKER as its head, so its machine
             # origin stays visible without the name.
             _safe_user_name = neutralize_untrusted_inline_text(source.user_name)
-            message_text = f"[{_safe_user_name}] {message_text}"
+            # The tag names the speaker only. A bare "[Mac]" reads as machine
+            # metadata and has been mistaken for the sender's OS.
+            message_text = f"[user: {_safe_user_name}] {message_text}"
 
         # Prepend channel context from history backfill (if any).  This
         # happens after sender-prefix so the prefix only applies to the

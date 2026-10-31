@@ -40,7 +40,7 @@ async def test_preprocess_prefixes_sender_for_shared_non_thread_group_session():
         history=[],
     )
 
-    assert result == "[Alice] hello"
+    assert result == "[user: Alice] hello"
 
 
 @pytest.mark.asyncio

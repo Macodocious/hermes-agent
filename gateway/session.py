@@ -503,7 +503,7 @@ def build_session_context_prompt(
         session_label = "Multi-user thread" if context.source.thread_id else "Multi-user session"
         lines.append(
             f"**Session type:** {session_label} — messages are prefixed "
-            "with [sender name]. Multiple users may participate."
+            "with [user: name]. Multiple users may participate."
         )
     elif context.source.user_name:
         lines.append(
