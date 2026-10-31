@@ -816,20 +816,12 @@ try:
 except Exception:
     pass
 
-# Neuter AsyncHttpxClientWrapper.__del__ before any AsyncOpenAI clients are
-# created.  The SDK's __del__ schedules aclose() on asyncio.get_running_loop()
-# which, during CLI idle time, finds prompt_toolkit's event loop and tries to
-# close TCP transports bound to dead worker loops — producing
-# "Event loop is closed" / "Press ENTER to continue..." errors.
-#
-# We install a sys.meta_path finder that defers the actual import + patch
-# until ``openai._base_client`` is first loaded by the rest of the codebase.
-# Eagerly importing it here (the old approach) cost ~166ms / ~30MB on every
-# cold CLI start because openai's type tree (responses/*, graders/*) is huge.
-# The finder approach pays nothing until the SDK is genuinely needed and
-# still guarantees the patch is applied before any AsyncOpenAI instance can
-# be constructed (the import-then-instantiate ordering is enforced by
-# Python's import system).
+# Neuter AsyncHttpxClientWrapper.__del__ before any AsyncOpenAI client exists: the
+# SDK's __del__ schedules aclose() on the running loop, which during CLI idle time is
+# prompt_toolkit's loop, closing transports bound to dead worker loops ("Event loop is
+# closed" / "Press ENTER to continue..."). A sys.meta_path finder applies the patch
+# when ``openai._base_client`` is first imported — eager import cost ~166ms/30MB per
+# cold start, and the import system guarantees the patch lands before instantiation.
 try:
     import sys as _httpx_neuter_sys
     import importlib.util as _httpx_neuter_imp_util
@@ -5031,19 +5023,11 @@ def save_config_value(key_path: str, value: any) -> bool:
     Returns:
         True if successful, False otherwise
     """
-    # Runtime persistence ALWAYS targets the user's HERMES_HOME config.yaml,
-    # creating it if needed. Resolve HERMES_HOME live (not the import-time
-    # _hermes_home constant) so profile switches and test isolation land right.
-    #
-    # We deliberately do NOT fall back to the repo's project cli-config.yaml:
-    # that file is a shipped default/template, and most config readers
-    # (load_config → get_hermes_home()/config.yaml, including
-    # load_wake_word_config) never read it. Writing a user setting there means
-    # the reader never sees it. This was the "wake-word ear reverts to disabled
-    # after restart" bug — the toggle's persist wrote to cli-config.yaml (which
-    # exists in the checkout) while startup read HERMES_HOME/config.yaml, so the
-    # setting silently vanished every restart on any install whose
-    # HERMES_HOME/config.yaml didn't exist yet.
+    # Runtime persistence ALWAYS targets HERMES_HOME/config.yaml (created if needed),
+    # resolved live so profile switches and test isolation land right. Never fall back
+    # to the repo's cli-config.yaml: it is a shipped template that config readers
+    # (load_config, load_wake_word_config) never read, so a setting written there
+    # silently vanishes on the next start (the "wake-word reverts to disabled" bug).
     config_path = get_hermes_home() / 'config.yaml'
     
     try:
@@ -8703,24 +8687,13 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin, CLITuiMix
         self._app = app  # Store reference for clarify_callback
 
         # ── Fix ghost status-bar lines on terminal resize ──────────────
-        # Resize handling: monkey-patch prompt_toolkit's _output_screen_diff
-        # to suppress the deliberate "reserve vertical space" scroll-up.
-        #
-        # Background: prompt_toolkit's renderer (renderer.py L232-242)
-        # explicitly moves the cursor to the bottom of the canvas after
-        # painting "to make sure the terminal scrolls up, even when the
-        # lower lines of the canvas just contain whitespace".  In
-        # non-fullscreen mode this scrolls chrome content (status bar,
-        # input rules) into terminal scrollback on every render.  When
-        # the terminal column-shrinks, the emulator reflows the previously
-        # rendered full-width rows into multiple narrower rows that get
-        # pushed up — leaving ghost duplicates AND polluting scrollback.
-        # Same issue as pt #29 (open since 2014), #1675, #1933.
-        #
-        # Surgical fix: wrap _output_screen_diff so that when its internal
-        # `if current_height > previous_screen.height` branch fires (the
-        # one that does the bottom-cursor-move), we make it fall through
-        # by inflating previous_screen.height first.
+        # prompt_toolkit's renderer moves the cursor to the canvas bottom after
+        # painting so the terminal scrolls up; in non-fullscreen mode that pushes
+        # chrome (status bar, input rules) into scrollback on every render, and a
+        # column-shrink reflows the old full-width rows into ghost duplicates
+        # (pt #29/#1675/#1933). Wrap _output_screen_diff so its
+        # `current_height > previous_screen.height` branch never fires, by
+        # inflating previous_screen.height first.
         try:
             import prompt_toolkit.renderer as _pt_renderer
             from prompt_toolkit.renderer import _output_screen_diff as _orig_osd
@@ -8798,24 +8771,13 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin, CLITuiMix
             if hasattr(_signal, 'SIGHUP'):
                 _signal.signal(_signal.SIGHUP, self._tui_signal_handler)
 
-            # Windows: install a SIGINT handler that absorbs the signal
-            # instead of letting Python's default handler raise
-            # KeyboardInterrupt in MainThread. Windows Terminal / Win32
-            # delivers spurious CTRL_C_EVENT to the hermes process when
-            # child processes are spawned from background threads (agent
-            # subprocess Popen path). The default Python SIGINT handler
-            # would then unwind prompt_toolkit's app.run(), trigger
-            # _run_cleanup mid-turn, and close browser sessions mid-open
-            # — causing "Daemon process exited during startup" errors.
-            #
-            # The handler is a silent no-op. Real user Ctrl+C still works
-            # because prompt_toolkit binds c-c at the TUI layer and never
-            # reaches this OS-signal path. This matches how Claude Code
-            # handles the same Windows quirk (cancellation is driven by
-            # the TUI key handler, not by OS signals).
-            #
-            # POSIX: leave the default SIGINT handler alone. prompt_toolkit
-            # installs its own handler there and it works as expected.
+            # Windows: absorb SIGINT. Win32 delivers spurious CTRL_C_EVENT when
+            # child processes are spawned from background threads; Python's
+            # default handler would unwind app.run() and run _run_cleanup
+            # mid-turn ("Daemon process exited during startup"). Real Ctrl+C
+            # still works — prompt_toolkit binds c-c at the TUI layer and never
+            # reaches this path. POSIX keeps the default handler (prompt_toolkit
+            # installs its own).
             if sys.platform == "win32":
                 def _sigint_absorb(signum, frame):
                     # Absorb silently. Do NOT call agent.interrupt() here:
@@ -9132,6 +9094,260 @@ def _run_kanban_goal_loop_q(cli: "HermesCLI", first_response: str) -> None:
         first_response=first_response or "",
         log=lambda m: logger.info("%s", m),
     )
+
+
+def _run_quiet_single_query(cli, effective_query):
+    """Quiet (-Q) one-shot turn: run, print the response (stderr for errors/session_id), then sys.exit with the automation exit code."""
+    try:
+        result = cli.agent.run_conversation(
+            user_message=effective_query,
+            conversation_history=cli.conversation_history,
+        )
+    except KeyboardInterrupt:
+        _emit_interrupted_session_end(cli, reason="keyboard_interrupt")
+        print(f"\nsession_id: {cli.session_id}", file=sys.stderr)
+        sys.exit(130)
+    # Sync session_id if mid-run compression created a
+    # continuation session. The exit line below reports
+    # session_id to stderr for automation wrappers; without
+    # this sync it would point at the ended parent.
+    if (
+        getattr(cli.agent, "session_id", None)
+        and cli.agent.session_id != cli.session_id
+    ):
+        cli.session_id = cli.agent.session_id
+    response = result.get("final_response", "") if isinstance(result, dict) else str(result)
+    # Surface backend errors that produced no visible output
+    # (e.g. invalid model slug → provider 4xx). Mirrors the
+    # interactive CLI path. Write to stderr so piped stdout
+    # stays clean for automation wrappers.
+    if (
+        not response
+        and isinstance(result, dict)
+        and result.get("error")
+        and (result.get("failed") or result.get("partial"))
+    ):
+        print(f"Error: {result['error']}", file=sys.stderr)
+    elif response:
+        print(response)
+
+    # Kanban goal-loop mode: a worker spawned for a
+    # goal_mode card keeps working in THIS session until an
+    # auxiliary judge agrees the card is done, the worker
+    # terminates the task itself, or the turn budget runs
+    # out (→ sticky block). Gated on the env vars the
+    # dispatcher sets in `_default_spawn`; a no-op for every
+    # normal worker and every non-kanban `-q` run.
+    if os.environ.get("HERMES_KANBAN_GOAL_MODE") == "1":
+        try:
+            _run_kanban_goal_loop_q(cli, response)
+        except Exception as _goal_exc:
+            logger.debug("kanban goal loop failed: %s", _goal_exc)
+
+    # Session ID goes to stderr so piped stdout is clean.
+    print(f"\nsession_id: {cli.session_id}", file=sys.stderr)
+
+    # Ensure proper exit code for automation wrappers.
+    #
+    # Kanban workers get a special case: when the run failed
+    # purely because the provider rate-limited / exhausted
+    # quota (not because the task itself is broken), exit with
+    # the EX_TEMPFAIL sentinel instead of the generic 1. The
+    # dispatcher's reap classifier maps that code to a
+    # ``rate_limited`` exit and releases the task back to
+    # ``ready`` WITHOUT incrementing the failure counter, so a
+    # 5-hour quota window can't trip the circuit breaker and
+    # permanently block the card. Non-kanban runs keep the
+    # plain 0/1 contract automation wrappers expect.
+    _exit_code = 0
+    if isinstance(result, dict) and result.get("failed"):
+        _exit_code = 1
+        if os.environ.get("HERMES_KANBAN_TASK") and result.get(
+            "failure_reason"
+        ) in ("rate_limit", "billing"):
+            try:
+                from hermes_cli.kanban_db import (
+                    KANBAN_RATE_LIMIT_EXIT_CODE as _RL_CODE,
+                )
+                _exit_code = _RL_CODE
+            except Exception:
+                _exit_code = 1
+    sys.exit(_exit_code)
+
+
+def _route_single_query_images(cli, query, effective_query, single_query_images, single_query_image_urls):
+    """Attach one-shot images natively when the model supports vision, else pre-describe them as text."""
+    if single_query_images or single_query_image_urls:
+        # Honour the same image-routing decision used by the
+        # interactive path. With a vision-capable model (incl.
+        # custom-provider models declared via
+        # `model.supports_vision: true`), attach images natively
+        # as image_url content parts. Otherwise fall back to the
+        # text-pipeline (vision_analyze pre-description).
+        _img_mode = "text"
+        _build_parts = None
+        try:
+            from agent.image_routing import (
+                build_native_content_parts as _build_parts,  # noqa: F811
+            )
+            from agent.image_routing import decide_image_input_mode
+            from hermes_cli.config import load_config
+
+            _img_mode = decide_image_input_mode(
+                (cli.provider or "").strip(),
+                (cli.model or "").strip(),
+                load_config(),
+                requested_provider=(
+                    cli.requested_provider or ""
+                ).strip(),
+            )
+        except Exception:
+            _img_mode = "text"
+
+        if _img_mode == "native" and _build_parts is not None:
+            try:
+                _parts, _skipped = _build_parts(
+                    query if isinstance(query, str) else "",
+                    [str(p) for p in single_query_images],
+                    image_urls=list(single_query_image_urls) or None,
+                )
+                if any(p.get("type") == "image_url" for p in _parts):
+                    effective_query = _parts
+                else:
+                    # All images unreadable — text fallback.
+                    # ``_preprocess_images_with_vision`` only knows
+                    # about local files; URLs would be lost there,
+                    # so keep the original query text intact when
+                    # only URLs were supplied.
+                    if single_query_images:
+                        effective_query = cli._preprocess_images_with_vision(
+                            query, single_query_images, announce=False,
+                        )
+            except Exception:
+                if single_query_images:
+                    effective_query = cli._preprocess_images_with_vision(
+                        query, single_query_images, announce=False,
+                    )
+        elif single_query_images:
+            effective_query = cli._preprocess_images_with_vision(
+                query,
+                single_query_images,
+                announce=False,
+            )
+    return effective_query
+
+
+def _collect_kanban_task_images(single_query_images):
+    """Kanban workers: scan the task body for image paths/URLs and add them to the first turn's attachments."""
+    # Kanban workers spawn with ``hermes chat -q "work kanban task <id>"``;
+    # the actual task description lives in the task body. Mirror the
+    # gateway/CLI behaviour for inbound images by scanning the body for
+    # local image paths and http(s) image URLs and attaching them to the
+    # worker's first turn. Without this, users who paste a screenshot
+    # path or URL into a kanban task body never get it routed to the
+    # model's vision input.
+    single_query_image_urls: list[str] = []
+    _kanban_task_id = os.environ.get("HERMES_KANBAN_TASK", "").strip()
+    if _kanban_task_id:
+        try:
+            from hermes_cli import kanban_db as _kb
+            from agent.image_routing import extract_image_refs as _extract_refs
+
+            _conn = _kb.connect()
+            try:
+                _task = _kb.get_task(_conn, _kanban_task_id)
+            finally:
+                try:
+                    _conn.close()
+                except Exception:
+                    pass
+            _body = getattr(_task, "body", "") if _task is not None else ""
+            if _body:
+                _kb_paths, _kb_urls = _extract_refs(_body)
+                if _kb_paths:
+                    # Dedupe against any --image the user already passed.
+                    _seen = {str(p) for p in single_query_images}
+                    for _p in _kb_paths:
+                        if _p not in _seen:
+                            _seen.add(_p)
+                            single_query_images.append(Path(_p))
+                if _kb_urls:
+                    single_query_image_urls.extend(_kb_urls)
+        except Exception as _exc:
+            # Best-effort enrichment; never block worker startup on it.
+            logger.debug("kanban image-ref extraction failed: %s", _exc)
+    return single_query_image_urls
+
+
+def _install_single_query_signal_handlers(cli):
+    """Route SIGINT/SIGTERM/SIGHUP through agent.interrupt() (worker threads see it) before unwinding; kanban workers hard-exit."""
+    # Single-query (`-q`) signal handling. Interactive mode registers its own in
+    # HermesCLI.run(); here AIAgent's tool worker threads would outlive a plain
+    # KeyboardInterrupt (only the main thread unwinds) and orphan the setsid child
+    # subprocess. So route SIGTERM/SIGHUP through agent.interrupt() (the worker
+    # poll loop checks it every 200 ms), give it a grace window to _kill_process,
+    # then raise KeyboardInterrupt. HERMES_SIGTERM_GRACE overrides the 1.5 s default.
+    def _signal_handler_q(signum, frame):
+        logger.debug("Received signal %s in single-query mode", signum)
+        # Arm the exit backstop now that shutdown intent is unambiguous —
+        # covers wedges in the unwind below that would otherwise leave the
+        # process alive with no watchdog (#65998 class). Never raises.
+        _arm_exit_watchdog_on_shutdown_signal()
+        try:
+            _agent = getattr(cli, "agent", None)
+            if _agent is not None:
+                request_hard_interrupt(_agent, f"received signal {signum}")
+                try:
+                    _grace = float(os.getenv("HERMES_SIGTERM_GRACE", "1.5"))
+                except (TypeError, ValueError):
+                    _grace = 1.5
+                if _grace > 0:
+                    time.sleep(_grace)
+        except Exception:
+            pass  # never block signal handling
+        # Kanban worker (#28181): a non-daemon worker thread blocked in
+        # _wait_for_process survives KeyboardInterrupt, so the PID stays alive and
+        # the dispatcher's _pid_alive sees 'running' forever. os._exit(0) instead,
+        # so detect_crashed_workers reclaims the claim next tick. Flush logging +
+        # stdio first (SIGALRM deadman guards a rare blocking flush).
+        if os.environ.get("HERMES_KANBAN_TASK"):
+            try:
+                import signal as _sig_mod
+                if hasattr(_sig_mod, "SIGALRM"):
+                    # Cancel any pre-existing alarm to avoid colliding with
+                    # caller-installed timers.
+                    _sig_mod.signal(_sig_mod.SIGALRM, lambda *_: os._exit(0))
+                    _sig_mod.alarm(5)
+            except Exception:
+                pass
+            # os._exit(0) skips atexit AND SessionDB's token-drain hook, so
+            # flush + finalize the session store here or the worker's turn
+            # (and its usage deltas) never become durable (#88583 / #50881
+            # class). Best-effort under the SIGALRM deadman above.
+            try:
+                _flush_one_shot_session_store(cli)
+            except Exception:
+                pass
+            try:
+                import logging as _lg
+                _lg.shutdown()
+            except Exception:
+                pass
+            for _stream in (sys.stdout, sys.stderr):
+                try:
+                    _stream.flush()
+                except Exception:
+                    pass
+            os._exit(0)
+        raise KeyboardInterrupt()
+    try:
+        import signal as _signal
+        _signal.signal(_signal.SIGINT, _signal_handler_q)
+        _signal.signal(_signal.SIGTERM, _signal_handler_q)
+        if hasattr(_signal, "SIGHUP"):
+            _signal.signal(_signal.SIGHUP, _signal_handler_q)
+    except Exception:
+        pass  # signal handler may fail in restricted environments
 
 
 def main(
@@ -9758,19 +9974,9 @@ def main(
                 # Exit with error code if credentials or agent init fails
                 sys.exit(1)
             else:
-                # Single-query mode (`hermes chat -q "…"`): skip the welcome
-                # banner. Building the banner takes ~420 ms on cold start —
-                # ~200 ms of that is the version-update check, the rest is
-                # toolset / skill enumeration and Rich panel rendering. None
-                # of that is useful for a one-shot query: the user already
-                # picked the prompt, doesn't need a toolset reference, and
-                # gets the session ID + resume hint from
-                # ``_print_exit_summary()`` after the response prints.
-                #
-                # The fully-quiet ``-Q`` / ``--quiet`` machine-readable path
-                # above was already banner-free; this brings the human-
-                # facing single-query path in line so all non-interactive
-                # invocations are fast.
+                # Single-query (`-q`): skip the welcome banner (~420 ms cold —
+                # version check + toolset/skill enumeration + Rich render). The
+                # session id / resume hint come from _print_exit_summary().
                 _query_label = query or ("[image attached]" if single_query_images else "")
                 if _query_label:
                     cli.console.print(f"[bold blue]Query:[/] {_query_label}")
