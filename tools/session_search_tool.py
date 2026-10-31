@@ -26,6 +26,16 @@ from tools.session_search_tool_discover import (  # noqa: F401  (re-exports)
 )
 
 
+def _is_compression_ended(db, session_id: str) -> bool:
+    """True when *session_id* ended by compression rather than another reason.
+
+    ``_session_left_live_context`` broadened this to fresh resets as well; the
+    narrower question still matters to callers that only want to know whether a
+    summary continuation replaced the session.
+    """
+    return _session_end_reason(db, session_id) == "compression"
+
+
 def _resolve_profile_db(profile: str):
     """Open another profile's ``state.db`` read-only (no write lock — safe on a
     live DB), or None for the current profile."""

@@ -3129,15 +3129,6 @@ def _generate_kittentts(text: str, output_path: str, tts_config: Dict[str, Any])
     speed = kt_config.get("speed", 1.0)
     clean_text = kt_config.get("clean_text", True)
 
-    # Use cached model instance if available
-    def _load_kittentts_model():
-        logger.info("[KittenTTS] Loading model: %s", model_name)
-        m = KittenTTS(model_name)
-        logger.info("[KittenTTS] Model loaded successfully")
-        return m
-
-    model = _tts_cache_get_or_load(_kittentts_model_cache, model_name, _load_kittentts_model)
-
     # KittenTTS 2 has no ``speed``/``clean_text`` knobs — it takes
     # ``normalize`` instead and reports its own sample rate. The legacy
     # ONNX models keep the original signature and a fixed 24kHz output.
