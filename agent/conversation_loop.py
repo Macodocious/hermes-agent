@@ -372,6 +372,8 @@ def _try_iteration_continuation(agent: Any, messages: list, api_call_count: int)
     # would then merge, corrupting the summary). A ``user``-role summary can be
     # misread by weak models as fresh input quoting a past request (#11475,
     # #14521), so it carries the explicit end marker below.
+    from agent.context_compressor import _SUMMARY_END_MARKER
+
     messages.append({
         "role": "user",
         "content": summary + "\n\n" + _SUMMARY_END_MARKER,
