@@ -3824,12 +3824,12 @@ class TestConcurrentToolExecution:
         monkeypatch.setattr("hermes_cli.lifecycle.has_hook", lambda name: True)
 
         with patch("tools.todo_tool.todo_tool", return_value='{"ok":true}') as mock_todo:
-            result = agent._invoke_tool("todo", {"todos": []}, "task-1", tool_call_id="todo-1")
+            result = agent._invoke_tool("todo_list", {"todos": []}, "task-1", tool_call_id="todo-1")
 
         mock_todo.assert_called_once()
         assert result == '{"ok":true}'
         post_call = next(call for call in hook_calls if call[0] == "post_tool_call")
-        assert post_call[1]["tool_name"] == "todo"
+        assert post_call[1]["tool_name"] == "todo_list"
         assert post_call[1]["tool_call_id"] == "todo-1"
         assert post_call[1]["status"] == "ok"
         assert post_call[1]["error_type"] is None
@@ -3842,7 +3842,7 @@ class TestConcurrentToolExecution:
             lambda *args, **kwargs: "Blocked by test policy",
         )
         with patch("tools.todo_tool.todo_tool", side_effect=AssertionError("should not run")) as mock_todo:
-            result = agent._invoke_tool("todo", {"todos": []}, "task-1")
+            result = agent._invoke_tool("todo_list", {"todos": []}, "task-1")
 
         assert json.loads(result) == {"error": "Blocked by test policy"}
         mock_todo.assert_not_called()
@@ -3918,7 +3918,7 @@ class TestConcurrentToolExecution:
 
     def test_sequential_agent_level_tool_emits_terminal_post_tool_hook(self, agent, monkeypatch):
         """Sequential built-in tool paths should also close observer tool spans."""
-        tool_call = _mock_tool_call(name="todo", arguments='{"todos":[]}', call_id="todo-1")
+        tool_call = _mock_tool_call(name="todo_list", arguments='{"todos":[]}', call_id="todo-1")
         mock_msg = _mock_assistant_msg(content="", tool_calls=[tool_call])
         messages = []
         hook_calls = []
@@ -3938,14 +3938,14 @@ class TestConcurrentToolExecution:
 
         mock_todo.assert_called_once()
         post_call = next(call for call in hook_calls if call[0] == "post_tool_call")
-        assert post_call[1]["tool_name"] == "todo"
+        assert post_call[1]["tool_name"] == "todo_list"
         assert post_call[1]["tool_call_id"] == "todo-1"
         assert post_call[1]["result"] == '{"ok":true}'
         assert post_call[1]["status"] == "ok"
 
     def test_sequential_agent_level_tool_execution_middleware_wraps_inline_dispatch(self, agent, monkeypatch):
         """Sequential built-in tool paths should expose the adaptive execution boundary."""
-        tool_call = _mock_tool_call(name="todo", arguments='{"todos":[]}', call_id="todo-1")
+        tool_call = _mock_tool_call(name="todo_list", arguments='{"todos":[]}', call_id="todo-1")
         mock_msg = _mock_assistant_msg(content="", tool_calls=[tool_call])
         messages = []
         hook_calls = []
@@ -3998,7 +3998,7 @@ class TestConcurrentToolExecution:
             reason=None,
         )
         post_call = next(call for call in hook_calls if call[0] == "post_tool_call")
-        assert post_call[1]["tool_name"] == "todo"
+        assert post_call[1]["tool_name"] == "todo_list"
         assert post_call[1]["args"] == {"todos": [], "request_rewritten": True, "merge": True}
         assert post_call[1]["middleware_trace"] == [{"source": "request-test"}]
 
@@ -4052,7 +4052,7 @@ class TestConcurrentToolExecution:
         assert post_calls[0]["result"] == '{"intercepted":true}'
 
     def test_concurrent_agent_level_tool_preserves_request_middleware_trace(self, agent, monkeypatch):
-        tool_call = _mock_tool_call(name="todo", arguments='{"todos":[]}', call_id="todo-1")
+        tool_call = _mock_tool_call(name="todo_list", arguments='{"todos":[]}', call_id="todo-1")
         mock_msg = _mock_assistant_msg(content="", tool_calls=[tool_call])
         messages = []
         hook_calls = []
@@ -4083,7 +4083,7 @@ class TestConcurrentToolExecution:
             agent._execute_tool_calls_concurrent(mock_msg, messages, "task-1")
 
         post_call = next(call for call in hook_calls if call[0] == "post_tool_call")
-        assert post_call[1]["tool_name"] == "todo"
+        assert post_call[1]["tool_name"] == "todo_list"
         assert post_call[1]["args"] == {"todos": [], "request_rewritten": True}
         assert post_call[1]["middleware_trace"] == [{"source": "request-test"}]
 
@@ -4523,11 +4523,12 @@ class TestAgentRuntimePostHookOwnershipSync:
         # runtime owns its post hook too, but the tool only exists in the
         # model's list when a context engine is configured, so it has no
         # generic case in _CASES for the parametrized execution below.
-        # ``tour`` is upstream's guided-UI tool and needs a live UI session to
-        # run, so it cannot be driven through the generic executor case either.
+        # ``gui_tour`` is the renamed guided-UI tool (upstream ``tour``); it
+        # needs a live UI session to run, so it cannot be driven through the
+        # generic executor case either.
         assert AGENT_RUNTIME_POST_HOOK_TOOL_NAMES == {
             tool_name for tool_name, _ in self._CASES
-        } | {"declare_task_context", "tour"}
+        } | {"declare_task_context", "gui_tour"}
 
 
 class TestPathsOverlap:
