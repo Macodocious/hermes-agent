@@ -4427,7 +4427,11 @@ class SlackAdapter(BasePlatformAdapter):
 
                 from gateway.session import sender_label
 
-                context_parts.append(f"{prefix}{trust_tag}{sender_label(name)} {msg_text}")
+                role = "user"
+                if is_bot:
+                    role = "agent" if (self_bot_uid and msg_user == self_bot_uid) else "bot"
+
+                context_parts.append(f"{prefix}{trust_tag}{sender_label(name, role)} {msg_text}")
                 if is_parent:
                     parent_text = msg_text
 

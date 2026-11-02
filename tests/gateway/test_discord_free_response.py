@@ -798,7 +798,7 @@ async def test_fetch_channel_context_stops_at_self_message_and_reverses_to_chron
 
     assert result == (
         "[Recent channel messages]\n"
-        "[user: Gemini [bot]] latest bot note\n"
+        "[bot: Gemini] latest bot note\n"
         "[user: Alice] latest human note"
     )
 
@@ -853,7 +853,7 @@ async def test_fetch_channel_context_skips_self_improvement_boundary_message(ada
     assert result == (
         "[Recent channel messages]\n"
         "[user: Alice] prompt before reply\n"
-        "[user: Codex [bot]] Codex final answer\n"
+        "[bot: Codex] Codex final answer\n"
         "[user: Alice] question after reply"
     )
 
@@ -1089,7 +1089,7 @@ class TestChannelContextUnverifiedTagging:
         )
 
         assert "[unverified]" not in result
-        assert "[user: Gemini [bot]] bot note" in result
+        assert "[bot: Gemini] bot note" in result
 
     @pytest.mark.asyncio
     async def test_auth_check_receives_chat_type_group_for_plain_channel(self, adapter, monkeypatch):
@@ -1233,7 +1233,7 @@ async def test_fetch_channel_context_cache_uses_latest_window_when_after_set(ada
 
     result = await adapter._fetch_channel_context(channel, before=trigger)
 
-    assert "[user: Codex [bot]] final analysis" in result
+    assert "[bot: Codex] final analysis" in result
     assert "[user: Alice] latest follow-up" in result
     assert "old tool trace 1" not in result
     assert "old tool trace 2" not in result

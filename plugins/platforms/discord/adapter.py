@@ -6072,8 +6072,12 @@ class DiscordAdapter(BasePlatformAdapter):
                     or getattr(msg.author, "name", None)
                     or "unknown"
                 )
-                if is_bot_author:
-                    name = f"{name} [bot]"
+                if msg.author == self._client.user:
+                    role = "agent"
+                elif is_bot_author:
+                    role = "bot"
+                else:
+                    role = "user"
                 # Mark senders not on the allowlist as [unverified] so the LLM
                 # treats their content as background reference rather than
                 # authoritative input — mirrors the Slack thread-context fix.
@@ -6092,7 +6096,7 @@ class DiscordAdapter(BasePlatformAdapter):
                         has_unverified = True
                 from gateway.session import sender_label
 
-                return f"{trust_tag}{sender_label(name)} {content}"
+                return f"{trust_tag}{sender_label(name, role)} {content}"
 
             # ── Primary window: recent channel activity since the last bot turn ──
             collected: List[Tuple[str, str]] = []  # (message_id, line)
