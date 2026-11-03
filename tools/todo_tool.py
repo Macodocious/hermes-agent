@@ -53,7 +53,7 @@ LIFECYCLE_WRITE_ACTION = {
     "completed": "complete",
 }
 
-# Row format for the always-on "[Active tasks]" block. A task's external
+# Row format for the always-on "[Active task]" block. A task's external
 # identity is its position in the sequence the user counts — the plan's tasks
 # when the row belongs to a plan, the list itself when no plan is in play —
 # rendered as "position/total". The store id is an internal address only: it is
@@ -304,6 +304,24 @@ _OPEN_STATUSES = frozenset({"pending", "in_progress", "paused"})
 # Terminal rows. A completion never promotes one, and never looks past the
 # first non-terminal row to find something else to start.
 _CLOSED_STATUSES = frozenset({"completed", "cancelled"})
+
+# The write-plan plugin signs an authorized plan by appending this marker to
+# the plan document. The lifecycle reads it to tell authoring (before the
+# marker) from execution (after it): only an authorized plan confines work.
+_EXECUTED_MARK_PREFIX = "# ── EXECUTED"
+
+
+def _plan_doc_is_executed(plan_doc: str) -> bool:
+    """True when the plan document carries the write-plan executed marker.
+
+    An unreadable or missing document reads as not executed, so the gate stays
+    open while the plan is still being written.
+    """
+    try:
+        with open(plan_doc, "r", encoding="utf-8", errors="replace") as handle:
+            return any(line.startswith(_EXECUTED_MARK_PREFIX) for line in handle)
+    except OSError:
+        return False
 
 # ---------------------------------------------------------------------------
 # User-message scaffold stripping (P5)
@@ -570,6 +588,32 @@ class TodoStore:
         """Return a copy of the current list."""
         return [item.copy() for item in self._items]
 
+    def current_card(self) -> Optional[Dict[str, Any]]:
+        """The one task the model may see: name, position, and spec path.
+
+        The begun task is the card; with nothing begun, the head open row is,
+        because that is the row the agent must begin. None when nothing is
+        left to work.
+        """
+        with self._lock:
+            item = next(
+                (i for i in self._items if i["status"] == "in_progress"), None
+            )
+            if item is None:
+                item = next(
+                    (i for i in self._items if i["status"] in _OPEN_STATUSES),
+                    None,
+                )
+            if item is None:
+                return None
+            return {
+                "id": item["id"],
+                "task": self.task_label(item["id"]),
+                "content": item["content"],
+                "status": item["status"],
+                "spec": str(item.get("spec") or ""),
+            }
+
     def has_items(self) -> bool:
         """Check if there are any items in the list."""
         return bool(self._items)
@@ -815,20 +859,11 @@ class TodoStore:
             )
         transitions.sort(key=lambda entry: (entry[0], entry[1]))
         for _rank, position, kind, item, prior_status in transitions:
-            held = False
-            if kind == NOTICE_COMPLETED:
-                # The successor rule, read from the committed list: a close
-                # with no later open row is the turn's final completion.
-                held = not any(
-                    row["status"] not in _CLOSED_STATUSES
-                    for row in self._items[position:]
-                )
             self._record_notice(
                 kind,
                 item,
                 from_status=prior_status,
                 to_status=str(item.get("status", "")),
-                held=held,
             )
 
     def transition(
@@ -934,8 +969,17 @@ class TodoStore:
                     }
             item["status"] = "in_progress"
             self._worked_id = ""
-            self._start_line_sent_id = ""
             self._work_count = 0
+            # Every entry into work speaks here, inside the transition that
+            # performed it: the start line describes this call, not a later
+            # one. A resumed task therefore carries a second start line.
+            self._start_line_sent_id = str(item["id"])
+            self._record_notice(
+                NOTICE_STARTED,
+                item,
+                from_status="pending" if action == "begin" else "paused",
+                to_status="in_progress",
+            )
             return {"ok": True, "item": item.copy()}
         if action == "pause":
             item["status"] = "paused"
@@ -957,12 +1001,10 @@ class TodoStore:
             item["reason"] = self._cap_content(reason)
             if was_current:
                 # Cancelling the current task is a terminal move like
-                # completing it: the next open row becomes current in the same
-                # commit, so the lifecycle never leaves the agent with no task
-                # to work on. Cancelling a later row moves nothing.
+                # completing it: the task's tenure ends here. The next task
+                # starts only by the agent's own begin.
                 self._start_line_sent_id = ""
                 self._work_count = 0
-                self._promote_successor(item)
             return {"ok": True, "item": item.copy()}
         # action == "complete": only the head may close, and its successor —
         # the next row that is neither completed nor cancelled — becomes
@@ -1007,7 +1049,6 @@ class TodoStore:
         self._worked_id = ""
         self._start_line_sent_id = ""
         self._work_count = 0
-        self._promote_successor(item)
         return {"ok": True, "item": item.copy()}
 
     def _promote_successor(self, item: Dict[str, Any]) -> None:
@@ -1040,10 +1081,9 @@ class TodoStore:
         """Record that a non-todo call ran under the current row.
 
         Called by the executor after every tool call. Records nothing when no
-        row is current; the mark is what a close is checked against. The first
-        call under a row also records the start line — the row becoming
-        current is not the work starting, so the line waits for this call.
-        Returns True when a start line was recorded.
+        row is current; the mark is what a close is checked against. The start
+        line is not written here: the row entering work already spoke, inside
+        the transition that opened it.
         """
         with self._lock:
             current = next(
@@ -1053,16 +1093,31 @@ class TodoStore:
                 return False
             self._worked_id = str(current["id"])
             self._work_count += 1
-            if self._start_line_sent_id == str(current["id"]):
-                return False
-            self._record_notice(
-                NOTICE_STARTED,
-                current,
-                from_status="",
-                to_status="in_progress",
+            return False
+
+    def containment_refusal(self) -> str:
+        """The refusal for a non-todo call under a plan task that has not begun.
+
+        Empty when the call may run: a task is already in progress, the head
+        row is not a plan row, or the plan is not yet authorized. Before the
+        executed mark the agent is still writing the plan's specifications, so
+        a pending row must not block it.
+        """
+        with self._lock:
+            if any(i["status"] == "in_progress" for i in self._items):
+                return ""
+            pending = next(
+                (i for i in self._items if i["status"] == "pending"), None
             )
-            self._start_line_sent_id = str(current["id"])
-            return True
+            if pending is None:
+                return ""
+            plan_doc = str(pending.get("plan") or "")
+            if not plan_doc or not _plan_doc_is_executed(plan_doc):
+                return ""
+            return (
+                f"Refused: {self._task_ref(pending)} has not begun. "
+                "Call todo with action='begin' on it before any other tool."
+            )
 
     def work_count(self) -> int:
         """Non-todo calls recorded under the current tenure (pacing line)."""
@@ -1244,106 +1299,48 @@ class TodoStore:
             self._notices = list(notices)
 
     def format_for_injection(self) -> Optional[str]:
-        """
-        Render the task list for post-compression injection.
+        """Render the current task's card for post-compression injection.
 
-        Completed items are injected alongside active ones under a
-        "Completed — do not redo" header, so the full list survives
-        compression instead of vanishing when nothing is active. Cancelled
-        items are injected struck through with their reason, so abandoned
-        work stays visible as abandoned rather than silently vanishing. An
-        all-completed list still renders (the compressed history keeps a
-        visible task anchor). Returns None only when the store is empty.
+        The card is the model's only view of the list: one task, its position,
+        and its specification path. Other tasks' titles and content stay out
+        of it — a completed row is still another task's content. Returns None
+        when no task is left to work.
         """
-        if not self._items:
+        card = self.current_card()
+        if card is None:
             return None
-
-        # Status markers for compact display
-        markers = {
-            "completed": "[x]",
-            "in_progress": "[>]",
-            "pending": "[ ]",
-            "paused": "[‖]",
-        }
-
-        # Completed items are visible (marked [x]) so finished work
-        # persists across compression without being re-proposed; the
-        # header explicitly flags them as done to prevent redoing.
-        active_items = [
-            item for item in self._items
-            if item["status"] in {"pending", "in_progress", "paused"}
+        position = f"[{card['task']}] " if card["task"] else ""
+        lines = [
+            "[Your active task was preserved across context compression]",
+            f"- {position}{card['content']} ({card['status']})",
         ]
-        completed_items = [
-            item for item in self._items if item["status"] == "completed"
-        ]
-        cancelled_items = [
-            item for item in self._items if item["status"] == "cancelled"
-        ]
-
-        lines = ["[Your active task list was preserved across context compression]"]
-        for item in active_items:
-            marker = markers.get(item["status"], "[?]")
-            lines.append(f"- {marker} {item['content']} ({item['status']})")
-        if completed_items:
-            lines.append("Completed — do not redo:")
-            for item in completed_items:
-                lines.append(f"- [x] {item['content']}")
-        if cancelled_items:
-            lines.append("Cancelled:")
-            for item in cancelled_items:
-                lines.append(f"- ~~{item['content']}~~")
-                if item.get("reason"):
-                    lines.append(f"  reason: {item['reason']}")
-
+        if card["spec"]:
+            lines.append(f"  spec: {card['spec']}")
         return "\n".join(lines)
 
     def format_for_turn(self) -> Optional[str]:
         """Render the per-turn task block merged into the user turn (P2/P3).
 
-        Unlike ``format_for_injection`` (compression-only snapshot), this is
-        the always-on visibility block: the active list with the single
-        ``in_progress`` item flagged as the current task, completed items
-        marked ``[x]``, plus any captured request candidates awaiting
-        disposition. Returns None when there is nothing to show (no items
-        at all and no pending captures) so an idle list injects zero
-        tokens.
+        The block carries the current task's card and nothing else: the model
+        sees one task, its position, and its specification path. Other tasks'
+        titles and content never appear, and captured requests still ride
+        along because they are not task rows. Returns None when there is
+        nothing to show.
         """
-        active_items = [
-            item for item in self._items
-            if item["status"] in {"pending", "in_progress", "paused"}
-        ]
-        completed_items = [
-            item for item in self._items if item["status"] == "completed"
-        ]
-        cancelled_items = [
-            item for item in self._items if item["status"] == "cancelled"
-        ]
+        card = self.current_card()
         pending_captures = self.pending_captures()
-        if (
-            not active_items
-            and not completed_items
-            and not cancelled_items
-            and not pending_captures
-        ):
+        if card is None and not pending_captures:
             return None
 
-        lines = ["[Active tasks]"]
-        lines.extend(render_task_board(self, active_items))
-        for item in cancelled_items:
-            # A cancelled task is shown struck through, its reason on the
-            # line beneath — the agent's own record of what it set aside and
-            # why, visible to the user reading the block. It is named by its
-            # label like every other row.
-            label = self.task_label(item["id"])
-            prefix = f"[{label}] " if label else ""
-            lines.append(f"- {prefix}[cancelled] ~~{item['content']}~~")
-            if item.get("reason"):
-                lines.append(f"  reason: {item['reason']}")
-        if completed_items:
-            lines.append("Completed:")
-            for item in completed_items:
-                lines.append(f"- [x] {item['content']}")
-        if self._seeded and len(active_items) == 1:
+        lines = ["[Active task]"]
+        if card is not None:
+            position = f"[{card['task']}] " if card["task"] else ""
+            lines.append(f"- {position}{card['content']} ({card['status']})")
+            if card["spec"]:
+                lines.append(f"  spec: {card['spec']}")
+        if self._seeded and card is not None and len(
+            [i for i in self._items if i["status"] in _OPEN_STATUSES]
+        ) == 1:
             lines.append(
                 "Rename the seeded task above into a concise title on your "
                 "first todo write (the seed is the user's opening message)."
@@ -1788,9 +1785,7 @@ def todo_tool(
         return sum(1 for item in counted if item["status"] == status)
 
     return json.dumps({
-        "todos": [
-            {**item, "task": store.task_label(item["id"])} for item in items
-        ],
+        "task": store.current_card(),
         "captures": store.pending_captures(),
         "summary": {
             "total": len(counted),

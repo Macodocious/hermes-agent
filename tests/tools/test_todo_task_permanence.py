@@ -206,12 +206,11 @@ class TestFormatForTurn:
         ])
         text = store.format_for_turn()
         assert text is not None
-        assert "[Active tasks]" in text
-        # Each active row carries its label and live status so the agent can
-        # address the task it describes (action + item_id). The label is the
-        # row's position in the sequence the user counts, never the store id.
-        assert "- [1/2] [pending] Waiting" in text
-        assert "- [2/2] [in_progress] Working" in text
+        assert "[Active task]" in text
+        # One card: the current task's label and live status. The other row
+        # is another task's content and must not appear.
+        assert "- [2/2] Working (in_progress)" in text
+        assert "Waiting" not in text
 
     def test_completed_items_rendered_as_done(self):
         store = TodoStore()
@@ -221,10 +220,11 @@ class TestFormatForTurn:
         ])
         text = store.format_for_turn()
         assert text is not None
-        # Completed items persist visibly, marked [x], never re-proposed
-        assert "[x] Done" in text
-        assert "Completed:" in text
+        # The card is the only row; a completed title is another task's
+        # content, so it never renders.
         assert "Active" in text
+        assert "Done" not in text
+        assert "Completed:" not in text
 
     def test_captures_rendered_with_disposition_nudge(self):
         store = TodoStore()

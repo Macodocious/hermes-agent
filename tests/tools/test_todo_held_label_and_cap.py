@@ -29,9 +29,9 @@ def _plan_store():
 def _close_final(store):
     assert store.transition("begin", "1")["ok"]
     store.mark_work()
-    store.drain_notices()
     assert store.transition("complete", "1")["ok"]
-    assert store.mark_work()
+    assert store.transition("begin", "2")["ok"]
+    store.mark_work()
     assert store.transition("complete", "2")["ok"]
     # The close itself records nothing; the held-line mechanics are still
     # exercised directly so the label freeze and the cap stay covered.

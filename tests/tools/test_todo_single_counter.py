@@ -42,13 +42,12 @@ def test_block_numbers_the_plan_not_the_tracker():
 
     block = store.format_for_turn() or ""
 
-    # Plan task 2 is store row 4. The block names it 2/11 and never 4.
-    assert "- [2/11] [pending] plan task 2" in block
-    assert "- [1/11] [pending] plan task 1" in block
-    assert "[4]" not in block
-    # A row outside the plan is not one of the tasks being counted.
-    assert "- [completed] research" not in block  # completed rows render [x]
-    assert "- [x] research" in block
+    # Plan task 1 is store row 3. The card names it 1/11 and never 3.
+    assert "- [1/11] plan task 1 (pending)" in block
+    assert "[3]" not in block
+    # One card only: no other plan row and no completed row renders.
+    assert "plan task 2" not in block
+    assert "research" not in block
 
 
 def test_a_row_outside_the_plan_carries_no_label():
@@ -57,21 +56,23 @@ def test_a_row_outside_the_plan_carries_no_label():
 
     block = store.format_for_turn() or ""
 
-    assert "- [in_progress] research" in block
-    assert "- [1/11] [pending] plan task 1" in block
+    # The current row is outside the plan, so it carries no position, and the
+    # plan's rows stay out of the card.
+    assert "- research (in_progress)" in block
+    assert "plan task 1" not in block
 
 
 def test_a_list_with_no_plan_numbers_its_own_rows():
     store = TodoStore()
     store.write([
-        {"id": "1", "content": "a", "status": "pending"},
-        {"id": "2", "content": "b", "status": "pending"},
+        {"id": "1", "content": "alpha", "status": "pending"},
+        {"id": "2", "content": "beta", "status": "pending"},
     ])
 
     block = store.format_for_turn() or ""
 
-    assert "- [1/2] [pending] a" in block
-    assert "- [2/2] [pending] b" in block
+    assert "- [1/2] alpha (pending)" in block
+    assert "beta" not in block
 
 
 def test_a_lifecycle_action_takes_the_label_from_the_block():
@@ -108,7 +109,9 @@ def test_the_tool_result_counts_the_plan():
 
     assert payload["summary"]["total"] == 11
     assert payload["summary"]["rows"] == 13
-    assert [row["task"] for row in payload["todos"]][3] == "2/11"
+    # The payload carries one card, not the list.
+    assert payload["task"]["task"] == "1/11"
+    assert payload["task"]["content"] == "plan task 1"
 
 
 def test_the_pacing_line_names_the_plan_position():

@@ -75,15 +75,14 @@ class TestFormatForInjection:
             {"id": "3", "content": "Working", "status": "in_progress"},
         ])
         text = store.format_for_injection()
-        # Completed items persist visibly, marked done (never re-proposed)
-        assert "[x] Do thing" in text
-        assert "Completed — do not redo" in text
-        # Active items are included
-        assert "[ ]" in text
-        assert "[>]" in text
-        assert "Next" in text
+        # The card is the model's only view: one task, no other titles.
         assert "Working" in text
+        assert "(in_progress)" in text
         assert "context compression" in text.lower()
+        # Completed and pending rows are other tasks' content.
+        assert "Do thing" not in text
+        assert "Next" not in text
+        assert "Completed — do not redo" not in text
 
 
 class TestMergeMode:

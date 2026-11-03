@@ -108,7 +108,7 @@ class TestApplyTaskInjection:
         agent = _agent_with_store(store)
         user_msg = {"role": "user", "content": "hello"}
         _apply_task_injection_and_capture(agent, [], user_msg)
-        assert user_msg["content"].startswith("[Active tasks]")
+        assert user_msg["content"].startswith("[Active task]")
         assert user_msg["content"].endswith("hello")
 
     def test_no_injection_when_store_empty(self):
@@ -150,7 +150,7 @@ class TestApplyTaskInjection:
         content = user_msg["content"]
         assert isinstance(content, list)
         assert content[0]["type"] == "text"
-        assert "[Active tasks]" in content[0]["text"]
+        assert "[Active task]" in content[0]["text"]
         # Original parts preserved after the injected block.
         assert content[-1]["type"] == "image_url"
 

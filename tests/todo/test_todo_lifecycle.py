@@ -88,21 +88,17 @@ def test_complete_refused_while_an_earlier_task_is_open() -> None:
     assert store.read() == before
 
 
-def test_complete_promotes_the_immediate_successor(store: TodoStore) -> None:
-    """Finishing the head starts the row after it, not the first pending row."""
+def test_complete_leaves_the_immediate_successor_pending(store: TodoStore) -> None:
+    """Finishing the head opens nothing: the next task starts by begin."""
     store.transition("begin", "1")
     store.mark_work()
     assert store.transition("complete", "1")["ok"] is True
     statuses = {i["id"]: i["status"] for i in store.read()}
-    assert statuses == {"1": "completed", "2": "in_progress"}
+    assert statuses == {"1": "completed", "2": "pending"}
 
 
-def test_complete_promotes_a_paused_successor() -> None:
-    """A paused row after the head becomes current when the head completes.
-
-    Refusing this instead would deadlock: the paused row cannot resume while
-    the head is open, and the head could not complete while the row is paused.
-    """
+def test_complete_leaves_a_paused_successor_paused() -> None:
+    """A paused row after the head stays paused; only resume returns it."""
     store = TodoStore()
     store.write(
         [
@@ -113,7 +109,7 @@ def test_complete_promotes_a_paused_successor() -> None:
     store.mark_work()
     assert store.transition("complete", "1")["ok"] is True
     statuses = {i["id"]: i["status"] for i in store.read()}
-    assert statuses == {"1": "completed", "2": "in_progress"}
+    assert statuses == {"1": "completed", "2": "paused"}
 
 
 def test_complete_finalizes_the_task(store: TodoStore) -> None:
@@ -124,17 +120,13 @@ def test_complete_finalizes_the_task(store: TodoStore) -> None:
     assert store.read()[0]["status"] == "completed"
 
 
-def test_complete_promotes_the_next_task(store: TodoStore) -> None:
-    """Completing a task begins the next one from the store.
-
-    The promotion makes the next row current; its ``▶️ Working on:`` line is
-    recorded at the first call under it, not at this completion.
-    """
+def test_complete_leaves_the_next_task_pending(store: TodoStore) -> None:
+    """Completing a task opens no successor; the agent begins the next one."""
     store.transition("begin", "1")
     store.mark_work()
     store.transition("complete", "1")
     statuses = {i["id"]: i["status"] for i in store.read()}
-    assert statuses == {"1": "completed", "2": "in_progress"}
+    assert statuses == {"1": "completed", "2": "pending"}
 
 
 def test_complete_with_no_pending_sibling_activates_nothing() -> None:
@@ -215,23 +207,20 @@ def test_write_demotes_extra_in_progress_to_pending() -> None:
     assert statuses == {"1": "in_progress", "2": "pending"}
 
 
-def test_complete_records_the_start_and_holds_the_final_close() -> None:
-    """The start line waits for work; the final close waits for turn end."""
+def test_complete_records_the_start_at_begin_and_the_close_at_complete() -> None:
+    """Both notices are written by the transition they describe."""
     s = TodoStore()
     s.write([{"id": "1", "content": "A", "status": "pending"}])
     s.transition("begin", "1")
-    assert s.drain_notices() == []
-    s.mark_work()
     assert [n["kind"] for n in s.drain_notices()] == ["started"]
+    s.mark_work()
+    assert s.drain_notices() == []
     s.transition("complete", "1")
-    assert [n["kind"] for n in s.pending_notices()] == ["completed"]
-    assert s.pending_notices()[0]["held"] is True
-    s.release_held_notices()
     assert [n["kind"] for n in s.drain_notices()] == ["completed"]
 
 
-def test_cancelling_the_current_task_makes_the_next_one_current() -> None:
-    """Cancel is terminal like complete: the sequence keeps moving."""
+def test_cancelling_the_current_task_leaves_the_next_one_pending() -> None:
+    """Cancel is terminal, and it opens nothing: the next task starts by begin."""
     s = TodoStore()
     s.write(
         [
@@ -244,11 +233,11 @@ def test_cancelling_the_current_task_makes_the_next_one_current() -> None:
     s.transition("cancel", "1", "not needed after all")
 
     statuses = {i["id"]: i["status"] for i in s.read()}
-    assert statuses == {"1": "cancelled", "2": "in_progress"}
+    assert statuses == {"1": "cancelled", "2": "pending"}
 
 
 def test_cancelling_a_later_task_moves_nothing() -> None:
-    """Only the current task's cancellation promotes; dropping a later row is local."""
+    """Only the current task's cancellation ends a tenure; dropping a later row is local."""
     s = TodoStore()
     s.write(
         [

@@ -406,7 +406,7 @@ def sender_label(name: Any, role: str = "user") -> str:
 
     ``user`` is a person, ``agent`` is this assistant's own turn, ``bot`` is
     another bot. The tag states what the token is: a bare ``[Mac]`` sits in
-    the same slot as machine annotations (``[Active tasks]``, ``[unverified]``)
+    the same slot as machine annotations (``[Active task]``, ``[unverified]``)
     and has been mistaken for the sender's operating system.
     """
     return f"[{role}: {name}]"
