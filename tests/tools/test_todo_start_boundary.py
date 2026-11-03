@@ -1,9 +1,9 @@
-"""The start line is recorded at the first real call under a row.
+"""The start line is recorded by the transition that opens work.
 
-A row becoming current is not the work starting. Every path that makes a row
-current — a list write that starts the head row, begin, resume, and a
-promotion — arms the start line; the first non-todo call under the row records
-it. A row that becomes current but never sees a call gets no start line.
+Every entry into ``in_progress`` — begin or resume — records the start line
+inside that call. A non-todo call no longer records it: the line that claims
+work started arrives with the call that started it, not after the work. A
+close promotes nothing, so the next task starts only by the agent's begin.
 """
 
 from tools.todo_tool import NOTICE_STARTED, TodoStore, todo_tool
@@ -23,6 +23,29 @@ def _starts(store):
     return [n for n in store.pending_notices() if n["kind"] == NOTICE_STARTED]
 
 
+class TestTransitionStart:
+    def test_begin_records_the_start_line_in_the_call(self):
+        store = _store("one")
+        assert store.transition("begin", "1")["ok"]
+        assert [(n["kind"], n["id"]) for n in _starts(store)] == [
+            (NOTICE_STARTED, "1")
+        ]
+
+    def test_resume_records_a_second_start_line(self):
+        store = _store("one")
+        assert store.transition("begin", "1")["ok"]
+        assert store.transition("pause", "1")["ok"]
+        assert store.transition("resume", "1")["ok"]
+        assert len(_starts(store)) == 2
+
+    def test_mark_work_records_nothing(self):
+        store = _store("one")
+        assert store.transition("begin", "1")["ok"]
+        store.drain_notices()
+        assert store.mark_work() is False
+        assert _starts(store) == []
+
+
 class TestListWriteStart:
     def test_head_row_write_makes_it_current_without_a_start_line(self):
         store = _store("one", "two")
@@ -34,18 +57,6 @@ class TestListWriteStart:
         assert '"in_progress"' in result
         assert store.read()[0]["status"] == "in_progress"
         assert _starts(store) == []
-
-    def test_first_call_records_the_start_line(self):
-        store = _store("one", "two")
-        todo_tool(
-            todos=[{"id": "1", "content": "one", "status": "in_progress"}],
-            merge=True,
-            store=store,
-        )
-        assert store.mark_work() is True
-        assert [(n["kind"], n["id"]) for n in _starts(store)] == [
-            (NOTICE_STARTED, "1")
-        ]
 
     def test_a_later_row_cannot_be_started_by_a_write(self):
         store = _store("one", "two")
@@ -68,74 +79,18 @@ class TestListWriteStart:
         assert "cannot write status 'in_progress'" in result
 
 
-class TestEveryStartPathWaits:
-    def test_begin_alone_records_nothing(self):
-        store = _store("one")
-        assert store.transition("begin", "1")["ok"]
-        assert _starts(store) == []
-
-    def test_resume_alone_records_nothing(self):
-        store = _store("one")
-        assert store.transition("begin", "1")["ok"]
-        assert store.transition("pause", "1")["ok"]
-        store.drain_notices()
-        assert store.transition("resume", "1")["ok"]
-        assert _starts(store) == []
-
-    def test_promotion_alone_records_nothing(self):
+class TestCloseDoesNotStart:
+    def test_completing_leaves_the_next_row_pending(self):
         store = _store("one", "two")
         assert store.transition("begin", "1")["ok"]
         store.mark_work()
-        store.drain_notices()
         assert store.transition("complete", "1")["ok"]
+        assert store.read()[1]["status"] == "pending"
+        store.drain_notices()
         assert _starts(store) == []
 
-    def test_a_row_that_never_sees_a_call_gets_no_line(self):
+    def test_cancelling_leaves_the_next_row_pending(self):
         store = _store("one", "two")
         assert store.transition("begin", "1")["ok"]
-        store.mark_work()
-        store.drain_notices()
-        assert store.transition("complete", "1")["ok"]
-        # Row 2 is current but no call has run under it.
-        assert store.read()[1]["status"] == "in_progress"
-        assert _starts(store) == []
-
-
-class TestOneLinePerTenure:
-    def test_a_second_call_records_nothing(self):
-        store = _store("one")
-        assert store.transition("begin", "1")["ok"]
-        assert store.mark_work() is True
-        assert store.mark_work() is False
-        assert len(_starts(store)) == 1
-
-    def test_a_new_tenure_records_a_new_line(self):
-        store = _store("one", "two")
-        assert store.transition("begin", "1")["ok"]
-        store.mark_work()
-        store.drain_notices()
-        assert store.transition("complete", "1")["ok"]
-        assert store.mark_work() is True
-        assert [(n["kind"], n["id"]) for n in _starts(store)] == [
-            (NOTICE_STARTED, "2")
-        ]
-
-    def test_the_start_mark_survives_a_reload(self):
-        store = _store("one")
-        assert store.transition("begin", "1")["ok"]
-        store.mark_work()
-        store.drain_notices()
-        restored = TodoStore.from_json(store.to_json())
-        assert restored.mark_work() is False
-        assert _starts(restored) == []
-
-    def test_the_start_mark_crosses_the_merge(self):
-        from hermes_cli.tasks import _merge_todo_stores
-
-        store = _store("one")
-        assert store.transition("begin", "1")["ok"]
-        store.mark_work()
-        store.drain_notices()
-        merged = _merge_todo_stores(store, TodoStore.from_json(store.to_json()))
-        assert merged.mark_work() is False
-        assert _starts(merged) == []
+        assert store.transition("cancel", "1", "not needed")["ok"]
+        assert store.read()[1]["status"] == "pending"

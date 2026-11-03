@@ -164,7 +164,7 @@ class TestRenameNudge:
         store.seed_from_user_message("Build the thing")
         block = store.format_for_turn()
         assert block is not None
-        assert "[Active tasks]" in block
+        assert "[Active task]" in block
         assert "Build the thing" in block
         assert "Rename the seeded task" in block
 

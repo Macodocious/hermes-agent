@@ -196,7 +196,7 @@ class TestRunConversationCodexPath:
         assert msgs[0]["role"] == "user"
         # P2 visibility: the seeded-task block prefixes the user turn; the
         # original message is preserved as the trailing content.
-        assert msgs[0]["content"].startswith("[Active tasks]")
+        assert msgs[0]["content"].startswith("[Active task]")
         assert msgs[0]["content"].endswith("hello")
         # Last assistant message has the final text
         final = [m for m in msgs if m.get("role") == "assistant"

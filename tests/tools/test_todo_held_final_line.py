@@ -39,7 +39,7 @@ class TestFinalClose:
         )
         assert notice["held"] is False
 
-    def test_a_close_with_no_successor_records_a_held_line(self):
+    def test_a_close_with_no_successor_records_an_unheld_line(self):
         store = _store("one")
         assert store.transition("begin", "1")["ok"]
         store.mark_work()
@@ -48,7 +48,7 @@ class TestFinalClose:
         notice = next(
             n for n in store.pending_notices() if n["kind"] == NOTICE_COMPLETED
         )
-        assert notice["held"] is True
+        assert notice["held"] is False
 
     def test_a_cancellation_is_recorded(self):
         store = _store("one")
@@ -61,23 +61,22 @@ class TestFinalClose:
 
 
 class TestDrain:
-    def test_the_successor_close_ships_and_the_final_close_waits(self):
+    def test_both_closes_ship_in_their_own_calls(self):
         store = _store("one", "two")
         assert store.transition("begin", "1")["ok"]
         store.mark_work()
         store.drain_notices()
         assert store.transition("complete", "1")["ok"]
-        assert store.mark_work()
+        assert store.transition("begin", "2")["ok"]
+        store.drain_notices()
+        store.mark_work()
         assert store.transition("complete", "2")["ok"]
         sent = []
 
         task_manager._emit_pending_notices(_agent(store, sent.append))
 
-        assert sent == [
-            "✅ Task completed: one",
-            "▶️ Working on: two",
-        ]
-        assert [n["held"] for n in store.pending_notices()] == [True]
+        assert sent == ["✅ Task completed: two"]
+        assert store.pending_notices() == []
 
 
 class TestRelease:

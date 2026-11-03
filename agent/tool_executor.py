@@ -357,6 +357,24 @@ def _with_lifecycle_reminder(agent, function_name: str, result: Any) -> Any:
     return result
 
 
+def _containment_block(agent, function_name: str) -> Optional[str]:
+    """Refuse a non-todo call under a plan task that has not begun.
+
+    The task list and clarify stay callable so the agent can open the task it
+    is being told to begin. Fail-open: containment must never break a call.
+    """
+    if function_name in ("todo", "clarify"):
+        return None
+    store = getattr(agent, "_todo_store", None)
+    if store is None:
+        return None
+    try:
+        return store.containment_refusal() or None
+    except Exception as exc:
+        logger.debug("todo containment check failed for %s: %s", function_name, exc)
+        return None
+
+
 def _mark_work_under_current_task(agent, function_name: str) -> None:
     """Record that this call counts as work under the current task.
 
@@ -527,6 +545,7 @@ def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effe
         # checkpoint state (dedup slot, real snapshots).
         block_result = None
         blocked_by_guardrail = False
+        _containment_msg = _containment_block(agent, function_name)
         if _ts_scope_block is not None:
             # Out-of-scope tool_call: reject before hooks/guardrails/dispatch.
             block_result = _ts_scope_block
@@ -540,6 +559,20 @@ def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effe
                 status="blocked",
                 error_type="tool_scope_block",
                 error_message=_ts_scope_block,
+                middleware_trace=list(middleware_trace),
+            )
+        elif _containment_msg is not None:
+            block_result = json.dumps({"error": _containment_msg}, ensure_ascii=False)
+            _emit_terminal_post_tool_call(
+                agent,
+                function_name=function_name,
+                function_args=function_args,
+                result=block_result,
+                effective_task_id=effective_task_id,
+                tool_call_id=getattr(tool_call, "id", "") or "",
+                status="blocked",
+                error_type="task_not_begun",
+                error_message=_containment_msg,
                 middleware_trace=list(middleware_trace),
             )
         else:
@@ -1207,11 +1240,15 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
         )
 
         # Check plugin hooks for a block directive before executing.
+        _containment_msg = _containment_block(agent, function_name)
         _block_msg: Optional[str] = None
         _block_error_type = "plugin_block"
         if _ts_scope_block is not None:
             _block_msg = _ts_scope_block
             _block_error_type = "tool_scope_block"
+        elif _containment_msg is not None:
+            _block_msg = _containment_msg
+            _block_error_type = "task_not_begun"
         else:
             try:
                 from hermes_cli.plugins import resolve_pre_tool_block

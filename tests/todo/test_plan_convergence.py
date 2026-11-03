@@ -51,19 +51,14 @@ def test_three_item_plan_reaches_all_terminal() -> None:
     assert statuses == {"1": "completed", "2": "completed", "3": "completed"}
 
 
-def test_complete_promotes_the_next_sibling() -> None:
-    """A completion promotes the next sibling; its start waits for work.
-
-    The promotion makes the next row current the moment this one ends. The
-    next task's ``▶️ Working on:`` line is recorded at the first call under
-    it, not at this transition.
-    """
+def test_complete_leaves_the_next_sibling_pending() -> None:
+    """A completion opens nothing: the agent begins the next item itself."""
     store = TodoStore()
     _seed_plan(store)
     store.transition("begin", "1")
     store.mark_work()
     store.transition("complete", "1")
-    assert _statuses(store)["2"] == "in_progress"
+    assert _statuses(store)["2"] == "pending"
 
 
 def test_plan_is_complete_reports_when_all_terminal() -> None:
