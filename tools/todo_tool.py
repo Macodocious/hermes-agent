@@ -1096,12 +1096,13 @@ class TodoStore:
             return False
 
     def containment_refusal(self) -> str:
-        """The refusal for a non-todo call under a plan task that has not begun.
+        """The refusal for a non-todo call under a pending head row.
 
-        Empty when the call may run: a task is already in progress, the head
-        row is not a plan row, or the plan is not yet authorized. Before the
-        executed mark the agent is still writing the plan's specifications, so
-        a pending row must not block it.
+        Empty when the call may run: a task is already in progress, or the head
+        row's plan is still being written. Before the executed mark the agent
+        is still authoring the plan's specifications, so a pending row must not
+        block it. A row with no plan is a user task and is confined like any
+        other: work cannot start before ``begin``.
         """
         with self._lock:
             if any(i["status"] == "in_progress" for i in self._items):
@@ -1112,7 +1113,7 @@ class TodoStore:
             if pending is None:
                 return ""
             plan_doc = str(pending.get("plan") or "")
-            if not plan_doc or not _plan_doc_is_executed(plan_doc):
+            if plan_doc and not _plan_doc_is_executed(plan_doc):
                 return ""
             return (
                 f"Refused: {self._task_ref(pending)} has not begun. "
