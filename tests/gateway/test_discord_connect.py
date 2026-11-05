@@ -147,11 +147,11 @@ class SlowSyncBot(FakeBot):
         ("769524422783664158", False),
         ("abhey-gupta", True),
         ("769524422783664158,abhey-gupta", True),
-        # ``"*"`` is the open-mode wildcard, not a username to resolve, so it
-        # must not pull in the privileged Server Members intent. Requesting
-        # that intent without it being enabled in the Discord Developer Portal
-        # can prevent the bot from coming online at all — and that is exactly
-        # the migration-from-OpenClaw path the wildcard fix targets (#22334).
+        # The application probe reports Server Members disabled here, so
+        # ``"*"`` must not pull in the privileged intent: requesting an intent
+        # the application lacks makes discord.py refuse the login outright,
+        # and that is the migrate-from-OpenClaw path the wildcard fix (#22334)
+        # targets.
         ("*", False),
         ("769524422783664158,*", False),
     ],
@@ -160,6 +160,9 @@ async def test_connect_only_requests_members_intent_when_needed(monkeypatch, all
     adapter = DiscordAdapter(PlatformConfig(enabled=True, token="test-token"))
 
     monkeypatch.setenv("DISCORD_ALLOWED_USERS", allowed_users)
+    monkeypatch.setattr(
+        discord_platform, "_application_has_members_intent", AsyncMock(return_value=False)
+    )
     monkeypatch.setattr("gateway.status.acquire_scoped_lock", lambda scope, identity, metadata=None: (True, None))
     monkeypatch.setattr("gateway.status.release_scoped_lock", lambda scope, identity: None)
 
@@ -186,6 +189,44 @@ async def test_connect_only_requests_members_intent_when_needed(monkeypatch, all
     assert am is not None, "connect() must pass an AllowedMentions to commands.Bot"
     assert am.everyone is False
     assert am.roles is False
+
+    await adapter.disconnect()
+
+
+@pytest.mark.asyncio
+async def test_connect_requests_members_intent_when_application_has_it(monkeypatch):
+    """The application probe wins over the wildcard allowlist.
+
+    Plugins need ``on_member_join`` to provision a member the moment they
+    arrive, so the intent is requested whenever Discord reports the
+    application has Server Members enabled — even with the open ``"*"``
+    allowlist that keeps it off when the flags say otherwise.
+    """
+    adapter = DiscordAdapter(PlatformConfig(enabled=True, token="test-token"))
+
+    monkeypatch.setenv("DISCORD_ALLOWED_USERS", "*")
+    monkeypatch.setattr(
+        discord_platform, "_application_has_members_intent", AsyncMock(return_value=True)
+    )
+    monkeypatch.setattr("gateway.status.acquire_scoped_lock", lambda scope, identity, metadata=None: (True, None))
+    monkeypatch.setattr("gateway.status.release_scoped_lock", lambda scope, identity: None)
+
+    intents = SimpleNamespace(message_content=False, dm_messages=False, guild_messages=False, members=False, voice_states=False)
+    monkeypatch.setattr(discord_platform.Intents, "default", lambda: intents)
+
+    created = {}
+
+    def fake_bot_factory(*, command_prefix, intents, proxy=None, allowed_mentions=None, **_):
+        created["bot"] = FakeBot(intents=intents, allowed_mentions=allowed_mentions)
+        return created["bot"]
+
+    monkeypatch.setattr(discord_platform.commands, "Bot", fake_bot_factory)
+    monkeypatch.setattr(adapter, "_resolve_allowed_usernames", AsyncMock())
+
+    ok = await adapter.connect()
+
+    assert ok is True
+    assert created["bot"].intents.members is True
 
     await adapter.disconnect()
 

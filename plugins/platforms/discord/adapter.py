@@ -200,6 +200,43 @@ async def _wait_for_ready_or_bot_exit(
                 await ready_task
 
 
+async def _application_has_members_intent(token: str) -> Optional[bool]:
+    """Return whether the bot's application has Server Members enabled.
+
+    ``GET /applications/@me`` reports the privileged-intent flags. Requesting
+    an intent the application does not have enabled makes discord.py refuse the
+    login outright, so the adapter asks for the members intent only when
+    Discord says it is available. ``None`` means the probe failed and the
+    caller keeps its allowlist heuristic.
+    """
+    if not token:
+        return None
+    headers = {
+        "Authorization": f"Bot {token}",
+        "User-Agent": "DiscordBot (https://github.com/NousResearch/hermes-agent, 1.0)",
+    }
+    try:
+        import aiohttp
+
+        timeout = aiohttp.ClientTimeout(total=5)
+        async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+            async with session.get(
+                "https://discord.com/api/v10/applications/@me"
+            ) as response:
+                if response.status != 200:
+                    logger.debug(
+                        "Discord application intent check returned %s", response.status
+                    )
+                    return None
+                payload = await response.json()
+    except Exception as exc:  # nosec — the probe is best-effort
+        logger.debug("Discord application intent check failed: %s", exc)
+        return None
+
+    flags = int(payload.get("flags", 0) or 0)
+    return bool((flags >> 14) & 1 or (flags >> 15) & 1)
+
+
 def _find_discord_windows_bundled_opus(discord_module: Any = None) -> Optional[str]:
     """Return discord.py's bundled Windows opus DLL path when present."""
     if sys.platform != "win32":
@@ -1123,22 +1160,28 @@ class DiscordAdapter(BasePlatformAdapter):
 
             # Set up intents.
             # Message Content is required for normal text replies.
-            # Server Members is only needed when the allowlist contains usernames
-            # that must be resolved to numeric IDs. Requesting privileged intents
-            # that aren't enabled in the Discord Developer Portal can prevent the
-            # bot from coming online at all, so avoid requesting members intent
-            # unless it is actually necessary.
+            # Server Members drives on_member_join, which plugins need to
+            # provision a member the moment they arrive. It is privileged, so
+            # it is requested only when Discord reports the application has it
+            # enabled: asking for an unavailable intent makes discord.py refuse
+            # the login outright. The allowlist heuristic stays as a fallback
+            # for when the probe fails — usernames and role lookups need the
+            # intent regardless of the application flags.
             intents = Intents.default()
             intents.message_content = True
             intents.dm_messages = True
             intents.guild_messages = True
+            members_intent_available = await _application_has_members_intent(
+                self.config.token
+            )
             intents.members = (
+                bool(members_intent_available)
                 # ``"*"`` is the open-mode wildcard (honored in _is_allowed_user),
-                # not a username to resolve, so it must not pull in the privileged
-                # Server Members intent — exactly the migrate-from-OpenClaw path
-                # the wildcard fix targets would otherwise silently fail to come
-                # online when Members Intent isn't enabled in the Developer Portal.
-                any(entry != "*" and not entry.isdigit() for entry in self._allowed_user_ids)
+                # not a username to resolve, so it does not pull in the intent.
+                or any(
+                    entry != "*" and not entry.isdigit()
+                    for entry in self._allowed_user_ids
+                )
                 or bool(self._allowed_role_ids)  # Need members intent for role lookup
             )
             intents.voice_states = True
