@@ -1,7 +1,9 @@
 """Per-thread conversation transcript persistence.
 
 Writes append-only JSONL transcript files for each message thread.
-One file per thread at ``<directory>/<thread_id>.jsonl``.
+One file per thread at ``<directory>/<thread_id>.jsonl``, and one file per
+channel at ``<directory>/<chat_id>.jsonl`` holding every record of the
+conversations that channel hosted, threads included.
 
 Inbound messages (from users) are captured via ``pre_gateway_dispatch``.
 Outbound messages (assistant responses) are captured via ``post_gateway_delivery``.
@@ -76,6 +78,7 @@ def _on_inbound(writer: "ThreadTranscriptWriter", *, event, **kw: Any) -> None:
         message_id=getattr(event, "message_id", None),
         thread_id=getattr(source, "thread_id", None),
         chat_id=getattr(source, "chat_id", None),
+        parent_chat_id=getattr(source, "parent_chat_id", None),
         platform=getattr(getattr(source, "platform", None), "value", None),
         content=getattr(event, "text", None),
         timestamp=getattr(event, "timestamp", None),
@@ -93,6 +96,7 @@ def _on_outbound(writer: "ThreadTranscriptWriter", *, event, result, content, **
         message_id=getattr(result, "message_id", None),
         thread_id=getattr(source, "thread_id", None),
         chat_id=getattr(source, "chat_id", None),
+        parent_chat_id=getattr(source, "parent_chat_id", None),
         platform=getattr(getattr(source, "platform", None), "value", None),
         content=content,
         timestamp=time.time(),
@@ -102,8 +106,9 @@ def _on_outbound(writer: "ThreadTranscriptWriter", *, event, result, content, **
 class ThreadTranscriptWriter:
     """Thread-safe append-only JSONL transcript writer.
 
-    One file per thread_id.  Each line is a single JSON object
-    representing one message turn (user or assistant).
+    One file per thread_id, plus one file per parent channel holding every
+    record of the conversations that channel hosted.  Each line is a single
+    JSON object representing one message turn (user or assistant).
     """
 
     def __init__(self, directory: Path) -> None:
@@ -120,6 +125,7 @@ class ThreadTranscriptWriter:
         message_id: Optional[str],
         thread_id: Optional[str],
         chat_id: Optional[str],
+        parent_chat_id: Optional[str] = None,
         platform: Optional[str],
         content: Optional[str],
         timestamp: Optional[float] = None,
@@ -169,6 +175,16 @@ class ThreadTranscriptWriter:
 
         line = json.dumps(record, ensure_ascii=False, default=str) + "\n"
         _atomic_append(_file, line)
+
+        # A thread's channel keeps a log of its own: the same record, filed
+        # under the channel, with ``chat_id`` naming the channel the file
+        # represents and ``thread_id`` still naming the thread it came from.
+        if parent_chat_id is not None and str(parent_chat_id) != str(_target_id):
+            record["chat_id"] = str(parent_chat_id)
+            _atomic_append(
+                self._directory / f"{parent_chat_id}.jsonl",
+                json.dumps(record, ensure_ascii=False, default=str) + "\n",
+            )
 
 
 # ── helpers ────────────────────────────────────────────────────
@@ -220,6 +236,7 @@ def record_clarify_question(
     choices: Optional[list] = None,
     thread_id: Optional[str] = None,
     chat_id: Optional[str] = None,
+    parent_chat_id: Optional[str] = None,
     platform: Optional[str] = None,
 ) -> None:
     """Write the clarify question as its own record, where it was asked.
@@ -234,6 +251,7 @@ def record_clarify_question(
         message_id=None,
         thread_id=thread_id,
         chat_id=chat_id,
+        parent_chat_id=parent_chat_id,
         platform=platform,
         content=question,
         kind=CLARIFY_KIND_QUESTION,
@@ -249,6 +267,7 @@ def record_clarify_answer(
     source: str,
     thread_id: Optional[str] = None,
     chat_id: Optional[str] = None,
+    parent_chat_id: Optional[str] = None,
     platform: Optional[str] = None,
 ) -> None:
     """Write the clarify answer as its own record, tagged with how it arrived.
@@ -267,6 +286,7 @@ def record_clarify_answer(
         message_id=None,
         thread_id=thread_id,
         chat_id=chat_id,
+        parent_chat_id=parent_chat_id,
         platform=platform,
         content=answer,
         kind=CLARIFY_KIND_ANSWER,
