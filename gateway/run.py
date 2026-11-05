@@ -21535,6 +21535,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     transcript={
                         "thread_id": _progress_thread_id,
                         "chat_id": _status_chat_id,
+                        "parent_chat_id": getattr(source, "parent_chat_id", None),
                         "platform": getattr(source.platform, "value", None),
                     },
                 )

@@ -73,3 +73,48 @@ def test_clarify_question_and_answer_are_recorded(tmp_path, monkeypatch):
     assert records[1]["content"] == "state.db"
     assert records[1]["source"] == "button"
     assert records[0]["clarify_id"] == records[1]["clarify_id"] == "c1"
+
+
+def test_thread_record_also_lands_in_its_channel_file(tmp_path):
+    """A thread record is filed under the thread and under its parent channel.
+
+    Discord's auto-threading turns every channel message into a thread, so
+    keying the file on ``thread_id or chat_id`` alone left each channel's file
+    holding nothing but commands. The channel copy keeps ``thread_id`` and
+    names the channel in ``chat_id``.
+    """
+    writer = ThreadTranscriptWriter(Path(tmp_path))
+    writer.write(
+        role="user",
+        user_id="u1",
+        message_id="m1",
+        thread_id="t1",
+        chat_id="t1",
+        parent_chat_id="c1",
+        platform="discord",
+        content="hello",
+    )
+
+    thread_record = json.loads((Path(tmp_path) / "t1.jsonl").read_text(encoding="utf-8"))
+    channel_record = json.loads((Path(tmp_path) / "c1.jsonl").read_text(encoding="utf-8"))
+
+    assert thread_record["chat_id"] == "t1"
+    assert channel_record["chat_id"] == "c1"
+    assert channel_record["thread_id"] == "t1"
+    assert channel_record["content"] == "hello"
+
+
+def test_channel_record_writes_one_file(tmp_path):
+    """A message already in the channel writes the channel file and nothing else."""
+    writer = ThreadTranscriptWriter(Path(tmp_path))
+    writer.write(
+        role="user",
+        user_id="u1",
+        message_id="m2",
+        thread_id=None,
+        chat_id="c1",
+        platform="discord",
+        content="in channel",
+    )
+
+    assert sorted(path.name for path in Path(tmp_path).glob("*.jsonl")) == ["c1.jsonl"]
