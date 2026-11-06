@@ -74,8 +74,9 @@ def test_sibling_does_not_match_different_thread_same_chat():
     assert runner._sibling_thread_run_keys(_thread_source("userA"), key_a) == []
 
 
-def test_sibling_returns_empty_for_non_thread_source():
-    # Non-thread group/channel must NOT trigger the cross-user fallback.
+def test_sibling_finds_other_users_run_in_non_thread_channel():
+    # A per-user channel (group_sessions_per_user) isolates participants the
+    # same way a per-user thread does: keys are ...:{chat_id}:{user_id}.
     runner = object.__new__(GatewayRunner)
     nonthread = SessionSource(
         platform=Platform.DISCORD, chat_type="group", chat_id="chan1", user_id="userA"
@@ -86,6 +87,27 @@ def test_sibling_returns_empty_for_non_thread_source():
         )
     )
     runner._running_agents = {grp_b: _FakeAgent()}
+    assert runner._sibling_thread_run_keys(nonthread, "agent:main:discord:group:chan1:userA") == [grp_b]
+
+
+def test_sibling_non_thread_does_not_match_run_inside_channel_thread():
+    # A channel-level /stop must not reach a run inside one of its threads:
+    # that key carries two segments after the chat prefix (thread_id, user_id).
+    runner = object.__new__(GatewayRunner)
+    nonthread = SessionSource(
+        platform=Platform.DISCORD, chat_type="group", chat_id="chan1", user_id="userA"
+    )
+    thread_key = build_session_key(
+        SessionSource(
+            platform=Platform.DISCORD,
+            chat_type="group",
+            chat_id="chan1",
+            thread_id="thr1",
+            user_id="userB",
+        ),
+        thread_sessions_per_user=True,
+    )
+    runner._running_agents = {thread_key: _FakeAgent()}
     assert runner._sibling_thread_run_keys(nonthread, "agent:main:discord:group:chan1:userA") == []
 
 

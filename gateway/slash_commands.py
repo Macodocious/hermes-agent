@@ -1255,12 +1255,12 @@ class GatewaySlashCommandsMixin:
             )
             return EphemeralReply(t("gateway.stop.stopped"))
 
-        # No run under the caller's own session key.  In a per-user thread
-        # (thread_sessions_per_user=True) each participant is isolated even
-        # inside one shared thread, so a run another user started lives under
-        # a different key.  Authorized users should still be able to /stop it
+        # No run under the caller's own session key.  In per-user mode each
+        # participant is isolated even inside one shared conversation (thread
+        # or channel), so a run another user started lives under a different
+        # key.  Authorized users should still be able to /stop it
         # (#bernard-thread-stop).  Fall back to interrupting any running
-        # agent(s) that share this thread, gated on authorization.
+        # agent(s) that share this conversation, gated on authorization.
         sibling_keys = self._sibling_thread_run_keys(source, session_key)
         if sibling_keys and self._is_user_authorized(source):
             for sibling_key in sibling_keys:
