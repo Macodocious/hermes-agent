@@ -27,7 +27,7 @@ application that did not happen.
 from typing import Optional
 
 # The only valid declaration values.
-VALID_CONTEXTS = ("general", "coding")
+VALID_CONTEXTS = ("general", "coding", "financial")
 
 # Bounds on user-directed temperatures. OpenAI-compatible sampling range.
 MIN_TEMPERATURE = 0.0
@@ -42,7 +42,8 @@ def switch_context(
     """Record the agent's per-turn task-context declaration.
 
     Args:
-        context: The declared context — ``"general"`` or ``"coding"``.
+        context: The declared context — ``"general"``, ``"coding"`` or
+            ``"financial"``.
         temperature: Optional user-directed explicit temperature for the
             next API request (e.g. the operator said "retry with
             temperature 1.0"). Takes precedence over the context knob for
@@ -57,7 +58,7 @@ def switch_context(
     if agent is None:
         return tool_error("Agent context unavailable; declaration not recorded.")
     if not isinstance(context, str):
-        return tool_error("context must be a string: 'general' or 'coding'.")
+        return tool_error("context must be a string: 'general', 'coding' or 'financial'.")
     normalized = context.strip().lower()
     if normalized not in VALID_CONTEXTS:
         return tool_error(
@@ -127,12 +128,13 @@ def check_task_context_requirements() -> bool:
 TASK_CONTEXT_SCHEMA = {
     "name": "switch_context",
     "description": (
-        "Declare whether the current work is `general` conversation or "
-        "`coding` output. Call this the moment the nature of your work "
-        "changes: before starting or finishing a coding task, call it with "
-        "the new context. The declaration sets the sampling temperature of "
-        "your next response — `general` for conversation, `coding` for "
-        "code work — as configured by the operator's temperature override. "
+        "Declare whether the current work is `general` conversation, "
+        "`coding` output, or `financial` analysis. Call this the moment the "
+        "nature of your work changes: before starting or finishing a coding "
+        "task, and before answering market, valuation or position questions. "
+        "The declaration sets the sampling temperature of your next response "
+        "— `general`, `coding` or `financial` — as configured by the "
+        "operator's temperature override. "
         "Default when never called: `general`. When the operator explicitly "
         "asks for a specific temperature (e.g. \"retry with temperature "
         "1.0\"), call this with `context` set to the current work type and "
@@ -146,7 +148,8 @@ TASK_CONTEXT_SCHEMA = {
                 "enum": list(VALID_CONTEXTS),
                 "description": (
                     "The task context you are declaring: `general` for "
-                    "conversation, `coding` for coding work."
+                    "conversation, `coding` for coding work, `financial` for "
+                    "market, valuation or position analysis."
                 ),
             },
             "temperature": {

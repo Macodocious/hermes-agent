@@ -1087,12 +1087,12 @@ def _resolve_effective_temperature(agent) -> Optional[float]:
     if explicit is not None:
         return explicit
     declared = getattr(agent, "_declared_task_context", None)
-    knob = declared if declared in ("general", "coding") else "general"
+    knob = declared if declared in ("general", "coding", "financial") else "general"
     temperature = override.get(knob, value)
     if temperature is None and knob != "general":
-        # The coding knob is unset — fall back to the general knob, then
+        # The context knob is unset — fall back to the general knob, then
         # to the base value, so a partial override config never yields
-        # a None temperature for a coding-declared turn.
+        # a None temperature for a declared non-general turn.
         temperature = override.get("general", value)
     return temperature
 
