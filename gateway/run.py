@@ -14377,41 +14377,49 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
 
     def _sibling_thread_run_keys(self, source: SessionSource, own_key: str) -> list:
-        """Find running-agent keys for OTHER participants in the same thread.
+        """Find running-agent keys for OTHER participants in the same conversation.
 
-        Only applies when the message originates in a thread.  In per-user
-        thread mode (``thread_sessions_per_user=True``) each participant gets
-        an isolated session key of the form
-        ``agent:main:{platform}:{chat_type}:{chat_id}:{thread_id}:{user_id}``,
-        so a run started by another user is invisible to the caller's own
-        ``/stop``.  This returns the keys of any *actually running* agents
-        (not the pending sentinel, not the caller's own key) whose key shares
-        the caller's ``{chat_id}:{thread_id}`` prefix.
+        In per-user mode each participant gets an isolated session key, so a
+        run another user started lives under a different key and is invisible
+        to the caller's own ``/stop``.  Threads (``thread_sessions_per_user``)
+        key as ``...:{chat_id}:{thread_id}:{user_id}``; non-thread channels
+        (``group_sessions_per_user``) key as ``...:{chat_id}:{user_id}``.  This
+        returns the keys of any *actually running* agents (not the pending
+        sentinel, not the caller's own key) whose key shares the caller's
+        conversation prefix.
 
-        Returns an empty list when the source is not in a thread, or when no
+        Returns an empty list when the source has no chat id, or when no
         sibling runs exist — callers must still gate on authorization.
         """
-        thread_id = getattr(source, "thread_id", None)
         chat_id = getattr(source, "chat_id", None)
-        if not thread_id or not chat_id:
+        if not chat_id:
             return []
+        thread_id = getattr(source, "thread_id", None)
         platform = source.platform.value
         chat_type = getattr(source, "chat_type", None) or ""
-        # Prefix that every per-user key in this thread shares, up to and
-        # including the thread_id segment.  Matching either the exact
-        # shared-thread key or any key with a further (user_id) segment
-        # (prefix + ":") avoids cross-matching an unrelated thread whose id
-        # merely starts with this one.
-        prefix = ":".join(
-            ["agent:main", platform, chat_type, str(chat_id), str(thread_id)]
-        )
+        prefix_parts = ["agent:main", platform, chat_type, str(chat_id)]
+        if thread_id:
+            # Prefix through the thread_id segment.  Matching either the exact
+            # shared-thread key or a key with one further (user_id) segment
+            # avoids cross-matching an unrelated thread (thr11 vs thr1).
+            prefix_parts.append(str(thread_id))
+        prefix = ":".join(prefix_parts)
         matches = []
         for key, agent in list(self._running_agents.items()):
             if key == own_key:
                 continue
             if agent is _AGENT_PENDING_SENTINEL or not agent:
                 continue
-            if key == prefix or key.startswith(prefix + ":"):
+            if key == prefix:
+                matches.append(key)
+                continue
+            if not key.startswith(prefix + ":"):
+                continue
+            # Exactly one further segment (user_id).  Deeper keys are runs
+            # inside a thread of this channel; a non-thread /stop must not
+            # reach into them.
+            suffix = key[len(prefix) + 1:]
+            if suffix and ":" not in suffix:
                 matches.append(key)
         return matches
 
