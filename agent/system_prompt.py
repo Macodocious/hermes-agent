@@ -24,6 +24,7 @@ Pure helpers that read the agent's state.  AIAgent keeps thin forwarders.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from typing import Any, Dict, List, Optional
 
@@ -354,6 +355,20 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
         skills_prompt = ""
     if skills_prompt:
         stable_parts.append(skills_prompt)
+
+    # Procedures index — its own pipe, placed directly after the skills index so
+    # the cached prefix keeps one boundary between the two sections.
+    try:
+        from agent.procedures import build_procedures_system_prompt
+
+        procedures_prompt = build_procedures_system_prompt()
+    except Exception as error:
+        logging.getLogger(__name__).warning(
+            "Could not build the procedures section: %s", error
+        )
+        procedures_prompt = ""
+    if procedures_prompt:
+        stable_parts.append(procedures_prompt)
 
     # Alibaba Coding Plan API always returns "glm-4.7" as model name regardless
     # of the requested model. Inject explicit model identity into the system prompt
