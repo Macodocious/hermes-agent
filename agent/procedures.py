@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 PROCEDURES_DIR_NAME = "procedures"
 PROCEDURES_SNAPSHOT_FILE = ".procedures_prompt_snapshot.json"
-PROCEDURES_SNAPSHOT_VERSION = 1
+PROCEDURES_SNAPSHOT_VERSION = 2
 PROCEDURES_FILE_SUFFIX = ".md"
 PROCEDURES_SECTION_HEADER = "## Procedures (mandatory)"
 PROCEDURES_OPEN_TAG = "<available_procedures>"
@@ -99,6 +99,8 @@ def _load_procedures_snapshot(procedures_dir: Path) -> Optional[dict]:
         return None
     if snapshot.get("manifest") != _build_procedures_manifest(procedures_dir):
         return None
+    if snapshot.get("disabled") != sorted(disabled_procedure_names()):
+        return None
     return snapshot
 
 
@@ -108,6 +110,7 @@ def _write_procedures_snapshot(
     payload = {
         "version": PROCEDURES_SNAPSHOT_VERSION,
         "manifest": manifest,
+        "disabled": sorted(disabled_procedure_names()),
         "procedures": procedure_entries,
     }
     try:
@@ -242,7 +245,7 @@ def build_procedures_system_prompt() -> str:
     if not procedures_dir.exists():
         return ""
 
-    cache_key = (str(procedures_dir),)
+    cache_key = (str(procedures_dir), tuple(sorted(disabled_procedure_names())))
     with _PROCEDURES_PROMPT_CACHE_LOCK:
         cached = _PROCEDURES_PROMPT_CACHE.get(cache_key)
         if cached is not None:
