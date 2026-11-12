@@ -1008,6 +1008,80 @@ class TestBuildContextFilesPrompt:
 
 
 # =========================================================================
+# Procedures index
+# =========================================================================
+
+
+class TestProceduresSystemPrompt:
+    """The procedures index is a sibling of the skills index, not a reuse of it."""
+
+    def _write(self, procedures_dir, filename, name, description, body="Body."):
+        procedures_dir.mkdir(parents=True, exist_ok=True)
+        (procedures_dir / filename).write_text(
+            f"---\nname: {name}\ndescription: {description}\n---\n\n{body}\n",
+            encoding="utf-8",
+        )
+
+    def test_renders_name_and_description_per_line(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        from agent import procedures
+
+        procedures.clear_procedures_system_prompt_cache(clear_snapshot=True)
+        self._write(
+            procedures.get_procedures_dir(),
+            "starting-every-turn.md",
+            "starting-every-turn",
+            "What to do at the start of every turn.",
+        )
+        section = procedures.build_procedures_system_prompt()
+        assert "<available_procedures>" in section
+        assert "starting-every-turn: What to do at the start of every turn." in section
+
+    def test_missing_directory_renders_nothing(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        from agent import procedures
+
+        procedures.clear_procedures_system_prompt_cache(clear_snapshot=True)
+        assert procedures.build_procedures_system_prompt() == ""
+
+    def test_file_without_frontmatter_is_skipped(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        from agent import procedures
+
+        procedures.clear_procedures_system_prompt_cache(clear_snapshot=True)
+        procedures_dir = procedures.get_procedures_dir()
+        self._write(procedures_dir, "keep.md", "keep", "Kept.")
+        procedures_dir.mkdir(parents=True, exist_ok=True)
+        (procedures_dir / "broken.md").write_text("no frontmatter\n", encoding="utf-8")
+
+        section = procedures.build_procedures_system_prompt()
+        assert "keep: Kept." in section
+        assert "broken" not in section
+
+    def test_snapshot_is_reused_until_a_file_changes(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        from agent import procedures
+
+        procedures.clear_procedures_system_prompt_cache(clear_snapshot=True)
+        procedures_dir = procedures.get_procedures_dir()
+        self._write(procedures_dir, "one.md", "one", "First.")
+        first = procedures.build_procedures_system_prompt()
+        assert "one: First." in first
+
+        snapshot = tmp_path / procedures.PROCEDURES_SNAPSHOT_FILE
+        assert snapshot.exists()
+
+        procedures.clear_procedures_system_prompt_cache(clear_snapshot=False)
+        second = procedures.build_procedures_system_prompt()
+        assert second == first
+
+        self._write(procedures_dir, "two.md", "two", "Second.")
+        procedures.clear_procedures_system_prompt_cache(clear_snapshot=False)
+        third = procedures.build_procedures_system_prompt()
+        assert "two: Second." in third
+
+
+# =========================================================================
 # .hermes.md helper functions
 # =========================================================================
 
