@@ -28,11 +28,16 @@ logger = logging.getLogger(__name__)
 
 PROCEDURES_DIR_NAME = "procedures"
 PROCEDURES_SNAPSHOT_FILE = ".procedures_prompt_snapshot.json"
-PROCEDURES_SNAPSHOT_VERSION = 1
+PROCEDURES_SNAPSHOT_VERSION = 2
 PROCEDURES_FILE_SUFFIX = ".md"
-PROCEDURES_SECTION_HEADER = "## Procedures"
+PROCEDURES_SECTION_HEADER = "## Procedures (mandatory)"
 PROCEDURES_OPEN_TAG = "<available_procedures>"
 PROCEDURES_CLOSE_TAG = "</available_procedures>"
+
+# `procedures.disabled` in config.yaml lists procedure names to keep out of the
+# prompt and out of list_procedures, mirroring the skills disabled list.
+PROCEDURES_CONFIG_SECTION = "procedures"
+PROCEDURES_DISABLED_KEY = "disabled"
 
 _PROCEDURES_PROMPT_CACHE_MAX = 8
 _PROCEDURES_PROMPT_CACHE: "OrderedDict[tuple, str]" = OrderedDict()
@@ -94,6 +99,8 @@ def _load_procedures_snapshot(procedures_dir: Path) -> Optional[dict]:
         return None
     if snapshot.get("manifest") != _build_procedures_manifest(procedures_dir):
         return None
+    if snapshot.get("disabled") != sorted(disabled_procedure_names()):
+        return None
     return snapshot
 
 
@@ -103,6 +110,7 @@ def _write_procedures_snapshot(
     payload = {
         "version": PROCEDURES_SNAPSHOT_VERSION,
         "manifest": manifest,
+        "disabled": sorted(disabled_procedure_names()),
         "procedures": procedure_entries,
     }
     try:
@@ -134,10 +142,31 @@ def read_procedure_metadata(procedure_path: Path) -> Optional[dict]:
     return {"name": name, "description": description, "file": procedure_path.name}
 
 
+def disabled_procedure_names() -> set[str]:
+    """Procedure names switched off in `procedures.disabled`, or none if unset.
+
+    A missing or malformed config yields no exclusions and reports at warning
+    level, so a broken config never silently hides every procedure.
+    """
+    try:
+        from hermes_cli.config import load_config
+
+        config = load_config()
+    except Exception as error:
+        logger.warning("Could not read procedures.disabled from config: %s", error)
+        return set()
+    section = config.get(PROCEDURES_CONFIG_SECTION) if isinstance(config, dict) else None
+    raw = section.get(PROCEDURES_DISABLED_KEY) if isinstance(section, dict) else None
+    if not isinstance(raw, list):
+        return set()
+    return {str(name).strip() for name in raw if str(name).strip()}
+
+
 def collect_procedures(procedures_dir: Path) -> list[dict]:
     """Read every procedure file, keeping the first file for each name."""
     procedure_entries: list[dict] = []
     seen_names: set[str] = set()
+    disabled = disabled_procedure_names()
     try:
         procedure_paths = sorted(procedures_dir.glob(f"*{PROCEDURES_FILE_SUFFIX}"))
     except OSError as error:
@@ -146,6 +175,8 @@ def collect_procedures(procedures_dir: Path) -> list[dict]:
     for procedure_path in procedure_paths:
         entry = read_procedure_metadata(procedure_path)
         if entry is None:
+            continue
+        if entry["name"] in disabled:
             continue
         if entry["name"] in seen_names:
             logger.warning(
@@ -164,11 +195,41 @@ def _render_procedures_section(procedure_entries: list[dict]) -> str:
     ]
     return (
         f"{PROCEDURES_SECTION_HEADER}\n"
-        "Recurring work the user has written down. Open one with "
-        "view_procedure(name) before following it.\n\n"
+        "Before replying, scan the procedures below. If a procedure matches the task you are "
+        "about to do, you MUST load it with view_procedure(name) and follow it. Procedures are "
+        "the user's own written instructions for recurring work, so they take priority over "
+        "your general defaults and over habits picked up elsewhere. Err on the side of loading: "
+        "a procedure that turns out to be unnecessary costs one tool call, while a missed one "
+        "means doing the task the wrong way.\n"
+        "\n"
         f"{PROCEDURES_OPEN_TAG}\n"
         + "\n".join(index_lines)
-        + f"\n{PROCEDURES_CLOSE_TAG}"
+        + f"\n{PROCEDURES_CLOSE_TAG}\n"
+        "\n"
+        "Only proceed without loading a procedure if genuinely none are relevant to the task."
+    )
+
+
+def _render_disabled_note(procedures_dir: Path) -> str:
+    """Render the note shown when every procedure on disk is disabled.
+
+    The skills index carries a hidden note in the same situation; without one,
+    an empty section is indistinguishable from a broken loader.
+    """
+    if not disabled_procedure_names():
+        return ""
+    try:
+        has_files = any(procedures_dir.glob(f"*{PROCEDURES_FILE_SUFFIX}"))
+    except OSError as error:
+        logger.warning("Could not list procedures in %s: %s", procedures_dir, error)
+        return ""
+    if not has_files:
+        return ""
+    return (
+        f"{PROCEDURES_SECTION_HEADER}\n"
+        f"Every procedure on disk is disabled in "
+        f"`{PROCEDURES_CONFIG_SECTION}.{PROCEDURES_DISABLED_KEY}`. None is loaded, "
+        "and none should be followed."
     )
 
 
@@ -184,7 +245,7 @@ def build_procedures_system_prompt() -> str:
     if not procedures_dir.exists():
         return ""
 
-    cache_key = (str(procedures_dir),)
+    cache_key = (str(procedures_dir), tuple(sorted(disabled_procedure_names())))
     with _PROCEDURES_PROMPT_CACHE_LOCK:
         cached = _PROCEDURES_PROMPT_CACHE.get(cache_key)
         if cached is not None:
@@ -200,10 +261,12 @@ def build_procedures_system_prompt() -> str:
             _build_procedures_manifest(procedures_dir), procedure_entries,
         )
 
-    if not procedure_entries:
-        return ""
-
-    result = _render_procedures_section(procedure_entries)
+    if procedure_entries:
+        result = _render_procedures_section(procedure_entries)
+    else:
+        result = _render_disabled_note(procedures_dir)
+        if not result:
+            return ""
 
     with _PROCEDURES_PROMPT_CACHE_LOCK:
         _PROCEDURES_PROMPT_CACHE[cache_key] = result

@@ -107,3 +107,23 @@ def test_write_outside_the_procedures_folder_is_refused(tmp_path, monkeypatch):
 
     assert "error" in payload
     assert not (tmp_path / "rules" / "02-design-philosophy.md").exists()
+
+
+def test_write_clears_the_prompt_cache(tmp_path, monkeypatch):
+    """A newly written procedure must appear in the next section build."""
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    procedures_dir = tmp_path / "procedures"
+    from agent import procedures
+
+    procedures.clear_procedures_system_prompt_cache(clear_snapshot=True)
+    _write_procedure_file(procedures_dir, "one.md", "one", "First.")
+    assert "one: First." in procedures.build_procedures_system_prompt()
+
+    module = _load_rulebook(monkeypatch, procedures_dir)
+    module._write_procedure_handler({
+        "reason": "test",
+        "path": "two.md",
+        "content": "---\nname: two\ndescription: Second.\n---\n\nBody.\n",
+    })
+
+    assert "two: Second." in procedures.build_procedures_system_prompt()

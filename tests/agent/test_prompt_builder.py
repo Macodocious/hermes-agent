@@ -1036,6 +1036,8 @@ class TestProceduresSystemPrompt:
         section = procedures.build_procedures_system_prompt()
         assert "<available_procedures>" in section
         assert "starting-every-turn: What to do at the start of every turn." in section
+        assert "Procedures (mandatory)" in section
+        assert "view_procedure(name) and follow it" in section
 
     def test_missing_directory_renders_nothing(self, tmp_path, monkeypatch):
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
@@ -1079,6 +1081,32 @@ class TestProceduresSystemPrompt:
         procedures.clear_procedures_system_prompt_cache(clear_snapshot=False)
         third = procedures.build_procedures_system_prompt()
         assert "two: Second." in third
+
+    def test_disabled_procedure_is_left_out(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        from agent import procedures
+
+        procedures.clear_procedures_system_prompt_cache(clear_snapshot=True)
+        procedures_dir = procedures.get_procedures_dir()
+        self._write(procedures_dir, "keep.md", "keep", "Kept.")
+        self._write(procedures_dir, "off.md", "off", "Switched off.")
+        monkeypatch.setattr(procedures, "disabled_procedure_names", lambda: {"off"})
+
+        section = procedures.build_procedures_system_prompt()
+        assert "keep: Kept." in section
+        assert "off: Switched off." not in section
+
+    def test_all_disabled_renders_a_note(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        from agent import procedures
+
+        procedures.clear_procedures_system_prompt_cache(clear_snapshot=True)
+        self._write(procedures.get_procedures_dir(), "off.md", "off", "Switched off.")
+        monkeypatch.setattr(procedures, "disabled_procedure_names", lambda: {"off"})
+
+        section = procedures.build_procedures_system_prompt()
+        assert "disabled" in section
+        assert "<available_procedures>" not in section
 
 
 # =========================================================================
