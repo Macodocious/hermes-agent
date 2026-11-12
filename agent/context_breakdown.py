@@ -14,6 +14,10 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 _SKILLS_BLOCK_RE = re.compile(r"<available_skills>.*?</available_skills>", re.DOTALL)
 
+_PROCEDURES_BLOCK_RE = re.compile(
+    r"<available_procedures>.*?</available_procedures>", re.DOTALL
+)
+
 _SUBAGENT_TOOL_NAMES = frozenset({"delegate_task"})
 
 _CATEGORY_COLORS = {
@@ -21,6 +25,7 @@ _CATEGORY_COLORS = {
     "tool_definitions": "var(--context-usage-tools)",
     "rules": "var(--context-usage-rules)",
     "skills": "var(--context-usage-skills)",
+    "procedures": "var(--context-usage-skills)",
     "mcp": "var(--context-usage-mcp)",
     "subagent_definitions": "var(--context-usage-subagents)",
     "memory": "var(--context-usage-memory)",
@@ -102,10 +107,13 @@ def compute_session_context_breakdown(
     skills_match = _SKILLS_BLOCK_RE.search(stable)
     skills_index = skills_match.group(0) if skills_match else ""
 
+    procedures_match = _PROCEDURES_BLOCK_RE.search(stable)
+    procedures_index = procedures_match.group(0) if procedures_match else ""
+
     memory_block, user_block = _memory_blocks(agent)
     memory_text = "\n\n".join(part for part in (memory_block, user_block) if part).strip()
 
-    system_core = _strip_blocks(stable, skills_index)
+    system_core = _strip_blocks(stable, skills_index, procedures_index)
     system_tail = _strip_blocks(volatile, memory_block, user_block)
     system_prompt_text = "\n\n".join(part for part in (system_core, system_tail) if part).strip()
 
@@ -119,6 +127,7 @@ def compute_session_context_breakdown(
         ("tool_definitions", "Tool definitions", _json_tokens(builtin_tools)),
         ("rules", "Rules", _chars_to_tokens(context)),
         ("skills", "Skills", _chars_to_tokens(skills_index)),
+        ("procedures", "Procedures", _chars_to_tokens(procedures_index)),
         ("mcp", "MCP", _json_tokens(mcp_tools)),
         ("subagent_definitions", "Subagent definitions", _json_tokens(subagent_tools)),
         ("memory", "Memory", _chars_to_tokens(memory_text)),

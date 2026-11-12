@@ -1036,6 +1036,8 @@ class TestProceduresSystemPrompt:
         section = procedures.build_procedures_system_prompt()
         assert "<available_procedures>" in section
         assert "starting-every-turn: What to do at the start of every turn." in section
+        assert "Procedures (mandatory)" in section
+        assert "view_procedure(name) and follow it" in section
 
     def test_missing_directory_renders_nothing(self, tmp_path, monkeypatch):
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))

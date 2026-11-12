@@ -20,6 +20,11 @@ from typing import Any, Dict, List, Tuple
 # The skills index is wrapped in this tag pair inside the stable tier.
 _SKILLS_BLOCK_RE = re.compile(r"<available_skills>.*?</available_skills>", re.DOTALL)
 
+# The procedures index is wrapped the same way, and measured separately.
+_PROCEDURES_BLOCK_RE = re.compile(
+    r"<available_procedures>.*?</available_procedures>", re.DOTALL
+)
+
 
 def _bytes(s: str) -> int:
     return len(s.encode("utf-8"))
@@ -60,9 +65,9 @@ def _build_inspection_agent(platform: str) -> Any:
 def compute_prompt_breakdown(platform: str = "cli") -> Dict[str, Any]:
     """Return a dict of prompt-size measurements for a fresh session.
 
-    Keys: ``system_prompt`` (chars/bytes), ``skills_index``, ``memory``,
-    ``user_profile``, ``tools`` (count + json bytes), and ``sections`` (a list
-    of (label, chars, bytes) for the three prompt tiers).
+    Keys: ``system_prompt`` (chars/bytes), ``skills_index``, ``procedures_index``,
+    ``memory``, ``user_profile``, ``tools`` (count + json bytes), and ``sections``
+    (a list of (label, chars, bytes) for the three prompt tiers).
     """
     from agent.system_prompt import build_system_prompt, build_system_prompt_parts
 
@@ -79,6 +84,9 @@ def compute_prompt_breakdown(platform: str = "cli") -> Dict[str, Any]:
     # when many skills are installed). Measured inside the stable tier.
     skills_match = _SKILLS_BLOCK_RE.search(stable)
     skills_index = skills_match.group(0) if skills_match else ""
+
+    procedures_match = _PROCEDURES_BLOCK_RE.search(stable)
+    procedures_index = procedures_match.group(0) if procedures_match else ""
 
     # Memory + user profile live in the volatile tier. We re-derive their
     # blocks directly from the memory store so the numbers are attributable
@@ -110,6 +118,7 @@ def compute_prompt_breakdown(platform: str = "cli") -> Dict[str, Any]:
         "model": getattr(agent, "model", "") or "",
         "system_prompt": {"chars": len(full), "bytes": _bytes(full)},
         "skills_index": {"chars": len(skills_index), "bytes": _bytes(skills_index)},
+        "procedures_index": {"chars": len(procedures_index), "bytes": _bytes(procedures_index)},
         "memory": {"chars": len(memory_block), "bytes": _bytes(memory_block)},
         "user_profile": {"chars": len(user_block), "bytes": _bytes(user_block)},
         "tools": {"count": len(tools), "json_bytes": _bytes(tools_json)},
@@ -134,6 +143,8 @@ def render_breakdown(data: Dict[str, Any]) -> str:
     mem = data["memory"]
     up = data["user_profile"]
     lines.append(f"    skills index       : {si['bytes']:>8,} B  ({_fmt_kb(si['bytes'])})")
+    pi = data["procedures_index"]
+    lines.append(f"    procedures index   : {pi['bytes']:>8,} B  ({_fmt_kb(pi['bytes'])})")
     lines.append(f"    memory             : {mem['bytes']:>8,} B  ({_fmt_kb(mem['bytes'])})")
     lines.append(f"    user profile       : {up['bytes']:>8,} B  ({_fmt_kb(up['bytes'])})")
     lines.append("")

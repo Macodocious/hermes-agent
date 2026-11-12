@@ -30,7 +30,7 @@ PROCEDURES_DIR_NAME = "procedures"
 PROCEDURES_SNAPSHOT_FILE = ".procedures_prompt_snapshot.json"
 PROCEDURES_SNAPSHOT_VERSION = 1
 PROCEDURES_FILE_SUFFIX = ".md"
-PROCEDURES_SECTION_HEADER = "## Procedures"
+PROCEDURES_SECTION_HEADER = "## Procedures (mandatory)"
 PROCEDURES_OPEN_TAG = "<available_procedures>"
 PROCEDURES_CLOSE_TAG = "</available_procedures>"
 
@@ -164,11 +164,18 @@ def _render_procedures_section(procedure_entries: list[dict]) -> str:
     ]
     return (
         f"{PROCEDURES_SECTION_HEADER}\n"
-        "Recurring work the user has written down. Open one with "
-        "view_procedure(name) before following it.\n\n"
+        "Before replying, scan the procedures below. If a procedure matches the task you are "
+        "about to do, you MUST load it with view_procedure(name) and follow it. Procedures are "
+        "the user's own written instructions for recurring work, so they take priority over "
+        "your general defaults and over habits picked up elsewhere. Err on the side of loading: "
+        "a procedure that turns out to be unnecessary costs one tool call, while a missed one "
+        "means doing the task the wrong way.\n"
+        "\n"
         f"{PROCEDURES_OPEN_TAG}\n"
         + "\n".join(index_lines)
-        + f"\n{PROCEDURES_CLOSE_TAG}"
+        + f"\n{PROCEDURES_CLOSE_TAG}\n"
+        "\n"
+        "Only proceed without loading a procedure if genuinely none are relevant to the task."
     )
 
 
