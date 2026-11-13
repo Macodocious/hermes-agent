@@ -844,7 +844,7 @@ export const ja = defineLocale({
       providerDefault: '(プロバイダーのデフォルト)',
       tasks: {
         vision: { label: 'ビジョン', hint: '画像分析' },
-        web_extract: { label: 'ウェブ抽出', hint: 'ページの要約' },
+        extract_web: { label: 'ウェブ抽出', hint: 'ページの要約' },
         compression: { label: '圧縮', hint: 'コンテキストの圧縮' },
         skills_hub: { label: 'スキルハブ', hint: 'スキル検索' },
         approval: { label: '承認', hint: 'スマート自動承認' },
@@ -2507,14 +2507,14 @@ export const ja = defineLocale({
         runningTool: action => `${action}を実行中`
       },
       titles: {
-        browser_click: {
+        click_browser: {
           done: 'ページ要素をクリックしました',
           pending: 'ページ要素をクリック中',
           pendingAction: 'クリック中'
         },
         browser_fill: { done: 'フォーム欄に入力しました', pending: 'フォーム欄に入力中', pendingAction: '入力中' },
-        browser_navigate: { done: 'ページを開きました', pending: 'ページをオープン中', pendingAction: 'オープン中' },
-        browser_snapshot: {
+        navigate_browser: { done: 'ページを開きました', pending: 'ページをオープン中', pendingAction: 'オープン中' },
+        snapshot_browser: {
           done: 'ページスナップショットを取得しました',
           pending: 'ページスナップショットを取得中',
           pendingAction: '取得中'
@@ -2524,12 +2524,12 @@ export const ja = defineLocale({
           pending: 'スクリーンショットを取得中',
           pendingAction: '取得中'
         },
-        browser_type: { done: 'ページに入力しました', pending: 'ページに入力中', pendingAction: '入力中' },
+        type_browser: { done: 'ページに入力しました', pending: 'ページに入力中', pendingAction: '入力中' },
         clarify: { done: '質問しました', pending: '質問中', pendingAction: '質問中' },
         cronjob: { done: 'Cron ジョブ', pending: 'Cron ジョブをスケジュール中', pendingAction: 'スケジュール中' },
         edit_file: { done: 'ファイルを編集しました', pending: 'ファイルを編集中', pendingAction: '編集中' },
         execute_code: { done: 'コードを実行しました', pending: 'スクリプト作成中', pendingAction: 'スクリプト作成中' },
-        image_generate: { done: '画像を生成しました', pending: '画像を生成中', pendingAction: '生成中' },
+        generate_image: { done: '画像を生成しました', pending: '画像を生成中', pendingAction: '生成中' },
         list_files: {
           done: 'ファイルを一覧表示しました',
           pending: 'ファイルを一覧表示中',
@@ -2549,13 +2549,13 @@ export const ja = defineLocale({
         },
         terminal: { done: 'コマンドを実行しました', pending: 'コマンドを実行中', pendingAction: '実行中' },
         todo: { done: 'Todo を更新しました', pending: 'Todo を更新中', pendingAction: '更新中' },
-        vision_analyze: { done: '画像を分析しました', pending: '画像を分析中', pendingAction: '分析中' },
-        web_extract: {
+        analyze_vision: { done: '画像を分析しました', pending: '画像を分析中', pendingAction: '分析中' },
+        extract_web: {
           done: 'Web ページを読み取りました',
           pending: 'Web ページを読み取り中',
           pendingAction: '読み取り中'
         },
-        web_search: { done: 'Web を検索しました', pending: 'Web を検索中', pendingAction: '検索中' },
+        search_web: { done: 'Web を検索しました', pending: 'Web を検索中', pendingAction: '検索中' },
         write_file: { done: 'ファイルを編集しました', pending: 'ファイルを編集中', pendingAction: '編集中' }
       }
     }

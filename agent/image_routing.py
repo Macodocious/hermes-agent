@@ -7,7 +7,7 @@ Two modes:
             OpenAI chat.completions) already translate these into their
             vendor-specific multimodal formats.
 
-  text    — run ``vision_analyze`` on each image up-front and prepend the
+  text    — run ``analyze_vision`` on each image up-front and prepend the
             description to the user's text. The model never sees the pixels;
             it only sees a lossy text summary. This is the pre-existing
             behaviour and still the right choice for non-vision models.
@@ -27,9 +27,9 @@ In ``auto`` mode:
     text pipeline so the auxiliary vision backend can describe the image
     for the text-only main model.
   - Otherwise (non-vision model, no explicit override), we fall back to
-    text via the default vision_analyze flow.
+    text via the default analyze_vision flow.
 
-This keeps ``vision_analyze`` surfaced as a tool in every session — skills
+This keeps ``analyze_vision`` surfaced as a tool in every session — skills
 and agent flows that chain it (browser screenshots, deeper inspection of
 URL-referenced images, style-gating loops) keep working. The routing only
 affects *how user-attached images on the current turn* are presented to the
@@ -697,7 +697,7 @@ def build_native_content_parts(
     The hint gives the model a string handle so MCP/skill tools that take
     an image path or URL argument can be invoked on the same image without
     an extra round-trip. This parallels the text-mode hint produced by
-    ``Runner._enrich_message_with_vision`` (``vision_analyze using image_url:
+    ``Runner._enrich_message_with_vision`` (``analyze_vision using image_url:
     <path>``) so behaviour is consistent across both image input modes.
 
     Images are attached at their native size. If a provider rejects the

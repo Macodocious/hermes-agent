@@ -26,7 +26,7 @@ describe('toTodoPayload', () => {
   it('routes named todo and anonymous todos-bearing events to the todo stream', () => {
     expect(toTodoPayload(payload({ name: 'todo' }))?.tool_id).toBe('todo-live')
     expect(toTodoPayload(payload({ todos: [] }))?.name).toBe('todo')
-    expect(toTodoPayload(payload({ name: 'web_search' }))).toBeUndefined()
+    expect(toTodoPayload(payload({ name: 'search_web' }))).toBeUndefined()
     expect(toTodoPayload(undefined)).toBeUndefined()
   })
 })
@@ -42,7 +42,7 @@ describe('sessionInfoStatePatch / hasSessionInfoStatePatch', () => {
 
 describe('delegateTaskPayloads', () => {
   it('returns [] for non-delegate events', () => {
-    expect(delegateTaskPayloads(payload({ name: 'web_search' }), 'running')).toEqual([])
+    expect(delegateTaskPayloads(payload({ name: 'search_web' }), 'running')).toEqual([])
   })
 
   it('maps a running tool.start to a subagent.start spec', () => {

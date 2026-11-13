@@ -75,7 +75,7 @@ describe('buildVerboseToolTrailLine', () => {
     // persisted, expanded-by-default trail block is what blew up the Ink
     // render tree and silently OOM-killed the TUI. The block stays small.
     const huge = 'A'.repeat(40_000)
-    const line = buildVerboseToolTrailLine('browser_snapshot', 'https://x.example', false, 2, undefined, huge)
+    const line = buildVerboseToolTrailLine('snapshot_browser', 'https://x.example', false, 2, undefined, huge)
 
     expect(line).toContain('Result:\n')
     // Far below the old 16KB live-render budget; the whole line (call + label +

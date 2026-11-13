@@ -3,8 +3,8 @@
 Video Generation Tool
 =====================
 
-Single ``video_generate`` tool that dispatches to a plugin-registered
-video generation provider. Mirrors the ``image_generate`` design:
+Single ``generate_video`` tool that dispatches to a plugin-registered
+video generation provider. Mirrors the ``generate_image`` design:
 
 - ``agent/video_gen_provider.py`` defines the :class:`VideoGenProvider` ABC.
 - ``agent/video_gen_registry.py`` holds the active providers (populated by
@@ -60,7 +60,7 @@ logger = logging.getLogger(__name__)
 
 
 VIDEO_GENERATE_SCHEMA: Dict[str, Any] = {
-    "name": "video_generate",
+    "name": "generate_video",
     # Placeholder — the real description is built dynamically at
     # get_tool_definitions() time so it reflects the active backend's
     # actual capabilities (which modalities / resolutions / duration
@@ -326,7 +326,7 @@ def _handle_video_generate(args: Dict[str, Any], **_kw: Any) -> str:
         return tool_error("prompt is required for video generation")
     if "operation" in args or "video_url" in args:
         return tool_error(
-            "video_generate only supports text-to-video, image-to-video, and "
+            "generate_video only supports text-to-video, image-to-video, and "
             "reference-to-video; use a provider-specific tool for video edit/extend"
         )
 
@@ -366,7 +366,7 @@ def _handle_video_generate(args: Dict[str, Any], **_kw: Any) -> str:
         return json.dumps(error_response(
             error=(
                 f"Provider '{getattr(provider, 'name', '?')}' signature is "
-                f"out of date with the video_generate schema. Report this "
+                f"out of date with the generate_video schema. Report this "
                 f"to the plugin author."
             ),
             error_type="provider_contract",
@@ -405,7 +405,7 @@ def _handle_video_generate(args: Dict[str, Any], **_kw: Any) -> str:
 #
 # Why dynamic: the user's configured backend determines which modalities
 # (text / image / refs), aspect ratios, resolutions, durations, and
-# audio/negative-prompt flags are real. A model that calls video_generate
+# audio/negative-prompt flags are real. A model that calls generate_video
 # without knowing the active backend wastes a turn on something like
 # "fal-ai/veo3.1/image-to-video requires image_url". Surfacing the per-model
 # surface in the description means the model usually gets the call right on
@@ -563,7 +563,7 @@ def _build_dynamic_video_schema() -> Dict[str, Any]:
 
 
 registry.register(
-    name="video_generate",
+    name="generate_video",
     toolset="video_gen",
     schema=VIDEO_GENERATE_SCHEMA,
     handler=_handle_video_generate,

@@ -39,8 +39,8 @@ description: "通过关键词、作者、分类或 ID 搜索 arXiv 论文"
 |--------|---------|
 | 搜索论文 | `curl "https://export.arxiv.org/api/query?search_query=all:QUERY&max_results=5"` |
 | 获取指定论文 | `curl "https://export.arxiv.org/api/query?id_list=2402.03300"` |
-| 阅读摘要（网页） | `web_extract(urls=["https://arxiv.org/abs/2402.03300"])` |
-| 阅读完整论文（PDF） | `web_extract(urls=["https://arxiv.org/pdf/2402.03300"])` |
+| 阅读摘要（网页） | `extract_web(urls=["https://arxiv.org/abs/2402.03300"])` |
+| 阅读完整论文（PDF） | `extract_web(urls=["https://arxiv.org/pdf/2402.03300"])` |
 
 ## 搜索论文
 
@@ -167,10 +167,10 @@ print('}')
 
 ```
 # 摘要页（速度快，包含元数据和摘要）
-web_extract(urls=["https://arxiv.org/abs/2402.03300"])
+extract_web(urls=["https://arxiv.org/abs/2402.03300"])
 
 # 完整论文（PDF → 通过 Firecrawl 转为 markdown）
-web_extract(urls=["https://arxiv.org/pdf/2402.03300"])
+extract_web(urls=["https://arxiv.org/pdf/2402.03300"])
 ```
 
 本地 PDF 处理请参阅 `ocr-and-documents` skill。
@@ -263,8 +263,8 @@ curl -s "https://api.semanticscholar.org/graph/v1/author/search?query=Yann+LeCun
 
 1. **发现论文**：`python scripts/search_arxiv.py "your topic" --sort date --max 10`
 2. **评估影响力**：`curl -s "https://api.semanticscholar.org/graph/v1/paper/arXiv:ID?fields=citationCount,influentialCitationCount"`
-3. **阅读摘要**：`web_extract(urls=["https://arxiv.org/abs/ID"])`
-4. **阅读完整论文**：`web_extract(urls=["https://arxiv.org/pdf/ID"])`
+3. **阅读摘要**：`extract_web(urls=["https://arxiv.org/abs/ID"])`
+4. **阅读完整论文**：`extract_web(urls=["https://arxiv.org/pdf/ID"])`
 5. **查找相关工作**：`curl -s "https://api.semanticscholar.org/graph/v1/paper/arXiv:ID/references?fields=title,citationCount&limit=20"`
 6. **获取推荐**：向 Semantic Scholar 推荐接口发送 POST 请求
 7. **追踪作者**：`curl -s "https://api.semanticscholar.org/graph/v1/author/search?query=NAME"`

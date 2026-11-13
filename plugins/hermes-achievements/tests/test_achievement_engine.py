@@ -13,13 +13,13 @@ class AchievementEngineTests(unittest.TestCase):
         messages = [
             {"role": "assistant", "tool_calls": [{"function": {"name": "terminal"}}]},
             {"role": "tool", "tool_name": "terminal", "content": "Error: port 3000 already in use"},
-            {"role": "assistant", "tool_calls": [{"function": {"name": "web_search"}}]},
+            {"role": "assistant", "tool_calls": [{"function": {"name": "search_web"}}]},
         ]
 
         stats = plugin_api.analyze_messages("s1", "Fix dev server", messages)
 
         self.assertEqual(stats["tool_call_count"], 2)
-        self.assertEqual(stats["tool_names"], {"terminal", "web_search"})
+        self.assertEqual(stats["tool_names"], {"terminal", "search_web"})
         self.assertEqual(stats["error_count"], 1)
         self.assertIs(stats["port_conflict"], True)
 

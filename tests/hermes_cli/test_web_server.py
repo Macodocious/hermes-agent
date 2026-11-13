@@ -5602,7 +5602,7 @@ class TestNewEndpoints:
             tools_config,
             "_get_effective_configurable_toolsets",
             lambda: [
-                ("web", "🔍 Web Search & Scraping", "web_search, web_extract"),
+                ("web", "🔍 Web Search & Scraping", "search_web, extract_web"),
                 ("skills", "📚 Skills", "list, view, manage"),
                 ("memory", "💾 Memory", "persistent memory across sessions"),
             ],
@@ -5621,8 +5621,8 @@ class TestNewEndpoints:
             toolsets_module,
             "resolve_toolset",
             lambda name: {
-                "web": ["web_search", "web_extract"],
-                "skills": ["skills_list", "skill_view"],
+                "web": ["search_web", "extract_web"],
+                "skills": ["list_skills", "view_skill"],
                 "memory": ["memory_read"],
             }[name],
         )
@@ -5635,13 +5635,13 @@ class TestNewEndpoints:
             {
                 "name": "web",
                 "label": "Web Search & Scraping",
-                "description": "web_search, web_extract",
+                "description": "search_web, extract_web",
                 "platform": "cli",
                 "platform_label": "CLI",
                 "enabled": True,
                 "available": True,
                 "configured": False,
-                "tools": ["web_extract", "web_search"],
+                "tools": ["extract_web", "search_web"],
             },
             {
                 "name": "skills",
@@ -5652,7 +5652,7 @@ class TestNewEndpoints:
                 "enabled": True,
                 "available": True,
                 "configured": True,
-                "tools": ["skill_view", "skills_list"],
+                "tools": ["view_skill", "list_skills"],
             },
             {
                 "name": "memory",
@@ -5670,23 +5670,23 @@ class TestNewEndpoints:
     def test_toggle_toolset_enable_disable(self):
         """PUT /api/tools/toolsets/{name} round-trips through config and the list view."""
         # Enable a toolset that is off-by-default so the state change is observable.
-        resp = self.client.put("/api/tools/toolsets/x_search", json={"enabled": True})
+        resp = self.client.put("/api/tools/toolsets/search_x", json={"enabled": True})
         assert resp.status_code == 200
         body = resp.json()
         assert body["ok"] is True
-        assert body["name"] == "x_search"
+        assert body["name"] == "search_x"
         assert body["enabled"] is True
 
         listing = {t["name"]: t for t in self.client.get("/api/tools/toolsets").json()}
-        assert listing["x_search"]["enabled"] is True
+        assert listing["search_x"]["enabled"] is True
 
         # Disable it again.
-        resp = self.client.put("/api/tools/toolsets/x_search", json={"enabled": False})
+        resp = self.client.put("/api/tools/toolsets/search_x", json={"enabled": False})
         assert resp.status_code == 200
         assert resp.json()["enabled"] is False
 
         listing = {t["name"]: t for t in self.client.get("/api/tools/toolsets").json()}
-        assert listing["x_search"]["enabled"] is False
+        assert listing["search_x"]["enabled"] is False
 
     def test_discord_toolsets_read_and_write_discord_platform(self):
         """Platform-restricted toolsets must not be saved as successful CLI no-ops."""
@@ -5967,7 +5967,7 @@ class TestNewEndpoints:
     def test_web_config_reports_per_capability_backends(self):
         """GET web/config carries the resolved search/extract backends.
 
-        The runtime resolves web_search and web_extract independently
+        The runtime resolves search_web and extract_web independently
         (web.search_backend / web.extract_backend → web.backend → auto-detect);
         the config payload must surface both so the GUI can show which backend
         each capability actually hits.
@@ -6414,13 +6414,13 @@ class TestNewEndpoints:
                 tool_calls=[
                     {
                         "function": {
-                            "name": "skill_view",
+                            "name": "view_skill",
                             "arguments": '{"name":"github-pr-workflow"}',
                         }
                     },
                     {
                         "function": {
-                            "name": "skill_manage",
+                            "name": "manage_skill",
                             "arguments": '{"name":"github-code-review"}',
                         }
                     },

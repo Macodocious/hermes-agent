@@ -1,7 +1,7 @@
 """ACP session manager — maps ACP sessions to Hermes AIAgent instances.
 
 Sessions are persisted to the shared SessionDB (``~/.hermes/state.db``) so they
-survive process restarts and appear in ``session_search``.  When the editor
+survive process restarts and appear in ``search_session``.  When the editor
 reconnects after idle/restart, the ``load_session`` / ``resume_session`` calls
 find the persisted session in the database and restore the full conversation
 history.
@@ -177,7 +177,7 @@ class SessionManager:
 
     Sessions are held in-memory for fast access **and** persisted to the
     shared SessionDB so they survive process restarts and are searchable
-    via ``session_search``.
+    via ``search_session``.
     """
 
     def __init__(self, agent_factory=None, db=None):

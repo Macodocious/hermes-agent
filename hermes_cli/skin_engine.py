@@ -78,7 +78,7 @@ All fields are optional. Missing values inherit from the ``default`` skin.
     # Tool emojis: override the default emoji for any tool (used in spinners & progress)
     tool_emojis:
       terminal: "⚔"           # Override terminal tool emoji
-      web_search: "🔮"        # Override web_search tool emoji
+      search_web: "🔮"        # Override search_web tool emoji
       # Any tool not listed here uses its registry default
 
 USAGE

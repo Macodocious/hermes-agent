@@ -228,9 +228,9 @@ Slug：从主题中取 2-4 个单词，使用 kebab-case。冲突时追加 `-YYY
 
 ### 第6步：生成图像
 
-使用 `image_generate` 工具，传入第5步组装的 prompt。
+使用 `generate_image` 工具，传入第5步组装的 prompt。
 
-- 将宽高比映射到 image_generate 的格式：`16:9` → `landscape`，`9:16` → `portrait`，`1:1` → `square`
+- 将宽高比映射到 generate_image 的格式：`16:9` → `landscape`，`9:16` → `portrait`，`1:1` → `square`
 - 自定义比例时，选择最接近的命名宽高比
 - 失败时自动重试一次
 - 将生成的图像 URL/路径保存至输出目录
@@ -253,4 +253,4 @@ Slug：从主题中取 2-4 个单词，使用 kebab-case。冲突时追加 `-YYY
 2. **去除密钥** — 在将源内容写入任何输出文件前，始终扫描 API 密钥、token 或凭据。
 3. **每节一个信息点** — 信息图的每个节应传达一个清晰概念。内容过载会降低可读性。
 4. **风格一致性** — 参考文件中的风格定义必须在整个信息图中一致应用，不得混用风格。
-5. **image_generate 宽高比** — 该工具仅支持 `landscape`、`portrait` 和 `square`。自定义比例如 `3:4` 应映射到最接近的选项（此例为 portrait）。
+5. **generate_image 宽高比** — 该工具仅支持 `landscape`、`portrait` 和 `square`。自定义比例如 `3:4` 应映射到最接近的选项（此例为 portrait）。

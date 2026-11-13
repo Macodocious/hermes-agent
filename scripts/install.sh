@@ -1862,7 +1862,7 @@ find_system_browser() {
     # Auto-detection silently bound the install to whatever `command -v chromium`
     # resolved to — most damagingly a Snap Chromium (/snap/bin/chromium), whose
     # sandbox blocks agent-browser's control socket under /tmp, so every
-    # browser_navigate hung until the 60s timeout fired ("opening web page
+    # navigate_browser hung until the 60s timeout fired ("opening web page
     # failed"). Every install now uses the bundled Playwright Chromium unless the
     # user explicitly points elsewhere.
     local override="${AGENT_BROWSER_EXECUTABLE_PATH:-}"

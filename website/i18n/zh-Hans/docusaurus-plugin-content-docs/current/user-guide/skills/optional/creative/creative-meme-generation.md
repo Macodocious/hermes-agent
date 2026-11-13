@@ -82,13 +82,13 @@ python "$SKILL_DIR/scripts/generate_meme.py" --search "disaster"
    ```
 6. 使用 `MEDIA:/tmp/meme.png` 返回图片。
 
-### 模式 2：自定义 AI 图片（当 image_generate 可用时）
+### 模式 2：自定义 AI 图片（当 generate_image 可用时）
 
 当没有合适的经典模板，或用户想要原创内容时使用此模式。
 
 1. 先编写说明文字。
-2. 使用 `image_generate` 创建符合表情包概念的场景。图片 prompt（提示词）中**不要包含任何文字** — 文字将由脚本添加。仅描述视觉场景。
-3. 从 image_generate 结果 URL 中找到生成图片的路径。如有需要，将其下载到本地路径。
+2. 使用 `generate_image` 创建符合表情包概念的场景。图片 prompt（提示词）中**不要包含任何文字** — 文字将由脚本添加。仅描述视觉场景。
+3. 从 generate_image 结果 URL 中找到生成图片的路径。如有需要，将其下载到本地路径。
 4. 使用 `--image` 运行脚本叠加文字，选择一种模式：
    - **Overlay**（文字直接叠加在图片上，白色带黑色描边）：
      ```bash
@@ -99,9 +99,9 @@ python "$SKILL_DIR/scripts/generate_meme.py" --search "disaster"
      python "$SKILL_DIR/scripts/generate_meme.py" --image /path/to/scene.png --bars /tmp/meme.png "top text" "bottom text"
      ```
    当图片内容复杂/细节丰富、文字叠加后难以辨认时，使用 `--bars`。
-5. **使用视觉验证**（如果 `vision_analyze` 可用）：检查结果是否美观：
+5. **使用视觉验证**（如果 `analyze_vision` 可用）：检查结果是否美观：
    ```
-   vision_analyze(image_url="/tmp/meme.png", question="Is the text legible and well-positioned? Does the meme work visually?")
+   analyze_vision(image_url="/tmp/meme.png", question="Is the text legible and well-positioned? Does the meme work visually?")
    ```
    如果视觉模型发现问题（文字难以辨认、位置不佳等），尝试切换另一种模式（在 overlay 和 bars 之间切换）或重新生成场景。
 6. 使用 `MEDIA:/tmp/meme.png` 返回图片。

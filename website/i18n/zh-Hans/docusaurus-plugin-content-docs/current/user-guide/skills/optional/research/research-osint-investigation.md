@@ -52,7 +52,7 @@ description: "公开记录 OSINT 调查框架 — SEC EDGAR 文件、USAspending
 
 **不适用**此 skill 的场景：
 
-- 通用网络研究 → `web_search` / `web_extract`
+- 通用网络研究 → `search_web` / `extract_web`
 - 域名/基础设施 OSINT → `domain-intel` skill
 - 学术文献 → `arxiv` skill
 - 社交媒体账号发现 → `sherlock` skill（可选）

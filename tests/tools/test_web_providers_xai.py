@@ -336,7 +336,7 @@ class TestXAIProviderRequestShape:
         # so renaming DEFAULT_MODEL (when xAI deprecates grok-4.3) doesn't
         # turn this into a change-detector failure.
         assert body["model"] == xai_provider.DEFAULT_MODEL
-        assert body["tools"] == [{"type": "web_search"}]
+        assert body["tools"] == [{"type": "search_web"}]
         assert body["input"][0]["role"] == "user"
         # No-inline-citations is opt-in via `include` per xAI Responses docs.
         assert "no_inline_citations" in body.get("include", [])
@@ -374,7 +374,7 @@ class TestXAIProviderRequestShape:
 
         tools = captured["json"]["tools"]
         assert tools == [{
-            "type": "web_search",
+            "type": "search_web",
             "filters": {"allowed_domains": ["x.ai", "grokipedia.com"]},
         }]
 
@@ -395,7 +395,7 @@ class TestXAIProviderRequestShape:
 
         tools = captured["json"]["tools"]
         assert tools == [{
-            "type": "web_search",
+            "type": "search_web",
             "filters": {"excluded_domains": ["spam.com"]},
         }]
 
@@ -678,7 +678,7 @@ class TestXAIBackendWiring:
         assert web_tools._is_backend_available("xai") is False
 
     def test_is_backend_available_does_not_call_resolver(self, monkeypatch):
-        """Regression guard — `_is_backend_available` runs on every web_search
+        """Regression guard — `_is_backend_available` runs on every search_web
         dispatch and every `hermes tools` repaint. It must not invoke the
         OAuth resolver (which can trigger a network refresh)."""
         from tools import web_tools
@@ -700,7 +700,7 @@ class TestXAIBackendWiring:
         does not include xAI — by design, since the no-config legacy
         chain is for users who set env vars but never ran ``hermes tools``,
         and we don't want a stray ``XAI_API_KEY`` (perhaps set for chat
-        inference) to silently re-route web_search through Grok.
+        inference) to silently re-route search_web through Grok.
 
         Note: this does NOT prevent the registry's single-provider
         shortcut (``agent.web_search_registry._resolve``) from selecting

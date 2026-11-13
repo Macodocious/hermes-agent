@@ -180,7 +180,7 @@ Memory entries are scanned for injection and exfiltration patterns before being 
 
 ## Session Search
 
-Beyond MEMORY.md and USER.md, the agent can search its past conversations using the `session_search` tool:
+Beyond MEMORY.md and USER.md, the agent can search its past conversations using the `search_session` tool:
 
 - All CLI and messaging sessions are stored in SQLite (`~/.hermes/state.db`) with FTS5 full-text search
 - Search queries return actual messages from the DB — no LLM summarization, no truncation
@@ -193,7 +193,7 @@ hermes sessions list    # Browse past sessions
 
 See [Session Search Tool](/user-guide/sessions#session-search-tool) for the three calling shapes (discovery / scroll / browse) and the response format.
 
-### session_search vs memory
+### search_session vs memory
 
 | Feature | Persistent Memory | Session Search |
 |---------|------------------|----------------|

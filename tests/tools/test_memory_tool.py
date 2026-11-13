@@ -20,9 +20,9 @@ class TestMemorySchema:
     def test_discourages_diary_style_task_logs(self):
         description = MEMORY_SCHEMA["description"].lower()
         # Intent (not exact phrasing): discourage saving task progress / logs,
-        # and point the model at session_search for those instead.
+        # and point the model at search_session for those instead.
         assert "task progress" in description
-        assert "session_search" in description
+        assert "search_session" in description
         assert "like a diary" not in description
         assert "todo state" in description
         assert ">80%" not in description

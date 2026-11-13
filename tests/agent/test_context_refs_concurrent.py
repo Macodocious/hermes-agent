@@ -17,7 +17,7 @@ from agent.context_references import preprocess_context_references_async
 
 
 async def _slow_fetcher(url: str) -> str:
-    # Simulate a per-URL network fetch (web_extract round trip).
+    # Simulate a per-URL network fetch (extract_web round trip).
     await asyncio.sleep(0.2)
     return f"CONTENT[{url}]"
 

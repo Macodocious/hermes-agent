@@ -9,7 +9,7 @@ configured — either via ``/browser connect`` (sets ``BROWSER_CDP_URL``) or
 session is active.
 
 This is the escape hatch for browser operations not covered by the main
-browser tool surface (``browser_navigate``, ``browser_click``,
+browser tool surface (``navigate_browser``, ``click_browser``,
 ``browser_console``, etc.) — handling native dialogs, iframe-scoped
 evaluation, cookie/network control, low-level tab management, etc.
 
@@ -133,7 +133,7 @@ def _browser_cdp_private_guard(
     """Apply the browser SSRF/private-page guard to raw CDP calls.
 
     ``browser_cdp`` is intentionally an escape hatch, but it still shares the
-    same cloud/private-network boundary as ``browser_snapshot``,
+    same cloud/private-network boundary as ``snapshot_browser``,
     ``browser_console`` and ``browser_eval``.  If a cloud browser has landed on
     a private/internal URL (for example via a prior eval navigation), raw CDP
     calls like ``Runtime.evaluate`` or ``DOM.getDocument`` must not become the
@@ -308,8 +308,8 @@ def _browser_cdp_via_supervisor(
     if supervisor is None:
         return tool_error(
             f"No CDP supervisor is attached for task={task_id!r}. Call "
-            f"browser_navigate or /browser connect first so the supervisor "
-            f"can attach. Once attached, browser_snapshot will populate "
+            f"navigate_browser or /browser connect first so the supervisor "
+            f"can attach. Once attached, snapshot_browser will populate "
             f"frame_tree with frame_ids you can pass here."
         )
 
@@ -334,7 +334,7 @@ def _browser_cdp_via_supervisor(
     if frame_info is None:
         return tool_error(
             f"frame_id {frame_id!r} not found in supervisor state. "
-            f"Call browser_snapshot to see current frame_tree."
+            f"Call snapshot_browser to see current frame_tree."
         )
 
     child_sid = frame_info.get("session_id")
@@ -409,7 +409,7 @@ def browser_cdp(
             ``method`` with the resulting ``sessionId``.  Uses a fresh
             stateless CDP connection.
         frame_id: Optional cross-origin (OOPIF) iframe ``frame_id`` from
-            ``browser_snapshot.frame_tree.children[]``.  When set (and the
+            ``snapshot_browser.frame_tree.children[]``.  When set (and the
             frame is an OOPIF with a live session tracked by the CDP
             supervisor), routes the call through the supervisor's existing
             WebSocket — which is how you Runtime.evaluate *inside* an
@@ -540,7 +540,7 @@ BROWSER_CDP_SCHEMA: Dict[str, Any] = {
     "name": "browser_cdp",
     "description": (
         "Send a raw Chrome DevTools Protocol (CDP) command. Escape hatch for "
-        "browser operations not covered by browser_navigate, browser_click, "
+        "browser operations not covered by navigate_browser, click_browser, "
         "browser_console, etc.\n\n"
         "**Requires a reachable CDP endpoint.** Available when the user has "
         "run '/browser connect' to attach to a running Chrome, Brave, Chromium, "
@@ -549,7 +549,7 @@ BROWSER_CDP_SCHEMA: Dict[str, Any] = {
         "Firecrawl) — those expose CDP per session but live-session routing is "
         "a follow-up. Camofox is REST-only and will never support CDP. If the "
         "tool is in your toolset at all, a CDP endpoint is already reachable.\n\n"
-        f"**CDP method reference:** {CDP_DOCS_URL} — use web_extract on a "
+        f"**CDP method reference:** {CDP_DOCS_URL} — use extract_web on a "
         "method's URL (e.g. '/tot/Page/#method-handleJavaScriptDialog') "
         "to look up parameters and return shape.\n\n"
         "**Common patterns:**\n"
@@ -570,7 +570,7 @@ BROWSER_CDP_SCHEMA: Dict[str, Any] = {
         "Network.* scoped to a tab): pass target_id from Target.getTargets.\n"
         "- **Cross-origin iframe scope** (Runtime.evaluate inside an OOPIF, "
         "Page.* targeting a frame target, etc.): pass frame_id from the "
-        "browser_snapshot frame_tree output. This routes through the CDP "
+        "snapshot_browser frame_tree output. This routes through the CDP "
         "supervisor's live connection — the only reliable way on "
         "Browserbase where stateless CDP calls hit signed-URL expiry.\n"
         "- Each stateless call (without frame_id) is independent — sessions "
@@ -610,7 +610,7 @@ BROWSER_CDP_SCHEMA: Dict[str, Any] = {
                 "type": "string",
                 "description": (
                     "Optional. Out-of-process iframe (OOPIF) frame_id from "
-                    "browser_snapshot.frame_tree.children[] where "
+                    "snapshot_browser.frame_tree.children[] where "
                     "is_oopif=true. When set, routes the call through the "
                     "CDP supervisor's live session for that iframe. "
                     "Essential for Runtime.evaluate inside cross-origin "

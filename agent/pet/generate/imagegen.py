@@ -1,7 +1,7 @@
 """Thin image-generation layer for pet sprites.
 
 Wraps the active :class:`~agent.image_gen_provider.ImageGenProvider` with the
-two things sprite generation needs that the agent-facing ``image_generate`` tool
+two things sprite generation needs that the agent-facing ``generate_image`` tool
 doesn't expose: **N variants** (loop) and **reference-image grounding** (so each
 animation row stays the same character as the chosen base).
 

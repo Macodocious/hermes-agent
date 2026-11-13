@@ -2,26 +2,26 @@
 
 ## Step 1: Detect Reference Images
 
-If the user provides reference images (local path or URL), the goal is to produce **textual descriptions** that can be embedded in prompts — `image_generate` doesn't accept reference-image inputs, and Hermes' text file tools can't read or write binaries.
+If the user provides reference images (local path or URL), the goal is to produce **textual descriptions** that can be embedded in prompts — `generate_image` doesn't accept reference-image inputs, and Hermes' text file tools can't read or write binaries.
 
 **Tool rules**:
 
 | Task | Tool | Notes |
 |------|------|-------|
-| Analyze a reference image | `vision_analyze` | Accepts URL or local path. Ask for style, palette, composition, subject. |
+| Analyze a reference image | `analyze_vision` | Accepts URL or local path. Ask for style, palette, composition, subject. |
 | Write the text description | `write_file` | Sidecar `.md` files only — never try to `write_file` a PNG/JPG. |
 | (Optional) Keep a local copy of the binary | `terminal` | `cp "$src" "{output-dir}/references/NN-ref-{slug}.{ext}"` — purely for the record; the skill itself doesn't read the binary. |
 
 | Input Type | Action |
 |------------|--------|
-| Image file path provided | `vision_analyze` → write sidecar `.md`. Optional `terminal cp` for a local record. |
-| Image URL provided | `vision_analyze` with the URL → write sidecar `.md`. |
+| Image file path provided | `analyze_vision` → write sidecar `.md`. Optional `terminal cp` for a local record. |
+| Image URL provided | `analyze_vision` with the URL → write sidecar `.md`. |
 | Image in conversation (no path, no URL) | Ask via `clarify` for a path or URL, or for a verbal description. |
 | User can't provide either | Extract style/palette verbally from the user → write `references/extracted-style.md`. Do NOT add `references:` to prompt frontmatter. |
 
 **Procedure** (when a path/URL is available):
 
-1. Call `vision_analyze(image_url=..., question="Describe the style, color palette (with hex approximations), composition, and subject so this can be used as a style/palette reference for another illustration.")`.
+1. Call `analyze_vision(image_url=..., question="Describe the style, color palette (with hex approximations), composition, and subject so this can be used as a style/palette reference for another illustration.")`.
 2. Write `{output-dir}/references/NN-ref-{slug}.md` via `write_file` with the description.
 3. (Optional) Run `terminal` with `cp` (or `curl -sSL -o ...` for URLs) to keep a local binary copy. Not required by the skill.
 4. Mark the reference in the outline with usage `direct` / `style` / `palette`. In Step 5.1 the description gets appended to the prompt body.
@@ -34,7 +34,7 @@ source: "<original path or URL>"
 local_copy: "NN-ref-{slug}.png"   # omit if no copy made
 usage_hint: style                 # direct | style | palette
 ---
-[vision_analyze description — colors, style, composition, subject]
+[analyze_vision description — colors, style, composition, subject]
 ```
 
 ---
@@ -87,7 +87,7 @@ Save analysis to `{output-dir}/analysis.md` using `write_file`.
 
 ### 2.5 Plan Reference Image Usage (if analyzed in Step 1)
 
-For each reference image (use the `vision_analyze` description from Step 1):
+For each reference image (use the `analyze_vision` description from Step 1):
 
 | Analysis | Description |
 |----------|-------------|
@@ -103,7 +103,7 @@ For each reference image (use the `vision_analyze` description from Step 1):
 | `style` | Extract visual style characteristics only | Append style traits to prompt body |
 | `palette` | Extract color scheme only | Append extracted hex colors to prompt body |
 
-Note: `image_generate` does not accept reference-image inputs under any usage type. Everything is mediated through the `vision_analyze` description.
+Note: `generate_image` does not accept reference-image inputs under any usage type. Everything is mediated through the `analyze_vision` description.
 
 ---
 
@@ -266,7 +266,7 @@ For each illustration in the outline:
 
 ### 5.1 Process References (if analyzed in Step 1)
 
-Read the `vision_analyze` description from the sidecar `references/NN-ref-{slug}.md` (via `read_file`) and embed it in the prompt body. `image_generate` never receives the binary.
+Read the `analyze_vision` description from the sidecar `references/NN-ref-{slug}.md` (via `read_file`) and embed it in the prompt body. `generate_image` never receives the binary.
 
 | Usage | Action |
 |-------|--------|
@@ -278,13 +278,13 @@ Read the `vision_analyze` description from the sidecar `references/NN-ref-{slug}
 
 ## Step 6: Generate Images
 
-`image_generate` returns a JSON blob with a URL (`{"success": true, "image": "<url>"}`). It does NOT save a local file, does NOT accept an output path, and does NOT let the agent pick a backend/model. Treat the URL as a temporary artifact and download it explicitly.
+`generate_image` returns a JSON blob with a URL (`{"success": true, "image": "<url>"}`). It does NOT save a local file, does NOT accept an output path, and does NOT let the agent pick a backend/model. Treat the URL as a temporary artifact and download it explicitly.
 
 For each prompt file:
 
 1. Read the prompt file (via `read_file`) and extract the assembled prompt
-2. Map the prompt's `ASPECT` to `image_generate`'s enum: `16:9` → `landscape`, `9:16` → `portrait`, `1:1` → `square`. Custom ratios → nearest named aspect.
-3. Call `image_generate(prompt=<assembled>, aspect_ratio=<enum>)` and extract the `image` URL from the returned JSON.
+2. Map the prompt's `ASPECT` to `generate_image`'s enum: `16:9` → `landscape`, `9:16` → `portrait`, `1:1` → `square`. Custom ratios → nearest named aspect.
+3. Call `generate_image(prompt=<assembled>, aspect_ratio=<enum>)` and extract the `image` URL from the returned JSON.
 4. **Backup rule**: If `{output-dir}/NN-{type}-{slug}.png` already exists, rename it via `terminal` (`mv "{output-dir}/NN-{type}-{slug}.png" "{output-dir}/NN-{type}-{slug}-backup-YYYYMMDD-HHMMSS.png"`) before writing.
 5. Download the URL via `terminal`:
    ```bash
@@ -292,7 +292,7 @@ For each prompt file:
    ```
    If `curl` is unavailable, fall back to `wget -qO "{output-dir}/NN-{type}-{slug}.png" "{image_url}"`.
 6. Verify the file exists and has non-zero size (`terminal`: `test -s "{path}" && echo ok`).
-7. On generation failure, retry `image_generate` once. On download failure, retry `curl` once with a longer timeout. Then log and continue.
+7. On generation failure, retry `generate_image` once. On download failure, retry `curl` once with a longer timeout. Then log and continue.
 8. After each generation, report "Generated X/N".
 
 ---

@@ -616,7 +616,7 @@ def _discover(
     }, ensure_ascii=False)
 
 
-def session_search(
+def search_session(
     query: str = "",
     role_filter: str = None,
     limit: int = 3,
@@ -647,7 +647,7 @@ def session_search(
             from hermes_state import SessionDB
             db = SessionDB()
         except Exception:
-            logging.debug("SessionDB unavailable for session_search", exc_info=True)
+            logging.debug("SessionDB unavailable for search_session", exc_info=True)
             from hermes_state import format_session_db_unavailable
             return tool_error(format_session_db_unavailable(), success=False)
 
@@ -750,7 +750,7 @@ def check_session_search_requirements() -> bool:
 
 
 SESSION_SEARCH_SCHEMA = {
-    "name": "session_search",
+    "name": "search_session",
     "description": (
         "Search past sessions stored in the local session DB, or scroll inside one. "
         "FTS5-backed retrieval over the SQLite message store. No LLM calls — every "
@@ -760,15 +760,15 @@ SESSION_SEARCH_SCHEMA = {
         "about the current contents of external sources. If the user provided a "
         "direct source such as a URL, phone number/contact, app/thread, file path, "
         "account, website, or live system, inspect that original source before or "
-        "instead of session_search when accessible. Use session_search as secondary "
+        "instead of search_session when accessible. Use search_session as secondary "
         "context for what was previously said, not as primary proof of what the "
         "source currently contains. If the original source is inaccessible, say so "
         "and why before falling back to session history. Do not conclude 'not found' "
-        "or 'no prior correspondence' from session_search alone when a direct source "
+        "or 'no prior correspondence' from search_session alone when a direct source "
         "was provided.\n\n"
         "FOUR CALLING SHAPES\n\n"
         "  1) DISCOVERY — pass `query`:\n"
-        "     session_search(query=\"auth refactor\", limit=3)\n"
+        "     search_session(query=\"auth refactor\", limit=3)\n"
         "     Runs FTS5, dedupes hits by session lineage, returns the top N sessions. "
         "Each result carries:\n"
         "       - session_id, title, when, source\n"
@@ -783,7 +783,7 @@ SESSION_SEARCH_SCHEMA = {
         "     Bookends + window together let you reconstruct goal → match → resolution "
         "without paying for the whole transcript.\n\n"
         "  2) SCROLL — pass `session_id` + `around_message_id`:\n"
-        "     session_search(session_id=\"...\", around_message_id=12345, window=10)\n"
+        "     search_session(session_id=\"...\", around_message_id=12345, window=10)\n"
         "     Returns a window of ±`window` messages centered on the anchor. No FTS5, "
         "no bookends — just the slice. Use after a discovery call when you need more "
         "context than the ±5 default window.\n"
@@ -793,13 +793,13 @@ SESSION_SEARCH_SCHEMA = {
         "       - When messages_before or messages_after is < window, you're at the "
         "start or end of the session.\n\n"
         "  3) READ — pass `session_id` only (no around_message_id):\n"
-        "     session_search(session_id=\"...\", profile=\"work\")\n"
+        "     search_session(session_id=\"...\", profile=\"work\")\n"
         "     Dumps the whole session by id (first 20 + last 10 messages when "
         "large). This is how you resolve an `@session:<profile>/<id>` link the "
         "user dropped into the chat: split the value on `/` into profile + id "
-        "and call session_search(session_id=id, profile=profile).\n\n"
+        "and call search_session(session_id=id, profile=profile).\n\n"
         "  4) BROWSE — no args:\n"
-        "     session_search()\n"
+        "     search_session()\n"
         "     Returns recent sessions chronologically: titles, previews, timestamps. "
         "Use when the user asks \"what was I working on\" without naming a topic.\n\n"
         "FTS5 SYNTAX\n\n"
@@ -811,7 +811,7 @@ SESSION_SEARCH_SCHEMA = {
         "  Reach for this on questions about Hermes conversation history itself, such "
         "as \"what did we do about X\", \"where did we leave Y\", or \"find the "
         "session where Z\". If the user provided a direct source identifier, inspect "
-        "that source first when accessible; session_search can then supply historical "
+        "that source first when accessible; search_session can then supply historical "
         "context. The session DB carries what was said when; external tools show "
         "current source/world state."
     ),
@@ -901,10 +901,10 @@ SESSION_SEARCH_SCHEMA = {
 from tools.registry import registry, tool_error
 
 registry.register(
-    name="session_search",
-    toolset="session_search",
+    name="search_session",
+    toolset="search_session",
     schema=SESSION_SEARCH_SCHEMA,
-    handler=lambda args, **kw: session_search(
+    handler=lambda args, **kw: search_session(
         query=args.get("query") or "",
         role_filter=args.get("role_filter"),
         limit=args.get("limit", 3),

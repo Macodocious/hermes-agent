@@ -99,7 +99,7 @@ def test_register_auxiliary_task_rejects_builtin_keys():
     for builtin in (
         "vision",
         "compression",
-        "web_extract",
+        "extract_web",
         "approval",
         "mcp",
         "title_generation",

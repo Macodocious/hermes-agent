@@ -18,7 +18,7 @@ The CDP supervisor closes two long-standing gaps in Hermes' browser tooling:
 
 The supervisor solves both by holding a persistent WebSocket to the backend's
 CDP endpoint per browser task, surfacing pending dialogs and frame structure
-into `browser_snapshot`, and exposing a `browser_dialog` tool for explicit
+into `snapshot_browser`, and exposing a `browser_dialog` tool for explicit
 responses.
 
 ## Backend support
@@ -69,7 +69,7 @@ frozen snapshot without awaiting.
 ### Lifecycle
 
 - **Start:** `SupervisorRegistry.get_or_start(task_id, cdp_url)` — called by
-  `browser_navigate`, Browserbase session create, `/browser connect`.
+  `navigate_browser`, Browserbase session create, `/browser connect`.
   Idempotent.
 - **Stop:** session teardown or `/browser disconnect`. Cancels the asyncio
   task, closes the WebSocket, discards state.
@@ -81,12 +81,12 @@ frozen snapshot without awaiting.
 
 Configurable via `config.yaml` under `browser.dialog_policy`:
 
-- **`must_respond`** (default) — capture, surface in `browser_snapshot`, wait
+- **`must_respond`** (default) — capture, surface in `snapshot_browser`, wait
   for explicit `browser_dialog(action=...)` call. After a 300s safety timeout
   with no response, auto-dismiss and log. Prevents a buggy agent from stalling
   forever.
 - `auto_dismiss` — record and dismiss immediately; agent sees it after the
-  fact via `browser_state` inside `browser_snapshot`.
+  fact via `browser_state` inside `snapshot_browser`.
 - `auto_accept` — record and accept (useful for `beforeunload` where the
   workflow wants to navigate away cleanly).
 
@@ -104,10 +104,10 @@ browser_dialog(action, prompt_text=None, dialog_id=None)
 - `prompt_text=...` → text to supply to a `prompt()` dialog
 - `dialog_id=...` → disambiguate when multiple dialogs are queued (rare)
 
-Tool is response-only. The agent reads pending dialogs from `browser_snapshot`
+Tool is response-only. The agent reads pending dialogs from `snapshot_browser`
 output before calling.
 
-### `browser_snapshot` extension
+### `snapshot_browser` extension
 
 Adds three optional fields to the existing snapshot output when a supervisor
 is attached:
@@ -161,7 +161,7 @@ hidden and the snapshot omits the new fields — no schema bloat.
 `browser_cdp(frame_id=...)` routes CDP calls (notably `Runtime.evaluate`)
 through the supervisor's already-connected WebSocket using the OOPIF's child
 `sessionId`. Agents pick frame_ids out of
-`browser_snapshot.frame_tree.children[]` where `is_oopif=true` and pass them
+`snapshot_browser.frame_tree.children[]` where `is_oopif=true` and pass them
 to `browser_cdp`. For same-origin iframes (no dedicated CDP session), the
 agent uses `contentWindow`/`contentDocument` from a top-level
 `Runtime.evaluate` instead — the supervisor surfaces an error pointing at that
@@ -175,7 +175,7 @@ expiry, while the supervisor's long-lived connection keeps a valid session.
 
 - `tools/browser_supervisor.py` — `CDPSupervisor`, `SupervisorRegistry`, `PendingDialog`, `FrameInfo`
 - `tools/browser_dialog_tool.py` — `browser_dialog` tool handler
-- `tools/browser_tool.py` — `browser_navigate` start-hook, `browser_snapshot` merge, `/browser connect` reattach, `_cleanup_browser_session` teardown
+- `tools/browser_tool.py` — `navigate_browser` start-hook, `snapshot_browser` merge, `/browser connect` reattach, `_cleanup_browser_session` teardown
 - `toolsets.py` — registers `browser_dialog` in `browser`, `hermes-acp`, `hermes-api-server`, and core toolsets (gated on CDP reachability)
 - `hermes_cli/config.py` — `browser.dialog_policy` and `browser.dialog_timeout_s` defaults
 

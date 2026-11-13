@@ -576,7 +576,7 @@ def _camofox_private_page_block(session: Dict[str, Any], task_id: Optional[str],
     Mirrors the eval-path guard added for ``_camofox_eval`` (browser_tool.py):
     Camofox snapshot / vision / image-extraction all read current page state, so
     on a non-local backend they can leak the content of an intranet/metadata
-    page the terminal itself can't reach.  The gate matches ``browser_snapshot``
+    page the terminal itself can't reach.  The gate matches ``snapshot_browser``
     / ``browser_vision`` — only active when the SSRF guard applies (non-local
     backend, not a local sidecar, ``allow_private_urls`` unset).  Fail-open on
     probe failure, matching the sibling guards.
@@ -610,7 +610,7 @@ def camofox_snapshot(full: bool = False, task_id: Optional[str] = None,
     try:
         session = _get_session(task_id)
         if not session["tab_id"]:
-            return tool_error("No browser session. Call browser_navigate first.", success=False)
+            return tool_error("No browser session. Call navigate_browser first.", success=False)
 
         blocked = _camofox_private_page_block(session, task_id, "read a page snapshot")
         if blocked:
@@ -651,7 +651,7 @@ def camofox_click(ref: str, task_id: Optional[str] = None) -> str:
     try:
         session = _get_session(task_id)
         if not session["tab_id"]:
-            return tool_error("No browser session. Call browser_navigate first.", success=False)
+            return tool_error("No browser session. Call navigate_browser first.", success=False)
 
         blocked = _camofox_private_page_block(session, task_id, "click")
         if blocked:
@@ -678,7 +678,7 @@ def camofox_type(ref: str, text: str, task_id: Optional[str] = None) -> str:
     try:
         session = _get_session(task_id)
         if not session["tab_id"]:
-            return tool_error("No browser session. Call browser_navigate first.", success=False)
+            return tool_error("No browser session. Call navigate_browser first.", success=False)
 
         blocked = _camofox_private_page_block(session, task_id, "type")
         if blocked:
@@ -695,11 +695,11 @@ def camofox_type(ref: str, text: str, task_id: Optional[str] = None) -> str:
             redact_tool_args_for_display,
         )
 
-        display_text = (redact_tool_args_for_display("browser_type", {"text": text}) or {})["text"]
+        display_text = (redact_tool_args_for_display("type_browser", {"text": text}) or {})["text"]
 
         response = {
             "success": True,
-            # Match browser_tool.browser_type: run typed text through the
+            # Match browser_tool.type_browser: run typed text through the
             # secret-pattern redactor so API keys / tokens don't leak into
             # tool progress or chat history.  The raw text is still typed into
             # the page; only the returned display value is redacted.
@@ -719,7 +719,7 @@ def camofox_scroll(direction: str, task_id: Optional[str] = None) -> str:
     try:
         session = _get_session(task_id)
         if not session["tab_id"]:
-            return tool_error("No browser session. Call browser_navigate first.", success=False)
+            return tool_error("No browser session. Call navigate_browser first.", success=False)
 
         _post(
             f"/tabs/{session['tab_id']}/scroll",
@@ -735,7 +735,7 @@ def camofox_back(task_id: Optional[str] = None) -> str:
     try:
         session = _get_session(task_id)
         if not session["tab_id"]:
-            return tool_error("No browser session. Call browser_navigate first.", success=False)
+            return tool_error("No browser session. Call navigate_browser first.", success=False)
 
         data = _post(
             f"/tabs/{session['tab_id']}/back",
@@ -751,7 +751,7 @@ def camofox_press(key: str, task_id: Optional[str] = None) -> str:
     try:
         session = _get_session(task_id)
         if not session["tab_id"]:
-            return tool_error("No browser session. Call browser_navigate first.", success=False)
+            return tool_error("No browser session. Call navigate_browser first.", success=False)
 
         blocked = _camofox_private_page_block(session, task_id, "press")
         if blocked:
@@ -790,7 +790,7 @@ def camofox_get_images(task_id: Optional[str] = None) -> str:
     try:
         session = _get_session(task_id)
         if not session["tab_id"]:
-            return tool_error("No browser session. Call browser_navigate first.", success=False)
+            return tool_error("No browser session. Call navigate_browser first.", success=False)
 
         blocked = _camofox_private_page_block(session, task_id, "extract page images")
         if blocked:
@@ -838,7 +838,7 @@ def camofox_vision(question: str, annotate: bool = False,
     try:
         session = _get_session(task_id)
         if not session["tab_id"]:
-            return tool_error("No browser session. Call browser_navigate first.", success=False)
+            return tool_error("No browser session. Call navigate_browser first.", success=False)
 
         blocked = _camofox_private_page_block(session, task_id, "capture a screenshot")
         if blocked:
@@ -942,7 +942,7 @@ def camofox_console(clear: bool = False, task_id: Optional[str] = None) -> str:
         "total_messages": 0,
         "total_errors": 0,
         "note": "Console log capture is not available with the Camofox backend. "
-                "Use browser_snapshot or browser_vision to inspect page state.",
+                "Use snapshot_browser or browser_vision to inspect page state.",
     })
 
 

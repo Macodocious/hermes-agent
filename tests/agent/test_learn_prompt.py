@@ -23,13 +23,13 @@ class TestBuildLearnPrompt:
 
     def test_instructs_saving_via_skill_manage_not_a_raw_file(self):
         prompt = build_learn_prompt("learn the thing")
-        assert "skill_manage" in prompt
+        assert "manage_skill" in prompt
 
     def test_references_gather_tools_for_open_ended_sourcing(self):
         # Open-ended sourcing relies on the agent's own tools, named so it
         # knows dirs/URLs/conversation/paste all route through existing tools.
         prompt = build_learn_prompt("learn from somewhere")
-        for tool in ("read_file", "search_files", "web_extract"):
+        for tool in ("read_file", "search_files", "extract_web"):
             assert tool in prompt
 
     def test_separates_sources_from_requirements(self):
@@ -54,7 +54,7 @@ class TestBuildLearnPrompt:
         prompt = build_learn_prompt("")
         assert "conversation" in prompt.lower()
         # And still carries the standards + save instruction.
-        assert "skill_manage" in prompt
+        assert "manage_skill" in prompt
 
     def test_whitespace_only_request_is_treated_as_empty(self):
         assert build_learn_prompt("   \n  ") == build_learn_prompt("")

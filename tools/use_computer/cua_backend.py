@@ -49,7 +49,7 @@ import threading
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
-from tools.computer_use.backend import (
+from tools.use_computer.backend import (
     ActionResult,
     CaptureResult,
     ComputerUseBackend,
@@ -174,7 +174,7 @@ _CUA_TELEMETRY_ENV_VAR = "CUA_DRIVER_RS_TELEMETRY_ENABLED"
 def _cua_telemetry_disabled() -> bool:
     """True when Hermes should disable cua-driver telemetry for this user.
 
-    Reads ``computer_use.cua_telemetry`` from config.yaml. Default is False
+    Reads ``use_computer.cua_telemetry`` from config.yaml. Default is False
     (telemetry off). Any failure to read config fails SAFE — toward the
     privacy-preserving default of telemetry disabled.
     """
@@ -182,7 +182,7 @@ def _cua_telemetry_disabled() -> bool:
         from hermes_cli.config import load_config
 
         cfg = load_config() or {}
-        cu = cfg.get("computer_use") or {}
+        cu = cfg.get("use_computer") or {}
         # opt-in flag: True => user wants telemetry => do NOT disable.
         return not bool(cu.get("cua_telemetry", False))
     except Exception:
@@ -362,7 +362,7 @@ _update_checked = False
 
 def _maybe_nudge_update() -> None:
     """Emit an update nudge at most once per process, off-thread so the
-    (cached, ~20h) GitHub poll never blocks the first computer_use action."""
+    (cached, ~20h) GitHub poll never blocks the first use_computer action."""
     global _update_checked
     if _update_checked:
         return
@@ -374,7 +374,7 @@ def _maybe_nudge_update() -> None:
         except Exception:
             return
         if msg:
-            logger.info("computer_use: %s", msg)
+            logger.info("use_computer: %s", msg)
 
     threading.Thread(
         target=_run, name="cua-driver-update-check", daemon=True
@@ -1319,7 +1319,7 @@ class CuaDriverBackend(ComputerUseBackend):
         # FeatureUnavailable carrying an actionable `uv pip install mcp==…`
         # hint, which surfaces via the backend-unavailable path in tool.py.
         from tools.lazy_deps import ensure as _lazy_ensure
-        _lazy_ensure("tool.computer_use", prompt=False)
+        _lazy_ensure("tool.use_computer", prompt=False)
         # A just-installed package may not be importable until the import
         # machinery's caches are refreshed within this process.
         import importlib
@@ -1472,7 +1472,7 @@ class CuaDriverBackend(ComputerUseBackend):
             # A title can still be the only usable identity on X11 when app
             # enumeration is unavailable, so retain the constrained title
             # fallback below instead of treating this as a hard no-match.
-            logger.debug("computer_use list_apps fallback failed for %r: %s", app, exc)
+            logger.debug("use_computer list_apps fallback failed for %r: %s", app, exc)
             running_apps = []
 
         exact_pids: set[int] = set()

@@ -500,10 +500,10 @@ async def _handle_yb_send_sticker(args, **kw):
 _TOOLSET = "hermes-yuanbao"
 
 registry.register(
-    name="yb_query_group_info",
+    name="query_yb_group_info",
     toolset=_TOOLSET,
     schema={
-        "name": "yb_query_group_info",
+        "name": "query_yb_group_info",
         "description": (
             "Query basic info about a group (called '派/Pai' in the app), "
             "including group name, owner, and member count."
@@ -526,10 +526,10 @@ registry.register(
 )
 
 registry.register(
-    name="yb_query_group_members",
+    name="query_yb_group_members",
     toolset=_TOOLSET,
     schema={
-        "name": "yb_query_group_members",
+        "name": "query_yb_group_members",
         "description": (
             "Query members of a group (called '派/Pai' in the app). "
             "Use this tool when you need to @mention someone, find a user by name, "
@@ -578,10 +578,10 @@ registry.register(
 )
 
 registry.register(
-    name="yb_send_dm",
+    name="send_yb_dm",
     toolset=_TOOLSET,
     schema={
-        "name": "yb_send_dm",
+        "name": "send_yb_dm",
         "description": (
             "Send a private/direct message (DM) to a user in a group, with optional media files. "
             "This tool automatically looks up the user by name in the group member list "
@@ -615,7 +615,7 @@ registry.register(
                     "type": "string",
                     "description": (
                         "Target user's account ID. If provided, skips the member lookup. "
-                        "Usually obtained from a previous yb_query_group_members call."
+                        "Usually obtained from a previous query_yb_group_members call."
                     ),
                 },
                 "media_files": {
@@ -652,14 +652,14 @@ registry.register(
 
 
 registry.register(
-    name="yb_search_sticker",
+    name="search_yb_sticker",
     toolset=_TOOLSET,
     schema={
-        "name": "yb_search_sticker",
+        "name": "search_yb_sticker",
         "description": (
             "Search the built-in Yuanbao sticker (TIM face / 表情包) catalogue by keyword. "
             "Returns the top matching candidates with sticker_id, name, and description. "
-            "Use this BEFORE yb_send_sticker to discover the right sticker_id. "
+            "Use this BEFORE send_yb_sticker to discover the right sticker_id. "
             "Sticker = 贴纸 = TIM face — NOT a message reaction. "
             "Prefer sending a sticker over bare Unicode emoji when reacting/expressing emotion."
         ),
@@ -689,19 +689,19 @@ registry.register(
 
 
 registry.register(
-    name="yb_send_sticker",
+    name="send_yb_sticker",
     toolset=_TOOLSET,
     schema={
-        "name": "yb_send_sticker",
+        "name": "send_yb_sticker",
         "description": (
             "Send a built-in sticker (TIMFaceElem / 贴纸表情) to the current Yuanbao chat. "
-            "Call yb_search_sticker first if you don't know the sticker_id/name. "
+            "Call search_yb_sticker first if you don't know the sticker_id/name. "
             "Sticker = 贴纸 = TIM face — NOT a message reaction. "
             "CRITICAL: Whenever the user asks you to send a sticker / 贴纸 / 表情包, you MUST "
             "use this tool. DO NOT draw a PNG via execute_code / Pillow / matplotlib and "
             "then call send_image_file — that produces a fake 'sticker' image instead of a "
             "real TIM face and is the WRONG path. If no suitable sticker_id is known, call "
-            "yb_search_sticker first. When the recent thread shows users sending stickers, "
+            "search_yb_sticker first. When the recent thread shows users sending stickers, "
             "prefer matching that tone by replying with a sticker instead of (or in "
             "addition to) text."
         ),

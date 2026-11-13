@@ -155,7 +155,7 @@ for each tool_call in response.tool_calls:
 |------|---------|
 | `todo` | 读写 agent 本地任务状态 |
 | `memory` | 向持久化内存文件写入内容（有字符限制） |
-| `session_search` | 通过 agent 的 session DB 查询 session 历史 |
+| `search_session` | 通过 agent 的 session DB 查询 session 历史 |
 | `delegate_task` | 以隔离上下文生成子 agent |
 
 这些工具直接修改 agent 状态，并返回合成的工具结果，不经过注册表。

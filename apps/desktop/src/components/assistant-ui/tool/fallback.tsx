@@ -371,17 +371,17 @@ function ToolEntry({ part }: ToolEntryProps) {
     (part.toolName === 'terminal' || part.toolName === 'execute_code' || part.toolName === 'read_file')
 
   const hasSearchHits = Boolean(view.searchHits?.length)
-  const searchResultsLabel = part.toolName === 'web_search' ? 'Search results' : view.detailLabel
+  const searchResultsLabel = part.toolName === 'search_web' ? 'Search results' : view.detailLabel
 
-  // Only web_search renders the raw JSON drilldown, so serialize the result
+  // Only search_web renders the raw JSON drilldown, so serialize the result
   // lazily here instead of prettyJson-ing every tool's result in buildToolView.
   const rawResult = useMemo(
-    () => (part.toolName === 'web_search' && toolViewMode !== 'technical' ? prettyJson(part.result) : ''),
+    () => (part.toolName === 'search_web' && toolViewMode !== 'technical' ? prettyJson(part.result) : ''),
     [part.toolName, part.result, toolViewMode]
   )
 
   const showRawSearchDrilldown =
-    part.toolName === 'web_search' &&
+    part.toolName === 'search_web' &&
     part.result !== undefined &&
     toolViewMode !== 'technical' &&
     Boolean(rawResult.trim())
@@ -628,7 +628,7 @@ const TOOL_GROUP_SCROLL_THRESHOLD = 3
 // Tools whose body (an interactive form, a full-size image) must never be
 // trapped behind the window's max-height + fade mask. A run holding any of
 // them stays a plain, fully-visible stack no matter how long it is.
-export const UNBOUNDABLE_TOOLS = new Set(['clarify', 'image_generate'])
+export const UNBOUNDABLE_TOOLS = new Set(['clarify', 'generate_image'])
 
 export function shouldBoundToolGroup(childCount: number, hasUnboundable: boolean) {
   return childCount >= TOOL_GROUP_SCROLL_THRESHOLD && !hasUnboundable

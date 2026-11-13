@@ -94,5 +94,5 @@ cat track.mp3 | songsee - --format png -o out.png
 ## 注意事项
 
 - WAV 和 MP3 原生解码；其他格式需要 `ffmpeg`
-- 输出图像可使用 `vision_analyze` 进行检查，以实现自动化音频分析
+- 输出图像可使用 `analyze_vision` 进行检查，以实现自动化音频分析
 - 适用于比较音频输出、调试合成过程或记录音频处理流水线

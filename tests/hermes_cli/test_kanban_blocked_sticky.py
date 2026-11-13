@@ -1,8 +1,8 @@
 """Regression tests for #28712 — kanban dispatcher must not auto-promote
-worker-initiated ``kanban_block`` (sticky blocks), but must keep
+worker-initiated ``block_kanban`` (sticky blocks), but must keep
 auto-recovering circuit-breaker blocks.
 
-The bug: when a worker called ``kanban_block(reason="review-required:
+The bug: when a worker called ``block_kanban(reason="review-required:
 ...")`` to hand off to a human, the dispatcher's ``recompute_ready``
 would promote the task back to ``ready`` on the next tick.  The fresh
 worker found nothing to do (work already applied), exited cleanly, and
@@ -16,7 +16,7 @@ These tests pin down:
 * Circuit-breaker blocks (``gave_up`` event, status flipped via
   ``_record_task_failure``) still auto-recover — the original intent
   of #40c1decb3 is preserved.
-* An explicit ``kanban_unblock`` clears the sticky state.
+* An explicit ``unblock_kanban`` clears the sticky state.
 * The full block → promote → crash → ``gave_up`` loop is broken after
   this fix: subsequent ticks leave the task blocked.
 
@@ -49,7 +49,7 @@ def kanban_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 # ---------------------------------------------------------------------------
-# Worker-initiated kanban_block must be sticky
+# Worker-initiated block_kanban must be sticky
 # ---------------------------------------------------------------------------
 
 
@@ -106,7 +106,7 @@ def test_worker_block_on_child_with_done_parents_is_still_sticky(kanban_home: Pa
 
 def test_circuit_breaker_block_still_auto_promotes(kanban_home: Path) -> None:
     """A child that was put into ``blocked`` *without* a worker-issued
-    ``kanban_block`` (e.g. a transient crash, manual DB triage) and whose
+    ``block_kanban`` (e.g. a transient crash, manual DB triage) and whose
     ``consecutive_failures`` is still *below* the circuit-breaker limit
     must get auto-promoted when its parents complete — preserves the
     pre-#28712 recovery semantics for genuinely transient failures.
@@ -176,7 +176,7 @@ def test_gave_up_event_alone_does_not_make_block_sticky(kanban_home: Path) -> No
 
 
 def test_unblock_clears_sticky_state_and_lets_block_recover(kanban_home: Path) -> None:
-    """``hermes kanban unblock`` (or the ``kanban_unblock`` tool) is
+    """``hermes kanban unblock`` (or the ``unblock_kanban`` tool) is
     the only legitimate way out of a worker-initiated block.  After
     unblock, a *subsequent* circuit-breaker block on the same task
     must again be eligible for auto-recovery."""
@@ -217,7 +217,7 @@ def test_protocol_violation_loop_is_broken(kanban_home: Path) -> None:
 
     Loop shape from the issue:
 
-    1. Worker calls ``kanban_block`` → status='blocked',
+    1. Worker calls ``block_kanban`` → status='blocked',
        ``task_runs.outcome='blocked'``, ``blocked`` event.
     2. (Bug) Dispatcher promotes back to ``ready``.
     3. Fresh worker exits cleanly without terminal tool call →

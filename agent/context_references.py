@@ -154,7 +154,7 @@ async def preprocess_context_references_async(
 
     # Expand all references concurrently. Each _expand_reference is independent
     # (no shared state during expansion) — a message with several @url: refs
-    # would otherwise pay one full web_extract round-trip per ref in series.
+    # would otherwise pay one full extract_web round-trip per ref in series.
     # gather preserves positional order, so we reassemble warnings/blocks in the
     # original ref order exactly as the prior serial loop did; the token-budget
     # check below is unchanged (it runs once, after all refs are expanded).

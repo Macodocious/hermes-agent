@@ -294,9 +294,9 @@ class TestRunConversationCodexPath:
         agent = _make_codex_agent()
         agent._skill_nudge_interval = 10
         agent._iters_since_skill = 0
-        # Make valid_tool_names include 'skill_manage' so the gate passes
+        # Make valid_tool_names include 'manage_skill' so the gate passes
         agent.valid_tool_names = set(getattr(agent, "valid_tool_names", set()))
-        agent.valid_tool_names.add("skill_manage")
+        agent.valid_tool_names.add("manage_skill")
 
         with patch.object(agent, "_spawn_background_review",
                           return_value=None) as spawn:
@@ -323,7 +323,7 @@ class TestRunConversationCodexPath:
         agent._skill_nudge_interval = 1  # very low so any iter trips it
         agent._iters_since_skill = 0
         agent.valid_tool_names = set(getattr(agent, "valid_tool_names", set()))
-        agent.valid_tool_names.add("skill_manage")
+        agent.valid_tool_names.add("manage_skill")
 
         with patch.object(agent, "_spawn_background_review",
                           return_value=None) as spawn:
@@ -520,7 +520,7 @@ class TestRunConversationCodexPath:
 class TestReviewForkApiModeDowngrade:
     """When the parent agent runs on codex_app_server, the background
     review fork must downgrade to codex_responses — otherwise the fork
-    can't dispatch agent-loop tools (memory, skill_manage) which is the
+    can't dispatch agent-loop tools (memory, manage_skill) which is the
     whole point of the review."""
 
     def test_codex_app_server_parent_downgrades_review_fork(self):
@@ -741,8 +741,8 @@ class TestCodexToolProgressBridge:
         assert _codex_item_to_tool_name(mcp) == "mcp.fs.read"
         assert _codex_item_to_args(mcp) == {"p": 1}
 
-        dyn = {"type": "dynamicToolCall", "tool": "web_search", "arguments": {"q": "x"}}
-        assert _codex_item_to_tool_name(dyn) == "web_search"
+        dyn = {"type": "dynamicToolCall", "tool": "search_web", "arguments": {"q": "x"}}
+        assert _codex_item_to_tool_name(dyn) == "search_web"
 
     def test_bridge_ignores_non_tool_items_and_other_methods(self):
         from agent.codex_runtime import make_codex_app_server_event_bridge

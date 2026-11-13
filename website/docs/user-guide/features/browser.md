@@ -361,7 +361,7 @@ Then launch the Hermes CLI and run `/browser connect`.
 **Why `--user-data-dir`?** Without it, launching a Chromium-family browser while a regular instance is already running typically opens a new window on the existing process — and that existing process was not started with `--remote-debugging-port`, so port 9222 never opens. A dedicated user-data-dir forces a fresh browser process where the debug port actually listens. `--no-first-run --no-default-browser-check` skips the first-launch wizard for the fresh profile.
 :::
 
-When connected via CDP, all browser tools (`browser_navigate`, `browser_click`, etc.) operate on your live browser instance instead of spinning up a cloud session.
+When connected via CDP, all browser tools (`navigate_browser`, `click_browser`, etc.) operate on your live browser instance instead of spinning up a cloud session.
 
 ### WSL2 + Windows Chrome: prefer MCP over `/browser connect`
 
@@ -424,7 +424,7 @@ The `browser` toolset must be included in your config's `toolsets` list or enabl
 
 ## Available Tools
 
-### `browser_navigate`
+### `navigate_browser`
 
 Navigate to a URL. Must be called before any other browser tool. Initializes the Browserbase session.
 
@@ -433,19 +433,19 @@ Navigate to https://github.com/NousResearch
 ```
 
 :::tip
-For simple information retrieval, prefer `web_search` or `web_extract` — they are faster and cheaper. Use browser tools when you need to **interact** with a page (click buttons, fill forms, handle dynamic content).
+For simple information retrieval, prefer `search_web` or `extract_web` — they are faster and cheaper. Use browser tools when you need to **interact** with a page (click buttons, fill forms, handle dynamic content).
 :::
 
-### `browser_snapshot`
+### `snapshot_browser`
 
-Get a text-based snapshot of the current page's accessibility tree. Returns interactive elements with ref IDs like `@e1`, `@e2` for use with `browser_click` and `browser_type`.
+Get a text-based snapshot of the current page's accessibility tree. Returns interactive elements with ref IDs like `@e1`, `@e2` for use with `click_browser` and `type_browser`.
 
 - **`full=false`** (default): Compact view showing only interactive elements
 - **`full=true`**: Complete page content
 
-Snapshots over 15,000 characters are automatically truncated or summarized by an LLM (the same per-page budget as `web_extract`). When that happens, the complete snapshot is saved to `~/.hermes/cache/web/` and the tool output includes the file path plus a ready-to-use `read_file` call, so the agent can page through the full accessibility tree — including element refs beyond the cut — without re-snapshotting.
+Snapshots over 15,000 characters are automatically truncated or summarized by an LLM (the same per-page budget as `extract_web`). When that happens, the complete snapshot is saved to `~/.hermes/cache/web/` and the tool output includes the file path plus a ready-to-use `read_file` call, so the agent can page through the full accessibility tree — including element refs beyond the cut — without re-snapshotting.
 
-### `browser_click`
+### `click_browser`
 
 Click an element identified by its ref ID from the snapshot.
 
@@ -453,7 +453,7 @@ Click an element identified by its ref ID from the snapshot.
 Click @e5 to press the "Sign In" button
 ```
 
-### `browser_type`
+### `type_browser`
 
 Type text into an input field. Clears the field first, then types the new text.
 
@@ -461,7 +461,7 @@ Type text into an input field. Clears the field first, then types the new text.
 Type "hermes agent" into the search field @e3
 ```
 
-### `browser_scroll`
+### `scroll_browser`
 
 Scroll the page up or down to reveal more content.
 
@@ -469,7 +469,7 @@ Scroll the page up or down to reveal more content.
 Scroll down to see more results
 ```
 
-### `browser_press`
+### `press_browser`
 
 Press a keyboard key. Useful for submitting forms or navigation.
 
@@ -479,11 +479,11 @@ Press Enter to submit the form
 
 Supported keys: `Enter`, `Tab`, `Escape`, `ArrowDown`, `ArrowUp`, and more.
 
-### `browser_back`
+### `back_browser`
 
 Navigate back to the previous page in browser history.
 
-### `browser_get_images`
+### `get_browser_images`
 
 List all images on the current page with their URLs and alt text. Useful for finding images to analyze.
 
@@ -516,7 +516,7 @@ browser_console(expression="document.querySelector('h1').textContent")
 browser_console(expression="JSON.stringify(performance.timing)")
 ```
 
-When a CDP supervisor is active for the current session (typical for any session that's run `browser_navigate` against a CDP-capable backend), evaluation runs over the supervisor's persistent WebSocket — no subprocess startup cost. Falls through to the standard agent-browser CLI path otherwise. Behaviour is identical either way; only latency changes.
+When a CDP supervisor is active for the current session (typical for any session that's run `navigate_browser` against a CDP-capable backend), evaluation runs over the supervisor's persistent WebSocket — no subprocess startup cost. Falls through to the standard agent-browser CLI path otherwise. Behaviour is identical either way; only latency changes.
 
 Evaluation is unrestricted by default — the agent can use `fetch`, read storage, query form values, and run any DOM extraction. Requests targeting private/internal addresses are still blocked on non-local backends (the SSRF guard is independent of this setting). If you browse hostile pages with a logged-in profile and want a strict denylist over sensitive JS primitives (cookies, storage, clipboard, network calls, form values), opt in with `browser.restrict_evaluate: true` in `config.yaml`. Note the denylist matches primitive *names*, so it also blocks legitimate expressions that merely contain words like `fetch` or `cookie`.
 
@@ -526,7 +526,7 @@ Raw Chrome DevTools Protocol passthrough — the escape hatch for browser operat
 
 **Only available when a CDP endpoint is reachable at session start** — meaning `/browser connect` has attached to a running Chrome, Brave, Chromium, or Edge browser, or `browser.cdp_url` is set in `config.yaml`. The default local agent-browser mode, Camofox, and cloud providers (Browserbase, Browser Use, Firecrawl) do not currently expose CDP to this tool — cloud providers have per-session CDP URLs but live-session routing is a follow-up.
 
-**CDP method reference:** https://chromedevtools.github.io/devtools-protocol/ — the agent can `web_extract` a specific method's page to look up parameters and return shape.
+**CDP method reference:** https://chromedevtools.github.io/devtools-protocol/ — the agent can `extract_web` a specific method's page to look up parameters and return shape.
 
 Common patterns:
 
@@ -550,13 +550,13 @@ browser_cdp(method="Network.getAllCookies")
 
 Browser-level methods (`Target.*`, `Browser.*`, `Storage.*`) omit `target_id`. Page-level methods (`Page.*`, `Runtime.*`, `DOM.*`, `Emulation.*`) require a `target_id` from `Target.getTargets`. Each stateless call is independent — sessions do not persist between calls.
 
-**Cross-origin iframes:** pass `frame_id` (from `browser_snapshot.frame_tree.children[]` where `is_oopif=true`) to route the CDP call through the supervisor's live session for that iframe. This is how `Runtime.evaluate` inside a cross-origin iframe works on Browserbase, where stateless CDP connections would hit signed-URL expiry. Example:
+**Cross-origin iframes:** pass `frame_id` (from `snapshot_browser.frame_tree.children[]` where `is_oopif=true`) to route the CDP call through the supervisor's live session for that iframe. This is how `Runtime.evaluate` inside a cross-origin iframe works on Browserbase, where stateless CDP connections would hit signed-URL expiry. Example:
 
 ```
 browser_cdp(
   method="Runtime.evaluate",
   params={"expression": "document.title", "returnByValue": True},
-  frame_id="<frame_id from browser_snapshot>",
+  frame_id="<frame_id from snapshot_browser>",
 )
 ```
 
@@ -564,10 +564,10 @@ Same-origin iframes don't need `frame_id` — use `document.querySelector('ifram
 
 ### `browser_dialog`
 
-Responds to a native JS dialog (`alert` / `confirm` / `prompt` / `beforeunload`). Before this tool existed, dialogs would silently block the page's JavaScript thread and subsequent `browser_*` calls would hang or throw; now the agent sees pending dialogs in `browser_snapshot` output and responds explicitly.
+Responds to a native JS dialog (`alert` / `confirm` / `prompt` / `beforeunload`). Before this tool existed, dialogs would silently block the page's JavaScript thread and subsequent `browser_*` calls would hang or throw; now the agent sees pending dialogs in `snapshot_browser` output and responds explicitly.
 
 **Workflow:**
-1. Call `browser_snapshot`. If a dialog is blocking the page, it shows up as `pending_dialogs: [{"id": "d-1", "type": "alert", "message": "..."}]`.
+1. Call `snapshot_browser`. If a dialog is blocking the page, it shows up as `pending_dialogs: [{"id": "d-1", "type": "alert", "message": "..."}]`.
 2. Call `browser_dialog(action="accept")` or `browser_dialog(action="dismiss")`. For `prompt()` dialogs, pass `prompt_text="..."` to supply the response.
 3. Re-snapshot — `pending_dialogs` is empty; the page's JS thread has resumed.
 
@@ -591,7 +591,7 @@ Responds to a native JS dialog (`alert` / `confirm` / `prompt` / `beforeunload`)
 | `auto_dismiss` | Capture, dismiss immediately. Agent still sees the dialog in `browser_state` history but doesn't have to act. |
 | `auto_accept` | Capture, accept immediately. Useful when navigating pages with aggressive `beforeunload` prompts. |
 
-**Frame tree** inside `browser_snapshot.frame_tree` is capped to 30 frames and OOPIF depth 2 to keep payloads bounded on ad-heavy pages. A `truncated: true` flag surfaces when limits were hit; agents needing the full tree can use `browser_cdp` with `Page.getFrameTree`.
+**Frame tree** inside `snapshot_browser.frame_tree` is capped to 30 frames and OOPIF depth 2 to keep payloads bounded on ad-heavy pages. A `truncated: true` flag surfaces when limits were hit; agents needing the full tree can use `browser_cdp` with `Page.getFrameTree`.
 
 ## Practical Examples
 
@@ -601,12 +601,12 @@ Responds to a native JS dialog (`alert` / `confirm` / `prompt` / `beforeunload`)
 User: Sign up for an account on example.com with my email john@example.com
 
 Agent workflow:
-1. browser_navigate("https://example.com/signup")
-2. browser_snapshot()  → sees form fields with refs
-3. browser_type(ref="@e3", text="john@example.com")
-4. browser_type(ref="@e5", text="SecurePass123")
-5. browser_click(ref="@e8")  → clicks "Create Account"
-6. browser_snapshot()  → confirms success
+1. navigate_browser("https://example.com/signup")
+2. snapshot_browser()  → sees form fields with refs
+3. type_browser(ref="@e3", text="john@example.com")
+4. type_browser(ref="@e5", text="SecurePass123")
+5. click_browser(ref="@e8")  → clicks "Create Account"
+6. snapshot_browser()  → confirms success
 ```
 
 ### Researching Dynamic Content
@@ -615,8 +615,8 @@ Agent workflow:
 User: What are the top trending repos on GitHub right now?
 
 Agent workflow:
-1. browser_navigate("https://github.com/trending")
-2. browser_snapshot(full=true)  → reads trending repo list
+1. navigate_browser("https://github.com/trending")
+2. snapshot_browser(full=true)  → reads trending repo list
 3. Returns formatted results
 ```
 
@@ -629,7 +629,7 @@ browser:
   record_sessions: true  # default: false
 ```
 
-When enabled, recording starts automatically on the first `browser_navigate` and saves to `~/.hermes/browser_recordings/` when the session closes. Works in both local and cloud (Browserbase) modes. Recordings older than 72 hours are automatically cleaned up.
+When enabled, recording starts automatically on the first `navigate_browser` and saves to `~/.hermes/browser_recordings/` when the session closes. Works in both local and cloud (Browserbase) modes. Recordings older than 72 hours are automatically cleaned up.
 
 ## Headed Mode (Visible Browser Window)
 
@@ -675,7 +675,7 @@ If paid features aren't available on your plan, Hermes automatically falls back 
 ## Limitations
 
 - **Text-based interaction** — relies on accessibility tree, not pixel coordinates
-- **Snapshot size** — large pages may be truncated or LLM-summarized at 15,000 characters (matching `web_extract`); the complete snapshot is saved to `~/.hermes/cache/web/` and the output points at it for `read_file` paging
+- **Snapshot size** — large pages may be truncated or LLM-summarized at 15,000 characters (matching `extract_web`); the complete snapshot is saved to `~/.hermes/cache/web/` and the output points at it for `read_file` paging
 - **Session timeout** — cloud sessions expire based on your provider's plan settings
 - **Cost** — cloud sessions consume provider credits; sessions are automatically cleaned up when the conversation ends or after inactivity. Use `/browser connect` for free local browsing.
 - **No file downloads** — cannot download files from the browser

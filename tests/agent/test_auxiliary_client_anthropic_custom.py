@@ -2,7 +2,7 @@
 
 When a user configures a custom endpoint with ``api_mode: anthropic_messages``
 (e.g. MiniMax, Zhipu GLM, LiteLLM in Anthropic-proxy mode), auxiliary tasks
-(compression, web_extract, session_search, title generation) must use the
+(compression, extract_web, search_session, title generation) must use the
 native Anthropic transport rather than being silently downgraded to an
 OpenAI-wire client that speaks the wrong protocol.
 """

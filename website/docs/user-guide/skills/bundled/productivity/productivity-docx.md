@@ -82,7 +82,7 @@ After writing a `.docx`, render it and look at it:
 ```bash
 python scripts/office/soffice.py --headless --convert-to pdf output.docx
 pdftoppm -jpeg -r 100 output.pdf page
-ls page-*.jpg   # then inspect each with vision_analyze
+ls page-*.jpg   # then inspect each with analyze_vision
 ```
 
 `pdftoppm` zero-pads page numbers to the width of the page count (`page-01.jpg`…`page-12.jpg`).
@@ -137,7 +137,7 @@ The script writes `comments.xml`, `commentsExtended.xml`, `commentsIds.xml`, `co
 ## Verification
 
 1. `python scripts/office/validate.py out.docx --original in.docx` — schema, relationship, and content-type checks; every failure names its fix.
-2. Render to PDF → images (see "Verify the output") and inspect each page with `vision_analyze` — look for broken tables, missing images, spacing artifacts, leftover placeholder text.
+2. Render to PDF → images (see "Verify the output") and inspect each page with `analyze_vision` — look for broken tables, missing images, spacing artifacts, leftover placeholder text.
 
 ## Related skills
 

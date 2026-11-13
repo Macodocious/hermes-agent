@@ -301,8 +301,8 @@ CLI 在 agent 工作时显示动态反馈：
 **工具执行信息流：**
 ```
   ┊ 💻 terminal `ls -la` (0.3s)
-  ┊ 🔍 web_search (1.2s)
-  ┊ 📄 web_extract (2.1s)
+  ┊ 🔍 search_web (1.2s)
+  ┊ 📄 extract_web (2.1s)
 ```
 
 使用 `/verbose` 循环切换显示模式：`off → new → all → verbose`。该命令也可为消息平台启用——参见[配置](/user-guide/configuration#display-settings)。
@@ -356,7 +356,7 @@ CLI 会话存储在 Hermes 的 SQLite 状态数据库 `~/.hermes/state.db` 中�
 - 会话元数据（ID、标题、时间戳、token 计数器）
 - 消息历史
 - 跨压缩/恢复会话的谱系
-- `session_search` 使用的全文搜索索引
+- `search_session` 使用的全文搜索索引
 
 部分消息适配器还会在数据库旁保存各平台的转录文件，但 CLI 本身从 SQLite 会话存储中恢复。
 

@@ -842,7 +842,7 @@ def test_tui_tool_output_risk_event_exposes_metadata_without_raw_output(monkeypa
     server._on_tool_progress(
         "risk-test",
         "tool.output_risk",
-        "web_extract",
+        "extract_web",
         tool_call_id="tool-1",
         risk_metadata={
             "risk": "high",
@@ -856,7 +856,7 @@ def test_tui_tool_output_risk_event_exposes_metadata_without_raw_output(monkeypa
         "risk-test",
         {
             "tool_id": "tool-1",
-            "name": "web_extract",
+            "name": "extract_web",
             "risk": "high",
             "findings": ["prompt_injection"],
             "redacted": False,

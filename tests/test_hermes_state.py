@@ -1027,7 +1027,7 @@ class TestMessageStorage:
         Only assistant messages with tool_calls should count.
         """
         db.create_session(session_id="s1", source="cli")
-        db.append_message("s1", role="tool", content="result", tool_name="web_search")
+        db.append_message("s1", role="tool", content="result", tool_name="search_web")
 
         session = db.get_session("s1")
         assert session["tool_call_count"] == 0
@@ -1036,7 +1036,7 @@ class TestMessageStorage:
         """An assistant message with N tool_calls should increment by N."""
         db.create_session(session_id="s1", source="cli")
         tool_calls = [
-            {"id": "call_1", "function": {"name": "web_search", "arguments": "{}"}},
+            {"id": "call_1", "function": {"name": "search_web", "arguments": "{}"}},
         ]
         db.append_message("s1", role="assistant", content="", tool_calls=tool_calls)
 
@@ -1049,14 +1049,14 @@ class TestMessageStorage:
 
         # Assistant makes 2 parallel tool calls in one message
         tool_calls = [
-            {"id": "call_1", "function": {"name": "ha_call_service", "arguments": "{}"}},
-            {"id": "call_2", "function": {"name": "ha_call_service", "arguments": "{}"}},
+            {"id": "call_1", "function": {"name": "call_ha_service", "arguments": "{}"}},
+            {"id": "call_2", "function": {"name": "call_ha_service", "arguments": "{}"}},
         ]
         db.append_message("s1", role="assistant", content="", tool_calls=tool_calls)
 
         # Two tool responses come back
-        db.append_message("s1", role="tool", content="ok", tool_name="ha_call_service")
-        db.append_message("s1", role="tool", content="ok", tool_name="ha_call_service")
+        db.append_message("s1", role="tool", content="ok", tool_name="call_ha_service")
+        db.append_message("s1", role="tool", content="ok", tool_name="call_ha_service")
 
         session = db.get_session("s1")
         # Should be 2 (the actual number of tool calls), not 3
@@ -1067,7 +1067,7 @@ class TestMessageStorage:
 
     def test_tool_calls_serialization(self, db):
         db.create_session(session_id="s1", source="cli")
-        tool_calls = [{"id": "call_1", "function": {"name": "web_search", "arguments": "{}"}}]
+        tool_calls = [{"id": "call_1", "function": {"name": "search_web", "arguments": "{}"}}]
         db.append_message("s1", role="assistant", tool_calls=tool_calls)
 
         messages = db.get_messages("s1")
@@ -1138,13 +1138,13 @@ class TestMessageStorage:
             "s1",
             [
                 {"role": "user", "content": "do something"},
-                make_tool_result_message("web_search", "some results", "c1"),
+                make_tool_result_message("search_web", "some results", "c1"),
             ],
         )
 
         msgs = db.get_messages("s1")
         tool_msg = next(m for m in msgs if m["role"] == "tool")
-        assert tool_msg["tool_name"] == "web_search"
+        assert tool_msg["tool_name"] == "search_web"
 
     def test_tool_effect_disposition_round_trips_through_session_db(self, db):
         from agent.tool_dispatch_helpers import make_tool_result_message
@@ -1215,14 +1215,14 @@ class TestMessageStorage:
         # assistant tool_calls row is inserted first but stamped LATER than
         # the tool response that follows it.
         tool_calls = [
-            {"id": "call_1", "function": {"name": "web_search", "arguments": "{}"}},
+            {"id": "call_1", "function": {"name": "search_web", "arguments": "{}"}},
         ]
         db.append_message(
             "s1", role="assistant", content="", tool_calls=tool_calls,
             timestamp=1000.0,
         )
         db.append_message(
-            "s1", role="tool", content="result", tool_name="web_search",
+            "s1", role="tool", content="result", tool_name="search_web",
             tool_call_id="call_1", timestamp=999.0,
         )
         db.append_message("s1", role="user", content="thanks", timestamp=998.0)
@@ -1745,7 +1745,7 @@ class TestFTS5Search:
     def test_search_dotted_term_does_not_crash(self, db):
         """Dotted terms like 'P2.2' or 'simulate.p2.test.ts' should not crash FTS5."""
         db.create_session(session_id="s1", source="cli")
-        db.append_message("s1", role="user", content="Working on P2.2 session_search edge cases")
+        db.append_message("s1", role="user", content="Working on P2.2 search_session edge cases")
         db.append_message("s1", role="assistant", content="See simulate.p2.test.ts for details")
 
         results = db.search_messages("P2.2")
@@ -3767,7 +3767,7 @@ class TestSchemaInit:
         conn.execute(
             "INSERT INTO messages (session_id, role, content, tool_name, tool_calls, timestamp) "
             "VALUES (?, ?, ?, ?, ?, ?)",
-            ("s1", "tool", "plain content", "browser_snapshot", '{"name":"browser_snapshot"}', 1001.0),
+            ("s1", "tool", "plain content", "snapshot_browser", '{"name":"snapshot_browser"}', 1001.0),
         )
         conn.commit()
         conn.close()
@@ -3801,7 +3801,7 @@ class TestSchemaInit:
             assert trigram_count == 1
             tool_hit = migrated_db._conn.execute(
                 "SELECT COUNT(*) FROM messages_fts_trigram "
-                "WHERE messages_fts_trigram MATCH 'browser_snapshot'"
+                "WHERE messages_fts_trigram MATCH 'snapshot_browser'"
             ).fetchone()[0]
             assert tool_hit == 1
         finally:
@@ -5103,7 +5103,7 @@ class TestFTS5ToolCallIndexing:
 
     Before #16751's fix, `messages_fts` only indexed `messages.content`, so
     tokens that only appeared in `tool_name` or the serialized `tool_calls`
-    JSON were invisible to session_search even though the row was in the DB.
+    JSON were invisible to search_session even though the row was in the DB.
     """
 
     def test_tool_name_is_searchable(self, db):
@@ -5123,7 +5123,7 @@ class TestFTS5ToolCallIndexing:
                 "id": "c1",
                 "type": "function",
                 "function": {
-                    "name": "web_search",
+                    "name": "search_web",
                     "arguments": '{"query": "UNIQUESEARCHTOKEN"}',
                 },
             }],
@@ -5155,11 +5155,11 @@ class TestFTS5ToolCallIndexing:
         db.create_session(session_id="s1", source="cli")
         db.append_message(
             "s1", role="assistant", content="hello",
-            tool_name="web_search",
+            tool_name="search_web",
             tool_calls=[{
                 "id": "c1",
                 "type": "function",
-                "function": {"name": "web_search", "arguments": '{"q": "x"}'},
+                "function": {"name": "search_web", "arguments": '{"q": "x"}'},
             }],
         )
         # end_session + end-time prune path would exercise DELETE; hit the
@@ -5169,7 +5169,7 @@ class TestFTS5ToolCallIndexing:
         db._execute_write(_delete)  # must not raise
 
         assert db.search_messages("hello") == []
-        assert db.search_messages("web_search") == []
+        assert db.search_messages("search_web") == []
 
     def test_update_message_reindexes_tool_fields(self, db):
         """UPDATE must refresh the FTS row so old tokens drop out and new tokens appear."""
@@ -5261,7 +5261,7 @@ class TestFTS5ToolCallMigration:
             "INSERT INTO messages (session_id, timestamp, role, content, tool_name, tool_calls) "
             "VALUES (?, ?, ?, ?, ?, ?)",
             ("s1", time.time(), "assistant", "", "LEGACYTOOL",
-             '{"function":{"name":"web_search","arguments":"{\\"q\\":\\"LEGACYARG\\"}"}}'),
+             '{"function":{"name":"search_web","arguments":"{\\"q\\":\\"LEGACYARG\\"}"}}'),
         )
         conn.commit()
 
@@ -6356,7 +6356,7 @@ class TestLoneSurrogatePersistence:
     def test_append_message_survives_lone_surrogate_content(self, db):
         db.create_session("s1", source="cli")
         db.append_message("s1", "assistant", "hello world")
-        db.append_message("s1", "tool", self.DIRTY, tool_name="web_search")
+        db.append_message("s1", "tool", self.DIRTY, tool_name="search_web")
 
         rows = db.get_messages("s1")
         assert len(rows) == 2
@@ -6379,7 +6379,7 @@ class TestLoneSurrogatePersistence:
         history = [
             {"role": "user", "content": "turn 1"},
             {"role": "assistant", "content": "answer 1"},
-            {"role": "tool", "content": self.DIRTY, "tool_name": "web_search"},
+            {"role": "tool", "content": self.DIRTY, "tool_name": "search_web"},
             {"role": "assistant", "content": "answer 2"},
         ]
         db.replace_messages("s1", history)

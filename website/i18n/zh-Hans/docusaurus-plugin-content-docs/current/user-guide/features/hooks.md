@@ -403,7 +403,7 @@ def my_callback(tool_name: str, args: dict, task_id: str, **kwargs):
 
 | 参数 | 类型 | 描述 |
 |-----|------|------|
-| `tool_name` | `str` | 即将执行的工具名称（如 `"terminal"`、`"web_search"`、`"read_file"`） |
+| `tool_name` | `str` | 即将执行的工具名称（如 `"terminal"`、`"search_web"`、`"read_file"`） |
 | `args` | `dict` | 模型传递给工具的参数 |
 | `task_id` | `str` | 会话/任务标识符。未设置时为空字符串。 |
 
@@ -1024,14 +1024,14 @@ def my_callback(
 
 | 参数 | 类型 | 描述 |
 |-----|------|------|
-| `tool_name` | `str` | 产生结果的工具（`read_file`、`web_extract`、`delegate_task` 等）。 |
+| `tool_name` | `str` | 产生结果的工具（`read_file`、`extract_web`、`delegate_task` 等）。 |
 | `arguments` | `dict` | 模型调用工具时传入的参数。 |
 | `result` | `str` | 工具的原始结果字符串，截断和 ANSI 剥离后。 |
 | `task_id` | `str \| None` | 在 RL/基准测试环境中运行时的任务/会话 ID。 |
 
 **返回值：** `str` 替换结果（返回的字符串即模型看到的内容），`None` 保持不变。
 
-**使用场景：** 从 `web_extract` 输出中脱敏组织特定的 PII、为长 JSON 工具响应添加摘要头、向 `read_file` 结果注入检索增强提示、将 `delegate_task` 子 agent 报告重写为项目特定 schema。
+**使用场景：** 从 `extract_web` 输出中脱敏组织特定的 PII、为长 JSON 工具响应添加摘要头、向 `read_file` 结果注入检索增强提示、将 `delegate_task` 子 agent 报告重写为项目特定 schema。
 
 ```python
 import re

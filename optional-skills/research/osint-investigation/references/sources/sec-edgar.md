@@ -48,7 +48,7 @@ Join key: company name OR CIK if you have it. CIK is canonical and stable.
 
 - Subsidiaries often filed under parent CIK — be careful with name matches
 - Name changes over time (rebrands, acquisitions) — CIK remains constant
-- 10-K Item 1A Risk Factors are free-form text — useful for `web_extract`-style
+- 10-K Item 1A Risk Factors are free-form text — useful for `extract_web`-style
   parsing, not structured queries
 - Foreign private issuers file 20-F instead of 10-K
 

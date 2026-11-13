@@ -6,7 +6,7 @@ gap for headless/VPS users. These tests pin:
 
 - GET /api/skills/content returns raw SKILL.md (and profile-scopes).
 - POST /api/skills creates a skill through the same validated write path
-  as the agent's ``skill_manage`` tool (frontmatter validation enforced).
+  as the agent's ``manage_skill`` tool (frontmatter validation enforced).
 - PUT /api/skills/content rewrites an existing SKILL.md (404 on unknown).
 - POST /api/cron/jobs accepts ``skills`` and persists it on the job;
   PUT /api/cron/jobs/{id} can update the list.

@@ -217,7 +217,7 @@ export default function SkillsPage() {
   // Open-ended: dir + URL + free-text inputs are composed into a single-line
   // /learn command and handed to the chat. /learn resolves to a normal agent
   // turn (command.dispatch → send), so the live agent gathers the sources
-  // with its own tools and authors the skill via skill_manage. No backend
+  // with its own tools and authors the skill via manage_skill. No backend
   // distill endpoint — one code path with the CLI/TUI/gateway /learn.
   const navigate = useNavigate();
   const [learnOpen, setLearnOpen] = useState(false);
@@ -696,7 +696,7 @@ export default function SkillsPage() {
                 URL
               </label>
               <Input
-                placeholder="https://docs.example.com/api  (fetched with web_extract)"
+                placeholder="https://docs.example.com/api  (fetched with extract_web)"
                 value={learnUrl}
                 onChange={(e) => setLearnUrl(e.target.value)}
               />

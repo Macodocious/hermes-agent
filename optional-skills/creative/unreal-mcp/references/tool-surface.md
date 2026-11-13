@@ -222,11 +222,11 @@ An agent that can't see the viewport is flying blind. In order of preference:
 2. **Console `HighResShot` via any console/exec tool** when you need
    resolutions beyond the viewport: `HighResShot 3840x2160` writes to
    `<Project>/Saved/Screenshots/<Platform>/` on the EDITOR host's
-   filesystem; read the file back (same machine) with `vision_analyze`.
+   filesystem; read the file back (same machine) with `analyze_vision`.
 3. **Custom toolset escape hatch** for anything else (e.g. camera-actor
    framed captures with MRQ-quality settings).
 
-Always `vision_analyze` the capture and art-direct against the brief before
+Always `analyze_vision` the capture and art-direct against the brief before
 declaring a milestone done.
 
 ## Plugin configuration reference

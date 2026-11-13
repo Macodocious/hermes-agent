@@ -14,11 +14,11 @@ class TestFeishuToolRegistration(unittest.TestCase):
     """Verify feishu tools are registered and have valid schemas."""
 
     EXPECTED_TOOLS = {
-        "feishu_doc_read": "feishu_doc",
-        "feishu_drive_list_comments": "feishu_drive",
-        "feishu_drive_list_comment_replies": "feishu_drive",
-        "feishu_drive_reply_comment": "feishu_drive",
-        "feishu_drive_add_comment": "feishu_drive",
+        "read_feishu_doc": "feishu_doc",
+        "list_feishu_drive_comments": "feishu_drive",
+        "list_feishu_drive_comment_replies": "feishu_drive",
+        "reply_feishu_drive_comment": "feishu_drive",
+        "add_feishu_drive_comment": "feishu_drive",
     }
 
     def test_all_tools_registered(self):
@@ -44,13 +44,13 @@ class TestFeishuToolRegistration(unittest.TestCase):
             self.assertTrue(callable(entry.handler))
 
     def test_doc_read_schema_params(self):
-        entry = registry.get_entry("feishu_doc_read")
+        entry = registry.get_entry("read_feishu_doc")
         props = entry.schema["parameters"].get("properties", {})
         self.assertIn("doc_token", props)
 
     def test_drive_tools_require_file_token(self):
         for tool_name in self.EXPECTED_TOOLS:
-            if tool_name == "feishu_doc_read":
+            if tool_name == "read_feishu_doc":
                 continue
             entry = registry.get_entry(tool_name)
             props = entry.schema["parameters"].get("properties", {})

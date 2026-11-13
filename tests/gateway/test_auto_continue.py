@@ -132,7 +132,7 @@ class TestInterruptedReplayFiltering:
                 "role": "assistant",
                 "content": None,
                 "tool_calls": [
-                    {"id": "call_1", "function": {"name": "web_search", "arguments": "{}"}},
+                    {"id": "call_1", "function": {"name": "search_web", "arguments": "{}"}},
                     {"id": "call_2", "function": {"name": "terminal", "arguments": "{}"}},
                 ],
             },
@@ -220,7 +220,7 @@ class TestInterruptedReplayFiltering:
                 "role": "assistant",
                 "content": None,
                 "tool_calls": [
-                    {"id": "call_1", "function": {"name": "web_search", "arguments": "{}"}},
+                    {"id": "call_1", "function": {"name": "search_web", "arguments": "{}"}},
                 ],
             },
             {"role": "tool", "tool_call_id": "call_1", "content": "found it"},

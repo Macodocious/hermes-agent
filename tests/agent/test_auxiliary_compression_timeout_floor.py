@@ -182,7 +182,7 @@ class TestCompressionTimeoutFloorAsync:
         p1, p2, p3, p4 = _patches(client, task_timeout=low)
         with p1, p2, p3, p4:
             await async_call_llm(
-                task="session_search",
+                task="search_session",
                 messages=[{"role": "user", "content": "x"}],
             )
         timeout = client.chat.completions.create.call_args.kwargs["timeout"]

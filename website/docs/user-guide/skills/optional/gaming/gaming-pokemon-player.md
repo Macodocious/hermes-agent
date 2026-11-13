@@ -90,7 +90,7 @@ This is faster than loading via the API after startup.
 
 ### Step 1: OBSERVE — check state AND take a screenshot
 GET /state for position, HP, battle, dialog.
-GET /screenshot and save to /tmp/pokemon.png, then use vision_analyze.
+GET /screenshot and save to /tmp/pokemon.png, then use analyze_vision.
 Always do BOTH — RAM state gives numbers, vision gives spatial awareness.
 
 ### Step 2: ORIENT
@@ -106,7 +106,7 @@ Priority: dialog > battle > heal > story objective > training > explore
 POST /action with a SHORT action list (2-4 actions, not 10-15).
 
 ### Step 5: VERIFY — screenshot after every move sequence
-Take a screenshot and use vision_analyze to confirm you moved where
+Take a screenshot and use analyze_vision to confirm you moved where
 intended. This is the MOST IMPORTANT step. Without vision you WILL get lost.
 
 ### Step 6: RECORD progress to memory with PKM: prefix

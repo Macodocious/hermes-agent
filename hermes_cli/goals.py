@@ -2073,20 +2073,20 @@ KANBAN_GOAL_CONTINUATION_TEMPLATE = (
     "[Continuing toward this kanban task — judge says it is not done yet]\n"
     "Reason: {reason}\n\n"
     "Take the next concrete step toward completing the task. When the work "
-    "is genuinely finished, call kanban_complete with a summary. If you are "
-    "blocked and need human input, call kanban_block with a reason. Do not "
+    "is genuinely finished, call complete_kanban with a summary. If you are "
+    "blocked and need human input, call block_kanban with a reason. Do not "
     "stop without calling one of them."
 )
 
 # Fed when the judge believes the work is done but the worker never called
-# kanban_complete / kanban_block. One explicit nudge to terminate the task
+# complete_kanban / block_kanban. One explicit nudge to terminate the task
 # the right way before the loop gives up.
 KANBAN_GOAL_FINALIZE_TEMPLATE = (
     "[The work looks complete, but the task is still open]\n"
     "Reason: {reason}\n\n"
-    "If the task is genuinely done, call kanban_complete now with a short "
+    "If the task is genuinely done, call complete_kanban now with a short "
     "summary of what you did. If something still blocks completion, call "
-    "kanban_block with the reason instead."
+    "block_kanban with the reason instead."
 )
 
 
@@ -2109,11 +2109,11 @@ def run_kanban_goal_loop(
     is that turn's reply. From here we:
 
     1. Check whether the worker already terminated the task (called
-       ``kanban_complete`` / ``kanban_block``). If so, stop — nothing to do.
+       ``complete_kanban`` / ``block_kanban``). If so, stop — nothing to do.
     2. Otherwise judge the latest response against ``goal_text`` (the card's
        title + body). ``continue`` → feed a continuation prompt and run
        another turn IN THE SAME SESSION via ``run_turn``. ``done`` but the
-       task is still open → one explicit "call kanban_complete" nudge.
+       task is still open → one explicit "call complete_kanban" nudge.
     3. When the turn budget is exhausted and the worker still hasn't
        terminated the task, ``block_fn`` is invoked so the card lands in a
        sticky ``blocked`` state for human review (NOT a silent exit).
@@ -2166,7 +2166,7 @@ def run_kanban_goal_loop(
 
         # Still open — judge whether the latest response satisfies the card.
         # The kanban worker loop has no wait-barrier concept (workers finish
-        # via kanban_complete / kanban_block, not by parking), so a WAIT
+        # via complete_kanban / block_kanban, not by parking), so a WAIT
         # verdict is treated as CONTINUE here.
         verdict, reason, _parse_failed, _wait, _transport_failed, _blocked, _clarify = judge_goal(goal_text, last_response)
         if verdict == "wait":
@@ -2175,13 +2175,13 @@ def run_kanban_goal_loop(
 
         if verdict == "done":
             if nudged_to_finalize:
-                # Already asked once to call kanban_complete and it still
+                # Already asked once to call complete_kanban and it still
                 # didn't — block for review rather than spin.
                 _log(f"kanban goal loop: task {task_id} judged done but worker won't finalize; blocking")
                 try:
                     block_fn(
                         f"Goal-mode worker's output looked complete but it never "
-                        f"called kanban_complete after a finalize nudge ({reason})."
+                        f"called complete_kanban after a finalize nudge ({reason})."
                     )
                 except Exception as exc:
                     _log(f"kanban goal loop: block_fn failed ({exc})")

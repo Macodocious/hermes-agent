@@ -1,7 +1,7 @@
 """Agent-facing tool: respond to a native JS dialog captured by the CDP supervisor.
 
 This tool is response-only — the agent first reads ``pending_dialogs`` from
-``browser_snapshot`` output, then calls ``browser_dialog(action=...)`` to
+``snapshot_browser`` output, then calls ``browser_dialog(action=...)`` to
 accept or dismiss.
 
 Gated on the same ``_browser_cdp_check`` as ``browser_cdp`` so it only
@@ -30,7 +30,7 @@ BROWSER_DIALOG_SCHEMA: Dict[str, Any] = {
     "description": (
         "Respond to a native JavaScript dialog (alert / confirm / prompt / "
         "beforeunload) that is currently blocking the page.\n\n"
-        "**Workflow:** call ``browser_snapshot`` first — if a dialog is open, "
+        "**Workflow:** call ``snapshot_browser`` first — if a dialog is open, "
         "it appears in the ``pending_dialogs`` field with ``id``, ``type``, "
         "and ``message``. Then call this tool with ``action='accept'`` or "
         "``action='dismiss'``.\n\n"
@@ -69,7 +69,7 @@ BROWSER_DIALOG_SCHEMA: Dict[str, Any] = {
                 "type": "string",
                 "description": (
                     "Specific dialog to respond to, from "
-                    "``browser_snapshot.pending_dialogs[].id``. Required "
+                    "``snapshot_browser.pending_dialogs[].id``. Required "
                     "only when multiple dialogs are queued."
                 ),
             },
@@ -96,7 +96,7 @@ def browser_dialog(
                     "No CDP supervisor is attached to this task. Either the "
                     "browser backend doesn't expose CDP (Camofox, default "
                     "Playwright) or no browser session has been started yet. "
-                    "Call browser_navigate or /browser connect first."
+                    "Call navigate_browser or /browser connect first."
                 ),
             }
         )
@@ -121,7 +121,7 @@ def _browser_dialog_check() -> bool:
     """Gate: same as ``browser_cdp`` — only offered when CDP is reachable.
 
     Kept identical so the two tools appear and disappear together. The
-    supervisor itself is started lazily by ``browser_navigate`` /
+    supervisor itself is started lazily by ``navigate_browser`` /
     ``/browser connect`` / Browserbase session creation, so a reachable
     CDP URL is enough to commit to showing the tool.
     """

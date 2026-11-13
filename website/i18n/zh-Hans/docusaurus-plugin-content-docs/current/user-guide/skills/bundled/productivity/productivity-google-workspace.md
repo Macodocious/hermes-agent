@@ -302,7 +302,7 @@ $GAPI docs append DOC_ID --text "Additional content to append"
 
 1. **未经用户确认，绝不发送邮件、创建/删除日历事件、删除 Drive 文件、共享文件或修改 Docs/Sheets。** 展示将要执行的操作（收件人、文件 ID、内容、共享角色）并请求批准。对于 `drive delete`，优先使用默认的回收站（可恢复）而非 `--permanent`。
 2. **首次使用前检查授权** —— 运行 `setup.py --check`。若失败，引导用户完成设置。
-3. **对于复杂查询，使用 Gmail 搜索语法参考** —— 通过 `skill_view("google-workspace", file_path="references/gmail-search-syntax.md")` 加载。
+3. **对于复杂查询，使用 Gmail 搜索语法参考** —— 通过 `view_skill("google-workspace", file_path="references/gmail-search-syntax.md")` 加载。
 4. **Calendar 时间必须包含时区** —— 始终使用带偏移量的 ISO 8601 格式（如 `2026-03-01T10:00:00-06:00`）或 UTC（`Z`）。
 5. **遵守速率限制** —— 避免快速连续的 API 调用。尽可能批量读取。
 

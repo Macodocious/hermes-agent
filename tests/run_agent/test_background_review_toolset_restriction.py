@@ -124,14 +124,14 @@ def test_background_review_installs_thread_local_whitelist():
     whitelist = captured["whitelist"]
     # memory + skills tools must be allowed
     assert "memory" in whitelist
-    assert "skill_manage" in whitelist
-    assert "skill_view" in whitelist
-    assert "skills_list" in whitelist
+    assert "manage_skill" in whitelist
+    assert "view_skill" in whitelist
+    assert "list_skills" in whitelist
     # dangerous tools must NOT be in the whitelist
     assert "terminal" not in whitelist
     assert "send_message" not in whitelist
     assert "delegate_task" not in whitelist
-    assert "web_search" not in whitelist
+    assert "search_web" not in whitelist
     assert "execute_code" not in whitelist
 
 
@@ -147,14 +147,14 @@ def test_background_review_agent_tools_are_limited():
     expected_tools = set(resolve_multiple_toolsets(["memory", "skills"]))
 
     assert "memory" in expected_tools
-    assert "skill_manage" in expected_tools
-    assert "skill_view" in expected_tools
-    assert "skills_list" in expected_tools
+    assert "manage_skill" in expected_tools
+    assert "view_skill" in expected_tools
+    assert "list_skills" in expected_tools
 
     assert "terminal" not in expected_tools
     assert "send_message" not in expected_tools
     assert "delegate_task" not in expected_tools
-    assert "web_search" not in expected_tools
+    assert "search_web" not in expected_tools
     assert "execute_code" not in expected_tools
 
 
@@ -193,8 +193,8 @@ def test_background_review_excludes_memory_when_disabled():
 
     whitelist = captured["whitelist"]
     # Skill tools still allowed...
-    assert "skill_manage" in whitelist
-    assert "skill_view" in whitelist
+    assert "manage_skill" in whitelist
+    assert "view_skill" in whitelist
     # ...but the built-in memory tool must be gated out.
     assert "memory" not in whitelist
 

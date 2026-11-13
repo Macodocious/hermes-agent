@@ -130,7 +130,7 @@ TIPS = [
     # --- Tools & Capabilities ---
     "execute_code runs Python scripts that call Hermes tools programmatically — results stay out of context.",
     "delegate_task spawns up to 3 concurrent sub-agents by default (delegation.max_concurrent_children) with isolated contexts for parallel work.",
-    "web_extract works on PDF URLs — pass any PDF link and it converts to markdown.",
+    "extract_web works on PDF URLs — pass any PDF link and it converts to markdown.",
     "search_files is ripgrep-backed and faster than grep — use it instead of terminal grep.",
     "patch uses 9 fuzzy matching strategies so minor whitespace differences won't break edits.",
     "patch supports V4A format for bulk multi-file edits in a single call.",
@@ -138,11 +138,11 @@ TIPS = [
     "read_file auto-deduplicates — re-reading an unchanged file returns a lightweight stub.",
     "browser_vision takes a screenshot and analyzes it with AI — works for CAPTCHAs and visual content.",
     "browser_console can evaluate JavaScript expressions in the page context.",
-    "image_generate creates images with FLUX 2 Pro and automatic 2x upscaling.",
+    "generate_image creates images with FLUX 2 Pro and automatic 2x upscaling.",
     "text_to_speech converts text to audio — plays as voice bubbles on Telegram.",
     "send_message can reach any connected messaging platform from within a session.",
     "The todo tool helps the agent track complex multi-step tasks during a session.",
-    "session_search performs full-text search across ALL past conversations.",
+    "search_session performs full-text search across ALL past conversations.",
     "The agent automatically saves preferences, corrections, and environment facts to memory.",
     "/moa routes one hard prompt through your configured Mixture of Agents model set.",
     "Terminal commands support background mode with notify_on_complete for long-running tasks.",
@@ -174,7 +174,7 @@ TIPS = [
     "hermes skills install official/security/1password installs optional skills from the repo.",
     "Skills can restrict to specific OS platforms — some only load on macOS or Linux.",
     "skills.external_dirs in config.yaml lets you load skills from custom directories.",
-    "The agent can create its own skills as procedural memory using skill_manage.",
+    "The agent can create its own skills as procedural memory using manage_skill.",
     "The plan skill saves markdown plans under .hermes/plans/ in the active workspace.",
 
     # --- Cron & Scheduling ---
@@ -223,7 +223,7 @@ TIPS = [
     # --- Browser ---
     "Five browser providers: local Chromium, Browserbase, Browser Use, Camofox, and Firecrawl.",
     "Camofox is an anti-detection browser — Firefox fork with C++ fingerprint spoofing.",
-    "browser_navigate returns a page snapshot automatically — no need to call browser_snapshot after.",
+    "navigate_browser returns a page snapshot automatically — no need to call snapshot_browser after.",
     "browser_vision with annotate=true overlays numbered labels on interactive elements.",
 
     # --- MCP ---
@@ -282,7 +282,7 @@ TIPS = [
     "Failed foreground terminal commands auto-retry up to 3 times with exponential backoff (2s, 4s, 8s).",
     "Bare sudo commands are auto-rewritten to pipe SUDO_PASSWORD from .env — no interactive prompt needed.",
     "execute_code has built-in helpers: json_parse() for tolerant parsing, shell_quote(), and retry() with backoff.",
-    "execute_code's 7 sandbox tools (web_search, terminal, read/write/search/patch) use RPC — never enter context.",
+    "execute_code's 7 sandbox tools (search_web, terminal, read/write/search/patch) use RPC — never enter context.",
     "Reading the same file region 3+ times triggers a warning. At 4+, it's hard-blocked to prevent loops.",
     "write_file and patch detect if a file was externally modified since the last read and warn about staleness.",
     "V4A patch format supports Add File, Delete File, and Move File directives — not just Update.",
@@ -365,7 +365,7 @@ TIPS = [
 
     # --- Curator ---
     'hermes curator run --dry-run previews what the curator would archive or consolidate without mutating anything.',
-    "hermes curator pin <skill> hard-fences a skill against both auto-archival and the agent's skill_manage tool.",
+    "hermes curator pin <skill> hard-fences a skill against both auto-archival and the agent's manage_skill tool.",
     'hermes curator rollback restores skills from a pre-run snapshot — backups live under skills/.curator_backups/.',
 
     # --- Credential Pools & Routing ---

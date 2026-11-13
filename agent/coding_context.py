@@ -560,7 +560,7 @@ class RuntimeMode:
         fully pruned these categories from the index, which caused silent
         capability loss in a real workflow: agent-created skills are the
         model's accumulated project memory (server-ops runbooks, learned
-        pitfalls, …), and models do not reliably reach for ``skills_list`` to
+        pitfalls, …), and models do not reliably reach for ``list_skills`` to
         rediscover what the index stopped showing them. Names-only keeps every
         skill loadable on recall while still cutting the description noise.
         """
@@ -656,7 +656,7 @@ def coding_compact_skill_categories(
     Empty outside the coding posture and outside the opt-in ``focus`` mode —
     the default posture never touches the skill index. Under ``focus``,
     demoted — never hidden: every skill name stays in the index and remains
-    loadable via ``skill_view`` / ``skills_list``; only descriptions are
+    loadable via ``view_skill`` / ``list_skills``; only descriptions are
     dropped.
     """
     return resolve_runtime_mode(

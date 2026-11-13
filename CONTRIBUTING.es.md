@@ -25,7 +25,7 @@ Esta es la pregunta más común para los nuevos colaboradores. La respuesta casi
 ### Hazlo una Habilidad cuando:
 
 - La capacidad se puede expresar como instrucciones + comandos de shell + herramientas existentes
-- Envuelve una CLI externa o API que el agente puede llamar a través de `terminal` o `web_extract`
+- Envuelve una CLI externa o API que el agente puede llamar a través de `terminal` o `extract_web`
 - No necesita integración personalizada de Python ni gestión de claves API integrada en el agente
 - Ejemplos: búsqueda en arXiv, flujos de trabajo de git, gestión de Docker, procesamiento de PDF, email a través de herramientas CLI
 
@@ -168,7 +168,7 @@ hermes-agent/
 │   ├── approval.py               # Detección de comandos peligrosos + aprobación por sesión
 │   ├── terminal_tool.py          # Orquestación del terminal (sudo, ciclo de vida del entorno, backends)
 │   ├── file_operations.py        # read_file, write_file, búsqueda, patch, etc.
-│   ├── web_tools.py              # web_search, web_extract (Paralelo/Firecrawl + resumición Gemini)
+│   ├── web_tools.py              # search_web, extract_web (Paralelo/Firecrawl + resumición Gemini)
 │   ├── vision_tools.py           # Análisis de imágenes a través de modelos multimodales
 │   ├── delegate_tool.py          # Lanzamiento de subagentes y ejecución paralela de tareas
 │   ├── code_execution_tool.py    # Python sandboxado con acceso a herramientas vía RPC
@@ -390,7 +390,7 @@ Todo skill nuevo o modernizado — incluido, opcional o contribuido — debe cum
 
 1. **`description` ≤ 60 caracteres, una oración, termina con punto.** Las descripciones largas saturan la UI de listado de habilidades. Indica la capacidad, no la implementación. Sin palabras de marketing ("potente", "completo", "fluido", "avanzado").
 
-2. **Las herramientas referenciadas en el cuerpo de SKILL.md deben ser herramientas nativas de Hermes o servidores MCP que la habilidad espere explícitamente.** Usa los nombres de herramientas en comillas invertidas: `` `terminal` ``, `` `web_extract` ``, `` `web_search` ``, `` `read_file` ``, `` `write_file` ``, etc.
+2. **Las herramientas referenciadas en el cuerpo de SKILL.md deben ser herramientas nativas de Hermes o servidores MCP que la habilidad espere explícitamente.** Usa los nombres de herramientas en comillas invertidas: `` `terminal` ``, `` `extract_web` ``, `` `search_web` ``, `` `read_file` ``, `` `write_file` ``, etc.
 
 3. **El campo `platforms:` auditado contra las importaciones reales del script.** Las habilidades que usen primitivos solo de POSIX deben declarar sus plataformas soportadas.
 

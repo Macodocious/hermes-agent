@@ -298,7 +298,7 @@ def _create_session_db_for_oneshot():
     """Best-effort SessionDB for ``hermes -z`` / oneshot mode.
 
     Oneshot bypasses ``HermesCLI._init_agent()``, so it must wire the SQLite
-    session store itself. Without this, the ``session_search``/recall tool is
+    session store itself. Without this, the ``search_session``/recall tool is
     advertised but every call returns "Session database not available.".
     """
     try:

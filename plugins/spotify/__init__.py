@@ -11,7 +11,7 @@ Why a plugin instead of a top-level ``tools/`` file?
 - ``plugins/`` is where third-party service integrations live (see
   ``plugins/image_gen/`` for the backend-provider pattern, ``plugins/
   disk-cleanup/`` for the standalone pattern). ``tools/`` is reserved
-  for foundational capabilities (terminal, read_file, web_search, etc.).
+  for foundational capabilities (terminal, read_file, search_web, etc.).
 - Mirroring the image_gen plugin layout (``plugins/<category>/<backend>/``
   for categories, flat ``plugins/<name>/`` for standalones) makes new
   service integrations a pattern contributors can copy.

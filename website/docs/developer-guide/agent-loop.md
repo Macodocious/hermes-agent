@@ -155,7 +155,7 @@ Some tools are intercepted by `run_agent.py` *before* reaching `handle_function_
 |------|--------------------|
 | `todo` | Reads/writes agent-local task state |
 | `memory` | Writes to persistent memory files with character limits |
-| `session_search` | Queries session history via the agent's session DB |
+| `search_session` | Queries session history via the agent's session DB |
 | `delegate_task` | Spawns subagent(s) with isolated context |
 
 These tools modify agent state directly and return synthetic tool results without going through the registry.

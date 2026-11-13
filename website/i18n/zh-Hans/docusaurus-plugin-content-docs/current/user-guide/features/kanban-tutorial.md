@@ -10,7 +10,7 @@ hermes dashboard             # 在浏览器中打开 http://127.0.0.1:9119
 # 点击左侧导航栏中的 Kanban
 ```
 
-dashboard 是**你**观察系统最便捷的地方。dispatcher 生成的 agent worker 不会看到 dashboard 或 CLI——它们通过专用的 `kanban_*` [工具集](./kanban#how-workers-interact-with-the-board)（`kanban_show`、`kanban_list`、`kanban_complete`、`kanban_block`、`kanban_heartbeat`、`kanban_comment`、`kanban_create`、`kanban_link`、`kanban_unblock`）来操作看板。三个界面——dashboard、CLI、worker 工具——都通过同一个每看板独立的 SQLite 数据库（默认看板为 `~/.hermes/kanban.db`，后续创建的任意看板为 `~/.hermes/kanban/boards/<slug>/kanban.db`）进行路由，因此无论变更来自哪一侧，每个看板的数据始终一致。
+dashboard 是**你**观察系统最便捷的地方。dispatcher 生成的 agent worker 不会看到 dashboard 或 CLI——它们通过专用的 `kanban_*` [工具集](./kanban#how-workers-interact-with-the-board)（`show_kanban`、`list_kanban`、`complete_kanban`、`block_kanban`、`heartbeat_kanban`、`comment_kanban`、`create_kanban`、`link_kanban`、`unblock_kanban`）来操作看板。三个界面——dashboard、CLI、worker 工具——都通过同一个每看板独立的 SQLite 数据库（默认看板为 `~/.hermes/kanban.db`，后续创建的任意看板为 `~/.hermes/kanban/boards/<slug>/kanban.db`）进行路由，因此无论变更来自哪一侧，每个看板的数据始终一致。
 
 本教程全程使用 `default` 看板。如果你需要多个隔离队列（每个项目/仓库/领域一个），请参阅概述中的[看板（多项目）](./kanban#boards-multi-project)——相同的 CLI/dashboard/worker 流程适用于每个看板，且 worker 在物理上无法看到其他看板上的任务。
 
@@ -65,15 +65,15 @@ hermes kanban create "Write auth integration tests" \
 
 ```python
 # worker tool calls — NOT commands you run
-kanban_show()
+show_kanban()
 # → 返回 title、body、worker_context、parents、prior attempts、comments
 
 # （worker 读取 worker_context，使用终端/文件工具设计 schema，
 #   编写迁移脚本，运行自身检查，提交——真正的工作在这里发生）
 
-kanban_heartbeat(note="schema drafted, writing migrations now")
+heartbeat_kanban(note="schema drafted, writing migrations now")
 
-kanban_complete(
+complete_kanban(
     summary="users(id, email, pw_hash), sessions(id, user_id, jti, expires_at); "
             "refresh tokens stored as sessions with type='refresh'",
     metadata={
@@ -84,9 +84,9 @@ kanban_complete(
 )
 ```
 
-`kanban_show` 默认将 `task_id` 设为 `$HERMES_KANBAN_TASK`，因此 worker 无需知道自己的 id。`kanban_complete` 将 summary 和 metadata 写入当前 `task_runs` 行，关闭该 run，并将任务转换为 `done`——全部通过 `kanban_db` 以原子方式完成。
+`show_kanban` 默认将 `task_id` 设为 `$HERMES_KANBAN_TASK`，因此 worker 无需知道自己的 id。`complete_kanban` 将 summary 和 metadata 写入当前 `task_runs` 行，关闭该 run，并将任务转换为 `done`——全部通过 `kanban_db` 以原子方式完成。
 
-当 `SCHEMA` 进入 `done` 状态时，依赖引擎会自动将 `API` 提升为 `ready`。API worker 认领任务后，调用 `kanban_show()` 时会看到 `SCHEMA` 的 summary 和 metadata 附加在父任务交接信息中——因此它无需重新阅读冗长的设计文档就能了解 schema 的决策。
+当 `SCHEMA` 进入 `done` 状态时，依赖引擎会自动将 `API` 提升为 `ready`。API worker 认领任务后，调用 `show_kanban()` 时会看到 `SCHEMA` 的 summary 和 metadata 附加在父任务交接信息中——因此它无需重新阅读冗长的设计文档就能了解 schema 的决策。
 
 在看板上点击已完成的 schema 任务，抽屉会显示所有信息：
 
@@ -138,7 +138,7 @@ hermes gateway start
 
 两个转录任务已完成，一个正在运行，两个就绪等待下一次 dispatcher tick。In Progress 列按 profile 分组（"Lanes by profile"默认开启），让你无需扫描混合列表即可看到每个 worker 的当前任务。dispatcher 会在当前任务完成后立即将下一个就绪任务提升为运行中。三个守护进程并行处理三个负责人池，整个内容队列无需进一步人工干预即可清空。
 
-**场景一中关于结构化交接的所有内容在这里同样适用。** 完成一次通话的翻译 worker 会发出 `kanban_complete(summary="translated 4 pages, style matched existing marketing voice", metadata={"duration_seconds": 720, "tokens_used": 2100})`——对分析以及依赖此任务的任何下游任务都很有价值。
+**场景一中关于结构化交接的所有内容在这里同样适用。** 完成一次通话的翻译 worker 会发出 `complete_kanban(summary="translated 4 pages, style matched existing marketing voice", metadata={"duration_seconds": 720, "tokens_used": 2100})`——对分析以及依赖此任务的任何下游任务都很有价值。
 
 ## 场景三 — 角色流水线与重试
 
@@ -155,8 +155,8 @@ dashboard 视图，按 `auth-project` 筛选：
 ```python
 # --- PM worker 在 $SPEC 上生成并编写验收标准 ---
 # worker tool calls
-kanban_show()
-kanban_complete(
+show_kanban()
+complete_kanban(
     summary="spec approved; POST /forgot-password sends email, "
             "GET /reset/:token renders form, POST /reset applies new password",
     metadata={"acceptance": [
@@ -169,10 +169,10 @@ kanban_complete(
 
 # --- 工程师 worker 在 $IMPL 上生成（第一次尝试）---
 # worker tool calls
-kanban_show()   # 在 worker_context 中读取 $SPEC 的 summary 和 acceptance metadata
+show_kanban()   # 在 worker_context 中读取 $SPEC 的 summary 和 acceptance metadata
 # （工程师编写代码，运行测试，开启 PR）
 # 审查者反馈到来——工程师认为问题有效并阻塞任务
-kanban_block(
+block_kanban(
     reason="Review: password strength check missing, reset link isn't "
            "single-use (can be replayed within 30min)",
 )
@@ -191,11 +191,11 @@ dispatcher 将 `$IMPL` 提升回 `ready`，并在下一次 tick 时重新生成 
 ```python
 # --- 工程师 worker 在 $IMPL 上生成（第二次尝试）---
 # worker tool calls
-kanban_show()
+show_kanban()
 # → worker_context 现在包含 run 1 的阻塞原因，因此该 worker 知道
 #   需要修复哪两个问题，而无需重新阅读整个规格说明
 # （工程师添加 zxcvbn 检查，使重置令牌变为一次性，重新运行测试）
-kanban_complete(
+complete_kanban(
     summary="added zxcvbn strength check, reset tokens are now single-use "
             "(stored + deleted on success)",
     metadata={
@@ -223,7 +223,7 @@ kanban_complete(
 
 ![Reviewer's drawer view of the pipeline](/img/kanban-tutorial/09-drawer-pipeline-review.png)
 
-父任务链接指向已完成的实现任务。当审查者的 worker 在 `Review password reset PR` 上生成并调用 `kanban_show()` 时，返回的 `worker_context` 包含父任务最近一次已完成 run 的 summary 和 metadata——因此审查者在查看 diff 之前就已读到"added zxcvbn strength check, reset tokens are now single-use"，并掌握了变更文件列表。
+父任务链接指向已完成的实现任务。当审查者的 worker 在 `Review password reset PR` 上生成并调用 `show_kanban()` 时，返回的 `worker_context` 包含父任务最近一次已完成 run 的 summary 和 metadata——因此审查者在查看 diff 之前就已读到"added zxcvbn strength check, reset tokens are now single-use"，并掌握了变更文件列表。
 
 ## 场景四 — 熔断器与崩溃恢复
 
@@ -282,16 +282,16 @@ Run 1 — `crashed`，错误为 `OOM kill at row 2.3M (process 99999 gone)`。Ru
 
 ## 结构化交接 — `summary` 和 `metadata` 的重要性
 
-在上述每个场景中，worker 在结束时都调用了 `kanban_complete(summary=..., metadata=...)`。这不是装饰性的——它是工作流各阶段之间的主要交接通道。
+在上述每个场景中，worker 在结束时都调用了 `complete_kanban(summary=..., metadata=...)`。这不是装饰性的——它是工作流各阶段之间的主要交接通道。
 
-当任务 B 上的 worker 被生成并调用 `kanban_show()` 时，返回的 `worker_context` 包含：
+当任务 B 上的 worker 被生成并调用 `show_kanban()` 时，返回的 `worker_context` 包含：
 
 - B 的**先前尝试**（之前的 run：outcome、summary、error、metadata），让重试的 worker 不会重蹈失败的路径。
 - **父任务结果** — 对于每个父任务，最近一次已完成 run 的 summary 和 metadata——让下游 worker 能看到上游工作的原因和方式。
 
 这取代了平面 kanban 系统中"翻查评论和工作输出"的繁琐流程。PM 在规格说明的 metadata 中编写验收标准，工程师的 worker 在父任务交接中以结构化形式看到它们。工程师记录运行了哪些测试以及通过了多少，审查者的 worker 在打开 diff 之前就已掌握该列表。
 
-批量关闭保护的存在正是因为这些数据是按 run 存储的。`hermes kanban complete a b c --summary X`（你，从 CLI 执行）会被拒绝——将相同的 summary 复制粘贴到三个任务几乎总是错误的。不带交接标志的批量关闭仍然适用于常见的"我完成了一堆行政任务"场景。工具界面根本不提供批量变体；`kanban_complete` 始终是单任务操作，原因相同。
+批量关闭保护的存在正是因为这些数据是按 run 存储的。`hermes kanban complete a b c --summary X`（你，从 CLI 执行）会被拒绝——将相同的 summary 复制粘贴到三个任务几乎总是错误的。不带交接标志的批量关闭仍然适用于常见的"我完成了一堆行政任务"场景。工具界面根本不提供批量变体；`complete_kanban` 始终是单任务操作，原因相同。
 
 ## 检查当前正在运行的任务
 

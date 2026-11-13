@@ -39,7 +39,7 @@ description: "54 个真实设计系统（Stripe、Linear、Vercel）的 HTML/CSS
 ## 使用方法
 
 1. 从下方目录中选择一个设计
-2. 加载它：`skill_view(name="popular-web-designs", file_path="templates/<site>.md")`
+2. 加载它：`view_skill(name="popular-web-designs", file_path="templates/<site>.md")`
 3. 生成 HTML 时使用设计 token 和组件规范
 4. 配合 `generative-widgets` skill，通过 cloudflared tunnel 提供服务
 

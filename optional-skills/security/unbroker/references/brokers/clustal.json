@@ -7,7 +7,7 @@
   "search": {
     "method": "url_pattern",
     "url": "https://www.clustal.org/",
-    "fetch": "web_extract",
+    "fetch": "extract_web",
     "match_signal": "record",
     "by": ["name"],
     "url_patterns": {
@@ -18,7 +18,7 @@
     "url_format_quirks": [
       "Name index: /people-search/{first-initial}/{first-last}/ e.g. /people-search/k/jane-public/ (lowercase, first letter of LAST name as the {letter} segment, hyphen-joined name). Optional state refine appends /{st}/ lowercase 2-letter.",
       "Detail (removable unit): /record/{first-last}-{8charID}/ e.g. /record/jane-public-a1b2c3d4/ (opaque mixed-case 8-char id). The index page links each match to its /record/ URL.",
-      "Readable via web_extract (no hard bot gate as of 2026-07-01). Rich profile: age/DOB, current+prior addresses, phones, emails, relatives, neighbors, associates.",
+      "Readable via extract_web (no hard bot gate as of 2026-07-01). Rich profile: age/DOB, current+prior addresses, phones, emails, relatives, neighbors, associates.",
       "Name only: search is by name(+state); no reverse phone/email/address path observed. NOTE: clustal.org squats the 'Clustal' bioinformatics brand but IS a real people-search/data-broker site ('Find Your DNA Relatives'), not the sequence-alignment tool - do not dismiss it as a false positive."
     ]
   },

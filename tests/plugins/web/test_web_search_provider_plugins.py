@@ -96,7 +96,7 @@ class TestBundledPluginsRegister:
             ("parallel", True, True),
             ("tavily", True, True),
             ("firecrawl", True, True),
-            # xai: search-only via Grok's agentic web_search tool.
+            # xai: search-only via Grok's agentic search_web tool.
             ("xai", True, False),
         ],
     )

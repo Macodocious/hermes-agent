@@ -22,7 +22,7 @@ export const sessionLabel = ({ id, title }: SessionDragPayload) =>
   title || translateNow('sidebar.row.untitledChat', id.slice(0, 8))
 
 /** Build a `@session:<profile>/<id>` chip. Value carries the metadata the agent
- * needs to resolve the link (session_search); label shows the friendly title. */
+ * needs to resolve the link (search_session); label shows the friendly title. */
 export function sessionInlineRef(payload: SessionDragPayload): InlineRefInput {
   return { kind: 'session', label: sessionLabel(payload), value: `${payload.profile || 'default'}/${payload.id}` }
 }

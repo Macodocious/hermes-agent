@@ -3619,7 +3619,7 @@ def install_from_quarantine(
     # Reject symlinks inside the quarantined skill before moving it.
     # A malicious skill bundle could include a symlink pointing outside the
     # skills tree; its target contents would then be copied into skills/ and
-    # leaked to the agent on the next skill_view call.
+    # leaked to the agent on the next view_skill call.
     for entry in quarantine_path.rglob("*"):
         if not _is_path_redirect(entry):
             continue

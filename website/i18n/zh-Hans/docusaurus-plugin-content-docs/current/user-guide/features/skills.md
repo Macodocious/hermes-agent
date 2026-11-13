@@ -46,9 +46,9 @@ hermes chat --toolsets skills -q "Show me the axolotl skill"
 Skills 使用一种节省 token 的加载模式：
 
 ```
-Level 0: skills_list()           → [{name, description, category}, ...]   (~3k tokens)
-Level 1: skill_view(name)        → Full content + metadata       (varies)
-Level 2: skill_view(name, path)  → Specific reference file       (varies)
+Level 0: list_skills()           → [{name, description, category}, ...]   (~3k tokens)
+Level 1: view_skill(name)        → Full content + metadata       (varies)
+Level 2: view_skill(name, path)  → Specific reference file       (varies)
 ```
 
 agent 只在真正需要时才加载完整的 skill 内容。
@@ -105,7 +105,7 @@ platforms: [macos]            # macOS only (e.g., iMessage, Apple Reminders, Fin
 platforms: [macos, linux]     # macOS and Linux
 ```
 
-设置后，该 skill 会在不兼容的平台上自动从系统提示词、`skills_list()` 和斜杠命令中隐藏。若省略，则在所有平台上加载。
+设置后，该 skill 会在不兼容的平台上自动从系统提示词、`list_skills()` 和斜杠命令中隐藏。若省略，则在所有平台上加载。
 
 ## Skill 输出与媒体传递
 
@@ -145,7 +145,7 @@ metadata:
   hermes:
     fallback_for_toolsets: [web]      # Show ONLY when these toolsets are unavailable
     requires_toolsets: [terminal]     # Show ONLY when these toolsets are available
-    fallback_for_tools: [web_search]  # Show ONLY when these specific tools are unavailable
+    fallback_for_tools: [search_web]  # Show ONLY when these specific tools are unavailable
     requires_tools: [terminal]        # Show ONLY when these specific tools are available
 ```
 
@@ -156,7 +156,7 @@ metadata:
 | `requires_toolsets` | 当列出的 toolsets 不可用时，skill **隐藏**。可用时显示。 |
 | `requires_tools` | 同上，但检查单个工具。 |
 
-**示例：** 内置的 `duckduckgo-search` skill 使用 `fallback_for_toolsets: [web]`。当你设置了 `FIRECRAWL_API_KEY` 时，web toolset 可用，agent 使用 `web_search`——DuckDuckGo skill 保持隐藏。如果 API key 缺失，web toolset 不可用，DuckDuckGo skill 会自动作为 fallback 出现。
+**示例：** 内置的 `duckduckgo-search` skill 使用 `fallback_for_toolsets: [web]`。当你设置了 `FIRECRAWL_API_KEY` 时，web toolset 可用，agent 使用 `search_web`——DuckDuckGo skill 保持隐藏。如果 API key 缺失，web toolset 不可用，DuckDuckGo skill 会自动作为 fallback 出现。
 
 没有任何条件字段的 skills 行为与之前完全相同——始终显示。
 
@@ -239,10 +239,10 @@ skills:
 
 ### 工作原理
 
-- **本地创建，就地更新**：新的 agent 创建的 skills 写入 `~/.hermes/skills/`。现有 skills 在找到的位置被修改，包括 `external_dirs` 下的 skills，当 agent 使用 `skill_manage` 操作（如 `patch`、`edit`、`write_file`、`remove_file` 或 `delete`）时。
+- **本地创建，就地更新**：新的 agent 创建的 skills 写入 `~/.hermes/skills/`。现有 skills 在找到的位置被修改，包括 `external_dirs` 下的 skills，当 agent 使用 `manage_skill` 操作（如 `patch`、`edit`、`write_file`、`remove_file` 或 `delete`）时。
 - **外部目录不是写保护边界**：如果外部 skill 目录对 Hermes 进程可写，agent 管理的 skill 更新可以修改该目录中的文件。如果共享的外部 skills 必须保持只读，请使用文件系统权限或单独的 profile/toolset 设置。
 - **本地优先**：如果同一 skill 名称同时存在于本地目录和外部目录中，本地版本优先。
-- **完整集成**：外部 skills 出现在系统提示词索引、`skills_list`、`skill_view` 以及 `/skill-name` 斜杠命令中——与本地 skills 无异。
+- **完整集成**：外部 skills 出现在系统提示词索引、`list_skills`、`view_skill` 以及 `/skill-name` 斜杠命令中——与本地 skills 无异。
 - **不存在的路径会被静默跳过**：如果配置的目录不存在，Hermes 会忽略它而不报错。适用于可能不在每台机器上都存在的可选共享目录。
 
 ### 示例
@@ -348,9 +348,9 @@ hermes bundles reload
 
 捆绑包只是一个 YAML 别名——它不会为你安装 skills。Skills 本身必须已经存在（在 `~/.hermes/skills/` 或外部 skill 目录中）。否则捆绑包调用只会跳过缺失的 skills。
 
-## Agent 管理的 Skills（skill_manage 工具）
+## Agent 管理的 Skills（manage_skill 工具）
 
-agent 可以通过 `skill_manage` 工具创建、更新和删除自己的 skills。这是 agent 的**程序性记忆**——当它找到一个非平凡的工作流时，它会将该方法保存为 skill 以供将来复用。
+agent 可以通过 `manage_skill` 工具创建、更新和删除自己的 skills。这是 agent 的**程序性记忆**——当它找到一个非平凡的工作流时，它会将该方法保存为 skill 以供将来复用。
 
 ### Agent 创建 Skills 的时机
 

@@ -11,7 +11,7 @@ Usage in a tool module:
     _debug = DebugSession("web_tools", env_var="WEB_TOOLS_DEBUG")
 
     # Log a call (no-op when debug mode is off)
-    _debug.log_call("web_search", {"query": q, "results": len(r)})
+    _debug.log_call("search_web", {"query": q, "results": len(r)})
 
     # Save the debug log (no-op when debug mode is off)
     _debug.save()

@@ -88,9 +88,9 @@ Make me a futuristic cityscape, landscape orientation
 
 ## Image-to-Image / Editing
 
-The same `image_generate` tool also **edits existing images** when the active
+The same `generate_image` tool also **edits existing images** when the active
 model supports it — pass a source image and the backend routes to its editing
-endpoint automatically (mirrors how `video_generate` handles image-to-video).
+endpoint automatically (mirrors how `generate_video` handles image-to-video).
 Omit the source image and it's plain text-to-image.
 
 ```

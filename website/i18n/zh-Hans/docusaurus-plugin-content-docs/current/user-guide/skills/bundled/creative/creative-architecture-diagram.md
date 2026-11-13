@@ -159,7 +159,7 @@ xdg-open ./my-architecture.html
 加载完整 HTML 模板以获取精确的结构、CSS 和 SVG 组件示例：
 
 ```
-skill_view(name="architecture-diagram", file_path="templates/template.html")
+view_skill(name="architecture-diagram", file_path="templates/template.html")
 ```
 
 模板包含每种组件类型（前端、后端、数据库、云、安全）、箭头样式（标准、虚线、曲线）、安全组、区域边界和图例的完整示例——生成图表时请以此作为结构参考。

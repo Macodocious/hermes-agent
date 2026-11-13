@@ -86,7 +86,7 @@ Regenerate specific pages only.
 
 **Workflow**:
 1. Read existing prompts for specified pages
-2. Regenerate images only for those pages via `image_generate`
+2. Regenerate images only for those pages via `generate_image`
 3. Download each returned URL and overwrite the existing PNG
 
 **Prerequisites** (must exist):

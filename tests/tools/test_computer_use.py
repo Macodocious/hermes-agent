@@ -1,4 +1,4 @@
-"""Tests for the computer_use toolset (cua-driver backend, universal schema)."""
+"""Tests for the use_computer toolset (cua-driver backend, universal schema)."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ import pytest
 @pytest.fixture(autouse=True)
 def _reset_backend():
     """Tear down the cached backend between tests."""
-    from tools.computer_use.tool import reset_backend_for_tests
+    from tools.use_computer.tool import reset_backend_for_tests
     reset_backend_for_tests()
     # Force the noop backend.
     with patch.dict(os.environ, {"HERMES_COMPUTER_USE_BACKEND": "noop"}, clear=False):
@@ -30,7 +30,7 @@ def _reset_backend():
 @pytest.fixture
 def noop_backend():
     """Return the active noop backend instance so tests can inspect calls."""
-    from tools.computer_use.tool import _get_backend
+    from tools.use_computer.tool import _get_backend
     return _get_backend()
 
 
@@ -40,8 +40,8 @@ def noop_backend():
 
 class TestSchema:
     def test_schema_is_universal_openai_function_format(self):
-        from tools.computer_use.schema import COMPUTER_USE_SCHEMA
-        assert COMPUTER_USE_SCHEMA["name"] == "computer_use"
+        from tools.use_computer.schema import COMPUTER_USE_SCHEMA
+        assert COMPUTER_USE_SCHEMA["name"] == "use_computer"
         assert "parameters" in COMPUTER_USE_SCHEMA
         params = COMPUTER_USE_SCHEMA["parameters"]
         assert params["type"] == "object"
@@ -50,14 +50,14 @@ class TestSchema:
 
     def test_schema_does_not_use_anthropic_native_types(self):
         """Generic OpenAI schema — no `type: computer_20251124`."""
-        from tools.computer_use.schema import COMPUTER_USE_SCHEMA
+        from tools.use_computer.schema import COMPUTER_USE_SCHEMA
         assert COMPUTER_USE_SCHEMA.get("type") != "computer_20251124"
         # The word should not appear in the description either.
         dumped = json.dumps(COMPUTER_USE_SCHEMA)
         assert "computer_20251124" not in dumped
 
     def test_schema_supports_element_and_coordinate_targeting(self):
-        from tools.computer_use.schema import COMPUTER_USE_SCHEMA
+        from tools.use_computer.schema import COMPUTER_USE_SCHEMA
         props = COMPUTER_USE_SCHEMA["parameters"]["properties"]
         assert "element" in props
         assert "coordinate" in props
@@ -65,7 +65,7 @@ class TestSchema:
         assert props["coordinate"]["type"] == "array"
 
     def test_schema_lists_all_expected_actions(self):
-        from tools.computer_use.schema import COMPUTER_USE_SCHEMA
+        from tools.use_computer.schema import COMPUTER_USE_SCHEMA
         actions = set(COMPUTER_USE_SCHEMA["parameters"]["properties"]["action"]["enum"])
         assert actions >= {
             "capture", "click", "double_click", "right_click", "middle_click",
@@ -74,19 +74,19 @@ class TestSchema:
         }
 
     def test_schema_exposes_exact_capture_targeting(self):
-        from tools.computer_use.schema import COMPUTER_USE_SCHEMA
+        from tools.use_computer.schema import COMPUTER_USE_SCHEMA
 
         props = COMPUTER_USE_SCHEMA["parameters"]["properties"]
         assert props["pid"]["type"] == "integer"
         assert props["window_id"]["type"] == "integer"
 
     def test_capture_mode_enum_has_som_vision_ax(self):
-        from tools.computer_use.schema import COMPUTER_USE_SCHEMA
+        from tools.use_computer.schema import COMPUTER_USE_SCHEMA
         modes = set(COMPUTER_USE_SCHEMA["parameters"]["properties"]["mode"]["enum"])
         assert modes == {"som", "vision", "ax"}
 
     def test_schema_exposes_max_elements_cap_for_capture(self):
-        from tools.computer_use.schema import COMPUTER_USE_SCHEMA
+        from tools.use_computer.schema import COMPUTER_USE_SCHEMA
         props = COMPUTER_USE_SCHEMA["parameters"]["properties"]
         assert "max_elements" in props
         assert props["max_elements"]["type"] == "integer"
@@ -97,8 +97,8 @@ class TestSchema:
         text said "Default 100" without a corresponding `default` field, and
         had no upper bound — both Copilot findings.
         """
-        from tools.computer_use.schema import COMPUTER_USE_SCHEMA
-        from tools.computer_use.tool import (
+        from tools.use_computer.schema import COMPUTER_USE_SCHEMA
+        from tools.use_computer.tool import (
             _DEFAULT_MAX_ELEMENTS,
             _MAX_ALLOWED_MAX_ELEMENTS,
         )
@@ -112,40 +112,40 @@ class TestRegistration:
         # Importing the shim registers the tool.
         import tools.computer_use_tool  # noqa: F401
         from tools.registry import registry
-        entry = registry._tools.get("computer_use")
+        entry = registry._tools.get("use_computer")
         assert entry is not None
-        assert entry.toolset == "computer_use"
-        assert entry.schema["name"] == "computer_use"
+        assert entry.toolset == "use_computer"
+        assert entry.schema["name"] == "use_computer"
 
     def test_check_fn_true_on_linux_when_binary_present(self):
         # Linux is supported; gated only on the cua-driver binary resolving.
-        from tools.computer_use import tool as cu_tool
-        with patch("tools.computer_use.tool.sys.platform", "linux"), \
-             patch("tools.computer_use.cua_backend.cua_driver_binary_available", return_value=True):
+        from tools.use_computer import tool as cu_tool
+        with patch("tools.use_computer.tool.sys.platform", "linux"), \
+             patch("tools.use_computer.cua_backend.cua_driver_binary_available", return_value=True):
             assert cu_tool.check_computer_use_requirements() is True
 
     def test_check_fn_false_on_linux_without_binary(self):
-        from tools.computer_use import tool as cu_tool
-        with patch("tools.computer_use.tool.sys.platform", "linux"), \
-             patch("tools.computer_use.cua_backend.cua_driver_binary_available", return_value=False):
+        from tools.use_computer import tool as cu_tool
+        with patch("tools.use_computer.tool.sys.platform", "linux"), \
+             patch("tools.use_computer.cua_backend.cua_driver_binary_available", return_value=False):
             assert cu_tool.check_computer_use_requirements() is False
 
     def test_check_fn_false_on_unsupported_platform(self):
-        from tools.computer_use import tool as cu_tool
-        with patch("tools.computer_use.tool.sys.platform", "freebsd13"):
+        from tools.use_computer import tool as cu_tool
+        with patch("tools.use_computer.tool.sys.platform", "freebsd13"):
             assert cu_tool.check_computer_use_requirements() is False
 
     def test_check_fn_true_on_windows_when_binary_present(self):
         # Windows is supported; gated only on the cua-driver binary resolving.
-        from tools.computer_use import tool as cu_tool
-        with patch("tools.computer_use.tool.sys.platform", "win32"), \
-             patch("tools.computer_use.cua_backend.cua_driver_binary_available", return_value=True):
+        from tools.use_computer import tool as cu_tool
+        with patch("tools.use_computer.tool.sys.platform", "win32"), \
+             patch("tools.use_computer.cua_backend.cua_driver_binary_available", return_value=True):
             assert cu_tool.check_computer_use_requirements() is True
 
     def test_check_fn_false_on_windows_without_binary(self):
-        from tools.computer_use import tool as cu_tool
-        with patch("tools.computer_use.tool.sys.platform", "win32"), \
-             patch("tools.computer_use.cua_backend.cua_driver_binary_available", return_value=False):
+        from tools.use_computer import tool as cu_tool
+        with patch("tools.use_computer.tool.sys.platform", "win32"), \
+             patch("tools.use_computer.cua_backend.cua_driver_binary_available", return_value=False):
             assert cu_tool.check_computer_use_requirements() is False
 
 
@@ -155,32 +155,32 @@ class TestRegistration:
 
 class TestDispatch:
     def test_missing_action_returns_error(self):
-        from tools.computer_use.tool import handle_computer_use
+        from tools.use_computer.tool import handle_computer_use
         out = handle_computer_use({})
         parsed = json.loads(out)
         assert "error" in parsed
 
     def test_unknown_action_returns_error(self):
-        from tools.computer_use.tool import handle_computer_use
+        from tools.use_computer.tool import handle_computer_use
         out = handle_computer_use({"action": "nope"})
         parsed = json.loads(out)
         assert "error" in parsed
 
     def test_list_apps_returns_json(self, noop_backend):
-        from tools.computer_use.tool import handle_computer_use
+        from tools.use_computer.tool import handle_computer_use
         out = handle_computer_use({"action": "list_apps"})
         parsed = json.loads(out)
         assert "apps" in parsed
         assert parsed["count"] == 0
 
     def test_list_windows_returns_json(self, noop_backend):
-        from tools.computer_use.tool import handle_computer_use
+        from tools.use_computer.tool import handle_computer_use
         out = handle_computer_use({"action": "list_windows"})
         parsed = json.loads(out)
         assert parsed == {"windows": [], "count": 0}
 
     def test_wait_clamps_long_waits(self, noop_backend):
-        from tools.computer_use.tool import handle_computer_use
+        from tools.use_computer.tool import handle_computer_use
         # The backend's default wait() uses time.sleep with clamping.
         out = handle_computer_use({"action": "wait", "seconds": 0.01})
         parsed = json.loads(out)
@@ -188,7 +188,7 @@ class TestDispatch:
         assert parsed["action"] == "wait"
 
     def test_click_without_target_returns_error(self, noop_backend):
-        from tools.computer_use.tool import handle_computer_use
+        from tools.use_computer.tool import handle_computer_use
         out = handle_computer_use({"action": "click"})
         parsed = json.loads(out)
         # Noop backend returns ok=True with no targeting; we only hard-error
@@ -196,7 +196,7 @@ class TestDispatch:
         assert "action" in parsed or "error" in parsed
 
     def test_click_by_element_routes_to_backend(self, noop_backend):
-        from tools.computer_use.tool import handle_computer_use
+        from tools.use_computer.tool import handle_computer_use
         handle_computer_use({"action": "click", "element": 7})
         call_names = [c[0] for c in noop_backend.calls]
         assert "click" in call_names
@@ -204,20 +204,20 @@ class TestDispatch:
         assert click_kw.get("element") == 7
 
     def test_double_click_sets_click_count(self, noop_backend):
-        from tools.computer_use.tool import handle_computer_use
+        from tools.use_computer.tool import handle_computer_use
         handle_computer_use({"action": "double_click", "element": 3})
         click_kw = next(c[1] for c in noop_backend.calls if c[0] == "click")
         assert click_kw["click_count"] == 2
 
     def test_right_click_sets_button(self, noop_backend):
-        from tools.computer_use.tool import handle_computer_use
+        from tools.use_computer.tool import handle_computer_use
         handle_computer_use({"action": "right_click", "element": 3})
         click_kw = next(c[1] for c in noop_backend.calls if c[0] == "click")
         assert click_kw["button"] == "right"
 
     def test_type_action_routes_to_type_text_backend(self, noop_backend):
         """type action must call backend.type_text, not type_text_chars (issue #24170, bug 3)."""
-        from tools.computer_use.tool import handle_computer_use
+        from tools.use_computer.tool import handle_computer_use
         out = handle_computer_use({"action": "type", "text": "hello"})
         parsed = json.loads(out)
         assert "error" not in parsed
@@ -228,7 +228,7 @@ class TestDispatch:
 
     def test_drag_action_routes_to_backend_by_coordinate(self, noop_backend):
         """drag action must dispatch to backend.drag with coordinates (issue #24170, bug 4)."""
-        from tools.computer_use.tool import handle_computer_use
+        from tools.use_computer.tool import handle_computer_use
         out = handle_computer_use({
             "action": "drag",
             "from_coordinate": [100, 200],
@@ -244,7 +244,7 @@ class TestDispatch:
 
     def test_drag_action_routes_to_backend_by_element(self, noop_backend):
         """drag action must dispatch to backend.drag with element indices (issue #24170, bug 4)."""
-        from tools.computer_use.tool import handle_computer_use
+        from tools.use_computer.tool import handle_computer_use
         out = handle_computer_use({
             "action": "drag",
             "from_element": 1,
@@ -260,14 +260,14 @@ class TestDispatch:
 
     def test_drag_action_requires_coordinates_or_elements(self, noop_backend):
         """drag without from/to must return an error."""
-        from tools.computer_use.tool import handle_computer_use
+        from tools.use_computer.tool import handle_computer_use
         out = handle_computer_use({"action": "drag"})
         parsed = json.loads(out)
         assert "error" in parsed
 
     def test_set_value_routes_to_backend(self, noop_backend):
         """set_value must reach the backend — regression for missing _NoopBackend stub."""
-        from tools.computer_use.tool import handle_computer_use
+        from tools.use_computer.tool import handle_computer_use
         out = handle_computer_use({"action": "set_value", "value": "Option A", "element": 5})
         parsed = json.loads(out)
         assert parsed.get("ok") is True
@@ -275,13 +275,13 @@ class TestDispatch:
         assert any(c[0] == "set_value" for c in noop_backend.calls)
 
     def test_set_value_missing_value_returns_error(self, noop_backend):
-        from tools.computer_use.tool import handle_computer_use
+        from tools.use_computer.tool import handle_computer_use
         out = handle_computer_use({"action": "set_value"})
         parsed = json.loads(out)
         assert "error" in parsed
 
     def test_capture_forwards_exact_pid_window_target(self, noop_backend):
-        from tools.computer_use.tool import handle_computer_use
+        from tools.use_computer.tool import handle_computer_use
 
         handle_computer_use({
             "action": "capture", "mode": "ax", "pid": 23502, "window_id": 58720504,
@@ -299,8 +299,8 @@ class TestDispatch:
         normal state, misleading the model into thinking the action succeeded.
         """
         from unittest.mock import patch
-        from tools.computer_use.backend import ActionResult
-        from tools.computer_use.tool import handle_computer_use
+        from tools.use_computer.backend import ActionResult
+        from tools.use_computer.tool import handle_computer_use
 
         # Make click() return a failure.
         with patch.object(noop_backend, "click",
@@ -319,7 +319,7 @@ class TestDispatch:
 
     def test_capture_after_fires_when_action_succeeds(self, noop_backend):
         """capture_after must trigger for successful actions."""
-        from tools.computer_use.tool import handle_computer_use
+        from tools.use_computer.tool import handle_computer_use
         out = handle_computer_use({"action": "click", "element": 1,
                                    "capture_after": True})
         # Noop backend returns ok=True, so capture should have been called.
@@ -340,7 +340,7 @@ class TestSafetyGuards:
         ":(){ :|: & };:",
     ])
     def test_blocked_type_patterns(self, text, noop_backend):
-        from tools.computer_use.tool import handle_computer_use
+        from tools.use_computer.tool import handle_computer_use
         out = handle_computer_use({"action": "type", "text": text})
         parsed = json.loads(out)
         assert "error" in parsed
@@ -353,20 +353,20 @@ class TestSafetyGuards:
         "cmd+shift+q",              # log out
     ])
     def test_blocked_key_combos(self, keys, noop_backend):
-        from tools.computer_use.tool import handle_computer_use
+        from tools.use_computer.tool import handle_computer_use
         out = handle_computer_use({"action": "key", "keys": keys})
         parsed = json.loads(out)
         assert "error" in parsed
         assert "blocked key combo" in parsed["error"]
 
     def test_safe_key_combos_pass(self, noop_backend):
-        from tools.computer_use.tool import handle_computer_use
+        from tools.use_computer.tool import handle_computer_use
         out = handle_computer_use({"action": "key", "keys": "cmd+s"})
         parsed = json.loads(out)
         assert "error" not in parsed
 
     def test_type_with_empty_string_is_allowed(self, noop_backend):
-        from tools.computer_use.tool import handle_computer_use
+        from tools.use_computer.tool import handle_computer_use
         out = handle_computer_use({"action": "type", "text": ""})
         parsed = json.loads(out)
         assert "error" not in parsed
@@ -378,7 +378,7 @@ class TestSafetyGuards:
 
 class TestCaptureResponse:
     def test_capture_ax_mode_returns_text_json(self, noop_backend):
-        from tools.computer_use.tool import handle_computer_use
+        from tools.use_computer.tool import handle_computer_use
         out = handle_computer_use({"action": "capture", "mode": "ax"})
         # AX mode → always JSON string
         parsed = json.loads(out)
@@ -386,8 +386,8 @@ class TestCaptureResponse:
 
     def test_capture_vision_mode_with_image_returns_multimodal_envelope(self):
         """Inject a fake backend that returns a PNG to exercise the envelope path."""
-        from tools.computer_use.backend import CaptureResult
-        from tools.computer_use import tool as cu_tool
+        from tools.use_computer.backend import CaptureResult
+        from tools.use_computer import tool as cu_tool
 
         fake_png = "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAADUlEQVR4nGNgGAUgAAABCAABgukLHQAAAABJRU5ErkJggg=="
 
@@ -425,8 +425,8 @@ class TestCaptureResponse:
 
     def test_capture_tiny_image_returns_text_json(self):
         """Providers can reject <8px images, so placeholders must be omitted."""
-        from tools.computer_use.backend import CaptureResult, UIElement
-        from tools.computer_use import tool as cu_tool
+        from tools.use_computer.backend import CaptureResult, UIElement
+        from tools.use_computer import tool as cu_tool
 
         tiny_png = "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAC0lEQVR4nGNgQAcAABIAAXfx+gAAAAAASUVORK5CYII="
 
@@ -454,8 +454,8 @@ class TestCaptureResponse:
         assert parsed["elements"][0]["label"] == "Continue"
 
     def test_capture_som_with_elements_formats_index(self):
-        from tools.computer_use.backend import CaptureResult, UIElement
-        from tools.computer_use import tool as cu_tool
+        from tools.use_computer.backend import CaptureResult, UIElement
+        from tools.use_computer import tool as cu_tool
 
         fake_png = "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAADUlEQVR4nGNgGAUgAAABCAABgukLHQAAAABJRU5ErkJggg=="
 
@@ -494,7 +494,7 @@ class TestCaptureResponse:
 
     def _ax_backend_with(self, count: int):
         """Construct a fake backend that yields ``count`` AX elements."""
-        from tools.computer_use.backend import CaptureResult, UIElement
+        from tools.use_computer.backend import CaptureResult, UIElement
 
         elements = [
             UIElement(index=i + 1, role="AXButton", label=f"el-{i}", bounds=(0, 0, 1, 1))
@@ -527,7 +527,7 @@ class TestCaptureResponse:
         """Regression for #22865: an Electron-style 600-element AX tree must
         not emit the entire array verbatim into the tool result.
         """
-        from tools.computer_use import tool as cu_tool
+        from tools.use_computer import tool as cu_tool
 
         fake_backend = self._ax_backend_with(600)
         cu_tool.reset_backend_for_tests()
@@ -544,7 +544,7 @@ class TestCaptureResponse:
         assert "truncated to" in parsed["summary"]
 
     def test_capture_ax_honors_explicit_max_elements_override(self):
-        from tools.computer_use import tool as cu_tool
+        from tools.use_computer import tool as cu_tool
 
         fake_backend = self._ax_backend_with(600)
         cu_tool.reset_backend_for_tests()
@@ -561,7 +561,7 @@ class TestCaptureResponse:
         """Backwards-compat: small captures keep the full elements array and
         do not surface a `truncated_elements` field.
         """
-        from tools.computer_use import tool as cu_tool
+        from tools.use_computer import tool as cu_tool
 
         fake_backend = self._ax_backend_with(5)
         cu_tool.reset_backend_for_tests()
@@ -578,7 +578,7 @@ class TestCaptureResponse:
         """Malformed `max_elements` (string, negative, zero) must not silently
         disable the cap and re-introduce the original unbounded behavior.
         """
-        from tools.computer_use import tool as cu_tool
+        from tools.use_computer import tool as cu_tool
 
         fake_backend = self._ax_backend_with(600)
         cu_tool.reset_backend_for_tests()
@@ -597,7 +597,7 @@ class TestCaptureResponse:
         disable the safeguard. The cap is clamped to a hard upper bound so
         the context-blow-up protection cannot be bypassed by argument.
         """
-        from tools.computer_use import tool as cu_tool
+        from tools.use_computer import tool as cu_tool
 
         fake_backend = self._ax_backend_with(5000)
         cu_tool.reset_backend_for_tests()
@@ -616,7 +616,7 @@ class TestCaptureResponse:
         Otherwise the model sees `#15` in the summary and finds no matching
         entry in `elements`.
         """
-        from tools.computer_use import tool as cu_tool
+        from tools.use_computer import tool as cu_tool
 
         fake_backend = self._ax_backend_with(600)
         cu_tool.reset_backend_for_tests()
@@ -641,8 +641,8 @@ class TestCaptureResponse:
         `elements` array — so a "response truncated to N of M elements"
         claim in the summary would be inaccurate.
         """
-        from tools.computer_use.backend import CaptureResult, UIElement
-        from tools.computer_use import tool as cu_tool
+        from tools.use_computer.backend import CaptureResult, UIElement
+        from tools.use_computer import tool as cu_tool
 
         fake_png = "iVBORw0KGgo="
         elements = [
@@ -685,7 +685,7 @@ class TestCaptureResponse:
 
 class TestCuaCaptureImageDimensions:
     def test_png_dimensions_are_sniffed_from_image_bytes(self):
-        from tools.computer_use.cua_backend import _image_dimensions_from_bytes
+        from tools.use_computer.cua_backend import _image_dimensions_from_bytes
 
         raw_png = base64.b64decode(
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42m"
@@ -695,7 +695,7 @@ class TestCuaCaptureImageDimensions:
         assert _image_dimensions_from_bytes(raw_png) == (1, 1)
 
     def test_jpeg_dimensions_are_sniffed_from_sof_segment(self):
-        from tools.computer_use.cua_backend import _image_dimensions_from_bytes
+        from tools.use_computer.cua_backend import _image_dimensions_from_bytes
 
         raw_jpeg = (
             b"\xff\xd8" +
@@ -726,7 +726,7 @@ class TestAnthropicAdapterMultimodal:
                 "tool_calls": [{
                     "id": "call_1",
                     "type": "function",
-                    "function": {"name": "computer_use", "arguments": "{}"},
+                    "function": {"name": "use_computer", "arguments": "{}"},
                 }],
             },
             {
@@ -782,7 +782,7 @@ class TestAnthropicAdapterMultimodal:
                 "tool_calls": [{
                     "id": f"call_{i}",
                     "type": "function",
-                    "function": {"name": "computer_use", "arguments": "{}"},
+                    "function": {"name": "use_computer", "arguments": "{}"},
                 }],
             })
             messages.append(_mm_tool(f"call_{i}"))
@@ -849,13 +849,13 @@ class TestCompressorScreenshotPruning:
         messages = [
             {"role": "user", "content": "go"},
             {"role": "assistant", "content": "",
-             "tool_calls": [{"id": "c1", "function": {"name": "computer_use", "arguments": "{}"}}]},
+             "tool_calls": [{"id": "c1", "function": {"name": "use_computer", "arguments": "{}"}}]},
             {"role": "tool", "tool_call_id": "c1", "content": [
                 {"type": "text", "text": "cap"},
                 {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{fake_png}"}},
             ]},
             {"role": "assistant", "content": "", "tool_calls": [
-                {"id": "c2", "function": {"name": "computer_use", "arguments": "{}"}}
+                {"id": "c2", "function": {"name": "use_computer", "arguments": "{}"}}
             ]},
             {"role": "tool", "tool_call_id": "c2", "content": "text-only short"},
             {"role": "assistant", "content": "done"},
@@ -879,7 +879,7 @@ class TestCompressorScreenshotPruning:
         messages = [
             {"role": "user", "content": "go"},
             {"role": "assistant", "content": "", "tool_calls": [
-                {"id": "c1", "function": {"name": "computer_use", "arguments": "{}"}}
+                {"id": "c1", "function": {"name": "use_computer", "arguments": "{}"}}
             ]},
             {"role": "tool", "tool_call_id": "c1", "content": {
                 "_multimodal": True,
@@ -1028,10 +1028,10 @@ class TestRunAgentMultimodalHelpers:
         }
 
         with patch.object(agent, "_model_supports_vision", return_value=False):
-            content = agent._tool_result_content_for_active_model("computer_use", result)
+            content = agent._tool_result_content_for_active_model("use_computer", result)
 
         parsed = json.loads(content)
-        assert "computer_use returned screenshot/image content" in parsed["error"]
+        assert "use_computer returned screenshot/image content" in parsed["error"]
         assert parsed["text_summary"] == "screen captured"
         assert "image_url" not in content
 
@@ -1048,7 +1048,7 @@ class TestRunAgentMultimodalHelpers:
         }
 
         with patch.object(agent, "_model_supports_vision", return_value=True):
-            content = agent._tool_result_content_for_active_model("computer_use", result)
+            content = agent._tool_result_content_for_active_model("use_computer", result)
 
         assert content is result["content"]
         assert any(part.get("type") == "image_url" for part in content)
@@ -1069,7 +1069,7 @@ class TestRunAgentMultimodalHelpers:
         }
 
         with patch.object(agent, "_model_supports_vision", return_value=False):
-            content = agent._tool_result_content_for_active_model("vision_analyze", result)
+            content = agent._tool_result_content_for_active_model("analyze_vision", result)
 
         assert content == "analysis summary"
 
@@ -1081,19 +1081,19 @@ class TestRunAgentMultimodalHelpers:
 class TestUniversality:
     def test_schema_is_valid_openai_function_schema(self):
         """The schema must be round-trippable as a standard OpenAI tool definition."""
-        from tools.computer_use.schema import COMPUTER_USE_SCHEMA
+        from tools.use_computer.schema import COMPUTER_USE_SCHEMA
         # OpenAI tool definition wrapper
         wrapped = {"type": "function", "function": COMPUTER_USE_SCHEMA}
         # Should serialize to JSON without error
         blob = json.dumps(wrapped)
         parsed = json.loads(blob)
-        assert parsed["function"]["name"] == "computer_use"
+        assert parsed["function"]["name"] == "use_computer"
 
     def test_no_provider_gating_in_tool_registration(self):
         """Anthropic-only gating was a #4562 artefact — must not recur."""
         import tools.computer_use_tool  # noqa: F401
         from tools.registry import registry
-        entry = registry._tools["computer_use"]
+        entry = registry._tools["use_computer"]
         # check_fn should only check platform + binary availability,
         # never provider.
         import inspect
@@ -1114,7 +1114,7 @@ class TestElementLabelParsing:
     """
 
     def test_classic_quoted_label_format(self):
-        from tools.computer_use.cua_backend import _parse_elements_from_tree
+        from tools.use_computer.cua_backend import _parse_elements_from_tree
         tree = (
             '  - [14] AXButton "One"\n'
             '  - [15] AXButton "Two"\n'
@@ -1130,7 +1130,7 @@ class TestElementLabelParsing:
 
     def test_new_id_eq_format(self):
         """cua-driver v0.1.6 format: [N] AXRole (order) id=Label"""
-        from tools.computer_use.cua_backend import _parse_elements_from_tree
+        from tools.use_computer.cua_backend import _parse_elements_from_tree
         tree = (
             "[14] AXButton (1) id=One\n"
             "[15] AXButton (2) id=Two\n"
@@ -1146,7 +1146,7 @@ class TestElementLabelParsing:
 
     def test_mixed_formats_in_single_tree(self):
         """Gracefully handles trees that mix old and new line formats."""
-        from tools.computer_use.cua_backend import _parse_elements_from_tree
+        from tools.use_computer.cua_backend import _parse_elements_from_tree
         tree = (
             '  - [1] AXWindow "Main Window"\n'
             "[14] AXButton (1) id=One\n"
@@ -1167,7 +1167,7 @@ class TestElementLabelParsing:
         the regex only matched the quoted and id= forms. A pure-digit (N) is an
         order number, not a label, and must be skipped in favour of id=.
         """
-        from tools.computer_use.cua_backend import _parse_elements_from_tree
+        from tools.use_computer.cua_backend import _parse_elements_from_tree
         tree = (
             '- [77] AXButton (Auto) [help="..." actions=[press]]\n'
             '- [78] AXButton (Light) [help="..." actions=[press]]\n'
@@ -1202,10 +1202,10 @@ class TestUpdateCheck:
     def _run_returning(stdout: str):
         fake = MagicMock()
         fake.stdout = stdout
-        return patch("tools.computer_use.cua_backend.subprocess.run", return_value=fake)
+        return patch("tools.use_computer.cua_backend.subprocess.run", return_value=fake)
 
     def test_update_available(self):
-        from tools.computer_use import cua_backend
+        from tools.use_computer import cua_backend
         payload = '{"current_version":"0.3.1","latest_version":"0.3.2","update_available":true}'
         with self._run_returning(payload):
             st = cua_backend.cua_driver_update_check()
@@ -1215,7 +1215,7 @@ class TestUpdateCheck:
         assert "0.3.2" in msg and "0.3.1" in msg
 
     def test_up_to_date_is_quiet(self):
-        from tools.computer_use import cua_backend
+        from tools.use_computer import cua_backend
         payload = '{"current_version":"0.3.2","latest_version":"0.3.2","update_available":false}'
         with self._run_returning(payload):
             st = cua_backend.cua_driver_update_check()
@@ -1223,7 +1223,7 @@ class TestUpdateCheck:
             assert cua_backend.cua_driver_update_nudge() is None
 
     def test_error_payload_is_indeterminate(self):
-        from tools.computer_use import cua_backend
+        from tools.use_computer import cua_backend
         payload = '{"current_version":"0.3.2","update_available":false,"error":"github 503"}'
         with self._run_returning(payload):
             assert cua_backend.cua_driver_update_check() is None
@@ -1231,19 +1231,19 @@ class TestUpdateCheck:
 
     def test_old_driver_without_verb_is_quiet(self):
         # Drivers predating trycua/cua#1734 print usage to stderr; stdout empty.
-        from tools.computer_use import cua_backend
+        from tools.use_computer import cua_backend
         with self._run_returning(""):
             assert cua_backend.cua_driver_update_check() is None
             assert cua_backend.cua_driver_update_nudge() is None
 
     def test_nonjson_output_is_quiet(self):
-        from tools.computer_use import cua_backend
+        from tools.use_computer import cua_backend
         with self._run_returning("cua-driver 0.2.18\n"):
             assert cua_backend.cua_driver_update_check() is None
 
     def test_subprocess_failure_is_quiet(self):
-        from tools.computer_use import cua_backend
-        with patch("tools.computer_use.cua_backend.subprocess.run",
+        from tools.use_computer import cua_backend
+        with patch("tools.use_computer.cua_backend.subprocess.run",
                    side_effect=FileNotFoundError()):
             assert cua_backend.cua_driver_update_check() is None
             assert cua_backend.cua_driver_update_nudge() is None
@@ -1252,34 +1252,34 @@ class TestUpdateCheck:
 class TestLazyMcpInstall:
     """`mcp` is an optional extra; the backend lazy-installs it on start().
 
-    Keeps computer_use from dead-ending on `No module named 'mcp'` for lean /
+    Keeps use_computer from dead-ending on `No module named 'mcp'` for lean /
     partial installs, matching how every other optional backend behaves.
     """
 
     def test_feature_registered_in_allowlist(self):
         from tools import lazy_deps
-        assert lazy_deps.feature_specs("tool.computer_use") == (
+        assert lazy_deps.feature_specs("tool.use_computer") == (
             "mcp==1.26.0",
             "starlette==1.0.1",
         )
 
     def test_start_lazy_installs_mcp(self):
-        from tools.computer_use import cua_backend
+        from tools.use_computer import cua_backend
         with patch.object(cua_backend, "_maybe_nudge_update"), \
              patch("tools.lazy_deps.ensure") as mock_ensure, \
              patch.object(cua_backend._CuaDriverSession, "start") as mock_sess_start:
             cua_backend.CuaDriverBackend().start()
-        mock_ensure.assert_called_once_with("tool.computer_use", prompt=False)
+        mock_ensure.assert_called_once_with("tool.use_computer", prompt=False)
         mock_sess_start.assert_called_once()
 
     def test_start_propagates_feature_unavailable(self):
         """When mcp can't be installed (lazy installs off / network), start()
         surfaces the actionable FeatureUnavailable rather than a session that
         crashes later on a bare import."""
-        from tools.computer_use import cua_backend
+        from tools.use_computer import cua_backend
         from tools.lazy_deps import FeatureUnavailable
         unavailable = FeatureUnavailable(
-            "tool.computer_use", ("mcp==1.26.0",), "lazy installs disabled"
+            "tool.use_computer", ("mcp==1.26.0",), "lazy installs disabled"
         )
         with patch.object(cua_backend, "_maybe_nudge_update"), \
              patch("tools.lazy_deps.ensure", side_effect=unavailable), \
@@ -1298,8 +1298,8 @@ class TestCaptureAfterAppContext:
 
     def test_capture_after_uses_last_app(self):
         """capture_after=True should pass _last_app to the follow-up capture."""
-        from tools.computer_use.backend import ActionResult, CaptureResult
-        from tools.computer_use import tool as cu_tool
+        from tools.use_computer.backend import ActionResult, CaptureResult
+        from tools.use_computer import tool as cu_tool
 
         captured_app_args = []
 
@@ -1364,8 +1364,8 @@ class TestCaptureAfterAppContext:
 
     def test_capture_after_without_prior_app_uses_none(self):
         """When no app context is set, follow-up capture uses app=None (frontmost)."""
-        from tools.computer_use.backend import ActionResult, CaptureResult
-        from tools.computer_use import tool as cu_tool
+        from tools.use_computer.backend import ActionResult, CaptureResult
+        from tools.use_computer import tool as cu_tool
 
         captured_app_args = []
 
@@ -1435,7 +1435,7 @@ class TestCaptureAfterAppContext:
 def _make_cua_backend_with_windows(windows: List[Dict[str, Any]]):
     """Construct a CuaDriverBackend with a mocked MCP session that returns
     the supplied list_windows payload."""
-    from tools.computer_use.cua_backend import CuaDriverBackend
+    from tools.use_computer.cua_backend import CuaDriverBackend
 
     backend = CuaDriverBackend()
     backend._session = MagicMock()
@@ -1452,7 +1452,7 @@ def _make_cua_backend_with_windows_and_apps(
     windows: List[Dict[str, Any]], apps: List[Dict[str, Any]]
 ):
     """Construct a backend whose mocked session serves list_windows/list_apps."""
-    from tools.computer_use.cua_backend import CuaDriverBackend
+    from tools.use_computer.cua_backend import CuaDriverBackend
 
     backend = CuaDriverBackend()
     backend._session = MagicMock()
@@ -1499,7 +1499,7 @@ class TestCuaDriverSessionReconnect:
     def _make_session(self, bridge):
         import threading
         from typing import Any, cast
-        from tools.computer_use.cua_backend import _CuaDriverSession
+        from tools.use_computer.cua_backend import _CuaDriverSession
         session = cast(Any, _CuaDriverSession.__new__(_CuaDriverSession))
         session._bridge = bridge
         session._session = object()
@@ -1566,7 +1566,7 @@ class TestCuaDriverSessionReconnect:
 
     def test_is_transient_daemon_error_matches_eagain(self):
         """The EAGAIN daemon-proxy error must be classified as transient."""
-        from tools.computer_use.cua_backend import _CuaDriverSession
+        from tools.use_computer.cua_backend import _CuaDriverSession
 
         msg = ("daemon transport error forwarding `get_window_state`: "
                "Resource temporarily unavailable (os error 35)")
@@ -1580,7 +1580,7 @@ class TestCuaDriverSessionReconnect:
         """When the MCP bridge throws EAGAIN, call_tool routes to the CLI transport."""
         import threading
         from typing import Any, cast
-        from tools.computer_use.cua_backend import _CuaDriverSession
+        from tools.use_computer.cua_backend import _CuaDriverSession
 
         eagain = RuntimeError(
             "daemon transport error forwarding `get_window_state`: "
@@ -1624,7 +1624,7 @@ class TestCuaDriverSessionReconnect:
         (screenshot_out_file path) when no inline base64 is present."""
         import base64 as _b64
         from typing import Any, cast
-        from tools.computer_use.cua_backend import _CuaDriverSession
+        from tools.use_computer.cua_backend import _CuaDriverSession
 
         png_bytes = b"\x89PNG\r\n\x1a\nFAKEDATA"
         shot = tmp_path / "shot.png"
@@ -1663,7 +1663,7 @@ class TestCuaDriverSessionReconnect:
 
     def test_cli_fallback_preserves_logical_error(self, monkeypatch):
         from typing import Any, cast
-        from tools.computer_use.cua_backend import _CuaDriverSession
+        from tools.use_computer.cua_backend import _CuaDriverSession
 
         session = cast(Any, _CuaDriverSession.__new__(_CuaDriverSession))
 
@@ -1679,7 +1679,7 @@ class TestCuaDriverSessionReconnect:
         assert out["isError"] is True
 
     def test_extract_tool_result_missing_mock_error_flag_is_not_error(self):
-        from tools.computer_use.cua_backend import _extract_tool_result
+        from tools.use_computer.cua_backend import _extract_tool_result
 
         result = MagicMock()
         result.content = []
@@ -1695,7 +1695,7 @@ class TestCaptureEmptyResultClipFallback:
 
     def test_capture_refetches_via_cli_on_empty_gws(self):
         from typing import Any, cast
-        from tools.computer_use.cua_backend import CuaDriverBackend
+        from tools.use_computer.cua_backend import CuaDriverBackend
 
         windows = [{
             "app_name": "Finder", "pid": 1208, "window_id": 1500,
@@ -1742,7 +1742,7 @@ class TestCaptureEmptyResultClipFallback:
 
     def test_capture_refetches_windows_via_cli_when_mcp_empty(self):
         from typing import Any, cast
-        from tools.computer_use.cua_backend import CuaDriverBackend
+        from tools.use_computer.cua_backend import CuaDriverBackend
 
         windows = [{
             "app_name": "Finder", "pid": 1208, "window_id": 1500,
@@ -1865,7 +1865,7 @@ class TestCaptureAppFilterNoMatch:
         assert backend._active_window_id == 2
 
     def test_exact_pid_window_capture_bypasses_window_discovery(self):
-        from tools.computer_use.cua_backend import CuaDriverBackend
+        from tools.use_computer.cua_backend import CuaDriverBackend
 
         backend = CuaDriverBackend()
         session = MagicMock()
@@ -1903,7 +1903,7 @@ class TestCaptureAppFilterNoMatch:
     def test_failed_exact_capture_clears_prior_target_and_tokens(
         self, pid, window_id, diagnostic,
     ):
-        from tools.computer_use.cua_backend import CuaDriverBackend
+        from tools.use_computer.cua_backend import CuaDriverBackend
 
         backend = CuaDriverBackend()
         session = MagicMock()
@@ -1929,7 +1929,7 @@ class TestCaptureAppFilterNoMatch:
         session.call_tool.assert_not_called()
 
     def test_list_windows_drops_nonpositive_and_boolean_identifiers(self):
-        from tools.computer_use.cua_backend import CuaDriverBackend
+        from tools.use_computer.cua_backend import CuaDriverBackend
 
         backend = CuaDriverBackend()
         session = MagicMock()
@@ -1954,7 +1954,7 @@ class TestCaptureAppFilterNoMatch:
         }]
 
     def test_capture_transport_exception_disarms_prior_target(self):
-        from tools.computer_use.cua_backend import CuaDriverBackend
+        from tools.use_computer.cua_backend import CuaDriverBackend
 
         backend = CuaDriverBackend()
         session = MagicMock()
@@ -1991,7 +1991,7 @@ class TestCaptureAppFilterNoMatch:
         assert backend._snapshot_tokens == {}
 
     def test_get_window_state_exception_disarms_selected_target_and_tokens(self):
-        from tools.computer_use.cua_backend import CuaDriverBackend
+        from tools.use_computer.cua_backend import CuaDriverBackend
 
         backend = CuaDriverBackend()
         session = MagicMock()
@@ -2018,7 +2018,7 @@ class TestCaptureAppFilterNoMatch:
 
     @pytest.mark.parametrize("tool_name", ["list_windows", "get_window_state"])
     def test_capture_logical_driver_error_disarms_target_and_tokens(self, tool_name):
-        from tools.computer_use.cua_backend import CuaDriverBackend
+        from tools.use_computer.cua_backend import CuaDriverBackend
 
         backend = CuaDriverBackend()
         session = MagicMock()
@@ -2220,8 +2220,8 @@ class TestFocusAppFilterNoMatch:
 
 class TestCaptureAfterExactTarget:
     def test_followup_capture_reuses_exact_window_identity(self):
-        from tools.computer_use.backend import ActionResult, CaptureResult
-        from tools.computer_use.tool import _maybe_follow_capture
+        from tools.use_computer.backend import ActionResult, CaptureResult
+        from tools.use_computer.tool import _maybe_follow_capture
 
         class GenericWindowBackend:
             _last_app = "Qt6Application"
@@ -2247,7 +2247,7 @@ class TestCaptureAfterExactTarget:
         }]
 
     def test_dispatch_capture_after_reuses_metadata_resolved_identity(self, monkeypatch):
-        from tools.computer_use import tool as computer_use_tool
+        from tools.use_computer import tool as computer_use_tool
 
         windows = [
             {"app_name": "Qt6Application", "pid": 100, "window_id": 1,
@@ -2307,7 +2307,7 @@ class TestCuaEnvironmentScrubbing:
         to StdioServerParameters, and asserts the scrub contract.
         """
         from unittest.mock import MagicMock, patch, AsyncMock
-        from tools.computer_use.cua_backend import _CuaDriverSession, _AsyncBridge
+        from tools.use_computer.cua_backend import _CuaDriverSession, _AsyncBridge
         import asyncio
 
         bridge = _AsyncBridge()
@@ -2331,9 +2331,9 @@ class TestCuaEnvironmentScrubbing:
                 return MagicMock()
 
             with patch.dict(os.environ, test_env, clear=True), \
-                 patch("tools.computer_use.cua_backend.cua_driver_binary_available",
+                 patch("tools.use_computer.cua_backend.cua_driver_binary_available",
                        return_value=True), \
-                 patch("tools.computer_use.cua_backend._resolve_mcp_invocation",
+                 patch("tools.use_computer.cua_backend._resolve_mcp_invocation",
                        return_value=("cua-driver", ["mcp"])), \
                  patch("mcp.StdioServerParameters", side_effect=capture_env), \
                  patch("mcp.client.stdio.stdio_client") as mock_stdio, \
@@ -2404,7 +2404,7 @@ class TestClickButtonPassthrough:
 
     def _backend_with_active_target(self):
         from unittest.mock import MagicMock
-        from tools.computer_use.cua_backend import CuaDriverBackend
+        from tools.use_computer.cua_backend import CuaDriverBackend
         backend = CuaDriverBackend()
         backend._session = MagicMock()
         backend._session.call_tool.return_value = {
@@ -2551,7 +2551,7 @@ class TestKeyboardWindowIdRouting:
 
     def _backend_with_active_target(self):
         from unittest.mock import MagicMock
-        from tools.computer_use.cua_backend import CuaDriverBackend
+        from tools.use_computer.cua_backend import CuaDriverBackend
         backend = CuaDriverBackend()
         backend._session = MagicMock()
         backend._session.call_tool.return_value = {
@@ -2624,7 +2624,7 @@ class TestZIndexSorting:
     def test_frontmost_window_selected_by_higher_z_index(self):
         """The frontmost window (highest z_index) should be the one
         capture() selects as its target."""
-        from tools.computer_use.cua_backend import CuaDriverBackend
+        from tools.use_computer.cua_backend import CuaDriverBackend
 
         windows = [
             {"app_name": "Terminal", "pid": 100, "window_id": 1,
@@ -2646,7 +2646,7 @@ class TestZIndexSorting:
         """Wayland may return z_index: null. _ingest_windows must coerce
         it to 0 (backmost) so it doesn't crash the sort or get selected
         over real foreground windows."""
-        from tools.computer_use.cua_backend import _ingest_windows
+        from tools.use_computer.cua_backend import _ingest_windows
 
         raw = [
             {"app_name": "Desktop", "pid": 300, "window_id": 3,
@@ -2689,7 +2689,7 @@ class TestImageMimeTypePropagation:
 
     def test_extract_tool_result_captures_mime_alongside_image(self):
         from unittest.mock import MagicMock
-        from tools.computer_use.cua_backend import _extract_tool_result
+        from tools.use_computer.cua_backend import _extract_tool_result
 
         image_part = MagicMock()
         image_part.type = "image"
@@ -2709,7 +2709,7 @@ class TestImageMimeTypePropagation:
         """Older cua-driver builds may omit mimeType — the parallel list
         carries an empty string so callers fall back to sniffing."""
         from unittest.mock import MagicMock
-        from tools.computer_use.cua_backend import _extract_tool_result
+        from tools.use_computer.cua_backend import _extract_tool_result
 
         image_part = MagicMock()
         image_part.type = "image"
@@ -2727,8 +2727,8 @@ class TestImageMimeTypePropagation:
         assert out["image_mime_types"] == [""]
 
     def test_capture_response_uses_explicit_mime_when_provided(self):
-        from tools.computer_use.backend import CaptureResult
-        from tools.computer_use.tool import _capture_response
+        from tools.use_computer.backend import CaptureResult
+        from tools.use_computer.tool import _capture_response
 
         cap = CaptureResult(
             mode="vision",
@@ -2747,8 +2747,8 @@ class TestImageMimeTypePropagation:
             )
 
     def test_capture_response_falls_back_to_sniff_when_mime_missing(self):
-        from tools.computer_use.backend import CaptureResult
-        from tools.computer_use.tool import _capture_response
+        from tools.use_computer.backend import CaptureResult
+        from tools.use_computer.tool import _capture_response
 
         cap = CaptureResult(
             mode="vision",
@@ -2766,8 +2766,8 @@ class TestImageMimeTypePropagation:
             )
 
     def test_capture_response_falls_back_to_png_when_mime_missing_and_no_jpeg_prefix(self):
-        from tools.computer_use.backend import CaptureResult
-        from tools.computer_use.tool import _capture_response
+        from tools.use_computer.backend import CaptureResult
+        from tools.use_computer.tool import _capture_response
 
         cap = CaptureResult(
             mode="vision",
@@ -2810,7 +2810,7 @@ class TestMcpInvocationResolution:
 
     def test_manifest_with_invocation_block_drives_subcommand(self):
         from unittest.mock import patch
-        from tools.computer_use.cua_backend import _resolve_mcp_invocation
+        from tools.use_computer.cua_backend import _resolve_mcp_invocation
 
         manifest = (
             '{"schema_version":"1",'
@@ -2825,7 +2825,7 @@ class TestMcpInvocationResolution:
         """The whole point: a future cua-driver that exposes `mcp-stdio`
         instead of `mcp` keeps working without a Hermes patch."""
         from unittest.mock import patch
-        from tools.computer_use.cua_backend import _resolve_mcp_invocation
+        from tools.use_computer.cua_backend import _resolve_mcp_invocation
 
         manifest = (
             '{"mcp_invocation":'
@@ -2839,7 +2839,7 @@ class TestMcpInvocationResolution:
         """If the manifest knows the args but not the command, keep our
         resolved driver path (so HERMES_CUA_DRIVER_CMD still wins)."""
         from unittest.mock import patch
-        from tools.computer_use.cua_backend import _resolve_mcp_invocation
+        from tools.use_computer.cua_backend import _resolve_mcp_invocation
 
         manifest = '{"mcp_invocation":{"args":["mcp"]}}'
         with patch("subprocess.run", new=self._fake_run(stdout=manifest)):
@@ -2849,7 +2849,7 @@ class TestMcpInvocationResolution:
 
     def test_falls_back_on_nonzero_exit(self):
         from unittest.mock import patch
-        from tools.computer_use.cua_backend import _resolve_mcp_invocation
+        from tools.use_computer.cua_backend import _resolve_mcp_invocation
 
         with patch("subprocess.run", new=self._fake_run(stdout="", returncode=64)):
             cmd, args = _resolve_mcp_invocation("cua-driver")
@@ -2860,7 +2860,7 @@ class TestMcpInvocationResolution:
         """FileNotFoundError, PermissionError, TimeoutExpired all degrade
         gracefully — the wrapper still starts with the literal baseline."""
         from unittest.mock import patch
-        from tools.computer_use.cua_backend import _resolve_mcp_invocation
+        from tools.use_computer.cua_backend import _resolve_mcp_invocation
 
         with patch("subprocess.run", new=self._fake_run(raises=FileNotFoundError("no such file"))):
             cmd, args = _resolve_mcp_invocation("cua-driver")
@@ -2869,7 +2869,7 @@ class TestMcpInvocationResolution:
 
     def test_falls_back_on_junk_json(self):
         from unittest.mock import patch
-        from tools.computer_use.cua_backend import _resolve_mcp_invocation
+        from tools.use_computer.cua_backend import _resolve_mcp_invocation
 
         with patch("subprocess.run", new=self._fake_run(stdout="not json")):
             cmd, args = _resolve_mcp_invocation("cua-driver")
@@ -2880,7 +2880,7 @@ class TestMcpInvocationResolution:
         """Older cua-driver builds that don't know about mcp_invocation
         still emit a manifest — we degrade to the literal."""
         from unittest.mock import patch
-        from tools.computer_use.cua_backend import _resolve_mcp_invocation
+        from tools.use_computer.cua_backend import _resolve_mcp_invocation
 
         manifest = '{"schema_version":"1","subcommands":[]}'
         with patch("subprocess.run", new=self._fake_run(stdout=manifest)):
@@ -2892,7 +2892,7 @@ class TestMcpInvocationResolution:
         a string instead of a list, etc.), we still fall back rather than
         passing junk to subprocess.Popen."""
         from unittest.mock import patch
-        from tools.computer_use.cua_backend import _resolve_mcp_invocation
+        from tools.use_computer.cua_backend import _resolve_mcp_invocation
 
         manifest = (
             '{"mcp_invocation":'
@@ -2913,7 +2913,7 @@ class TestStructuredElementsConsumption:
     """
 
     def test_structured_parser_reads_frames(self):
-        from tools.computer_use.cua_backend import _parse_elements_from_structured
+        from tools.use_computer.cua_backend import _parse_elements_from_structured
 
         raw = [
             {"element_index": 1, "role": "AXButton", "label": "OK",
@@ -2932,7 +2932,7 @@ class TestStructuredElementsConsumption:
     def test_structured_parser_tolerates_missing_frame(self):
         """Some elements (hidden / virtual) have no frame. They should
         still surface in the list — just with (0,0,0,0) bounds."""
-        from tools.computer_use.cua_backend import _parse_elements_from_structured
+        from tools.use_computer.cua_backend import _parse_elements_from_structured
 
         raw = [{"element_index": 7, "role": "AXGroup", "label": "container"}]
         out = _parse_elements_from_structured(raw)
@@ -2943,7 +2943,7 @@ class TestStructuredElementsConsumption:
     def test_structured_parser_skips_malformed_entries(self):
         """A corrupted row (missing element_index, wrong type) should not
         kill the whole walk — degrade to fewer elements."""
-        from tools.computer_use.cua_backend import _parse_elements_from_structured
+        from tools.use_computer.cua_backend import _parse_elements_from_structured
 
         raw = [
             {"element_index": 1, "role": "AXButton", "label": "first"},
@@ -2961,7 +2961,7 @@ class TestStructuredElementsConsumption:
         structuredContent.elements and a markdown tree, the structured
         path wins — that's how we recover real bounds."""
         from unittest.mock import MagicMock
-        from tools.computer_use.cua_backend import CuaDriverBackend
+        from tools.use_computer.cua_backend import CuaDriverBackend
 
         backend = CuaDriverBackend()
         backend._session = MagicMock()
@@ -3011,7 +3011,7 @@ class TestStructuredElementsConsumption:
         """Older cua-driver builds didn't emit structuredContent.elements;
         the wrapper still extracts what it can from the markdown surface."""
         from unittest.mock import MagicMock
-        from tools.computer_use.cua_backend import CuaDriverBackend
+        from tools.use_computer.cua_backend import CuaDriverBackend
 
         backend = CuaDriverBackend()
         backend._session = MagicMock()
@@ -3054,7 +3054,7 @@ class TestStructuredElementsConsumption:
         folded full-window PNG capture into `get_window_state`. When the driver
         no longer advertises `screenshot`, vision capture must route through
         `get_window_state` (discarding the AX tree) and still return a PNG."""
-        from tools.computer_use.cua_backend import CuaDriverBackend
+        from tools.use_computer.cua_backend import CuaDriverBackend
 
         backend = CuaDriverBackend()
         backend._session = MagicMock()
@@ -3102,7 +3102,7 @@ class TestStructuredElementsConsumption:
         """capture(app='screen') resolves to the OS shell/desktop window
         (Windows Progman) rather than an application window, so 'show me my
         screen' works on cua-driver's window-oriented capture surface."""
-        from tools.computer_use.cua_backend import CuaDriverBackend
+        from tools.use_computer.cua_backend import CuaDriverBackend
 
         backend = CuaDriverBackend()
         backend._session = MagicMock()
@@ -3141,7 +3141,7 @@ class TestStructuredElementsConsumption:
         """When no desktop/shell window is present, capture(app='screen')
         returns a clear message about cua-driver's per-window capture limit
         instead of silently grabbing the frontmost app."""
-        from tools.computer_use.cua_backend import CuaDriverBackend
+        from tools.use_computer.cua_backend import CuaDriverBackend
 
         backend = CuaDriverBackend()
         backend._session = MagicMock()
@@ -3177,7 +3177,7 @@ class TestCapabilityDiscovery:
     """
 
     def test_supports_capability_returns_false_before_session_start(self):
-        from tools.computer_use.cua_backend import _CuaDriverSession, _AsyncBridge
+        from tools.use_computer.cua_backend import _CuaDriverSession, _AsyncBridge
 
         session = _CuaDriverSession(_AsyncBridge())
         # No session started → no capabilities populated.
@@ -3186,7 +3186,7 @@ class TestCapabilityDiscovery:
         assert session.capability_version == ""
 
     def test_supports_capability_global_match_any_tool(self):
-        from tools.computer_use.cua_backend import _CuaDriverSession, _AsyncBridge
+        from tools.use_computer.cua_backend import _CuaDriverSession, _AsyncBridge
 
         session = _CuaDriverSession(_AsyncBridge())
         session._capabilities = {
@@ -3200,7 +3200,7 @@ class TestCapabilityDiscovery:
         assert session.supports_capability("never.heard.of.it") is False
 
     def test_supports_capability_scoped_to_specific_tool(self):
-        from tools.computer_use.cua_backend import _CuaDriverSession, _AsyncBridge
+        from tools.use_computer.cua_backend import _CuaDriverSession, _AsyncBridge
 
         session = _CuaDriverSession(_AsyncBridge())
         session._capabilities = {
@@ -3236,7 +3236,7 @@ class TestElementTokenAttachment:
     def _backend_with_session(self, capabilities):
         """Build a backend whose session reports the given capabilities map."""
         from unittest.mock import MagicMock
-        from tools.computer_use.cua_backend import CuaDriverBackend
+        from tools.use_computer.cua_backend import CuaDriverBackend
 
         backend = CuaDriverBackend()
         backend._session = MagicMock()
@@ -3329,7 +3329,7 @@ class TestElementTokenAttachment:
         previous snapshot — token cache invariant: only the latest
         capture's tokens are eligible for attachment."""
         from unittest.mock import MagicMock
-        from tools.computer_use.cua_backend import CuaDriverBackend
+        from tools.use_computer.cua_backend import CuaDriverBackend
 
         backend = CuaDriverBackend()
         backend._session = MagicMock()
@@ -3379,7 +3379,7 @@ class TestSessionLifecycle:
 
     def _backend_with_mock_session(self):
         from unittest.mock import MagicMock
-        from tools.computer_use.cua_backend import CuaDriverBackend
+        from tools.use_computer.cua_backend import CuaDriverBackend
         backend = CuaDriverBackend()
         backend._session = MagicMock()
         backend._session._started = True  # start() probe
@@ -3393,7 +3393,7 @@ class TestSessionLifecycle:
         return backend
 
     def test_session_id_format(self):
-        from tools.computer_use.cua_backend import CuaDriverBackend
+        from tools.use_computer.cua_backend import CuaDriverBackend
         backend = CuaDriverBackend()
         # hermes-{12 hex chars} — short enough to surface in logs
         # without being a privacy hazard, unique enough for concurrent runs.
@@ -3401,14 +3401,14 @@ class TestSessionLifecycle:
         assert len(backend._session_id) == 7 + 12
 
     def test_session_id_unique_per_backend(self):
-        from tools.computer_use.cua_backend import CuaDriverBackend
+        from tools.use_computer.cua_backend import CuaDriverBackend
         a = CuaDriverBackend()._session_id
         b = CuaDriverBackend()._session_id
         assert a != b, "each Hermes run should mint its own session id"
 
     def test_start_invokes_start_session_with_run_id(self):
         from unittest.mock import MagicMock, patch
-        from tools.computer_use.cua_backend import CuaDriverBackend
+        from tools.use_computer.cua_backend import CuaDriverBackend
 
         backend = CuaDriverBackend()
         # Replace the real session with a mock to capture call_tool.
@@ -3433,7 +3433,7 @@ class TestSessionLifecycle:
 
     def test_stop_invokes_end_session_before_disconnect(self):
         from unittest.mock import MagicMock, patch
-        from tools.computer_use.cua_backend import CuaDriverBackend
+        from tools.use_computer.cua_backend import CuaDriverBackend
 
         backend = CuaDriverBackend()
         backend._session = MagicMock()
@@ -3506,7 +3506,7 @@ class TestSessionLifecycle:
         path), backend.start() must still succeed — the rest of the
         wrapper works fine in anonymous mode."""
         from unittest.mock import MagicMock, patch
-        from tools.computer_use.cua_backend import CuaDriverBackend
+        from tools.use_computer.cua_backend import CuaDriverBackend
 
         backend = CuaDriverBackend()
         backend._session = MagicMock()
@@ -3531,7 +3531,7 @@ class TestCuaToolCoverageExpansion:
     def _backend(self, structured: Optional[Dict[str, Any]] = None,
                  data: Any = "ok"):
         from unittest.mock import MagicMock
-        from tools.computer_use.cua_backend import CuaDriverBackend
+        from tools.use_computer.cua_backend import CuaDriverBackend
         backend = CuaDriverBackend()
         backend._session = MagicMock()
         backend._session.call_tool.return_value = {
@@ -3787,7 +3787,7 @@ class TestStartupTimeoutPhaseDetail:
         import threading
         from typing import Any, cast
         from unittest.mock import MagicMock
-        from tools.computer_use.cua_backend import _CuaDriverSession
+        from tools.use_computer.cua_backend import _CuaDriverSession
 
         session = cast(Any, _CuaDriverSession.__new__(_CuaDriverSession))
         session._lock = threading.Lock()
@@ -3819,7 +3819,7 @@ class TestStartupTimeoutPhaseDetail:
         from typing import Any, cast
         from unittest.mock import MagicMock, patch as _patch
         import asyncio
-        from tools.computer_use.cua_backend import _CuaDriverSession
+        from tools.use_computer.cua_backend import _CuaDriverSession
 
         session = cast(Any, _CuaDriverSession.__new__(_CuaDriverSession))
         session._lock = threading.Lock()

@@ -1,6 +1,6 @@
 """End-to-end regression for #24015 — capture routing via auxiliary.vision.
 
-When ``computer_use(action='capture', mode='som'|'vision')`` returns a
+When ``use_computer(action='capture', mode='som'|'vision')`` returns a
 screenshot, ``_capture_response`` previously always returned a
 ``_multimodal`` envelope. For non-vision main models, or when the user
 explicitly configured ``auxiliary.vision`` in ``config.yaml``, that
@@ -69,7 +69,7 @@ def _make_capture(
     width: int = 1280,
     height: int = 800,
 ):
-    from tools.computer_use.backend import CaptureResult, UIElement
+    from tools.use_computer.backend import CaptureResult, UIElement
 
     elements = list(elements or [
         UIElement(index=0, role="AXButton", label="Sign in",
@@ -103,7 +103,7 @@ class TestCaptureResponseDefaultPath:
     """When routing helper says 'native', the existing multimodal envelope wins."""
 
     def test_som_capture_returns_multimodal_envelope_when_native(self):
-        from tools.computer_use import tool as cu_tool
+        from tools.use_computer import tool as cu_tool
 
         cap = _make_capture(png_b64=_PNG_B64, mode="som")
         with patch.object(cu_tool, "_should_route_through_aux_vision",
@@ -121,7 +121,7 @@ class TestCaptureResponseDefaultPath:
         assert "vision_analysis" not in resp
 
     def test_jpeg_capture_returns_image_jpeg_mime_when_native(self):
-        from tools.computer_use import tool as cu_tool
+        from tools.use_computer import tool as cu_tool
 
         cap = _make_capture(png_b64=_JPEG_B64, mode="som")
         with patch.object(cu_tool, "_should_route_through_aux_vision",
@@ -132,7 +132,7 @@ class TestCaptureResponseDefaultPath:
         assert url["image_url"]["url"].startswith("data:image/jpeg;base64,")
 
     def test_ax_only_capture_returns_text_regardless_of_routing(self):
-        from tools.computer_use import tool as cu_tool
+        from tools.use_computer import tool as cu_tool
 
         cap = _make_capture(mode="ax", png_b64="")
         # ax mode never has a PNG so neither path matters; assert pure text.
@@ -159,7 +159,7 @@ class TestCaptureResponseRoutedToAuxVision:
     def test_som_capture_returns_text_with_vision_analysis(
         self, tmp_cache_dir,
     ):
-        from tools.computer_use import tool as cu_tool
+        from tools.use_computer import tool as cu_tool
 
         cap = _make_capture(mode="som")
 
@@ -212,7 +212,7 @@ class TestCaptureResponseRoutedToAuxVision:
     def test_temp_screenshot_file_is_cleaned_up_after_routing(
         self, tmp_cache_dir,
     ):
-        from tools.computer_use import tool as cu_tool
+        from tools.use_computer import tool as cu_tool
 
         cap = _make_capture(mode="som")
         # We capture the path the aux call sees so we can assert it's gone
@@ -242,7 +242,7 @@ class TestCaptureResponseRoutedToAuxVision:
         assert not os.path.exists(observed_path["path"])
 
     def test_aux_route_creates_missing_cache_dir(self, tmp_path):
-        from tools.computer_use import tool as cu_tool
+        from tools.use_computer import tool as cu_tool
 
         cache_dir = tmp_path / "missing" / "cache_vision"
         cap = _make_capture(mode="som")
@@ -277,7 +277,7 @@ class TestCaptureResponseRoutedToAuxVision:
     def test_temp_file_cleaned_up_even_when_aux_call_raises(
         self, tmp_cache_dir,
     ):
-        from tools.computer_use import tool as cu_tool
+        from tools.use_computer import tool as cu_tool
 
         cap = _make_capture(mode="som")
         observed_path = {}
@@ -309,7 +309,7 @@ class TestCaptureResponseRoutedToAuxVision:
         assert not os.path.exists(observed_path["path"])
 
     def test_empty_aux_analysis_degrades_to_text_payload(self, tmp_cache_dir):
-        from tools.computer_use import tool as cu_tool
+        from tools.use_computer import tool as cu_tool
 
         cap = _make_capture(mode="som")
 
@@ -334,7 +334,7 @@ class TestCaptureResponseRoutedToAuxVision:
         assert body.get("elements") is not None
 
     def test_invalid_aux_response_degrades_to_text_payload(self, tmp_cache_dir):
-        from tools.computer_use import tool as cu_tool
+        from tools.use_computer import tool as cu_tool
 
         cap = _make_capture(mode="som")
 
@@ -363,7 +363,7 @@ class TestRoutingDecisionWiring:
     """Verify _should_route_through_aux_vision wires the right config + helper."""
 
     def test_explicit_aux_vision_in_config_routes_to_aux(self):
-        from tools.computer_use import tool as cu_tool
+        from tools.use_computer import tool as cu_tool
 
         cfg = {
             "model": {"default": "tencent/hy3-preview", "provider": "openrouter"},
@@ -382,7 +382,7 @@ class TestRoutingDecisionWiring:
             assert cu_tool._should_route_through_aux_vision() is True
 
     def test_no_explicit_aux_and_vision_capable_main_keeps_multimodal(self):
-        from tools.computer_use import tool as cu_tool
+        from tools.use_computer import tool as cu_tool
 
         cfg = {
             "model": {"default": "claude-opus-4-5", "provider": "anthropic"},
@@ -392,15 +392,15 @@ class TestRoutingDecisionWiring:
              patch("agent.auxiliary_client._read_main_model",
                    return_value="claude-opus-4-5"), \
              patch("hermes_cli.config.load_config", return_value=cfg), \
-             patch("tools.computer_use.vision_routing._lookup_supports_vision",
+             patch("tools.use_computer.vision_routing._lookup_supports_vision",
                    return_value=True), \
-             patch("tools.computer_use.vision_routing."
+             patch("tools.use_computer.vision_routing."
                    "_provider_accepts_multimodal_tool_result",
                    return_value=True):
             assert cu_tool._should_route_through_aux_vision() is False
 
     def test_config_load_failure_disables_routing_safely(self):
-        from tools.computer_use import tool as cu_tool
+        from tools.use_computer import tool as cu_tool
 
         with patch("hermes_cli.config.load_config",
                    side_effect=RuntimeError("config.yaml unreadable")):
@@ -409,8 +409,8 @@ class TestRoutingDecisionWiring:
             assert cu_tool._should_route_through_aux_vision() is False
 
     def test_helper_decision_exception_is_swallowed(self):
-        from tools.computer_use import tool as cu_tool
-        from tools.computer_use import vision_routing as vr_mod
+        from tools.use_computer import tool as cu_tool
+        from tools.use_computer import vision_routing as vr_mod
 
         with patch("agent.auxiliary_client._read_main_provider",
                    return_value="openrouter"), \
@@ -440,7 +440,7 @@ class TestBugReproductionAnchor:
     def test_non_vision_main_model_never_returns_image_url_when_routed(
         self, tmp_cache_dir,
     ):
-        from tools.computer_use import tool as cu_tool
+        from tools.use_computer import tool as cu_tool
 
         cap = _make_capture(mode="som")
 

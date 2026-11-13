@@ -42,9 +42,9 @@ python batch_runner.py \
 
 IMPORTANT GUIDELINES:
 
-1. SEARCHING: Do NOT search directly on Google via the browser — they block automated searches. Use the web_search tool first to find URLs, then navigate to them with browser tools.
+1. SEARCHING: Do NOT search directly on Google via the browser — they block automated searches. Use the search_web tool first to find URLs, then navigate to them with browser tools.
 
-2. COOKIE/PRIVACY DIALOGS: After navigating to a page, check for cookie consent or privacy popups. Dismiss them by clicking Accept/Close/OK before interacting with other elements. Take a fresh browser_snapshot afterward.
+2. COOKIE/PRIVACY DIALOGS: After navigating to a page, check for cookie consent or privacy popups. Dismiss them by clicking Accept/Close/OK before interacting with other elements. Take a fresh snapshot_browser afterward.
 
 3. HANDLING TIMEOUTS: If an action times out, the element may be blocked by an overlay. Take a new snapshot and look for dialogs to dismiss. If none, try an alternative approach or report the issue.
 

@@ -1,8 +1,8 @@
-"""Vision-routing decisions for ``computer_use`` capture results.
+"""Vision-routing decisions for ``use_computer`` capture results.
 
 Background
 ----------
-``computer_use(action='capture', mode='som'|'vision')`` returns a
+``use_computer(action='capture', mode='som'|'vision')`` returns a
 ``_multimodal`` envelope containing the captured screenshot. That envelope
 is delivered back to the **active session model** as the tool result. When
 the active main model has no vision capability (e.g. text-only or
@@ -22,7 +22,7 @@ screenshot be returned as multimodal content (main model handles vision
 natively) or pre-analysed via the auxiliary vision pipeline so the main
 model only ever sees text?
 
-Behaviour (mirrors ``vision_analyze`` for consistency)
+Behaviour (mirrors ``analyze_vision`` for consistency)
 ------------------------------------------------------
 * If the user explicitly configured ``auxiliary.vision`` (any of
   ``provider``, ``model``, or ``base_url`` non-empty / not ``"auto"``),
@@ -90,7 +90,7 @@ def _lookup_user_declared_supports_vision(
         from agent.image_routing import _supports_vision_override
     except Exception as exc:  # pragma: no cover - defensive
         logger.debug(
-            "computer_use vision_routing: config override lookup import failed: %s",
+            "use_computer vision_routing: config override lookup import failed: %s",
             exc,
         )
         return None
@@ -98,7 +98,7 @@ def _lookup_user_declared_supports_vision(
         return _supports_vision_override(cfg, provider, model)
     except Exception as exc:  # pragma: no cover - defensive
         logger.debug(
-            "computer_use vision_routing: config override lookup failed: %s",
+            "use_computer vision_routing: config override lookup failed: %s",
             exc,
         )
         return None
@@ -121,7 +121,7 @@ def _lookup_supports_vision(
             return _lookup_image_supports(provider, model, cfg)
         except Exception as exc:  # pragma: no cover - defensive
             logger.debug(
-                "computer_use vision_routing: image-routing caps lookup failed "
+                "use_computer vision_routing: image-routing caps lookup failed "
                 "for %s:%s — %s",
                 provider, model, exc,
             )
@@ -131,7 +131,7 @@ def _lookup_supports_vision(
         caps = get_model_capabilities(provider, model)
     except Exception as exc:  # pragma: no cover - defensive
         logger.debug(
-            "computer_use vision_routing: caps lookup failed for %s:%s — %s",
+            "use_computer vision_routing: caps lookup failed for %s:%s — %s",
             provider, model, exc,
         )
         return None
@@ -145,7 +145,7 @@ def _provider_accepts_multimodal_tool_result(provider: str, model: str) -> Optio
 
     Reuses ``tools.vision_tools._supports_media_in_tool_results`` so the
     capture-routing decision stays in lockstep with the
-    ``vision_analyze`` native fast path. Returns None on import failure
+    ``analyze_vision`` native fast path. Returns None on import failure
     so callers fall back to aux routing rather than guessing.
     """
     if not provider:
@@ -154,7 +154,7 @@ def _provider_accepts_multimodal_tool_result(provider: str, model: str) -> Optio
         from tools.vision_tools import _supports_media_in_tool_results
     except Exception as exc:  # pragma: no cover - defensive
         logger.debug(
-            "computer_use vision_routing: tool-result support lookup failed: %s",
+            "use_computer vision_routing: tool-result support lookup failed: %s",
             exc,
         )
         return None

@@ -6,7 +6,7 @@ animated pixel effects (stars, rain, fireflies, etc.), then encodes to MP4
 
 Scene animations ported from pixel-art-studio (MIT) — see ATTRIBUTION.md.
 The generative/Pollinations code is intentionally dropped — Hermes uses
-`image_generate` + `pixel_art()` for base frames instead.
+`generate_image` + `pixel_art()` for base frames instead.
 
 Usage (import):
     from pixel_art_video import pixel_art_video

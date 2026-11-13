@@ -4642,8 +4642,8 @@ class GatewaySlashCommandsMixin:
         """Handle /reload-skills — rescan skills dir, queue a note for next turn.
 
         Skills don't need to be in the system prompt for the model to use
-        them (they're invoked via ``/skill-name``, ``skills_list``, or
-        ``skill_view`` at runtime), so this does NOT clear the prompt cache
+        them (they're invoked via ``/skill-name``, ``list_skills``, or
+        ``view_skill`` at runtime), so this does NOT clear the prompt cache
         — prefix caching stays intact.
 
         If any skills were added or removed, a one-shot note is queued on
@@ -4723,7 +4723,7 @@ class GatewaySlashCommandsMixin:
                 for item in removed:
                     sections.append(_fmt_line(item))
             sections.append("")
-            sections.append("Use skills_list to see the updated catalog.]")
+            sections.append("Use list_skills to see the updated catalog.]")
             note = "\n".join(sections)
 
             session_key = self._session_key_for_source(event.source)

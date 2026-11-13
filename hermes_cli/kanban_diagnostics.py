@@ -323,7 +323,7 @@ def _positive_int(value: Any, default: int) -> int:
 
 
 def _rule_hallucinated_cards(task, events, runs, now, cfg) -> list[Diagnostic]:
-    """Blocked-hallucination gate fires: a worker called kanban_complete
+    """Blocked-hallucination gate fires: a worker called complete_kanban
     with created_cards that didn't exist or weren't created by the
     completing profile. Task stayed in its prior state; the operator
     needs to decide how to proceed.
@@ -359,7 +359,7 @@ def _rule_hallucinated_cards(task, events, runs, now, cfg) -> list[Diagnostic]:
             "exist or weren't created by its profile. The completion was "
             "blocked and the task stayed in its prior state. "
             "Usually means the worker hallucinated ids instead of capturing "
-            "return values from kanban_create."
+            "return values from create_kanban."
         ),
         actions=actions,
         first_seen_at=first,

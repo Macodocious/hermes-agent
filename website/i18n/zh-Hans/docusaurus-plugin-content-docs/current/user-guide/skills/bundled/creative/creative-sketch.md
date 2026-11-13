@@ -108,7 +108,7 @@ sketches/
 **使用 Hermes 的浏览器工具对方案进行视觉验证。** 不要只写 HTML 然后寄希望于它能正常渲染；加载每个方案并查看：
 
 ```
-browser_navigate(url="file:///absolute/path/to/sketches/001-calm-editorial/index.html")
+navigate_browser(url="file:///absolute/path/to/sketches/001-calm-editorial/index.html")
 browser_vision(question="Does this layout look clean and readable? Any visible bugs (overlapping text, unstyled elements, broken images)?")
 ```
 
@@ -227,7 +227,7 @@ One sentence on the principle driving this variant.
 terminal("mkdir -p sketches/001-calm-editorial")
 write_file("sketches/001-calm-editorial/index.html", "<!doctype html>...")
 write_file("sketches/001-calm-editorial/README.md", "## Variant: Calm editorial\n...")
-browser_navigate(url="file://$(pwd)/sketches/001-calm-editorial/index.html")
+navigate_browser(url="file://$(pwd)/sketches/001-calm-editorial/index.html")
 browser_vision(question="How does this look? Any obvious layout issues?")
 ```
 

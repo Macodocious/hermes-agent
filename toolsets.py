@@ -30,7 +30,7 @@ from typing import List, Dict, Any, Set, Optional
 # Edit this once to update all platforms simultaneously.
 _HERMES_CORE_TOOLS = [
     # Web
-    "web_search", "web_extract",
+    "search_web", "extract_web",
     # Terminal + process management
     "terminal", "process",
     # Read the desktop GUI's embedded terminal pane, and close an agent's
@@ -40,13 +40,13 @@ _HERMES_CORE_TOOLS = [
     # File manipulation
     "read_file", "write_file", "patch", "search_files",
     # Vision + image generation
-    "vision_analyze", "image_generate",
+    "analyze_vision", "generate_image",
     # Skills
-    "skills_list", "skill_view", "skill_manage",
+    "list_skills", "view_skill", "manage_skill",
     # Browser automation
-    "browser_navigate", "browser_snapshot", "browser_click",
-    "browser_type", "browser_scroll", "browser_back",
-    "browser_press", "browser_get_images",
+    "navigate_browser", "snapshot_browser", "click_browser",
+    "type_browser", "scroll_browser", "back_browser",
+    "press_browser", "get_browser_images",
     "browser_vision", "browser_console", "browser_cdp", "browser_dialog",
     # Text-to-speech
     "text_to_speech",
@@ -55,13 +55,13 @@ _HERMES_CORE_TOOLS = [
     # Per-turn task-context declaration (temperature override selection;
     # schema gated on agent.temperature.override.enabled via check_fn)
     "switch_context",
-    # NOTE: the desktop Project tools (project_list/create/switch) are
+    # NOTE: the desktop Project tools (list_project/create/switch) are
     # deliberately NOT here. They only make sense where a GUI can follow the
     # move, so they live in the `project` toolset and are enabled solely by the
     # GUI gateway (tui_gateway/server.py::_load_enabled_toolsets) — keeping them
     # off every CLI/messaging/cron schema (narrow waist).
     # Session history search
-    "session_search",
+    "search_session",
     # Clarifying questions
     "clarify",
     # Code execution + delegation
@@ -69,27 +69,27 @@ _HERMES_CORE_TOOLS = [
     # Cronjob management
     "cronjob",
     # Home Assistant smart home control (gated on HASS_TOKEN via check_fn)
-    "ha_list_entities", "ha_get_state", "ha_list_services", "ha_call_service",
+    "list_ha_entities", "get_ha_state", "list_ha_services", "call_ha_service",
     # Kanban multi-agent coordination — only in schema when the agent is
     # spawned as a kanban worker (HERMES_KANBAN_TASK env set) or the current
     # profile explicitly enables the kanban toolset. Gated via check_fn in
     # tools/kanban_tools.py.
-    "kanban_show", "kanban_list",
-    "kanban_complete", "kanban_block", "kanban_heartbeat",
-    "kanban_comment", "kanban_create", "kanban_link",
-    "kanban_unblock",
-    "kanban_attach", "kanban_attach_url", "kanban_attachments",
+    "show_kanban", "list_kanban",
+    "complete_kanban", "block_kanban", "heartbeat_kanban",
+    "comment_kanban", "create_kanban", "link_kanban",
+    "unblock_kanban",
+    "attach_kanban", "attach_kanban_url", "kanban_attachments",
     # Computer use (macOS, gated on cua-driver being installed via check_fn)
-    "computer_use",
+    "use_computer",
 ]
 
 # Webhook events may originate from untrusted third-party content (for example,
 # public PR titles/comments). Keep the default webhook toolset intentionally
 # constrained to avoid local file/system execution by prompt injection.
 _HERMES_WEBHOOK_SAFE_TOOLS = [
-    "web_search",
-    "web_extract",
-    "vision_analyze",
+    "search_web",
+    "extract_web",
+    "analyze_vision",
     "clarify",
 ]
 
@@ -100,64 +100,64 @@ TOOLSETS = {
     # Basic toolsets - individual tool categories
     "web": {
         "description": "Web research and content extraction tools",
-        "tools": ["web_search", "web_extract"],
+        "tools": ["search_web", "extract_web"],
         "includes": []  # No other toolsets included
     },
     
     "search": {
         "description": "Web search only (no content extraction/scraping)",
-        "tools": ["web_search"],
+        "tools": ["search_web"],
         "includes": []
     },
 
-    "x_search": {
+    "search_x": {
         "description": (
             "Search X (Twitter) posts and threads via xAI's built-in "
-            "x_search Responses tool. Available when xAI credentials are "
+            "search_x Responses tool. Available when xAI credentials are "
             "configured (SuperGrok OAuth or XAI_API_KEY). Off by default; "
             "enable in `hermes tools` → X (Twitter) Search."
         ),
-        "tools": ["x_search"],
+        "tools": ["search_x"],
         "includes": []
     },
     
     "vision": {
         "description": "Image analysis and vision tools",
-        "tools": ["vision_analyze"],
+        "tools": ["analyze_vision"],
         "includes": []
     },
 
     "video": {
         "description": "Video analysis and understanding tools (opt-in, not in default toolset)",
-        "tools": ["video_analyze"],
+        "tools": ["analyze_video"],
         "includes": []
     },
     
     "image_gen": {
         "description": "Creative generation tools (images)",
-        "tools": ["image_generate"],
+        "tools": ["generate_image"],
         "includes": []
     },
 
     "video_gen": {
         "description": (
-            "Video generation tools. Single ``video_generate`` tool covers "
+            "Video generation tools. Single ``generate_video`` tool covers "
             "text-to-video (prompt only) and image-to-video (prompt + "
             "image_url), plus reference-to-video. Provider-specific edit/"
             "extend workflows may appear as separate tools. Configure via "
             "``hermes tools`` → Video Generation."
         ),
-        "tools": ["video_generate", "xai_video_edit", "xai_video_extend"],
+        "tools": ["generate_video", "edit_xai_video", "extend_xai_video"],
         "includes": []
     },
 
-    "computer_use": {
+    "use_computer": {
         "description": (
             "Background desktop control via cua-driver (macOS/Windows/Linux) — "
             "screenshots, mouse, keyboard, scroll, drag. Does NOT steal the "
             "user's cursor or keyboard focus. Works with any tool-capable model."
         ),
-        "tools": ["computer_use"],
+        "tools": ["use_computer"],
         "includes": []
     },
 
@@ -169,18 +169,18 @@ TOOLSETS = {
     
     "skills": {
         "description": "Access, create, edit, and manage skill documents with specialized instructions and knowledge",
-        "tools": ["skills_list", "skill_view", "skill_manage"],
+        "tools": ["list_skills", "view_skill", "manage_skill"],
         "includes": []
     },
     
     "browser": {
         "description": "Browser automation for web interaction (navigate, click, type, scroll, iframes, hold-click) with web search for finding URLs",
         "tools": [
-            "browser_navigate", "browser_snapshot", "browser_click",
-            "browser_type", "browser_scroll", "browser_back",
-            "browser_press", "browser_get_images",
+            "navigate_browser", "snapshot_browser", "click_browser",
+            "type_browser", "scroll_browser", "back_browser",
+            "press_browser", "get_browser_images",
             "browser_vision", "browser_console", "browser_cdp",
-            "browser_dialog", "web_search"
+            "browser_dialog", "search_web"
         ],
         "includes": []
     },
@@ -209,7 +209,7 @@ TOOLSETS = {
     # surface it is meant to preserve.
     "read": {
         "description": "Read-only inspection: read files, search contents, view skills — no writes, no terminal",
-        "tools": ["read_file", "search_files", "skill_view"],
+        "tools": ["read_file", "search_files", "view_skill"],
         "includes": [],
         "posture": True,
     },
@@ -238,15 +238,15 @@ TOOLSETS = {
         "includes": []
     },
     
-    "session_search": {
+    "search_session": {
         "description": "Search and recall past conversations with summarization",
-        "tools": ["session_search"],
+        "tools": ["search_session"],
         "includes": []
     },
 
     "project": {
         "description": "Desktop Projects — create/switch named workspaces (GUI sessions only)",
-        "tools": ["project_list", "project_create", "project_switch"],
+        "tools": ["list_project", "create_project", "switch_project"],
         "includes": []
     },
     
@@ -273,7 +273,7 @@ TOOLSETS = {
 
     "homeassistant": {
         "description": "Home Assistant smart home control and monitoring",
-        "tools": ["ha_list_entities", "ha_get_state", "ha_list_services", "ha_call_service"],
+        "tools": ["list_ha_entities", "get_ha_state", "list_ha_services", "call_ha_service"],
         "includes": []
     },
 
@@ -288,11 +288,11 @@ TOOLSETS = {
             "(for orchestrators) list, unblock, and fan out tasks."
         ),
         "tools": [
-            "kanban_show", "kanban_list", "kanban_complete", "kanban_block",
-            "kanban_heartbeat", "kanban_comment",
-            "kanban_create", "kanban_link",
-            "kanban_unblock",
-            "kanban_attach", "kanban_attach_url", "kanban_attachments",
+            "show_kanban", "list_kanban", "complete_kanban", "block_kanban",
+            "heartbeat_kanban", "comment_kanban",
+            "create_kanban", "link_kanban",
+            "unblock_kanban",
+            "attach_kanban", "attach_kanban_url", "kanban_attachments",
         ],
         "includes": [],
     },
@@ -312,26 +312,26 @@ TOOLSETS = {
     "yuanbao": {
         "description": "Yuanbao platform tools - group info, member queries, DM, stickers",
         "tools": [
-            "yb_query_group_info",
-            "yb_query_group_members",
-            "yb_send_dm",
-            "yb_search_sticker",
-            "yb_send_sticker",
+            "query_yb_group_info",
+            "query_yb_group_members",
+            "send_yb_dm",
+            "search_yb_sticker",
+            "send_yb_sticker",
         ],
         "includes": []
     },
 
     "feishu_doc": {
         "description": "Read Feishu/Lark document content",
-        "tools": ["feishu_doc_read"],
+        "tools": ["read_feishu_doc"],
         "includes": []
     },
 
     "feishu_drive": {
         "description": "Feishu/Lark document comment operations (list, reply, add)",
         "tools": [
-            "feishu_drive_list_comments", "feishu_drive_list_comment_replies",
-            "feishu_drive_reply_comment", "feishu_drive_add_comment",
+            "list_feishu_drive_comments", "list_feishu_drive_comment_replies",
+            "reply_feishu_drive_comment", "add_feishu_drive_comment",
         ],
         "includes": []
     },
@@ -367,17 +367,17 @@ TOOLSETS = {
     "coding": {
         "description": "Coding-focused toolset: files, terminal, search, web docs, skills, todo, delegate, vision, browser",
         "tools": [
-            "web_search", "web_extract",
+            "search_web", "extract_web",
             "terminal", "process", "read_terminal", "close_terminal",
             "read_file", "write_file", "patch", "search_files",
-            "vision_analyze",
-            "skills_list", "skill_view", "skill_manage",
-            "browser_navigate", "browser_snapshot", "browser_click",
-            "browser_type", "browser_scroll", "browser_back",
-            "browser_press", "browser_get_images",
+            "analyze_vision",
+            "list_skills", "view_skill", "manage_skill",
+            "navigate_browser", "snapshot_browser", "click_browser",
+            "type_browser", "scroll_browser", "back_browser",
+            "press_browser", "get_browser_images",
             "browser_vision", "browser_console", "browser_cdp", "browser_dialog",
             "todo", "memory",
-            "session_search", "clarify",
+            "search_session", "clarify",
             "execute_code", "delegate_task",
         ],
         "includes": [],
@@ -399,17 +399,17 @@ TOOLSETS = {
     "hermes-acp": {
         "description": "Editor integration (VS Code, Zed, JetBrains) — coding-focused tools without messaging, audio, or clarify UI",
         "tools": [
-            "web_search", "web_extract",
+            "search_web", "extract_web",
             "terminal", "process",
             "read_file", "write_file", "patch", "search_files",
-            "vision_analyze",
-            "skills_list", "skill_view", "skill_manage",
-            "browser_navigate", "browser_snapshot", "browser_click",
-            "browser_type", "browser_scroll", "browser_back",
-            "browser_press", "browser_get_images",
+            "analyze_vision",
+            "list_skills", "view_skill", "manage_skill",
+            "navigate_browser", "snapshot_browser", "click_browser",
+            "type_browser", "scroll_browser", "back_browser",
+            "press_browser", "get_browser_images",
             "browser_vision", "browser_console", "browser_cdp", "browser_dialog",
             "todo", "memory",
-            "session_search",
+            "search_session",
             "execute_code", "delegate_task",
         ],
         "includes": []
@@ -419,30 +419,30 @@ TOOLSETS = {
         "description": "OpenAI-compatible API server — full agent tools accessible via HTTP (no interactive UI tools like clarify or send_message)",
         "tools": [
             # Web
-            "web_search", "web_extract",
+            "search_web", "extract_web",
             # Terminal + process management
             "terminal", "process",
             # File manipulation
             "read_file", "write_file", "patch", "search_files",
             # Vision + image generation
-            "vision_analyze", "image_generate",
+            "analyze_vision", "generate_image",
             # Skills
-            "skills_list", "skill_view", "skill_manage",
+            "list_skills", "view_skill", "manage_skill",
             # Browser automation
-            "browser_navigate", "browser_snapshot", "browser_click",
-            "browser_type", "browser_scroll", "browser_back",
-            "browser_press", "browser_get_images",
+            "navigate_browser", "snapshot_browser", "click_browser",
+            "type_browser", "scroll_browser", "back_browser",
+            "press_browser", "get_browser_images",
             "browser_vision", "browser_console", "browser_cdp", "browser_dialog",
             # Planning & memory
             "todo", "memory",
             # Session history search
-            "session_search",
+            "search_session",
             # Code execution + delegation
             "execute_code", "delegate_task",
             # Cronjob management
             "cronjob",
             # Home Assistant smart home control (gated on HASS_TOKEN via check_fn)
-            "ha_list_entities", "ha_get_state", "ha_list_services", "ha_call_service",
+            "list_ha_entities", "get_ha_state", "list_ha_services", "call_ha_service",
 
         ],
         "includes": []
@@ -537,11 +537,11 @@ TOOLSETS = {
     "hermes-feishu": {
         "description": "Feishu/Lark bot toolset - enterprise messaging via Feishu/Lark (full access)",
         "tools": _HERMES_CORE_TOOLS + [
-            "feishu_doc_read",
-            "feishu_drive_list_comments",
-            "feishu_drive_list_comment_replies",
-            "feishu_drive_reply_comment",
-            "feishu_drive_add_comment",
+            "read_feishu_doc",
+            "list_feishu_drive_comments",
+            "list_feishu_drive_comment_replies",
+            "reply_feishu_drive_comment",
+            "add_feishu_drive_comment",
         ],
         "includes": []
     },
@@ -573,11 +573,11 @@ TOOLSETS = {
     "hermes-yuanbao": {
         "description": "Yuanbao Bot 元宝消息平台工具集 - 群信息、成员查询、私聊、贴纸表情",
         "tools": _HERMES_CORE_TOOLS + [
-            "yb_query_group_info",
-            "yb_query_group_members",
-            "yb_send_dm",
-            "yb_search_sticker",
-            "yb_send_sticker",
+            "query_yb_group_info",
+            "query_yb_group_members",
+            "send_yb_dm",
+            "search_yb_sticker",
+            "send_yb_sticker",
         ],
         "module": "tools.yuanbao_tools",
         "includes": []
@@ -983,7 +983,7 @@ if __name__ == "__main__":
     create_custom_toolset(
         name="my_custom",
         description="My custom toolset for specific tasks",
-        tools=["web_search"],
+        tools=["search_web"],
         includes=["terminal", "vision"]
     )
     custom_info = get_toolset_info("my_custom")

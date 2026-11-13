@@ -233,8 +233,8 @@ LAZY_DEPS: dict[str, tuple[str, ...]] = {
     # to the cua-driver process over stdio. Matches the `mcp` / `computer-use`
     # extras in pyproject.toml. The one-liner installer pulls this in via
     # `[all]`; lazy-installing here covers lean / partial / broken-extra
-    # installs so computer_use never dead-ends on `No module named 'mcp'`.
-    "tool.computer_use": (
+    # installs so use_computer never dead-ends on `No module named 'mcp'`.
+    "tool.use_computer": (
         "mcp==1.26.0",
         "starlette==1.0.1",  # CVE-2026-48710 — keep in sync with pyproject [computer-use]
     ),

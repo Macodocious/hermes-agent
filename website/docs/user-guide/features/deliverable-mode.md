@@ -24,7 +24,7 @@ Three pieces fit together:
 1. **The agent has tools that produce files.** `execute_code` for charts via
    matplotlib, the `docx` skill for Word documents, the `xlsx` skill for
    spreadsheets, the `pdf` and `latex-pdf-report` skills for PDFs, the
-   `powerpoint` skill for decks, `image_generate` for images,
+   `powerpoint` skill for decks, `generate_image` for images,
    `text_to_speech` for audio, and so on.
 
 2. **The gateway scans agent responses for file paths.** Any absolute path
@@ -78,10 +78,10 @@ mutilated.
 ## Kanban: artifacts ride completion notifications
 
 If you use Hermes' kanban multi-agent workflow, workers can attach
-deliverable files to their `kanban_complete` call:
+deliverable files to their `complete_kanban` call:
 
 ```python
-kanban_complete(
+complete_kanban(
     summary="rendered Q3 revenue chart and report",
     artifacts=[
         "/tmp/q3-revenue.png",

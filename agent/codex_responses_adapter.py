@@ -266,13 +266,13 @@ def _responses_tools(tools: Optional[List[Dict[str, Any]]] = None) -> Optional[L
 # Responses ``tools`` array.  These are declared by ``type`` alone (no
 # client-side name/parameters schema) and run server-side — the provider
 # owns the implementation and reports progress via the matching ``*_call``
-# output items.  Hermes injects xAI's native ``web_search`` for the xAI
+# output items.  Hermes injects xAI's native ``search_web`` for the xAI
 # transport (see agent/transports/codex.py); the rest are listed so the
 # preflight validator passes them through rather than rejecting them as
 # "unsupported type".  Mirrors the ``*_call`` item-type set used in
 # _normalize_codex_response.
 _RESPONSES_BUILTIN_TOOL_TYPES = {
-    "web_search",
+    "search_web",
     "web_search_preview",
     "file_search",
     "code_interpreter",
@@ -863,13 +863,13 @@ def _preflight_codex_api_kwargs(
 
             tool_type = tool.get("type")
 
-            # Provider-executed built-in tools (xAI native web_search, code
+            # Provider-executed built-in tools (xAI native search_web, code
             # interpreter, etc.) are declared by ``type`` alone and carry no
             # ``name``/``parameters`` schema — the provider owns the
             # implementation.  Pass them through verbatim instead of forcing
             # them through the function-tool validation below (which would
             # otherwise reject them with "unsupported type").  See
-            # agent/transports/codex.py for where xAI's native web_search is
+            # agent/transports/codex.py for where xAI's native search_web is
             # injected.
             if tool_type in _RESPONSES_BUILTIN_TOOL_TYPES:
                 normalized_tools.append(dict(tool))
@@ -1178,7 +1178,7 @@ def _normalize_codex_response(
     saw_final_answer_phase = False
     saw_reasoning_item = False
 
-    # Server-side built-in tool calls (xAI's native web_search, code
+    # Server-side built-in tool calls (xAI's native search_web, code
     # interpreter, etc.) are executed by the provider and reported as
     # discrete ``*_call`` output items.  xAI's /v1/responses surface
     # (e.g. grok-composer-2.5-fast on SuperGrok OAuth) routinely leaves

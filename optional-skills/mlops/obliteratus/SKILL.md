@@ -261,7 +261,7 @@ vllm serve ./abliterated-models/<model>
 ## Analysis Modules
 
 OBLITERATUS includes 28 analysis modules for mechanistic interpretability.
-See `skill_view(name="obliteratus", file_path="references/analysis-modules.md")` for the full reference.
+See `view_skill(name="obliteratus", file_path="references/analysis-modules.md")` for the full reference.
 
 ### Quick analysis commands
 ```bash
@@ -310,7 +310,7 @@ OBLITERATUS includes built-in evaluation tools:
 
 ## YAML Config Templates
 
-Load templates for reproducible runs via `skill_view`:
+Load templates for reproducible runs via `view_skill`:
 - `templates/abliteration-config.yaml` — Standard single-model config
 - `templates/analysis-study.yaml` — Pre-abliteration analysis study
 - `templates/batch-abliteration.yaml` — Multi-model batch processing

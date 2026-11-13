@@ -219,5 +219,5 @@ Then from the agent, view the render:
 # After execute_blender_code returns, verify and view
 from hermes_tools import terminal
 terminal("ls -la /tmp/blender_render.png")
-# Use vision_analyze to inspect the render
+# Use analyze_vision to inspect the render
 ```

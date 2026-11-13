@@ -1,5 +1,5 @@
 """Tests for the cross-profile soft guard wired into write_file / patch /
-skill_manage.
+manage_skill.
 
 The classifier is tested in tests/agent/test_file_safety_cross_profile.py.
 This file tests that the tool surfaces:
@@ -7,7 +7,7 @@ This file tests that the tool surfaces:
   1. Refuse cross-profile writes by default and return the warning.
   2. Accept cross-profile writes when cross_profile=True is passed.
   3. Continue to accept in-profile writes normally.
-  4. skill_manage's "not found" error names other profiles where the
+  4. manage_skill's "not found" error names other profiles where the
      skill exists.
 """
 from __future__ import annotations
@@ -160,7 +160,7 @@ class TestPatchCrossProfileGuard:
 
 
 # ---------------------------------------------------------------------------
-# skill_manage — error message naming other profile (item D)
+# manage_skill — error message naming other profile (item D)
 # ---------------------------------------------------------------------------
 
 
@@ -210,7 +210,7 @@ class TestSkillManageCrossProfileErrorUX:
     def test_genuinely_missing_skill_keeps_helpful_hint(
         self, fake_hermes, monkeypatch
     ):
-        """When no profile has the skill, error falls back to skills_list hint."""
+        """When no profile has the skill, error falls back to list_skills hint."""
         import importlib
         import tools.skill_manager_tool
         importlib.reload(tools.skill_manager_tool)
@@ -218,7 +218,7 @@ class TestSkillManageCrossProfileErrorUX:
 
         err = _skill_not_found_error("totally-imaginary-skill")
         assert "not found in active profile 'hermes-security'" in err
-        assert "skills_list" in err
+        assert "list_skills" in err
 
 
 # ---------------------------------------------------------------------------

@@ -819,7 +819,7 @@ export const zhHant = defineLocale({
       providerDefault: '(提供方預設)',
       tasks: {
         vision: { label: '視覺', hint: '圖片分析' },
-        web_extract: { label: '網頁擷取', hint: '頁面摘要' },
+        extract_web: { label: '網頁擷取', hint: '頁面摘要' },
         compression: { label: '壓縮', hint: '上下文壓縮' },
         skills_hub: { label: '技能中心', hint: '技能搜尋' },
         approval: { label: '核准', hint: '智慧自動核准' },
@@ -2433,17 +2433,17 @@ export const zhHant = defineLocale({
         runningTool: action => `正在執行 ${action}`
       },
       titles: {
-        browser_click: { done: '已點擊頁面元素', pending: '正在點擊頁面元素', pendingAction: '正在點擊' },
+        click_browser: { done: '已點擊頁面元素', pending: '正在點擊頁面元素', pendingAction: '正在點擊' },
         browser_fill: { done: '已填寫表單欄位', pending: '正在填寫表單欄位', pendingAction: '正在填寫' },
-        browser_navigate: { done: '已開啟頁面', pending: '正在開啟頁面', pendingAction: '正在開啟' },
-        browser_snapshot: { done: '已擷取頁面快照', pending: '正在擷取頁面快照', pendingAction: '正在擷取' },
+        navigate_browser: { done: '已開啟頁面', pending: '正在開啟頁面', pendingAction: '正在開啟' },
+        snapshot_browser: { done: '已擷取頁面快照', pending: '正在擷取頁面快照', pendingAction: '正在擷取' },
         browser_take_screenshot: { done: '已擷取截圖', pending: '正在擷取截圖', pendingAction: '正在擷取' },
-        browser_type: { done: '已在頁面輸入', pending: '正在頁面輸入', pendingAction: '正在輸入' },
+        type_browser: { done: '已在頁面輸入', pending: '正在頁面輸入', pendingAction: '正在輸入' },
         clarify: { done: '已提問', pending: '正在提問', pendingAction: '正在提問' },
         cronjob: { done: 'Cron 工作', pending: '正在安排 Cron 工作', pendingAction: '正在安排' },
         edit_file: { done: '已編輯檔案', pending: '正在編輯檔案', pendingAction: '正在編輯' },
         execute_code: { done: '已執行程式碼', pending: '正在撰寫腳本', pendingAction: '正在撰寫腳本' },
-        image_generate: { done: '已生成圖片', pending: '正在生成圖片', pendingAction: '正在生成' },
+        generate_image: { done: '已生成圖片', pending: '正在生成圖片', pendingAction: '正在生成' },
         list_files: { done: '已列出檔案', pending: '正在列出檔案', pendingAction: '正在列出' },
         patch: { done: '已修補檔案', pending: '正在修補檔案', pendingAction: '正在修補' },
         read_file: { done: '已讀取檔案', pending: '正在讀取檔案', pendingAction: '正在讀取' },
@@ -2455,9 +2455,9 @@ export const zhHant = defineLocale({
         },
         terminal: { done: '已執行指令', pending: '正在執行指令', pendingAction: '正在執行' },
         todo: { done: '已更新待辦', pending: '正在更新待辦', pendingAction: '正在更新' },
-        vision_analyze: { done: '已分析圖片', pending: '正在分析圖片', pendingAction: '正在分析' },
-        web_extract: { done: '已讀取網頁', pending: '正在讀取網頁', pendingAction: '正在讀取' },
-        web_search: { done: '已搜尋網頁', pending: '正在搜尋網頁', pendingAction: '正在搜尋' },
+        analyze_vision: { done: '已分析圖片', pending: '正在分析圖片', pendingAction: '正在分析' },
+        extract_web: { done: '已讀取網頁', pending: '正在讀取網頁', pendingAction: '正在讀取' },
+        search_web: { done: '已搜尋網頁', pending: '正在搜尋網頁', pendingAction: '正在搜尋' },
         write_file: { done: '已編輯檔案', pending: '正在編輯檔案', pendingAction: '正在編輯' }
       }
     }

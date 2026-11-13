@@ -1,6 +1,6 @@
 """Feishu Document Tool -- read document content via Feishu/Lark API.
 
-Provides ``feishu_doc_read`` for reading document content as plain text.
+Provides ``read_feishu_doc`` for reading document content as plain text.
 Uses the same lazy-import + BaseRequest pattern as feishu_comment.py.
 """
 
@@ -27,13 +27,13 @@ def get_client():
 
 
 # ---------------------------------------------------------------------------
-# feishu_doc_read
+# read_feishu_doc
 # ---------------------------------------------------------------------------
 
 _RAW_CONTENT_URI = "/open-apis/docx/v1/documents/:document_id/raw_content"
 
 FEISHU_DOC_READ_SCHEMA = {
-    "name": "feishu_doc_read",
+    "name": "read_feishu_doc",
     "description": (
         "Read the full content of a Feishu/Lark document as plain text. "
         "Useful when you need more context beyond the quoted text in a comment."
@@ -126,7 +126,7 @@ def _handle_feishu_doc_read(args: dict, **kwargs) -> str:
 # ---------------------------------------------------------------------------
 
 registry.register(
-    name="feishu_doc_read",
+    name="read_feishu_doc",
     toolset="feishu_doc",
     schema=FEISHU_DOC_READ_SCHEMA,
     handler=_handle_feishu_doc_read,

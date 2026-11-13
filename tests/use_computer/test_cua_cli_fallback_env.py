@@ -12,7 +12,7 @@ secrets that ``_lifecycle_coro``'s primary MCP spawn already strips via
 import json
 from unittest.mock import MagicMock
 
-from tools.computer_use.cua_backend import _CuaDriverSession
+from tools.use_computer.cua_backend import _CuaDriverSession
 
 
 def _make_session() -> _CuaDriverSession:

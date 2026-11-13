@@ -37,16 +37,16 @@ description: "从 PDF/扫描件中提取文本（pymupdf、marker-pdf）"
 
 ## 第一步：是否有远程 URL？
 
-如果文档有 URL，**始终优先尝试 `web_extract`**：
+如果文档有 URL，**始终优先尝试 `extract_web`**：
 
 ```
-web_extract(urls=["https://arxiv.org/pdf/2402.03300"])
-web_extract(urls=["https://example.com/report.pdf"])
+extract_web(urls=["https://arxiv.org/pdf/2402.03300"])
+extract_web(urls=["https://example.com/report.pdf"])
 ```
 
 这通过 Firecrawl 实现 PDF 转 Markdown，无需本地依赖。
 
-仅在以下情况使用本地提取：文件在本地、`web_extract` 失败，或需要批量处理。
+仅在以下情况使用本地提取：文件在本地、`extract_web` 失败，或需要批量处理。
 
 ## 第二步：选择本地提取器
 
@@ -70,7 +70,7 @@ web_extract(urls=["https://example.com/report.pdf"])
 **决策原则**：除非需要 OCR、公式、表单或复杂版面分析，否则使用 pymupdf。
 
 如果用户需要 marker-pdf 的功能但系统磁盘空间不足约 5GB：
-> "此文档需要 OCR/高级提取（marker-pdf），这需要约 5GB 用于 PyTorch 和模型。您的系统剩余 [X]GB 可用空间。可选方案：释放磁盘空间、提供 URL 以使用 web_extract，或我可以尝试 pymupdf——它适用于基于文本的 PDF，但不支持扫描文档或公式。"
+> "此文档需要 OCR/高级提取（marker-pdf），这需要约 5GB 用于 PyTorch 和模型。您的系统剩余 [X]GB 可用空间。可选方案：释放磁盘空间、提供 URL 以使用 extract_web，或我可以尝试 pymupdf——它适用于基于文本的 PDF，但不支持扫描文档或公式。"
 
 ---
 
@@ -132,13 +132,13 @@ marker /path/to/folder --workers 4    # 批量处理
 
 ```
 # 仅摘要（快速）
-web_extract(urls=["https://arxiv.org/abs/2402.03300"])
+extract_web(urls=["https://arxiv.org/abs/2402.03300"])
 
 # 完整论文
-web_extract(urls=["https://arxiv.org/pdf/2402.03300"])
+extract_web(urls=["https://arxiv.org/pdf/2402.03300"])
 
 # 搜索
-web_search(query="arxiv GRPO reinforcement learning 2026")
+search_web(query="arxiv GRPO reinforcement learning 2026")
 ```
 
 ## 拆分、合并与搜索
@@ -181,7 +181,7 @@ for i, page in enumerate(doc):
 
 ## 注意事项
 
-- `web_extract` 始终是 URL 的首选方案
+- `extract_web` 始终是 URL 的首选方案
 - pymupdf 是安全的默认选择——即时可用，无需模型，适用于所有环境
 - marker-pdf 用于 OCR、扫描文档、公式、复杂版面——仅在需要时安装
 - 两个辅助脚本均支持 `--help` 查看完整用法

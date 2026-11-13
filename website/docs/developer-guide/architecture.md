@@ -98,7 +98,7 @@ hermes-agent/
 │   ├── terminal_tool.py      # Terminal orchestration
 │   ├── process_registry.py   # Background process management
 │   ├── file_tools.py         # read_file, write_file, patch, search_files
-│   ├── web_tools.py          # web_search, web_extract
+│   ├── web_tools.py          # search_web, extract_web
 │   ├── browser_tool.py       # 10 browser automation tools
 │   ├── code_execution_tool.py # execute_code sandbox
 │   ├── delegate_tool.py      # Subagent delegation

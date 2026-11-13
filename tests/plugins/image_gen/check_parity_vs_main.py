@@ -6,7 +6,7 @@ skip in ``_dispatch_to_plugin_provider``) or this PR's worktree (FAL is
 itself a plugin and the dispatcher routes every set provider through
 the registry). Each subprocess clears all FAL-related env vars + writes
 a ``config.yaml``, then asks the dispatcher how it would route an
-``image_generate`` call. The emitted shape tuple is
+``generate_image`` call. The emitted shape tuple is
 ``{dispatch_kind, provider_name, model}``:
 
 * ``dispatch_kind`` ∈ ``{"legacy_fal", "plugin", "error", None}`` —

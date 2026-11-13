@@ -37,16 +37,16 @@ Environment Variables:
   Set to extend beyond project default. Common values: 600 (10min), 1800 (30min) (default: none)
 
 Usage:
-    from tools.browser_tool import browser_navigate, browser_snapshot, browser_click
+    from tools.browser_tool import navigate_browser, snapshot_browser, click_browser
 
     # Navigate to a page
-    result = browser_navigate("https://example.com", task_id="task_123")
+    result = navigate_browser("https://example.com", task_id="task_123")
 
     # Get page snapshot
-    snapshot = browser_snapshot(task_id="task_123")
+    snapshot = snapshot_browser(task_id="task_123")
 
     # Click an element
-    browser_click("@e5", task_id="task_123")
+    click_browser("@e5", task_id="task_123")
 """
 
 import atexit
@@ -231,7 +231,7 @@ MIN_FIRST_OPEN_TIMEOUT = 120
 
 # Max chars for snapshot content before truncation/summarization. Aligned
 # with web_tools.DEFAULT_EXTRACT_CHAR_LIMIT (15000) — the snapshot and
-# web_extract paths share the same truncate-and-store pattern, so the model
+# extract_web paths share the same truncate-and-store pattern, so the model
 # gets the same per-page budget from both.
 SNAPSHOT_SUMMARIZE_THRESHOLD = 15000
 
@@ -392,7 +392,7 @@ def _get_vision_model() -> Optional[str]:
 
 
 def _get_extraction_model() -> Optional[str]:
-    """Model for page snapshot text summarization — same as web_extract."""
+    """Model for page snapshot text summarization — same as extract_web."""
     return os.getenv("AUXILIARY_WEB_EXTRACT_MODEL", "").strip() or None
 
 
@@ -527,7 +527,7 @@ def _ensure_cdp_supervisor(task_id: str) -> None:
     Idempotent — delegates to ``SupervisorRegistry.get_or_start`` which skips
     when a supervisor for this ``(task_id, cdp_url)`` already exists and
     tears down + restarts on URL change. Safe to call on every
-    ``browser_navigate`` / ``/browser connect`` without worrying about
+    ``navigate_browser`` / ``/browser connect`` without worrying about
     double-attach.
 
     Resolves the CDP URL in this order:
@@ -1209,7 +1209,7 @@ def _auto_local_for_private_urls() -> bool:
     Chromium for LAN/localhost URLs.
 
     Reads ``browser.auto_local_for_private_urls`` once (default ``True``) and
-    caches it for the process lifetime.  When enabled, ``browser_navigate``
+    caches it for the process lifetime.  When enabled, ``navigate_browser``
     routes URLs whose host resolves to a private/loopback/LAN address to a
     local headless Chromium sidecar even when a cloud provider (Browserbase
     / Browser-Use / Firecrawl) is configured globally.  Public URLs continue
@@ -1358,7 +1358,7 @@ def _session_info_owned_by_task(session_info: Dict[str, Any], task_id: str, sess
 def _last_session_key(task_id: str) -> str:
     """Return the live session key to use for a non-nav browser tool call.
 
-    ``browser_navigate`` records which concrete session key served a task's
+    ``navigate_browser`` records which concrete session key served a task's
     most recent successful navigation. Non-navigation tools must reuse that key
     so click/fill/snapshot land in the same browser. If the recorded owner was
     later cleaned up or ownership metadata no longer matches, fail closed by
@@ -1437,7 +1437,7 @@ def _socket_safe_tmpdir() -> str:
 _active_sessions: Dict[str, Dict[str, Any]] = {}  # session_key -> {session_name, ...}
 _recording_sessions: set = set()  # session_keys with active recordings
 
-# Tracks the most recent session_key used per task_id. Set by browser_navigate()
+# Tracks the most recent session_key used per task_id. Set by navigate_browser()
 # after it chooses a backend for a URL; read by every non-nav browser tool
 # (snapshot/click/fill/eval/...) so they target the session that served the last
 # navigation.  Without this, a task that navigated to localhost on the local
@@ -1861,8 +1861,8 @@ atexit.register(_stop_browser_cleanup_thread)
 
 BROWSER_TOOL_SCHEMAS = [
     {
-        "name": "browser_navigate",
-        "description": "Navigate to a URL in the browser. Initializes the session and loads the page. Must be called before other browser tools. For simple information retrieval, prefer web_search or web_extract (faster, cheaper). For plain-text endpoints — URLs ending in .md, .txt, .json, .yaml, .yml, .csv, .xml, raw.githubusercontent.com, or any documented API endpoint — prefer curl via the terminal tool or web_extract; the browser stack is overkill and much slower for these. Use browser tools when you need to interact with a page (click, fill forms, dynamic content). Returns a compact page snapshot with interactive elements and ref IDs — no need to call browser_snapshot separately after navigating.",
+        "name": "navigate_browser",
+        "description": "Navigate to a URL in the browser. Initializes the session and loads the page. Must be called before other browser tools. For simple information retrieval, prefer search_web or extract_web (faster, cheaper). For plain-text endpoints — URLs ending in .md, .txt, .json, .yaml, .yml, .csv, .xml, raw.githubusercontent.com, or any documented API endpoint — prefer curl via the terminal tool or extract_web; the browser stack is overkill and much slower for these. Use browser tools when you need to interact with a page (click, fill forms, dynamic content). Returns a compact page snapshot with interactive elements and ref IDs — no need to call snapshot_browser separately after navigating.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -1875,8 +1875,8 @@ BROWSER_TOOL_SCHEMAS = [
         }
     },
     {
-        "name": "browser_snapshot",
-        "description": "Get a text-based snapshot of the current page's accessibility tree. Returns interactive elements with ref IDs (like @e1, @e2) for browser_click and browser_type. full=false (default): compact view with interactive elements. full=true: complete page content. Snapshots over 15000 chars are truncated or LLM-summarized; when that happens the complete snapshot is saved to a file and the output includes its path so you can page through the rest with read_file. Requires browser_navigate first. Note: browser_navigate already returns a compact snapshot — use this to refresh after interactions that change the page, or with full=true for complete content.",
+        "name": "snapshot_browser",
+        "description": "Get a text-based snapshot of the current page's accessibility tree. Returns interactive elements with ref IDs (like @e1, @e2) for click_browser and type_browser. full=false (default): compact view with interactive elements. full=true: complete page content. Snapshots over 15000 chars are truncated or LLM-summarized; when that happens the complete snapshot is saved to a file and the output includes its path so you can page through the rest with read_file. Requires navigate_browser first. Note: navigate_browser already returns a compact snapshot — use this to refresh after interactions that change the page, or with full=true for complete content.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -1890,8 +1890,8 @@ BROWSER_TOOL_SCHEMAS = [
         }
     },
     {
-        "name": "browser_click",
-        "description": "Click on an element identified by its ref ID from the snapshot (e.g., '@e5'). The ref IDs are shown in square brackets in the snapshot output. Requires browser_navigate and browser_snapshot to be called first.",
+        "name": "click_browser",
+        "description": "Click on an element identified by its ref ID from the snapshot (e.g., '@e5'). The ref IDs are shown in square brackets in the snapshot output. Requires navigate_browser and snapshot_browser to be called first.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -1904,8 +1904,8 @@ BROWSER_TOOL_SCHEMAS = [
         }
     },
     {
-        "name": "browser_type",
-        "description": "Type text into an input field identified by its ref ID. Clears the field first, then types the new text. Requires browser_navigate and browser_snapshot to be called first.",
+        "name": "type_browser",
+        "description": "Type text into an input field identified by its ref ID. Clears the field first, then types the new text. Requires navigate_browser and snapshot_browser to be called first.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -1922,8 +1922,8 @@ BROWSER_TOOL_SCHEMAS = [
         }
     },
     {
-        "name": "browser_scroll",
-        "description": "Scroll the page in a direction. Use this to reveal more content that may be below or above the current viewport. Requires browser_navigate to be called first.",
+        "name": "scroll_browser",
+        "description": "Scroll the page in a direction. Use this to reveal more content that may be below or above the current viewport. Requires navigate_browser to be called first.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -1937,8 +1937,8 @@ BROWSER_TOOL_SCHEMAS = [
         }
     },
     {
-        "name": "browser_back",
-        "description": "Navigate back to the previous page in browser history. Requires browser_navigate to be called first.",
+        "name": "back_browser",
+        "description": "Navigate back to the previous page in browser history. Requires navigate_browser to be called first.",
         "parameters": {
             "type": "object",
             "properties": {},
@@ -1946,8 +1946,8 @@ BROWSER_TOOL_SCHEMAS = [
         }
     },
     {
-        "name": "browser_press",
-        "description": "Press a keyboard key. Useful for submitting forms (Enter), navigating (Tab), or keyboard shortcuts. Requires browser_navigate to be called first.",
+        "name": "press_browser",
+        "description": "Press a keyboard key. Useful for submitting forms (Enter), navigating (Tab), or keyboard shortcuts. Requires navigate_browser to be called first.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -1960,8 +1960,8 @@ BROWSER_TOOL_SCHEMAS = [
         }
     },
     {
-        "name": "browser_get_images",
-        "description": "Get a list of all images on the current page with their URLs and alt text. Useful for finding images to analyze with the vision tool. Requires browser_navigate to be called first.",
+        "name": "get_browser_images",
+        "description": "Get a list of all images on the current page with their URLs and alt text. Useful for finding images to analyze with the vision tool. Requires navigate_browser to be called first.",
         "parameters": {
             "type": "object",
             "properties": {},
@@ -1970,7 +1970,7 @@ BROWSER_TOOL_SCHEMAS = [
     },
     {
         "name": "browser_vision",
-        "description": "Take a screenshot of the current page so you can inspect it visually. Use this when you need to understand what the page looks like - especially for CAPTCHAs, visual verification challenges, complex layouts, or cases where the text snapshot misses important visual information. When your active model has native vision, the screenshot is attached to your context directly and you inspect it on the next turn; otherwise Hermes falls back to an auxiliary vision model and returns a text analysis. Includes a screenshot_path that you can share with the user by including MEDIA:<screenshot_path> in your response. Requires browser_navigate to be called first.",
+        "description": "Take a screenshot of the current page so you can inspect it visually. Use this when you need to understand what the page looks like - especially for CAPTCHAs, visual verification challenges, complex layouts, or cases where the text snapshot misses important visual information. When your active model has native vision, the screenshot is attached to your context directly and you inspect it on the next turn; otherwise Hermes falls back to an auxiliary vision model and returns a text analysis. Includes a screenshot_path that you can share with the user by including MEDIA:<screenshot_path> in your response. Requires navigate_browser to be called first.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -1989,7 +1989,7 @@ BROWSER_TOOL_SCHEMAS = [
     },
     {
         "name": "browser_console",
-        "description": "Get browser console output and JavaScript errors from the current page. Returns console.log/warn/error/info messages and uncaught JS exceptions. Use this to detect silent JavaScript errors, failed API calls, and application warnings. Requires browser_navigate to be called first. When 'expression' is provided, evaluates JavaScript in the page context and returns the result — use this for DOM inspection, reading page state, or extracting data programmatically.",
+        "description": "Get browser console output and JavaScript errors from the current page. Returns console.log/warn/error/info messages and uncaught JS exceptions. Use this to detect silent JavaScript errors, failed API calls, and application warnings. Requires navigate_browser to be called first. When 'expression' is provided, evaluates JavaScript in the page context and returns the result — use this for DOM inspection, reading page state, or extracting data programmatically.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -2712,7 +2712,7 @@ def _extract_relevant_content(
 
     try:
         call_kwargs = {
-            "task": "web_extract",
+            "task": "extract_web",
             "messages": [{"role": "user", "content": extraction_prompt}],
             "max_tokens": 4000,
             "temperature": 0.1,
@@ -2737,7 +2737,7 @@ def _truncate_snapshot(snapshot_text: str, max_chars: int = SNAPSHOT_SUMMARIZE_T
 
     Cuts at line boundaries so that accessibility tree elements are never
     split mid-line. The full snapshot is saved to cache/web (same pattern as
-    web_extract's truncate-and-store) and the appended note tells the agent
+    extract_web's truncate-and-store) and the appended note tells the agent
     exactly where the complete text lives and how to page through it with
     read_file — element refs beyond the cut are in the file, not lost.
 
@@ -2773,7 +2773,7 @@ def _truncate_snapshot(snapshot_text: str, max_chars: int = SNAPSHOT_SUMMARIZE_T
                 f'read_file path="{stored_path}" offset={next_line} limit=200]'
             )
         else:
-            result.append(f'\n[... {remaining} more lines truncated, use browser_snapshot for full content]')
+            result.append(f'\n[... {remaining} more lines truncated, use snapshot_browser for full content]')
     return '\n'.join(result)
 
 
@@ -2802,7 +2802,7 @@ def _redact_browser_output(value: Any) -> Any:
 # Browser Tool Functions
 # ============================================================================
 
-def browser_navigate(url: str, task_id: Optional[str] = None) -> str:
+def navigate_browser(url: str, task_id: Optional[str] = None) -> str:
     """
     Navigate to a URL in the browser.
 
@@ -2901,7 +2901,7 @@ def browser_navigate(url: str, task_id: Optional[str] = None) -> str:
 
     if auto_local_this_nav:
         logger.info(
-            "browser_navigate: auto-routing %s to local Chromium sidecar "
+            "navigate_browser: auto-routing %s to local Chromium sidecar "
             "(cloud provider %s stays on cloud for public URLs; "
             "set browser.auto_local_for_private_urls: false to disable)",
             url,
@@ -2932,7 +2932,7 @@ def browser_navigate(url: str, task_id: Optional[str] = None) -> str:
 
         # Post-redirect SSRF check — if the browser followed a redirect to a
         # private/internal address, block the result so the model can't read
-        # internal content via subsequent browser_snapshot calls.
+        # internal content via subsequent snapshot_browser calls.
         # Skipped for local backends (same rationale as the pre-nav check),
         # and for the hybrid local sidecar (we're already on a local browser
         # hitting a private URL by design).
@@ -3004,7 +3004,7 @@ def browser_navigate(url: str, task_id: Optional[str] = None) -> str:
             response["stealth_features"] = active_features
 
         # Auto-take a compact snapshot so the model can act immediately
-        # without a separate browser_snapshot call.
+        # without a separate snapshot_browser call.
         try:
             snap_result = _run_browser_command(nav_session_key, "snapshot", ["-c"])
             if snap_result.get("success"):
@@ -3028,7 +3028,7 @@ def browser_navigate(url: str, task_id: Optional[str] = None) -> str:
         }, ensure_ascii=False)
 
 
-def browser_snapshot(
+def snapshot_browser(
     full: bool = False,
     task_id: Optional[str] = None,
     user_task: Optional[str] = None
@@ -3091,7 +3091,7 @@ def browser_snapshot(
                             ),
                         }, ensure_ascii=False)
             except Exception as _url_exc:
-                logger.debug("browser_snapshot: URL safety check failed (%s)", _url_exc)
+                logger.debug("snapshot_browser: URL safety check failed (%s)", _url_exc)
 
         # Check if snapshot needs summarization
         if len(snapshot_text) > SNAPSHOT_SUMMARIZE_THRESHOLD and user_task:
@@ -3128,7 +3128,7 @@ def browser_snapshot(
         return json.dumps(_copy_fallback_warning(response, result), ensure_ascii=False)
 
 
-def browser_click(ref: str, task_id: Optional[str] = None) -> str:
+def click_browser(ref: str, task_id: Optional[str] = None) -> str:
     """
     Click on an element.
 
@@ -3168,7 +3168,7 @@ def browser_click(ref: str, task_id: Optional[str] = None) -> str:
         return json.dumps(_copy_fallback_warning(response, result), ensure_ascii=False)
 
 
-def browser_type(ref: str, text: str, task_id: Optional[str] = None) -> str:
+def type_browser(ref: str, text: str, task_id: Optional[str] = None) -> str:
     """
     Type text into an input field.
 
@@ -3201,7 +3201,7 @@ def browser_type(ref: str, text: str, task_id: Optional[str] = None) -> str:
         redact_tool_args_for_display,
     )
 
-    display_text = (redact_tool_args_for_display("browser_type", {"text": text}) or {})["text"]
+    display_text = (redact_tool_args_for_display("type_browser", {"text": text}) or {})["text"]
 
     if result.get("success"):
         response = {
@@ -3226,7 +3226,7 @@ def browser_type(ref: str, text: str, task_id: Optional[str] = None) -> str:
         return json.dumps(response, ensure_ascii=False)
 
 
-def browser_scroll(direction: str, task_id: Optional[str] = None) -> str:
+def scroll_browser(direction: str, task_id: Optional[str] = None) -> str:
     """
     Scroll the page.
 
@@ -3275,7 +3275,7 @@ def browser_scroll(direction: str, task_id: Optional[str] = None) -> str:
     return json.dumps(_copy_fallback_warning(response, result), ensure_ascii=False)
 
 
-def browser_back(task_id: Optional[str] = None) -> str:
+def back_browser(task_id: Optional[str] = None) -> str:
     """
     Navigate back in browser history.
 
@@ -3294,11 +3294,11 @@ def browser_back(task_id: Optional[str] = None) -> str:
 
     if result.get("success"):
         # Browser history can land on a private/internal/cloud-metadata
-        # address that the browser_navigate preflight never saw (e.g. a
+        # address that the navigate_browser preflight never saw (e.g. a
         # redirect chain from an earlier legitimate navigation touched an
         # internal host, or client-side history was otherwise manipulated).
         # Re-check post-navigation, matching every other content-returning
-        # entry point (browser_snapshot/vision/console/eval, and click/type/
+        # entry point (snapshot_browser/vision/console/eval, and click/type/
         # press via _blocked_private_page_action) — the floor must fire for
         # every backend, not just the initial navigate.
         if _eval_ssrf_guard_active(effective_task_id):
@@ -3326,7 +3326,7 @@ def browser_back(task_id: Optional[str] = None) -> str:
         return json.dumps(_copy_fallback_warning(response, result), ensure_ascii=False)
 
 
-def browser_press(key: str, task_id: Optional[str] = None) -> str:
+def press_browser(key: str, task_id: Optional[str] = None) -> str:
     """
     Press a keyboard key.
 
@@ -3458,7 +3458,7 @@ def browser_console(clear: bool = False, expression: Optional[str] = None, task_
 def _eval_ssrf_guard_active(effective_task_id: str) -> bool:
     """Return True when eval-driven private-network access must be guarded.
 
-    Matches the gating used by ``browser_navigate`` / ``browser_snapshot`` /
+    Matches the gating used by ``navigate_browser`` / ``snapshot_browser`` /
     ``browser_vision``: the SSRF guard is only meaningful for non-local
     backends (cloud browser, or a containerized terminal whose browser-on-host
     can reach internal networks the terminal can't), and is skipped for local
@@ -3669,7 +3669,7 @@ def _enforce_browser_eval_policy(expression: str) -> Optional[str]:
     return (
         "Blocked: browser_console(expression=...) tried to use sensitive browser "
         f"JavaScript primitive ({reason}) while browser.restrict_evaluate is "
-        "enabled. Use browser_snapshot/browser_get_images/browser_console "
+        "enabled. Use snapshot_browser/get_browser_images/browser_console "
         "without expression for normal inspection, or set "
         "browser.restrict_evaluate: false in config.yaml to allow "
         "programmatic evaluation."
@@ -3899,7 +3899,7 @@ def _camofox_eval(expression: str, task_id: Optional[str] = None) -> str:
             return json.dumps({
                 "success": False,
                 "error": "JavaScript evaluation is not supported by this Camofox server. "
-                         "Use browser_snapshot or browser_vision to inspect page state.",
+                         "Use snapshot_browser or browser_vision to inspect page state.",
             })
         return tool_error(error_msg, success=False)
 
@@ -3953,7 +3953,7 @@ def _maybe_stop_recording(task_id: str):
             _recording_sessions.discard(task_id)
 
 
-def browser_get_images(task_id: Optional[str] = None) -> str:
+def get_browser_images(task_id: Optional[str] = None) -> str:
     """
     Get all images on the current page.
 
@@ -4207,7 +4207,7 @@ def browser_vision(question: str, annotate: bool = False, task_id: Optional[str]
         # Fast path: when native image routing is in effect for the active main
         # model, attach the screenshot directly instead of describing it through
         # an auxiliary vision LLM. The model inspects the pixels on its next
-        # turn — no aux call, no information loss. Consistent with vision_analyze.
+        # turn — no aux call, no information loss. Consistent with analyze_vision.
         from tools.vision_tools import (
             _build_native_vision_tool_result,
             _should_use_native_vision_fast_path,
@@ -4849,9 +4849,9 @@ if __name__ == "__main__":
         print(f"  🔹 {schema['name']}: {schema['description'][:60]}...")
 
     print("\n💡 Usage:")
-    print("  from tools.browser_tool import browser_navigate, browser_snapshot")
-    print("  result = browser_navigate('https://example.com', task_id='my_task')")
-    print("  snapshot = browser_snapshot(task_id='my_task')")
+    print("  from tools.browser_tool import navigate_browser, snapshot_browser")
+    print("  result = navigate_browser('https://example.com', task_id='my_task')")
+    print("  snapshot = snapshot_browser(task_id='my_task')")
 
 
 # ---------------------------------------------------------------------------
@@ -4862,68 +4862,68 @@ from tools.registry import registry, tool_error
 _BROWSER_SCHEMA_MAP = {s["name"]: s for s in BROWSER_TOOL_SCHEMAS}
 
 registry.register(
-    name="browser_navigate",
+    name="navigate_browser",
     toolset="browser",
-    schema=_BROWSER_SCHEMA_MAP["browser_navigate"],
-    handler=lambda args, **kw: browser_navigate(url=args.get("url", ""), task_id=kw.get("task_id")),
+    schema=_BROWSER_SCHEMA_MAP["navigate_browser"],
+    handler=lambda args, **kw: navigate_browser(url=args.get("url", ""), task_id=kw.get("task_id")),
     check_fn=check_browser_requirements,
     emoji="🌐",
 )
 registry.register(
-    name="browser_snapshot",
+    name="snapshot_browser",
     toolset="browser",
-    schema=_BROWSER_SCHEMA_MAP["browser_snapshot"],
-    handler=lambda args, **kw: browser_snapshot(
+    schema=_BROWSER_SCHEMA_MAP["snapshot_browser"],
+    handler=lambda args, **kw: snapshot_browser(
         full=args.get("full", False), task_id=kw.get("task_id"), user_task=kw.get("user_task")),
     check_fn=check_browser_requirements,
     emoji="📸",
 )
 registry.register(
-    name="browser_click",
+    name="click_browser",
     toolset="browser",
-    schema=_BROWSER_SCHEMA_MAP["browser_click"],
-    handler=lambda args, **kw: browser_click(ref=args.get("ref", ""), task_id=kw.get("task_id")),
+    schema=_BROWSER_SCHEMA_MAP["click_browser"],
+    handler=lambda args, **kw: click_browser(ref=args.get("ref", ""), task_id=kw.get("task_id")),
     check_fn=check_browser_requirements,
     emoji="👆",
 )
 registry.register(
-    name="browser_type",
+    name="type_browser",
     toolset="browser",
-    schema=_BROWSER_SCHEMA_MAP["browser_type"],
-    handler=lambda args, **kw: browser_type(ref=args.get("ref", ""), text=args.get("text", ""), task_id=kw.get("task_id")),
+    schema=_BROWSER_SCHEMA_MAP["type_browser"],
+    handler=lambda args, **kw: type_browser(ref=args.get("ref", ""), text=args.get("text", ""), task_id=kw.get("task_id")),
     check_fn=check_browser_requirements,
     emoji="⌨️",
 )
 registry.register(
-    name="browser_scroll",
+    name="scroll_browser",
     toolset="browser",
-    schema=_BROWSER_SCHEMA_MAP["browser_scroll"],
-    handler=lambda args, **kw: browser_scroll(direction=args.get("direction", "down"), task_id=kw.get("task_id")),
+    schema=_BROWSER_SCHEMA_MAP["scroll_browser"],
+    handler=lambda args, **kw: scroll_browser(direction=args.get("direction", "down"), task_id=kw.get("task_id")),
     check_fn=check_browser_requirements,
     emoji="📜",
 )
 registry.register(
-    name="browser_back",
+    name="back_browser",
     toolset="browser",
-    schema=_BROWSER_SCHEMA_MAP["browser_back"],
-    handler=lambda args, **kw: browser_back(task_id=kw.get("task_id")),
+    schema=_BROWSER_SCHEMA_MAP["back_browser"],
+    handler=lambda args, **kw: back_browser(task_id=kw.get("task_id")),
     check_fn=check_browser_requirements,
     emoji="◀️",
 )
 registry.register(
-    name="browser_press",
+    name="press_browser",
     toolset="browser",
-    schema=_BROWSER_SCHEMA_MAP["browser_press"],
-    handler=lambda args, **kw: browser_press(key=args.get("key", ""), task_id=kw.get("task_id")),
+    schema=_BROWSER_SCHEMA_MAP["press_browser"],
+    handler=lambda args, **kw: press_browser(key=args.get("key", ""), task_id=kw.get("task_id")),
     check_fn=check_browser_requirements,
     emoji="⌨️",
 )
 
 registry.register(
-    name="browser_get_images",
+    name="get_browser_images",
     toolset="browser",
-    schema=_BROWSER_SCHEMA_MAP["browser_get_images"],
-    handler=lambda args, **kw: browser_get_images(task_id=kw.get("task_id")),
+    schema=_BROWSER_SCHEMA_MAP["get_browser_images"],
+    handler=lambda args, **kw: get_browser_images(task_id=kw.get("task_id")),
     check_fn=check_browser_requirements,
     emoji="🖼️",
 )

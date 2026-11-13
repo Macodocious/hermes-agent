@@ -262,17 +262,17 @@ find . -name "*.bib"
 
 ### 步骤 1.2：搜索相关工作
 
-**加载 `arxiv` skill** 进行结构化论文发现：`skill_view("arxiv")`。它提供 arXiv REST API 搜索、Semantic Scholar 引用图谱、作者档案和 BibTeX 生成。
+**加载 `arxiv` skill** 进行结构化论文发现：`view_skill("arxiv")`。它提供 arXiv REST API 搜索、Semantic Scholar 引用图谱、作者档案和 BibTeX 生成。
 
-使用 `web_search` 进行广泛发现，使用 `web_extract` 获取特定论文：
+使用 `search_web` 进行广泛发现，使用 `extract_web` 获取特定论文：
 
 ```
-# 通过 web_search：
-web_search("[main technique] + [application domain] site:arxiv.org")
-web_search("[baseline method] comparison ICML NeurIPS 2024")
+# 通过 search_web：
+search_web("[main technique] + [application domain] site:arxiv.org")
+search_web("[baseline method] comparison ICML NeurIPS 2024")
 
-# 通过 web_extract（针对特定论文）：
-web_extract("https://arxiv.org/abs/2303.17651")
+# 通过 extract_web（针对特定论文）：
+extract_web("https://arxiv.org/abs/2303.17651")
 ```
 
 其他可尝试的搜索查询：
@@ -2142,12 +2142,12 @@ ACL 系列会议有不同的投稿类型：
 
 | Skill | 使用时机 | 加载方式 |
 |-------|----------|----------|
-| **arxiv** | 阶段 1（文献综述）：搜索 arXiv、生成 BibTeX、通过 Semantic Scholar 查找相关论文 | `skill_view("arxiv")` |
-| **subagent-driven-development** | 阶段 5（起草）：并行章节写作，含两阶段审阅（规范合规性，然后质量） | `skill_view("subagent-driven-development")` |
-| **plan** | 阶段 0（设置）：执行前创建结构化计划。写入 `.hermes/plans/` | `skill_view("plan")` |
-| **qmd** | 阶段 1（文献）：通过混合 BM25+向量搜索查询本地知识库（笔记、转录、文档） | 安装：`skill_manage("install", "qmd")` |
-| **diagramming** | 阶段 4-5：创建基于 Excalidraw 的图形和架构示意图 | `skill_view("diagramming")` |
-| **data-science** | 阶段 4（分析）：用于交互式分析和可视化的 Jupyter 实时内核 | `skill_view("data-science")` |
+| **arxiv** | 阶段 1（文献综述）：搜索 arXiv、生成 BibTeX、通过 Semantic Scholar 查找相关论文 | `view_skill("arxiv")` |
+| **subagent-driven-development** | 阶段 5（起草）：并行章节写作，含两阶段审阅（规范合规性，然后质量） | `view_skill("subagent-driven-development")` |
+| **plan** | 阶段 0（设置）：执行前创建结构化计划。写入 `.hermes/plans/` | `view_skill("plan")` |
+| **qmd** | 阶段 1（文献）：通过混合 BM25+向量搜索查询本地知识库（笔记、转录、文档） | 安装：`manage_skill("install", "qmd")` |
+| **diagramming** | 阶段 4-5：创建基于 Excalidraw 的图形和架构示意图 | `view_skill("diagramming")` |
+| **data-science** | 阶段 4（分析）：用于交互式分析和可视化的 Jupyter 实时内核 | `view_skill("data-science")` |
 
 **本 skill 取代 `ml-paper-writing`**——它包含 ml-paper-writing 的所有内容，加上完整的实验/分析流水线和 autoreason 方法论。
 
@@ -2159,8 +2159,8 @@ ACL 系列会议有不同的投稿类型：
 | **`process`** | 后台实验管理：`process("start", ...)`、`process("poll", pid)`、`process("log", pid)`、`process("kill", pid)` |
 | **`execute_code`** | 运行 Python 进行引用核实、统计分析、数据聚合。通过 RPC 访问工具。 |
 | **`read_file`** / **`write_file`** / **`patch`** | 论文编辑、实验脚本、结果文件。对大型 .tex 文件使用 `patch` 进行针对性编辑。 |
-| **`web_search`** | 文献发现：`web_search("transformer attention mechanism 2024")` |
-| **`web_extract`** | 获取论文内容，核实引用：`web_extract("https://arxiv.org/abs/2303.17651")` |
+| **`search_web`** | 文献发现：`search_web("transformer attention mechanism 2024")` |
+| **`extract_web`** | 获取论文内容，核实引用：`extract_web("https://arxiv.org/abs/2303.17651")` |
 | **`delegate_task`** | **并行章节起草**——为每个章节生成隔离的子 agent。也用于并发引用核实。 |
 | **`todo`** | 跨会话的主要状态追踪器。每次阶段转换后更新。 |
 | **`memory`** | 跨会话持久化关键决策：贡献框架、会议选择、审稿反馈。 |
@@ -2186,7 +2186,7 @@ delegate_task("Draft the Methods section based on these experiment scripts and c
   Include: pseudocode, all hyperparameters, architectural details sufficient for 
   reproduction. Write in LaTeX using the neurips2025 template conventions.")
 
-delegate_task("Draft the Related Work section. Use web_search and web_extract to 
+delegate_task("Draft the Related Work section. Use search_web and extract_web to 
   find papers. Verify every citation via Semantic Scholar. Group by methodology.")
 
 delegate_task("Draft the Experiments section. Read all result files in results/. 

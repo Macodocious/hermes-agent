@@ -1,6 +1,6 @@
 """Tests for SessionDB.get_anchored_view — anchored window + session bookends.
 
-Used by the discovery shape of session_search: an FTS5 match becomes the
+Used by the discovery shape of search_session: an FTS5 match becomes the
 anchor, the call returns goal (bookend_start) + match (window) + resolution
 (bookend_end) in a single round trip, no LLM.
 """

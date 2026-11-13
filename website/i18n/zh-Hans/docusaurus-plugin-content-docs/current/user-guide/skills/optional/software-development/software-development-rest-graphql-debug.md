@@ -30,7 +30,7 @@ description: "调试 REST/GraphQL API：状态码、认证、Schema、复现"
 
 # API 测试与调试
 
-通过 Hermes 工具驱动 REST 和 GraphQL 诊断 —— `terminal` 用于 `curl`，`execute_code` 用于 Python `requests`，`web_extract` 用于查阅厂商文档。在猜测修复方案之前，先隔离出故障层。
+通过 Hermes 工具驱动 REST 和 GraphQL 诊断 —— `terminal` 用于 `curl`，`execute_code` 用于 Python `requests`，`extract_web` 用于查阅厂商文档。在猜测修复方案之前，先隔离出故障层。
 
 ## 适用场景
 
@@ -473,12 +473,12 @@ print(f"users={len(all_users)}")
 ''')
 ```
 
-### web_extract — 用于查阅厂商 API 文档
+### extract_web — 用于查阅厂商 API 文档
 
 直接拉取你正在调试的端点的规范，而不是靠猜测：
 
 ```python
-web_extract(urls=["https://docs.example.com/api/v1/users"])
+extract_web(urls=["https://docs.example.com/api/v1/users"])
 ```
 
 ### delegate_task — 用于完整的 CRUD 测试扫描

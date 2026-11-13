@@ -5,7 +5,7 @@ Image Generation Provider ABC
 Defines the pluggable-backend interface for image generation. Providers register
 instances via ``PluginContext.register_image_gen_provider()``; the active one
 (selected via ``image_gen.provider`` in ``config.yaml``) services every
-``image_generate`` tool call.
+``generate_image`` tool call.
 
 Providers live in ``<repo>/plugins/image_gen/<name>/`` (built-in, auto-loaded
 as ``kind: backend``) or ``~/.hermes/plugins/image_gen/<name>/`` (user, opt-in
@@ -13,7 +13,7 @@ via ``plugins.enabled``).
 
 Unified surface
 ---------------
-One tool — ``image_generate`` — covers **text-to-image** and
+One tool — ``generate_image`` — covers **text-to-image** and
 **image-to-image / image editing**. The router is the presence of
 ``image_url`` (and/or ``reference_image_urls``): if any source image is
 provided, the provider routes to its image-to-image / edit endpoint; if

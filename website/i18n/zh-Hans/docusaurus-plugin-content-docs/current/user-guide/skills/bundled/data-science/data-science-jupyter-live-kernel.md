@@ -37,7 +37,7 @@ description: "通过实时 Jupyter 内核进行迭代式 Python 开发（hamelnb
 | 工具 | 使用场景 |
 |------|----------|
 | **本 skill** | 迭代式探索、跨步骤保持状态、数据科学、机器学习、"试试看再检查" |
-| `execute_code` | 需要访问 Hermes 工具（web_search、文件操作）的一次性脚本。无状态。 |
+| `execute_code` | 需要访问 Hermes 工具（search_web、文件操作）的一次性脚本。无状态。 |
 | `terminal` | Shell 命令、构建、安装、git、进程管理 |
 
 **经验法则：** 如果你会为某个任务打开 Jupyter notebook，就使用本 skill。

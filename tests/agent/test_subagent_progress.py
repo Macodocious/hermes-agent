@@ -94,9 +94,9 @@ class TestBuildChildProgressCallback:
         cb = _build_child_progress_callback(0, "test goal", parent)
         assert cb is not None
         
-        cb("tool.started", "web_search", "quantum computing", {})
+        cb("tool.started", "search_web", "quantum computing", {})
         output = buf.getvalue()
-        assert "web_search" in output
+        assert "search_web" in output
         assert "quantum computing" in output
         assert "├─" in output
 
@@ -191,7 +191,7 @@ class TestBuildChildProgressCallback:
         
         # task_index=0 in a batch of 3 → prefix "[1]"
         cb0 = _build_child_progress_callback(0, "test goal", parent, task_count=3)
-        cb0("tool.started", "web_search", "test", {})
+        cb0("tool.started", "search_web", "test", {})
         output = buf.getvalue()
         assert "[1]" in output
 
@@ -199,7 +199,7 @@ class TestBuildChildProgressCallback:
         buf.truncate(0)
         buf.seek(0)
         cb2 = _build_child_progress_callback(2, "test goal", parent, task_count=3)
-        cb2("tool.started", "web_search", "test", {})
+        cb2("tool.started", "search_web", "test", {})
         output = buf.getvalue()
         assert "[3]" in output
 
@@ -215,7 +215,7 @@ class TestBuildChildProgressCallback:
         parent.tool_progress_callback = None
         
         cb = _build_child_progress_callback(0, "test goal", parent, task_count=1)
-        cb("tool.started", "web_search", "test", {})
+        cb("tool.started", "search_web", "test", {})
         
         output = buf.getvalue()
         assert "[" not in output
@@ -339,7 +339,7 @@ class TestBatchFlush:
         cb = _build_child_progress_callback(0, "test goal", parent)
 
         # Send 3 tools (below batch size of 5) — each relays subagent.tool
-        cb("tool.started", "web_search", "query1", {})
+        cb("tool.started", "search_web", "query1", {})
         cb("tool.started", "read_file", "file.txt", {})
         cb("tool.started", "write_file", "out.txt", {})
         events = [c.args[0] for c in parent_cb.call_args_list]
@@ -352,7 +352,7 @@ class TestBatchFlush:
         assert events[-1] == "subagent.progress"
         summary_call = parent_cb.call_args_list[-1]
         summary_text = summary_call.kwargs.get("preview") or summary_call.args[2]
-        assert "web_search" in summary_text
+        assert "search_web" in summary_text
         assert "write_file" in summary_text
 
     def test_flush_noop_when_batch_empty(self):
@@ -378,7 +378,7 @@ class TestBatchFlush:
         parent.tool_progress_callback = None
 
         cb = _build_child_progress_callback(0, "test goal", parent)
-        cb("tool.started", "web_search", "test", {})
+        cb("tool.started", "search_web", "test", {})
         cb._flush()  # Should not crash
 
 

@@ -2,7 +2,7 @@
 
 cua-driver ships anonymous PostHog telemetry ENABLED by default upstream.
 Hermes disables it unless the user opts in via
-``computer_use.cua_telemetry: true``. The policy is applied by injecting
+``use_computer.cua_telemetry: true``. The policy is applied by injecting
 ``CUA_DRIVER_RS_TELEMETRY_ENABLED=0`` into every cua-driver child env.
 
 These assert the behavior contract (default disables, opt-in leaves the var
@@ -12,7 +12,7 @@ snapshots.
 
 from unittest.mock import patch
 
-from tools.computer_use import cua_backend
+from tools.use_computer import cua_backend
 
 
 _VAR = "CUA_DRIVER_RS_TELEMETRY_ENABLED"
@@ -26,12 +26,12 @@ class TestTelemetryDisabledFlag:
 
     def test_explicit_false_disables(self):
         with patch("hermes_cli.config.load_config",
-                   return_value={"computer_use": {"cua_telemetry": False}}):
+                   return_value={"use_computer": {"cua_telemetry": False}}):
             assert cua_backend._cua_telemetry_disabled() is True
 
     def test_opt_in_true_does_not_disable(self):
         with patch("hermes_cli.config.load_config",
-                   return_value={"computer_use": {"cua_telemetry": True}}):
+                   return_value={"use_computer": {"cua_telemetry": True}}):
             assert cua_backend._cua_telemetry_disabled() is False
 
     def test_config_load_failure_fails_safe(self):

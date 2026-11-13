@@ -220,7 +220,7 @@ HERMES_AGENT_HELP_GUIDANCE = (
     "it — or when you need to understand your own features, tools, or capabilities, "
     "the documentation at https://hermes-agent.nousresearch.com/docs is your "
     "authoritative reference and always holds the latest, most up-to-date "
-    "information. Load the `hermes-agent` skill with skill_view(name='hermes-agent') "
+    "information. Load the `hermes-agent` skill with view_skill(name='hermes-agent') "
     "for additional guidance and proven workflows, but treat the docs as the source "
     "of truth when the two differ."
 )
@@ -234,7 +234,7 @@ MEMORY_GUIDANCE = (
     "that prevents the user from having to correct or remind you again. "
     "User preferences and recurring corrections matter more than procedural task details.\n"
     "Do NOT save task progress, session outcomes, completed-work logs, or temporary TODO "
-    "state to memory; use session_search to recall those from past transcripts. "
+    "state to memory; use search_session to recall those from past transcripts. "
     "Specifically: do not record PR numbers, issue numbers, commit SHAs, 'fixed bug X', "
     "'submitted PR Y', 'Phase N done', file counts, or any artifact that will be stale "
     "in 7 days. If a fact will be stale in a week, it does not belong in memory. "
@@ -250,16 +250,16 @@ MEMORY_GUIDANCE = (
 
 SESSION_SEARCH_GUIDANCE = (
     "When the user references something from a past conversation or you suspect "
-    "relevant cross-session context exists, use session_search to recall it before "
+    "relevant cross-session context exists, use search_session to recall it before "
     "asking them to repeat themselves."
 )
 
 SKILLS_GUIDANCE = (
     "After completing a complex task (5+ tool calls), fixing a tricky error, "
     "or discovering a non-trivial workflow, save the approach as a "
-    "skill with skill_manage so you can reuse it next time.\n"
+    "skill with manage_skill so you can reuse it next time.\n"
     "When using a skill and finding it outdated, incomplete, or wrong, "
-    "patch it immediately with skill_manage(action='patch') — don't wait to be asked. "
+    "patch it immediately with manage_skill(action='patch') — don't wait to be asked. "
     "Skills that aren't maintained become liabilities."
 )
 
@@ -274,7 +274,7 @@ KANBAN_GUIDANCE = (
     "\n"
     "## Lifecycle\n"
     "\n"
-    "1. **Orient.** Call `kanban_show()` first (no args — it defaults to your "
+    "1. **Orient.** Call `show_kanban()` first (no args — it defaults to your "
     "task). The response includes title, body, parent-task handoffs (summary + "
     "metadata), any prior attempts on this task if you're a retry, the full "
     "comment thread, and a pre-formatted `worker_context` you can treat as "
@@ -282,43 +282,43 @@ KANBAN_GUIDANCE = (
     "2. **Work inside the workspace.** `cd $HERMES_KANBAN_WORKSPACE` before "
     "any file operations. The workspace is yours for this run. Don't modify "
     "files outside it unless the task explicitly asks.\n"
-    "3. **Heartbeat on long operations.** Call `kanban_heartbeat(note=...)` "
+    "3. **Heartbeat on long operations.** Call `heartbeat_kanban(note=...)` "
     "every few minutes during long subprocesses (training, encoding, crawling). "
     "Skip heartbeats for short tasks. **If your task may run longer than 1 hour, "
-    "you MUST call `kanban_heartbeat` at least once an hour** — the dispatcher "
+    "you MUST call `heartbeat_kanban` at least once an hour** — the dispatcher "
     "reclaims tasks running past `kanban.dispatch_stale_timeout_seconds` "
     "(default 4 hours) when no heartbeat has arrived in the last hour. A "
     "reclaim re-queues the task as `ready` without penalty (no failure counter "
     "tick), but you lose your current run's progress.\n"
     "4. **Block on genuine ambiguity.** If you need a human decision you cannot "
     "infer (missing credentials, UX choice, paywalled source, peer output you "
-    "need first), call `kanban_block(reason=\"...\")` and stop. Don't guess. "
+    "need first), call `block_kanban(reason=\"...\")` and stop. Don't guess. "
     "The user will unblock with context and the dispatcher will respawn you.\n"
-    "5. **Complete with structured handoff.** Call `kanban_complete(summary=..., "
+    "5. **Complete with structured handoff.** Call `complete_kanban(summary=..., "
     "metadata=...)`. `summary` is 1–3 human-readable sentences naming concrete "
     "artifacts. `metadata` is machine-readable facts "
     "(`{changed_files: [...], tests_run: N, decisions: [...]}`). Downstream "
-    "workers read both via their own `kanban_show`. Never put secrets / "
+    "workers read both via their own `show_kanban`. Never put secrets / "
     "tokens / raw PII in either field — run rows are durable forever. "
     "Exception: if your output is a code change that needs human review "
     "before counting as merged/done (most coding tasks), drop the "
     "structured metadata (changed_files / tests_run / diff_path) into a "
-    "`kanban_comment` first, then end with "
-    "`kanban_block(reason=\"review-required: <one-line summary>\")` so a "
+    "`comment_kanban` first, then end with "
+    "`block_kanban(reason=\"review-required: <one-line summary>\")` so a "
     "reviewer can approve+unblock or request changes. Reviewing-then-"
     "completing is more honest than auto-completing work that still needs "
     "eyes on it.\n"
     "6. **If follow-up work appears, create it; don't do it.** Use "
-    "`kanban_create(title=..., assignee=<right-profile>, parents=[your-task-id])` "
+    "`create_kanban(title=..., assignee=<right-profile>, parents=[your-task-id])` "
     "to spawn a child task for the appropriate specialist profile instead of "
     "scope-creeping into the next thing.\n"
     "\n"
     "## Orchestrator mode\n"
     "\n"
     "If your task is itself a decomposition task (e.g. a planner profile given "
-    "a high-level goal), use `kanban_create` to fan out into child tasks — one "
+    "a high-level goal), use `create_kanban` to fan out into child tasks — one "
     "per specialist, each with an explicit `assignee` and `parents=[...]` to "
-    "express dependencies. Then `kanban_complete` your own task with a summary "
+    "express dependencies. Then `complete_kanban` your own task with a summary "
     "of the decomposition. Do NOT execute the work yourself; your job is "
     "routing, not implementation.\n"
     "\n"
@@ -332,19 +332,19 @@ KANBAN_GUIDANCE = (
     "`<project-slug>/<task-id>` — the main repo is two levels up, so run "
     "`git worktree add` from there.\n"
     "- **Deliverables.** Files a human wants go in "
-    "`kanban_complete(artifacts=[<absolute paths>])` (top-level param; paths in "
+    "`complete_kanban(artifacts=[<absolute paths>])` (top-level param; paths in "
     "`metadata` are NOT uploaded). Files must exist at completion.\n"
     "- **Attachments.** Attach real downloadable artifacts instead of pasting "
-    "links in comments: `kanban_attach` (base64) or `kanban_attach_url` "
+    "links in comments: `attach_kanban` (base64) or `attach_kanban_url` "
     "(server-side public http(s) fetch); 25 MB cap, `kanban_attachments` "
     "lists them. Workers may only attach to their own task.\n"
-    "- **Created cards.** List ids in `kanban_complete(created_cards=[...])` "
-    "ONLY when captured from a successful `kanban_create` return — never invent "
+    "- **Created cards.** List ids in `complete_kanban(created_cards=[...])` "
+    "ONLY when captured from a successful `create_kanban` return — never invent "
     "or paste ids; the kernel rejects the completion on any phantom id.\n"
     "- **Orchestrating: discover profiles first.** The dispatcher SILENTLY "
     "drops a card with an unknown assignee (it sits in `ready` forever). Ground "
     "every assignee in a real profile (`hermes profile list`, or ask the user), "
-    "and express dependencies via `parents=[...]` on `kanban_create`, not prose.\n"
+    "and express dependencies via `parents=[...]` on `create_kanban`, not prose.\n"
     "\n"
     "## Do NOT\n"
     "\n"
@@ -354,7 +354,7 @@ KANBAN_GUIDANCE = (
     "- Do not call `clarify` to ask questions. You are running headless — "
     "there is no live user to answer. The call will time out and the task "
     "will sit silently in `running` with no signal to the operator. Instead: "
-    "`kanban_comment` the context, then `kanban_block(reason=...)` so the "
+    "`comment_kanban` the context, then `block_kanban(reason=...)` so the "
     "task surfaces on the board as needing input.\n"
     "- Do not assign follow-up work to yourself. Assign it to the right "
     "specialist profile.\n"
@@ -494,7 +494,7 @@ OPENAI_MODEL_EXECUTION_GUIDANCE = (
     "- System state: OS, CPU, memory, disk, ports, processes → use terminal\n"
     "- File contents, sizes, line counts → use read_file, search_files, or terminal\n"
     "- Git history, branches, diffs → use terminal\n"
-    "- Current facts (weather, news, versions) → use web_search\n"
+    "- Current facts (weather, news, versions) → use search_web\n"
     "Your memory and user profile describe the USER, not the system you are "
     "running on. The execution environment may differ from what the user profile "
     "says about their personal setup.\n"
@@ -529,7 +529,7 @@ OPENAI_MODEL_EXECUTION_GUIDANCE = (
     "<missing_context>\n"
     "- If required context is missing, do NOT guess or hallucinate an answer.\n"
     "- Use the appropriate lookup tool when missing information is retrievable "
-    "(search_files, web_search, read_file, etc.).\n"
+    "(search_files, search_web, read_file, etc.).\n"
     "- Ask a clarifying question only when the information cannot be retrieved by tools.\n"
     "- If you must proceed with incomplete information, label assumptions explicitly.\n"
     "</missing_context>"
@@ -559,7 +559,7 @@ GOOGLE_MODEL_OPERATIONAL_GUIDANCE = (
 )
 
 
-# Guidance injected into the system prompt when the computer_use toolset
+# Guidance injected into the system prompt when the use_computer toolset
 # is active. Universal — works for any model (Claude, GPT, open models).
 # Built per-platform via computer_use_guidance() so Windows/Linux hosts
 # don't get macOS-only wording ("Mac", "Space", cmd+s). The module-level
@@ -620,12 +620,12 @@ def computer_use_guidance(platform_name: Optional[str] = None) -> str:
 
     return (
         f"# Computer Use ({os_name} background control)\n"
-        f"You have a `computer_use` tool that drives the {os_name} desktop in "
+        f"You have a `use_computer` tool that drives the {os_name} desktop in "
         "the BACKGROUND — your actions do not steal the user's cursor, "
         "keyboard "
         + share_line +
         "## Preferred workflow\n"
-        "1. Call `computer_use` with `action='capture'` and `mode='som'` "
+        "1. Call `use_computer` with `action='capture'` and `mode='som'` "
         "(default). You get a screenshot with numbered overlays on every "
         "interactable element plus an AX-tree index listing role, label, and "
         "bounds for each numbered element.\n"
@@ -687,7 +687,7 @@ def computer_use_guidance(platform_name: Optional[str] = None) -> str:
         "- Some system shortcuts are hard-blocked (log out, lock screen, "
         "force empty trash). You'll see an error if you try.\n\n"
         "## When something is broken\n"
-        "If `computer_use` consistently fails (empty captures, missing "
+        "If `use_computer` consistently fails (empty captures, missing "
         "elements, clicks not landing, type going nowhere), ask the user to "
         "run `hermes computer-use doctor` and share the output. That command "
         "runs cua-driver's structured health-report — per-platform checks "
@@ -952,14 +952,14 @@ PLATFORM_HINTS = {
         "Stickers (贴纸 / 表情包 / TIM face): Yuanbao has a built-in sticker catalogue. "
         "When the user sends a sticker (you see '[emoji: 名称]' in their message) or asks "
         "you to send/reply-with a 贴纸/表情/表情包, you MUST use the sticker tools:\n"
-        "  1. Call yb_search_sticker with a Chinese keyword (e.g. '666', '比心', '吃瓜', "
+        "  1. Call search_yb_sticker with a Chinese keyword (e.g. '666', '比心', '吃瓜', "
         "     '捂脸', '合十') to discover matching sticker_ids.\n"
-        "  2. Call yb_send_sticker with the chosen sticker_id or name — this sends a real "
+        "  2. Call send_yb_sticker with the chosen sticker_id or name — this sends a real "
         "     TIMFaceElem that renders as a native sticker in the chat.\n"
         "DO NOT draw sticker-like PNGs with execute_code/Pillow/matplotlib and then send "
         "them via MEDIA: or send_image_file. That produces a fake low-quality 'sticker' "
         "image and is the WRONG path. Bare Unicode emoji in text is also not a substitute "
-        "— when a sticker is the right response, use yb_send_sticker."
+        "— when a sticker is the right response, use send_yb_sticker."
     ),
     "api_server": (
         "You're responding through an API server. The rendering layer is unknown — "
@@ -1522,7 +1522,7 @@ def _parse_skill_file(skill_file: Path) -> tuple[bool, dict, str]:
         # Environment relevance gate (offer-time only): hide skills tagged for
         # a runtime environment that isn't active (e.g. kanban-only skills for
         # non-kanban users, s6-only skills outside the container). Explicit
-        # loads (skill_view / --skills) bypass this — see skill_matches_environment.
+        # loads (view_skill / --skills) bypass this — see skill_matches_environment.
         if not skill_matches_environment(frontmatter):
             return False, frontmatter, ""
 
@@ -1601,7 +1601,7 @@ def build_skills_system_prompt(
     ``compact_categories`` (e.g. from the coding posture — see
     agent/coding_context.py) demotes whole categories to a names-only line in
     the rendered index. Nothing is ever hidden: every skill name stays
-    visible and loadable via ``skill_view`` / ``skills_list``; only the
+    visible and loadable via ``view_skill`` / ``list_skills``; only the
     descriptions are dropped, and a footer note explains the demotion.
     """
     skills_dir = get_skills_dir()
@@ -1761,7 +1761,7 @@ def build_skills_system_prompt(
     # line — descriptions are dropped to cut noise, but every skill name
     # remains visible so memory-anchored recall ("load <name>") keeps working.
     # NEVER remove entries entirely: agent-created skills are the model's
-    # project memory, and models don't reach for skills_list to rediscover
+    # project memory, and models don't reach for list_skills to rediscover
     # what the index stops showing them. Match on the top-level category
     # segment so nested categories ("social-media/twitter") are demoted with
     # their parent.
@@ -1775,7 +1775,7 @@ def build_skills_system_prompt(
         hidden_note = (
             "\n(Categories marked [names only] are outside the current coding "
             "context, so their descriptions are omitted — the skills work "
-            "normally and load with skill_view(name) as usual.)"
+            "normally and load with view_skill(name) as usual.)"
         )
 
     if not skills_by_category:
@@ -1806,12 +1806,12 @@ def build_skills_system_prompt(
         result = (
             "## Skills (mandatory)\n"
             "Before replying, scan the skills below. If a skill matches or is even partially relevant "
-            "to your task, you MUST load it with skill_view(name) and follow its instructions. "
+            "to your task, you MUST load it with view_skill(name) and follow its instructions. "
             "Err on the side of loading — it is always better to have context you don't need "
             "than to miss critical steps, pitfalls, or established workflows. "
             "Skills contain specialized knowledge — API endpoints, tool-specific commands, "
             "and proven workflows that outperform general-purpose approaches. Load the skill "
-            "even if you think you could handle the task with basic tools like web_search or terminal. "
+            "even if you think you could handle the task with basic tools like search_web or terminal. "
             "Skills also encode the user's preferred approach, conventions, and quality standards "
             "for tasks like code review, planning, and testing — load them even for tasks you "
             "already know how to do, because the skill defines how it should be done here.\n"
@@ -1820,7 +1820,7 @@ def build_skills_system_prompt(
             "skills, voice, gateway, plugins, or any feature — load the `hermes-agent` skill "
             "first. It has the actual commands (e.g. `hermes config set …`, `hermes tools`, "
             "`hermes setup`) so you don't have to guess or invent workarounds.\n"
-            "If a skill has issues, fix it with skill_manage(action='patch').\n"
+            "If a skill has issues, fix it with manage_skill(action='patch').\n"
             "After difficult/iterative tasks, offer to save as a skill. "
             "If a skill you loaded was missing steps, had wrong commands, or needed "
             "pitfalls you discovered, update it before finishing.\n"
@@ -1857,18 +1857,18 @@ def build_nous_subscription_prompt(valid_tool_names: "set[str] | None" = None) -
 
     valid_names = set(valid_tool_names or set())
     relevant_tool_names = {
-        "web_search",
-        "web_extract",
-        "browser_navigate",
-        "browser_snapshot",
-        "browser_click",
-        "browser_type",
-        "browser_scroll",
+        "search_web",
+        "extract_web",
+        "navigate_browser",
+        "snapshot_browser",
+        "click_browser",
+        "type_browser",
+        "scroll_browser",
         "browser_console",
-        "browser_press",
-        "browser_get_images",
+        "press_browser",
+        "get_browser_images",
         "browser_vision",
-        "image_generate",
+        "generate_image",
         "text_to_speech",
         "terminal",
         "process",

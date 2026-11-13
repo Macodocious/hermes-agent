@@ -1,4 +1,4 @@
-"""Tests for web_extract truncate-store robustness (findings from #54843 review).
+"""Tests for extract_web truncate-store robustness (findings from #54843 review).
 
 Covers two robustness gaps left unaddressed when #54843 merged:
   1. _store_full_text bounded by MAX_STORED_TEXT_CHARS (no unbounded disk write).

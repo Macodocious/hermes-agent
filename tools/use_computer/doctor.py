@@ -45,7 +45,7 @@ def _cua_child_env() -> Dict[str, str]:
     if that import fails, so doctor never breaks on a telemetry-helper error.
     """
     try:
-        from tools.computer_use.cua_backend import cua_driver_child_env
+        from tools.use_computer.cua_backend import cua_driver_child_env
 
         return cua_driver_child_env()
     except Exception:
@@ -242,7 +242,7 @@ def run_doctor(
 
     Honors `HERMES_CUA_DRIVER_CMD` via the same `_cua_driver_cmd()` resolver
     that `install_cua_driver` + the runtime backend use, so the doctor
-    diagnoses what your `computer_use` toolset will actually invoke.
+    diagnoses what your `use_computer` toolset will actually invoke.
     """
     # Windows ships stdout/stderr wrapped with the system ANSI codec
     # (`cp1252` on a US locale, `cp936` on zh-CN, etc.). The check-matrix

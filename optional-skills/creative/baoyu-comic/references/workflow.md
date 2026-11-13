@@ -247,7 +247,7 @@ Create image generation prompts for all pages.
 
 **For each page (cover + pages)**:
 1. Create prompt following art style + tone guidelines
-2. **Embed character descriptions** inline (copy relevant traits from `characters/characters.md`) — `image_generate` is prompt-only, so the prompt text is the sole vehicle for character consistency
+2. **Embed character descriptions** inline (copy relevant traits from `characters/characters.md`) — `generate_image` is prompt-only, so the prompt text is the sole vehicle for character consistency
 3. Save to `prompts/NN-{cover|page}-[slug].md` using `write_file`
    - **Backup rule**: If prompt file exists, rename to `prompts/NN-{cover|page}-[slug]-backup-YYYYMMDD-HHMMSS.md`
 
@@ -266,7 +266,7 @@ Art: [art style] | Tone: [tone] | Layout: [layout type]
 [From storyboard.md - panel descriptions, actions, dialogue]
 
 ## Generation Prompt
-[Combined prompt passed to image_generate]
+[Combined prompt passed to generate_image]
 ```
 
 **After generation**:
@@ -308,17 +308,17 @@ options:
 
 ## Step 7: Generate Images
 
-With confirmed prompts from Step 5/6, use the `image_generate` tool. The tool accepts only `prompt` and `aspect_ratio` (`landscape` | `portrait` | `square`) and **returns a URL** — it does not accept reference images and does not write local files. Every invocation must be followed by a download step.
+With confirmed prompts from Step 5/6, use the `generate_image` tool. The tool accepts only `prompt` and `aspect_ratio` (`landscape` | `portrait` | `square`) and **returns a URL** — it does not accept reference images and does not write local files. Every invocation must be followed by a download step.
 
 **Aspect ratio mapping** — map the storyboard's `aspect_ratio` to the tool's enum:
 
-| Storyboard ratio | `image_generate` format |
+| Storyboard ratio | `generate_image` format |
 |------------------|-------------------------|
 | `3:4`, `9:16`, `2:3` | `portrait` |
 | `4:3`, `16:9`, `3:2` | `landscape` |
 | `1:1` | `square` |
 
-**Download procedure** (run after every successful `image_generate` call):
+**Download procedure** (run after every successful `generate_image` call):
 
 1. Extract the `url` field from the tool result
 2. Fetch it to disk, e.g. `curl -fsSL "<url>" -o comic/{slug}/<target>.png`
@@ -339,16 +339,16 @@ Character sheet is recommended for multi-page comics with recurring characters, 
 **When generating**:
 1. Use Reference Sheet Prompt from `characters/characters.md`
 2. **Backup rule**: If `characters/characters.png` exists, rename to `characters/characters-backup-YYYYMMDD-HHMMSS.png`
-3. Call `image_generate` with `landscape` format
+3. Call `generate_image` with `landscape` format
 4. Download the returned URL → save to `characters/characters.png`
 
-**Important**: the downloaded sheet is a **human-facing review artifact** (so the user can visually verify character design) and a reference for later regenerations or manual prompt edits. It does **not** drive Step 7.2 — page prompts were already written in Step 5 from the text descriptions in `characters/characters.md`. `image_generate` cannot accept images as visual input, so the text is the sole cross-page consistency mechanism.
+**Important**: the downloaded sheet is a **human-facing review artifact** (so the user can visually verify character design) and a reference for later regenerations or manual prompt edits. It does **not** drive Step 7.2 — page prompts were already written in Step 5 from the text descriptions in `characters/characters.md`. `generate_image` cannot accept images as visual input, so the text is the sole cross-page consistency mechanism.
 
 ### 7.2 Generate Comic Pages
 
 **Before generating any page**:
 1. Confirm each prompt file exists at `prompts/NN-{cover|page}-[slug].md`
-2. Confirm that each prompt has character descriptions embedded inline (see Step 5). `image_generate` is prompt-only, so the prompt text is the sole consistency mechanism.
+2. Confirm that each prompt has character descriptions embedded inline (see Step 5). `generate_image` is prompt-only, so the prompt text is the sole consistency mechanism.
 
 **Page Generation Strategy**: every page prompt must embed character descriptions (sourced from `characters/characters.md`) inline. This is done during Step 5, uniformly whether or not the PNG sheet was produced in 7.1 — the PNG is only a review/regeneration aid, never a generation input.
 
@@ -368,7 +368,7 @@ Character sheet is recommended for multi-page comics with recurring characters, 
 **For each page (cover + pages)**:
 1. Read prompt from `prompts/NN-{cover|page}-[slug].md`
 2. **Backup rule**: If image file exists, rename to `NN-{cover|page}-[slug]-backup-YYYYMMDD-HHMMSS.png`
-3. Call `image_generate` with the prompt text and mapped aspect ratio
+3. Call `generate_image` with the prompt text and mapped aspect ratio
 4. Download the returned URL → save to `NN-{cover|page}-[slug].png`
 5. Report progress after each generation: "Generated X/N: [page title]"
 

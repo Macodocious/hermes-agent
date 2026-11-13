@@ -342,7 +342,7 @@ Use these Hermes tools during Phase 1:
 - **`search_files`** — Find error strings, trace function calls, locate patterns
 - **`read_file`** — Read source code with line numbers for precise analysis
 - **`terminal`** — Run tests, check git history, reproduce bugs
-- **`web_search`/`web_extract`** — Research error messages, library docs
+- **`search_web`/`extract_web`** — Research error messages, library docs
 
 ### With delegate_task
 

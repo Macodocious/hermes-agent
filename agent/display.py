@@ -370,13 +370,13 @@ def _read_file_line_label(args: dict) -> str:
 
 
 def redact_browser_typed_text_for_display(value: Any, typed_text: Any) -> Any:
-    """Apply secret redaction to browser_type text in display-facing payloads.
+    """Apply secret redaction to type_browser text in display-facing payloads.
 
     Backends sometimes echo the attempted input in error strings or fallback
     metadata.  When the raw typed value contains a recognizable secret (API
     key, token, JWT, etc.) the redacted form differs from the raw value, so we
     replace every occurrence of the raw value with its redacted form before a
-    browser_type result reaches logs, callbacks, the model, or chat history.
+    type_browser result reaches logs, callbacks, the model, or chat history.
 
     Normal typed text (search queries, addresses, form fields) matches no
     secret pattern, so it passes through unchanged and stays readable.
@@ -411,14 +411,14 @@ def redact_browser_typed_text_for_display(value: Any, typed_text: Any) -> Any:
 def redact_tool_args_for_display(tool_name: str, args: dict | None) -> dict | None:
     """Return a copy of tool args safe for logs/progress UI.
 
-    For ``browser_type`` the ``text`` argument is run through the same
+    For ``type_browser`` the ``text`` argument is run through the same
     secret-pattern redactor used for logs.  Recognizable credentials (API
     keys, tokens) are masked before the value reaches tool progress
     notifications; normal typed text is left intact for debuggability.
     """
     if not isinstance(args, dict):
         return args
-    if tool_name == "browser_type" and isinstance(args.get("text"), str):
+    if tool_name == "type_browser" and isinstance(args.get("text"), str):
         safe_args = dict(args)
         safe_args["text"] = redact_sensitive_text(args["text"], force=True)
         return safe_args
@@ -462,16 +462,16 @@ def build_tool_preview(tool_name: str, args: dict, max_len: int | None = None) -
         return None
     args = redact_tool_args_for_display(tool_name, args) or args
     primary_args = {
-        "terminal": "command", "web_search": "query", "web_extract": "urls",
+        "terminal": "command", "search_web": "query", "extract_web": "urls",
         "read_file": "path", "write_file": "path", "patch": "path",
-        "search_files": "pattern", "browser_navigate": "url",
-        "browser_click": "ref", "browser_type": "text",
-        "image_generate": "prompt", "text_to_speech": "text",
-        "vision_analyze": "question",
-        "skill_view": "name", "skills_list": "category",
+        "search_files": "pattern", "navigate_browser": "url",
+        "click_browser": "ref", "type_browser": "text",
+        "generate_image": "prompt", "text_to_speech": "text",
+        "analyze_vision": "question",
+        "view_skill": "name", "list_skills": "category",
         "cronjob": "action",
         "execute_code": "code", "delegate_task": "goal",
-        "clarify": "question", "skill_manage": "name",
+        "clarify": "question", "manage_skill": "name",
         "mnemosyne_remember": "content",
         "mnemosyne_remember_canonical": "body",
     }
@@ -540,7 +540,7 @@ def build_tool_preview(tool_name: str, args: dict, max_len: int | None = None) -
         preview = f"{label} {line_label}".strip()
         return _truncate_preview(preview, max_len) if preview else None
 
-    if tool_name == "session_search":
+    if tool_name == "search_session":
         query = _oneline(args.get("query", ""))
         return f"recall: \"{query[:25]}{'...' if len(query) > 25 else ''}\""
 
@@ -563,7 +563,7 @@ def build_tool_preview(tool_name: str, args: dict, max_len: int | None = None) -
         return get_tool_action_phrase(tool_name, args) or action
 
     if tool_name in _TOOL_ACTION_PHRASES:
-        # cronjob / skill_manage: the preview is the standalone action phrase
+        # cronjob / manage_skill: the preview is the standalone action phrase
         # ("Reading scheduled jobs"), never the bare action noun.
         return get_tool_action_phrase(tool_name, args)
 
@@ -574,7 +574,7 @@ def build_tool_preview(tool_name: str, args: dict, max_len: int | None = None) -
             msg = msg[:17] + "..."
         return f"to {target}: \"{msg}\""
 
-    if tool_name == "skill_view":
+    if tool_name == "view_skill":
         name = _oneline(str(args.get("name") or ""))
         file_path = args.get("file_path")
         if file_path:
@@ -609,7 +609,7 @@ def build_tool_preview(tool_name: str, args: dict, max_len: int | None = None) -
 # =========================================================================
 # Friendly tool labels (human-phrased verbs for built-in tools)
 #
-# Turns "web_search <query>" into "Searching the web for <query>" — the
+# Turns "search_web <query>" into "Searching the web for <query>" — the
 # ChatGPT-style "Searching…/Reading…" surface.  Curated and built-in only:
 # we know each core tool's semantics, so the verb is fixed, not computed.
 # Custom/plugin/MCP tools have no entry and fall back to the raw preview.
@@ -619,24 +619,24 @@ def build_tool_preview(tool_name: str, args: dict, max_len: int | None = None) -
 # A trailing space-then-preview is appended by build_tool_label() when the
 # tool's argument preview is available (e.g. "Reading docs/api.md").
 _TOOL_VERBS: dict[str, str] = {
-    "web_search": "Searching the web",
-    "web_extract": "Reading",
-    "browser_navigate": "Browsing",
-    "browser_click": "Clicking",
-    "browser_type": "Typing",
+    "search_web": "Searching the web",
+    "extract_web": "Reading",
+    "navigate_browser": "Browsing",
+    "click_browser": "Clicking",
+    "type_browser": "Typing",
     "read_file": "Reading",
     "write_file": "Writing",
     "patch": "Editing",
     "search_files": "Searching files",
     "terminal": "Running",
     "execute_code": "Running code",
-    "image_generate": "Generating image",
-    "video_generate": "Generating video",
+    "generate_image": "Generating image",
+    "generate_video": "Generating video",
     "text_to_speech": "Generating speech",
-    "vision_analyze": "Looking at the image",
-    "session_search": "Searching past sessions",
-    "skill_view": "Reading skill",
-    "skills_list": "Listing skills",
+    "analyze_vision": "Looking at the image",
+    "search_session": "Searching past sessions",
+    "view_skill": "Reading skill",
+    "list_skills": "Listing skills",
     "delegate_task": "Delegating",
     "clarify": "Asking",
 }
@@ -659,7 +659,7 @@ _TOOL_ACTION_PHRASES: dict[str, dict[str, str]] = {
         "run_now": "Running a scheduled job",
         "trigger": "Running a scheduled job",
     },
-    "skill_manage": {
+    "manage_skill": {
         "create": "Creating skill",
         "patch": "Updating skill",
         "edit": "Rewriting skill",
@@ -677,19 +677,19 @@ _TOOL_ACTION_PHRASES: dict[str, dict[str, str]] = {
 # For these tools the action phrase should carry the primary argument value
 # (e.g. the skill name) appended to the phrase when present.
 _TOOL_ACTION_PHRASE_APPEND: dict[str, str] = {
-    "skill_manage": "name",
+    "manage_skill": "name",
 }
 
 # Verbs that read better without the raw argument preview appended.
 _TOOL_VERBS_NO_PREVIEW: frozenset[str] = frozenset({
-    "skills_list",
-    "session_search",
+    "list_skills",
+    "search_session",
 })
 
 # Verbs that take a "for" connector before the preview (search-style phrasing):
 # "Searching the web for <query>" reads better than "Searching the web <query>".
 _TOOL_VERBS_FOR_CONNECTOR: frozenset[str] = frozenset({
-    "web_search",
+    "search_web",
     "search_files",
 })
 
@@ -733,7 +733,7 @@ def verb_drops_preview(tool_name: str) -> bool:
 def get_tool_action_phrase(tool_name: str, args: dict | None) -> str | None:
     """Return a complete standalone phrase for an action-driven tool call.
 
-    Tools whose semantics vary by ``action`` (``cronjob``, ``skill_manage``,
+    Tools whose semantics vary by ``action`` (``cronjob``, ``manage_skill``,
     ``memory``) render a fixed verb that can lie about what the call actually
     does — e.g. "Scheduling list" implies creating a job when the action is a
     read-only listing.  This resolves the action-aware phrase (e.g. "Reading
@@ -799,7 +799,7 @@ def build_status_phrase(tool_name: str, args: dict | None, max_len: int = 49) ->
             if preview:
                 phrase = f"is {preview[0].lower()}{preview[1:]}"
     elif tool_name in _TOOL_ACTION_PHRASES:
-        # Action-driven tools (cronjob/skill_manage/memory) render their
+        # Action-driven tools (cronjob/manage_skill/memory) render their
         # standalone action phrase ("Reading scheduled jobs") as the status.
         phrase = "is working"
         if args:
@@ -832,7 +832,7 @@ def build_status_phrase(tool_name: str, args: dict | None, max_len: int = 49) ->
 def build_tool_label(tool_name: str, args: dict, max_len: int | None = None) -> str | None:
     """Build a human-phrased status label for a tool call.
 
-    For built-in tools with a known verb (``web_search`` -> "Searching the
+    For built-in tools with a known verb (``search_web`` -> "Searching the
     web for ..."), returns the verb optionally followed by the argument
     preview.  For everything else (custom/plugin/MCP tools, or when friendly
     labels are disabled) returns the raw preview, so callers can use this as a
@@ -841,7 +841,7 @@ def build_tool_label(tool_name: str, args: dict, max_len: int | None = None) -> 
     if not _friendly_tool_labels:
         return build_tool_preview(tool_name, args, max_len=max_len)
 
-    # Action-driven tools (cronjob/skill_manage/memory) render a complete
+    # Action-driven tools (cronjob/manage_skill/memory) render a complete
     # standalone phrase per action instead of a fixed verb + raw action.
     action_phrase = get_tool_action_phrase(tool_name, args)
     if action_phrase:
@@ -891,7 +891,7 @@ def _display_diff_path(path: Path) -> str:
 
 
 def _resolve_skill_manage_paths(args: dict) -> list[Path]:
-    """Resolve skill_manage write targets to filesystem paths."""
+    """Resolve manage_skill write targets to filesystem paths."""
     action = args.get("action")
     name = args.get("name")
     if not action or not name:
@@ -933,7 +933,7 @@ def _resolve_local_edit_paths(tool_name: str, function_args: dict | None) -> lis
         path = function_args.get("path")
         return [_resolved_path(path)] if path else []
 
-    if tool_name == "skill_manage":
+    if tool_name == "manage_skill":
         return _resolve_skill_manage_paths(function_args)
 
     return []
@@ -1011,7 +1011,7 @@ def extract_edit_diff(
             if isinstance(diff, str) and diff.strip():
                 return diff
 
-    if tool_name not in {"write_file", "patch", "skill_manage"}:
+    if tool_name not in {"write_file", "patch", "manage_skill"}:
         return None
     if not _result_succeeded(result):
         return None
@@ -1495,9 +1495,9 @@ def _get_cute_tool_message(
             return line
         return f"{line}{failure_suffix}"
 
-    if tool_name == "web_search":
+    if tool_name == "search_web":
         return _wrap(f"┊ 🔍 search    {_trunc(args.get('query', ''), 42)}  {dur}")
-    if tool_name == "web_extract":
+    if tool_name == "extract_web":
         urls = args.get("urls", [])
         if urls:
             url = _display_url(urls[0] if isinstance(urls, list) else urls)
@@ -1526,26 +1526,26 @@ def _get_cute_tool_message(
         target = args.get("target", "content")
         verb = "find" if target == "files" else "grep"
         return _wrap(f"┊ 🔎 {verb:9} {pattern}  {dur}")
-    if tool_name == "browser_navigate":
+    if tool_name == "navigate_browser":
         url = args.get("url", "")
         domain = url.replace("https://", "").replace("http://", "").split("/")[0]
         return _wrap(f"┊ 🌐 navigate  {_trunc(domain, 35)}  {dur}")
-    if tool_name == "browser_snapshot":
+    if tool_name == "snapshot_browser":
         mode = "full" if args.get("full") else "compact"
         return _wrap(f"┊ 📸 snapshot  {mode}  {dur}")
-    if tool_name == "browser_click":
+    if tool_name == "click_browser":
         return _wrap(f"┊ 👆 click     {args.get('ref', '?')}  {dur}")
-    if tool_name == "browser_type":
+    if tool_name == "type_browser":
         return _wrap(f"┊ ⌨️  type      \"{_trunc(args.get('text', ''), 30)}\"  {dur}")
-    if tool_name == "browser_scroll":
+    if tool_name == "scroll_browser":
         d = args.get("direction", "down")
         arrow = {"down": "↓", "up": "↑", "right": "→", "left": "←"}.get(d, "↓")
         return _wrap(f"┊ {arrow}  scroll    {d}  {dur}")
-    if tool_name == "browser_back":
+    if tool_name == "back_browser":
         return _wrap(f"┊ ◀️  back      {dur}")
-    if tool_name == "browser_press":
+    if tool_name == "press_browser":
         return _wrap(f"┊ ⌨️  press     {args.get('key', '?')}  {dur}")
-    if tool_name == "browser_get_images":
+    if tool_name == "get_browser_images":
         return _wrap(f"┊ 🖼️  images    extracting  {dur}")
     if tool_name == "browser_vision":
         return _wrap(f"┊ 👁️  vision    analyzing page  {dur}")
@@ -1581,7 +1581,7 @@ def _get_cute_tool_message(
                 return _wrap(f"┊ 📋 plan      {done}/{total} {noun}  {dur}")
             noun = "task" if len(todos_arg) == 1 else "tasks"
             return _wrap(f"┊ 📋 plan      planning {len(todos_arg)} {noun}  {dur}")
-    if tool_name == "session_search":
+    if tool_name == "search_session":
         return _wrap(f"┊ 🔍 recall    \"{_trunc(args.get('query', ''), 35)}\"  {dur}")
     if tool_name == "memory":
         action = args.get("action", "?")
@@ -1597,19 +1597,19 @@ def _get_cute_tool_message(
             old = old if old else "<missing old_text>"
             return _wrap(f"┊ 🧠 memory    -{target}: \"{_trunc(old, 20)}\"  {dur}")
         return _wrap(f"┊ 🧠 memory    {action}  {dur}")
-    if tool_name == "skills_list":
+    if tool_name == "list_skills":
         return _wrap(f"┊ 📚 skills    list {args.get('category', 'all')}  {dur}")
-    if tool_name == "skill_view":
+    if tool_name == "view_skill":
         label = args.get("name", "")
         file_path = args.get("file_path")
         if file_path:
             label = f"{label} → {file_path}" if label else str(file_path)
         return _wrap(f"┊ 📚 skill     {_trunc(label, 44)}  {dur}")
-    if tool_name == "image_generate":
+    if tool_name == "generate_image":
         return _wrap(f"┊ 🎨 create    {_trunc(args.get('prompt', ''), 35)}  {dur}")
     if tool_name == "text_to_speech":
         return _wrap(f"┊ 🔊 speak     {_trunc(args.get('text', ''), 30)}  {dur}")
-    if tool_name == "vision_analyze":
+    if tool_name == "analyze_vision":
         return _wrap(f"┊ 👁️  vision    {_trunc(args.get('question', ''), 30)}  {dur}")
     if tool_name == "send_message":
         return _wrap(f"┊ 📨 send      {args.get('target', '?')}: \"{_trunc(args.get('message', ''), 25)}\"  {dur}")

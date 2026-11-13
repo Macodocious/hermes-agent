@@ -35,14 +35,14 @@ description: "在仓库中编写 SKILL.md"
 
 SKILL.md 可以存放在两个位置：
 
-1. **用户本地：** `~/.hermes/skills/<maybe-category>/<name>/SKILL.md` — 个人使用，不共享。通过 `skill_manage(action='create')` 创建。
-2. **仓库内（本 skill 讨论此情况）：** `/home/bb/hermes-agent/skills/<category>/<name>/SKILL.md` — 已提交，随包一起发布。使用 `write_file` + `git add`。`skill_manage(action='create')` **不**针对此目录树。
+1. **用户本地：** `~/.hermes/skills/<maybe-category>/<name>/SKILL.md` — 个人使用，不共享。通过 `manage_skill(action='create')` 创建。
+2. **仓库内（本 skill 讨论此情况）：** `/home/bb/hermes-agent/skills/<category>/<name>/SKILL.md` — 已提交，随包一起发布。使用 `write_file` + `git add`。`manage_skill(action='create')` **不**针对此目录树。
 
 ## 使用时机
 
 - 用户要求你"在此分支 / 仓库 / 提交中"添加一个 skill
 - 你正在提交一个应随 hermes-agent 一起发布的可复用工作流
-- 你正在编辑 `/home/bb/hermes-agent/skills/` 下的现有 skill（小改动用 `patch`，重写用 `write_file`；`skill_manage` 对仓库内 skill 的 `patch` 仍有效，但 `create` 无效）
+- 你正在编辑 `/home/bb/hermes-agent/skills/` 下的现有 skill（小改动用 `patch`，重写用 `write_file`；`manage_skill` 对仓库内 skill 的 `patch` 仍有效，但 `create` 无效）
 
 ## 必需的 Frontmatter
 
@@ -141,7 +141,7 @@ skills/<category>/<skill-name>/SKILL.md
    assert len(content) <= 100_000
    ```
 5. **Git add + commit**，在当前活跃分支上。
-6. **注意：** 当前会话的 skill 加载器已缓存——`skill_view` / `skills_list` 在新会话开始前不会看到新 skill。这是预期行为，不是 bug。
+6. **注意：** 当前会话的 skill 加载器已缓存——`view_skill` / `list_skills` 在新会话开始前不会看到新 skill。这是预期行为，不是 bug。
 
 ## 交叉引用其他 Skill
 
@@ -149,14 +149,14 @@ skills/<category>/<skill-name>/SKILL.md
 
 ## 编辑现有仓库内 Skill
 
-- **小改动（修正错别字、添加常见问题、收紧触发条件）：** `skill_manage(action='patch', name=..., old_string=..., new_string=...)` 对仓库内 skill 同样有效。
-- **大规模重写：** 使用 `write_file` 写入完整 SKILL.md。`skill_manage(action='edit')` 也可以，但需要提供完整的新内容。
-- **添加支持文件：** 使用 `write_file` 写入 `skills/<category>/<name>/references/<file>.md`、`templates/<file>` 或 `scripts/<file>`。`skill_manage(action='write_file')` 也可以，并会强制执行 references/templates/scripts/assets 子目录白名单。
+- **小改动（修正错别字、添加常见问题、收紧触发条件）：** `manage_skill(action='patch', name=..., old_string=..., new_string=...)` 对仓库内 skill 同样有效。
+- **大规模重写：** 使用 `write_file` 写入完整 SKILL.md。`manage_skill(action='edit')` 也可以，但需要提供完整的新内容。
+- **添加支持文件：** 使用 `write_file` 写入 `skills/<category>/<name>/references/<file>.md`、`templates/<file>` 或 `scripts/<file>`。`manage_skill(action='write_file')` 也可以，并会强制执行 references/templates/scripts/assets 子目录白名单。
 - **始终提交**编辑——仓库内 skill 是源码，不是运行时状态。
 
 ## 常见问题
 
-1. **对仓库内 skill 使用 `skill_manage(action='create')`。** 它会写入 `~/.hermes/skills/`，而非仓库目录树。仓库内创建请使用 `write_file`。
+1. **对仓库内 skill 使用 `manage_skill(action='create')`。** 它会写入 `~/.hermes/skills/`，而非仓库目录树。仓库内创建请使用 `write_file`。
 
 2. **`---` 前有前导空白。** 验证器检查 `content.startswith("---")`；任何前导空行或 BOM 都会导致验证失败。
 
@@ -166,7 +166,7 @@ skills/<category>/<skill-name>/SKILL.md
 
 5. **编写了与同类重复的 skill。** 创建前先执行 `ls skills/<category>/` 并打开 2-3 个同类 skill。优先扩展现有 skill，而非创建功能狭窄的兄弟 skill。
 
-6. **期望当前会话能看到新 skill。** 不会。skill 加载器在会话开始时初始化。请在新会话中验证，或通过 `skill_view` 使用精确路径进行验证。
+6. **期望当前会话能看到新 skill。** 不会。skill 加载器在会话开始时初始化。请在新会话中验证，或通过 `view_skill` 使用精确路径进行验证。
 
 7. **链接到仓库中不存在的 skill。** `related_skills: [some-user-local-skill]` 对你有效，但对其他克隆用户会失效。优先只使用仓库内链接。
 

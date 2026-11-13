@@ -1,15 +1,15 @@
 ---
 title: X (Twitter) Search
-description: Search X (Twitter) posts and threads from within the agent using xAI's built-in x_search Responses tool — works with either a SuperGrok OAuth login or an XAI_API_KEY.
+description: Search X (Twitter) posts and threads from within the agent using xAI's built-in search_x Responses tool — works with either a SuperGrok OAuth login or an XAI_API_KEY.
 sidebar_label: X (Twitter) Search
 sidebar_position: 7
 ---
 
 # X (Twitter) Search
 
-The `x_search` tool lets the agent search X (Twitter) posts, profiles, and threads directly. It's backed by xAI's built-in `x_search` tool on the Responses API at `https://api.x.ai/v1/responses` — Grok itself runs the search server-side and returns synthesized results with citations to the originating posts.
+The `search_x` tool lets the agent search X (Twitter) posts, profiles, and threads directly. It's backed by xAI's built-in `search_x` tool on the Responses API at `https://api.x.ai/v1/responses` — Grok itself runs the search server-side and returns synthesized results with citations to the originating posts.
 
-**Use this instead of `web_search`** when you specifically want current discussion, reactions, or claims **on X**. For general web pages, keep using `web_search` / `web_extract`.
+**Use this instead of `search_web`** when you specifically want current discussion, reactions, or claims **on X**. For general web pages, keep using `search_web` / `extract_web`.
 
 :::tip
 If you're paying Portal for an xAI model anyway, Live Search calls bill against the same xAI key configured for chat. See [Nous Portal](/integrations/nous-portal).
@@ -17,20 +17,20 @@ If you're paying Portal for an xAI model anyway, Live Search calls bill against 
 
 ## Authentication
 
-`x_search` registers when **either** xAI credential path is available:
+`search_x` registers when **either** xAI credential path is available:
 
 | Credential | Source | Setup |
 |------------|--------|-------|
 | **SuperGrok / X Premium+ OAuth** (preferred) | Browser login at `accounts.x.ai`, refreshed automatically | `hermes auth add xai-oauth` — see [xAI Grok OAuth (SuperGrok / X Premium+)](../../guides/xai-grok-oauth.md) |
 | **`XAI_API_KEY`** | Paid xAI API key | Set in `~/.hermes/.env` |
 
-Both hit the same endpoint with the same payload — the only difference is the bearer token. **When both are configured, SuperGrok OAuth wins** so x_search runs against your subscription quota instead of paid API spend.
+Both hit the same endpoint with the same payload — the only difference is the bearer token. **When both are configured, SuperGrok OAuth wins** so search_x runs against your subscription quota instead of paid API spend.
 
 The tool's `check_fn` runs the xAI credential resolver every time the model's tool list is rebuilt. A `True` return means the bearer is fetchable AND non-empty AND (if it had expired) successfully refreshed. Revoked tokens with a failed refresh hide the tool from the schema; the model simply can't see it.
 
 ## Enabling the tool
 
-Auto-enables when xAI credentials (OAuth token or `XAI_API_KEY`) are present. Disable explicitly via `hermes tools` → Search → x_search if you don't want this.
+Auto-enables when xAI credentials (OAuth token or `XAI_API_KEY`) are present. Disable explicitly via `hermes tools` → Search → search_x if you don't want this.
 
 ```bash
 hermes tools
@@ -48,10 +48,10 @@ Either choice satisfies the gating. You can pick whichever credentials you alrea
 
 ```yaml
 # ~/.hermes/config.yaml
-x_search:
+search_x:
   # xAI model used for the Responses call.
   # grok-4.5 is the recommended default; any Grok model
-  # with x_search tool access works.
+  # with search_x tool access works.
   model: grok-4.5
 
   # Optional reasoning effort: low, medium, high, or xhigh. When omitted,
@@ -59,7 +59,7 @@ x_search:
   # models that document it, such as grok-4.20-multi-agent.
   # reasoning_effort: low
 
-  # Request timeout in seconds. x_search can take 60–120s for
+  # Request timeout in seconds. search_x can take 60–120s for
   # complex queries — the default is generous. Minimum: 30.
   timeout_seconds: 180
 
@@ -74,7 +74,7 @@ configurable reasoning. Invalid values fail before an API request is made.
 
 ## Tool parameters
 
-The agent calls `x_search` with these arguments:
+The agent calls `search_x` with these arguments:
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
@@ -115,7 +115,7 @@ Talking to the agent:
 
 The agent will:
 
-1. Call `x_search` with `query="reactions to new Grok image features"`, `allowed_x_handles=["xai"]`
+1. Call `search_x` with `query="reactions to new Grok image features"`, `allowed_x_handles=["xai"]`
 2. Get back a synthesized answer plus a list of citations linking to specific posts
 3. Reply with the answer and references
 
@@ -125,9 +125,9 @@ The agent will:
 
 The tool surfaces this when both auth paths fail. Either set `XAI_API_KEY` in `~/.hermes/.env` or run `hermes auth add xai-oauth` and complete the browser login. Then restart your session so the agent re-reads the tool registry.
 
-### "`x_search` is not enabled for this model"
+### "`search_x` is not enabled for this model"
 
-The configured `x_search.model` doesn't have access to the server-side `x_search` tool. Switch to `grok-4.5` (the default) or another Grok model that supports it. Check the [xAI documentation](https://docs.x.ai/) for the current list.
+The configured `search_x.model` doesn't have access to the server-side `search_x` tool. Switch to `grok-4.5` (the default) or another Grok model that supports it. Check the [xAI documentation](https://docs.x.ai/) for the current list.
 
 ### Tool doesn't appear in the schema
 
@@ -144,7 +144,7 @@ Causes worth checking:
 
 - **Typo in the handle.** Strip the `@`, double-check spelling, and confirm the account exists.
 - **Date range too narrow** or sliding past today's posts; widen and retry.
-- **xAI index gap.** Some active accounts intermittently fail to surface in `x_search` even when they post regularly. Retry after a few minutes, or use the `xurl` skill for direct X API reads when you need an exact handle's timeline.
+- **xAI index gap.** Some active accounts intermittently fail to surface in `search_x` even when they post regularly. Retry after a few minutes, or use the `xurl` skill for direct X API reads when you need an exact handle's timeline.
 
 ## See Also
 

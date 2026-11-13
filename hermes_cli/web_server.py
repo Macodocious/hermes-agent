@@ -796,10 +796,10 @@ _CATEGORY_MERGE: Dict[str, str] = {
     # the MCP tab) — fold it into the agent tab rather than spawning a
     # one-field orphan category.
     "mcp": "agent",
-    # `computer_use.cua_telemetry` is the only schema-surfaced computer_use
+    # `use_computer.cua_telemetry` is the only schema-surfaced use_computer
     # field — fold it into the agent tab rather than spawning a one-field
     # orphan category.
-    "computer_use": "agent",
+    "use_computer": "agent",
 }
 
 # Display order for tabs — unlisted categories sort alphabetically after these.
@@ -6089,7 +6089,7 @@ def get_model_info(profile: Optional[str] = None):
 # in hermes_cli/config.py — listed here for deterministic ordering in the UI.
 _AUX_TASK_SLOTS: Tuple[str, ...] = (
     "vision",
-    "web_extract",
+    "extract_web",
     "compression",
     "skills_hub",
     "approval",
@@ -14842,7 +14842,7 @@ class SkillContentUpdate(BaseModel):
 def _clear_skills_prompt_cache() -> None:
     """Best-effort: invalidate the skills system-prompt snapshot after a write.
 
-    Mirrors what ``skill_manage`` does so a dashboard-authored skill is picked
+    Mirrors what ``manage_skill`` does so a dashboard-authored skill is picked
     up by the next session without a manual cache reset.
     """
     try:
@@ -14875,7 +14875,7 @@ async def get_skill_content(name: str, profile: Optional[str] = None):
 async def create_skill(body: SkillCreate):
     """Create a new custom skill (SKILL.md) from the dashboard editor.
 
-    Calls the same validated write path as the agent's ``skill_manage``
+    Calls the same validated write path as the agent's ``manage_skill``
     tool (frontmatter validation, name/category validation, size limit,
     optional security scan) — but bypasses the agent write-approval gate:
     a write from the authenticated dashboard IS the user acting directly.
@@ -15091,7 +15091,7 @@ async def get_toolset_config(name: str, profile: Optional[str] = None):
                 providers.append(row)
         if name == "web":
             # Resolve the per-capability active backends exactly the way the
-            # web_search / web_extract dispatchers do (per-capability key →
+            # search_web / extract_web dispatchers do (per-capability key →
             # shared web.backend → credential auto-detect), so the GUI badges
             # reflect what a tool call would actually hit right now.
             try:
@@ -15786,11 +15786,11 @@ async def select_terminal_backend(
 async def get_computer_use_status(profile: Optional[str] = None):
     """Cross-platform Computer Use readiness for the desktop card.
 
-    See ``tools.computer_use.permissions.computer_use_status`` for the payload
+    See ``tools.use_computer.permissions.computer_use_status`` for the payload
     shape. Read-only and fast (shells ``cua-driver doctor`` + macOS
     ``permissions status``).
     """
-    from tools.computer_use.permissions import computer_use_status
+    from tools.use_computer.permissions import computer_use_status
 
     with _profile_scope(profile):
         return computer_use_status()

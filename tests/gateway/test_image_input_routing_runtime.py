@@ -95,7 +95,7 @@ async def test_prepare_image_routing_uses_session_vision_model_override(monkeypa
 
 @pytest.mark.asyncio
 async def test_prepare_image_routing_falls_back_to_text_for_text_only_session_override(monkeypatch):
-    """A text-only session override should get vision_analyze text fallback.
+    """A text-only session override should get analyze_vision text fallback.
 
     Regression mirror case: if config.default is a vision model but the current
     Telegram session is switched to a text-only provider (for example Mimo),

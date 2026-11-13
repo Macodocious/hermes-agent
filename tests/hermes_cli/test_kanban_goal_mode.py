@@ -188,7 +188,7 @@ def _patch_judge(monkeypatch, verdicts):
 
 
 def test_loop_stops_when_worker_already_completed(monkeypatch):
-    # Worker called kanban_complete on its first turn — no judging needed.
+    # Worker called complete_kanban on its first turn — no judging needed.
     _patch_judge(monkeypatch, ["continue"])  # should never be consulted
     turns = []
 
@@ -267,7 +267,7 @@ def test_loop_finalize_nudge_when_judge_done_but_open(monkeypatch):
 
 
 def test_loop_blocks_when_judge_done_but_never_finalizes(monkeypatch):
-    # Judge keeps saying done, worker never calls kanban_complete → block
+    # Judge keeps saying done, worker never calls complete_kanban → block
     # after the single finalize nudge.
     _patch_judge(monkeypatch, ["done", "done"])
     blocked = {}
@@ -304,7 +304,7 @@ def test_loop_stops_if_task_reclaimed(monkeypatch):
 
 class TestCLIJudgeGate:
     """hermes kanban complete must apply the same goal_mode judge gate as the
-    kanban_complete tool (Issue #38367 sibling gap).
+    complete_kanban tool (Issue #38367 sibling gap).
 
     Uses mocks for kb.get_task and kb.complete_task to avoid depending on the
     full kanban_db schema; the gate logic is the unit under test.

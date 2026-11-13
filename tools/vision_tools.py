@@ -80,9 +80,9 @@ _VISION_MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024
 # ---------------------------------------------------------------------------
 # CPU-burst concurrency cap (vision encode/resize)
 # ---------------------------------------------------------------------------
-# A single agent turn can fan out N vision_analyze calls at once (the classic
+# A single agent turn can fan out N analyze_vision calls at once (the classic
 # trigger is "analyze every frame of this video" — ffmpeg explodes a clip into
-# dozens of frames, the model then calls vision_analyze on each). Each call does
+# dozens of frames, the model then calls analyze_vision on each). Each call does
 # a CPU-heavy base64-encode + (sometimes) Pillow resize. The tool executor runs
 # concurrent tool calls on a ThreadPoolExecutor (agent.tool_executor =
 # 8 workers) PER SESSION, and several agent sessions share one process (the
@@ -334,7 +334,7 @@ def _normalize_to_supported_image(
             "SVG rasterizer is installed (tried cairosvg, svglib, rsvg-convert, "
             "inkscape). Convert the SVG to PNG first — e.g. open it in a browser "
             "and screenshot it, or install a rasterizer "
-            "(`pip install cairosvg`) — then re-run vision_analyze on the PNG.",
+            "(`pip install cairosvg`) — then re-run analyze_vision on the PNG.",
         )
 
     # Other non-supported raster formats (BMP, TIFF, ...): re-encode via Pillow.
@@ -1442,7 +1442,7 @@ if __name__ == "__main__":
 from tools.registry import registry, tool_error
 
 VISION_ANALYZE_SCHEMA = {
-    "name": "vision_analyze",
+    "name": "analyze_vision",
     "description": (
         "Load an image into the conversation so you can see it. Accepts a "
         "URL, local file path, or data URL. When your active model has "
@@ -1487,7 +1487,7 @@ async def _handle_vision_analyze(args: Dict[str, Any], **kw: Any) -> str:
     # model sees the pixels directly on its next turn — no aux call, no
     # information loss, no extra latency.
     if _should_use_native_vision_fast_path():
-        logger.info("vision_analyze: native fast path")
+        logger.info("analyze_vision: native fast path")
         return await _vision_analyze_native(image_url, question, task_id=task_id)
 
     # Legacy path: aux LLM describes the image and we return its text.
@@ -1511,7 +1511,7 @@ async def _handle_vision_analyze(args: Dict[str, Any], **kw: Any) -> str:
 
 
 registry.register(
-    name="vision_analyze",
+    name="analyze_vision",
     toolset="vision",
     schema=VISION_ANALYZE_SCHEMA,
     handler=_handle_vision_analyze,
@@ -1837,11 +1837,11 @@ async def video_analyze_tool(
 
 
 VIDEO_ANALYZE_SCHEMA = {
-    "name": "video_analyze",
+    "name": "analyze_video",
     "description": (
         "Analyze a video from a URL or local file path using a multimodal AI model. "
         "Sends the video to a video-capable model (e.g. Gemini) for understanding. "
-        "Use this for video files — for images, use vision_analyze instead. "
+        "Use this for video files — for images, use analyze_vision instead. "
         "Supports mp4, webm, mov, avi, mkv, mpeg formats. "
         "Note: large videos (>20 MB) may be slow; max ~50 MB."
     ),
@@ -1887,7 +1887,7 @@ def _handle_video_analyze(args: Dict[str, Any], **kw: Any) -> Awaitable[str]:
 
 
 registry.register(
-    name="video_analyze",
+    name="analyze_video",
     toolset="video",
     schema=VIDEO_ANALYZE_SCHEMA,
     handler=_handle_video_analyze,

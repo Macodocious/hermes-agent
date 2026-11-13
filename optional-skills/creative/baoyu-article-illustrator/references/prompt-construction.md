@@ -30,7 +30,7 @@ references:                    # ⚠️ ONLY if files EXIST in references/ direc
 
 | Usage | Description | Generation Action |
 |-------|-------------|-------------------|
-| `direct` | Primary visual reference | Describe the reference (composition, subject, style, palette) in prompt text — `image_generate` does not accept reference-image inputs |
+| `direct` | Primary visual reference | Describe the reference (composition, subject, style, palette) in prompt text — `generate_image` does not accept reference-image inputs |
 | `style` | Style characteristics only | Describe style in prompt text |
 | `palette` | Color palette extraction | Include colors in prompt |
 

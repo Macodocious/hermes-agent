@@ -38,9 +38,9 @@ def compressor():
 
 
 class TestSummarizeToolResultWebExtract:
-    """Pre-compression pruning must survive web_extract calls whose ``urls`` are
-    web_search result dicts ({"url"/"href": ...}), which models routinely forward
-    straight into web_extract.
+    """Pre-compression pruning must survive extract_web calls whose ``urls`` are
+    search_web result dicts ({"url"/"href": ...}), which models routinely forward
+    straight into extract_web.
     """
 
     CONTENT = "x" * 500  # >200 chars so the pruning pass actually summarizes
@@ -54,30 +54,30 @@ class TestSummarizeToolResultWebExtract:
                 {"url": "https://example.org/b", "title": "B"},
             ]
         })
-        summary = _summarize_tool_result("web_extract", args, self.CONTENT)
-        assert summary == "[web_extract] https://example.com/a (+1 more) (500 chars)"
+        summary = _summarize_tool_result("extract_web", args, self.CONTENT)
+        assert summary == "[extract_web] https://example.com/a (+1 more) (500 chars)"
 
     def test_single_dict_url_is_unwrapped_not_stringified(self):
         args = json.dumps({"urls": [{"url": "https://example.com/a", "title": "A"}]})
-        summary = _summarize_tool_result("web_extract", args, self.CONTENT)
-        assert summary == "[web_extract] https://example.com/a (500 chars)"
+        summary = _summarize_tool_result("extract_web", args, self.CONTENT)
+        assert summary == "[extract_web] https://example.com/a (500 chars)"
         assert "{" not in summary  # no raw dict repr leaked into the summary
 
     def test_href_key_is_unwrapped(self):
         args = json.dumps({"urls": [{"href": "https://example.com/h"}]})
-        summary = _summarize_tool_result("web_extract", args, self.CONTENT)
-        assert summary == "[web_extract] https://example.com/h (500 chars)"
+        summary = _summarize_tool_result("extract_web", args, self.CONTENT)
+        assert summary == "[extract_web] https://example.com/h (500 chars)"
 
     def test_malformed_dict_falls_back_to_placeholder(self):
         args = json.dumps({"urls": [{"title": "no url here"}, {"title": "still none"}]})
-        summary = _summarize_tool_result("web_extract", args, self.CONTENT)
-        assert summary == "[web_extract] ? (+1 more) (500 chars)"
+        summary = _summarize_tool_result("extract_web", args, self.CONTENT)
+        assert summary == "[extract_web] ? (+1 more) (500 chars)"
 
     def test_plain_string_urls_unchanged(self):
         # Regression guard: the normal (already-working) string path is intact.
         args = json.dumps({"urls": ["https://example.com/a", "https://example.org/b"]})
-        summary = _summarize_tool_result("web_extract", args, self.CONTENT)
-        assert summary == "[web_extract] https://example.com/a (+1 more) (500 chars)"
+        summary = _summarize_tool_result("extract_web", args, self.CONTENT)
+        assert summary == "[extract_web] https://example.com/a (+1 more) (500 chars)"
 
 
 class TestShouldCompress:
@@ -2052,8 +2052,8 @@ class TestCompressWithClient:
                 "role": "assistant",
                 "content": "",
                 "tool_calls": [
-                    {"id": "call_a", "type": "function", "function": {"name": "skill_view", "arguments": "{}"}},
-                    {"id": "call_b", "type": "function", "function": {"name": "skill_view", "arguments": "{}"}},
+                    {"id": "call_a", "type": "function", "function": {"name": "view_skill", "arguments": "{}"}},
+                    {"id": "call_b", "type": "function", "function": {"name": "view_skill", "arguments": "{}"}},
                 ],
             },
             {"role": "tool", "tool_call_id": "call_a", "content": "output a"},

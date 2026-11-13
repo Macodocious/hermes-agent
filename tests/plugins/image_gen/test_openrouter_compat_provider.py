@@ -325,7 +325,7 @@ class TestGenerate:
         assert headers["Authorization"] == "Bearer sk-or-test"
 
     def test_generate_uses_model_kwarg_from_dispatch(self):
-        """image_generate passes image_gen.model as a model kwarg — honor it."""
+        """generate_image passes image_gen.model as a model kwarg — honor it."""
         with patch(_RUNTIME, return_value=_runtime_ok()), \
              patch("requests.post", return_value=_mock_chat_response([_PNG_DATA_URI])) as mock_post, \
              patch("plugins.image_gen.openrouter.save_b64_image", return_value=Path("/tmp/x.png")):

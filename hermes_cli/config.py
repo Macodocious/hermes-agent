@@ -1203,13 +1203,13 @@ DEFAULT_CONFIG = {
         #   "auto"   — attach natively when the active model reports
         #              supports_vision=True AND the user hasn't explicitly
         #              configured auxiliary.vision.provider.  Otherwise fall
-        #              back to text (vision_analyze pre-analysis).
+        #              back to text (analyze_vision pre-analysis).
         #   "native" — always attach natively; non-vision models will either
         #              error at the provider or get a last-chance text fallback
         #              (see run_agent._prepare_messages_for_api).
-        #   "text"   — always pre-analyze with vision_analyze and prepend the
+        #   "text"   — always pre-analyze with analyze_vision and prepend the
         #              description as text; the main model never sees pixels.
-        # Affects gateway platforms, the TUI, and CLI /attach.  vision_analyze
+        # Affects gateway platforms, the TUI, and CLI /attach.  analyze_vision
         # remains available as a tool regardless of this setting — the routing
         # only controls how inbound user images are presented.
         "image_input_mode": "auto",
@@ -1322,9 +1322,9 @@ DEFAULT_CONFIG = {
 
     "web": {
         "backend": "",           # shared fallback — applies to both search and extract
-        "search_backend": "",    # per-capability override for web_search (e.g. "searxng")
-        "extract_backend": "",   # per-capability override for web_extract (e.g. "native")
-        "extract_char_limit": 15000,  # per-page char budget for web_extract; larger pages truncate + store full text in cache/web
+        "search_backend": "",    # per-capability override for search_web (e.g. "searxng")
+        "extract_backend": "",   # per-capability override for extract_web (e.g. "native")
+        "extract_char_limit": 15000,  # per-page char budget for extract_web; larger pages truncate + store full text in cache/web
     },
 
     "browser": {
@@ -1554,7 +1554,7 @@ DEFAULT_CONFIG = {
                                       # the model reloads), but the pre-compaction
                                       # turns are soft-archived under the same id
                                       # (active=0, compacted=1) — still searchable via
-                                      # session_search and recoverable, not deleted.
+                                      # search_session and recoverable, not deleted.
                                       # Default False during rollout; will flip on
                                       # after live validation.
     },
@@ -1565,7 +1565,7 @@ DEFAULT_CONFIG = {
     # kanban dashboard (see ``hermes dashboard`` -> Notifications).
     "kanban": {
         # Auto-subscribe the originating gateway/TUI session to task
-        # completion + block events when ``kanban_create`` is called from
+        # completion + block events when ``create_kanban`` is called from
         # inside a session that has a persistent delivery channel. The
         # agent that dispatched the task will get notified automatically
         # instead of having to poll. Disable to mirror pre-feature
@@ -1665,7 +1665,7 @@ DEFAULT_CONFIG = {
             "reasoning_effort": "",  # per-task thinking level: none|minimal|low|medium|high|xhigh|max|ultra (empty = provider default)
             "download_timeout": 30,  # seconds — image HTTP download timeout; increase for slow connections
         },
-        "web_extract": {
+        "extract_web": {
             "provider": "auto",
             "model": "",
             "base_url": "",
@@ -1683,9 +1683,9 @@ DEFAULT_CONFIG = {
             "extra_body": {},
             "reasoning_effort": "",  # per-task thinking level: none|minimal|low|medium|high|xhigh|max|ultra (empty = provider default)
         },
-        # Note: session_search no longer uses an auxiliary LLM (PR #27590 —
+        # Note: search_session no longer uses an auxiliary LLM (PR #27590 —
         # single-shape tool returns DB content directly). The old
-        # ``auxiliary.session_search.*`` block was removed here. Existing
+        # ``auxiliary.search_session.*`` block was removed here. Existing
         # values in user config.yaml files are harmless leftovers and ignored.
         "skills_hub": {
             "provider": "auto",
@@ -1934,7 +1934,7 @@ DEFAULT_CONFIG = {
         # clarify) into scrollback so the question and decision survive the
         # panel repaint. Set false to keep scrollback untouched.
         "persist_prompts": True,
-        "inline_diffs": True,     # Show inline diff previews for write actions (write_file, patch, skill_manage)
+        "inline_diffs": True,     # Show inline diff previews for write actions (write_file, patch, manage_skill)
         # File-mutation verifier footer.  When true (default), the agent
         # appends a one-line advisory to its final response whenever a
         # write_file / patch call failed during the turn and was never
@@ -2385,7 +2385,7 @@ DEFAULT_CONFIG = {
         # trim, the full text is spilled to ~/.hermes/cache/delegation/
         # (mounted into remote backends) and the in-context summary becomes a
         # head+tail window plus a footer with the exact read_file offset to
-        # page the omitted middle — the same convention web_extract uses for
+        # page the omitted middle — the same convention extract_web uses for
         # large pages. Nothing is lost. max_summary_chars is a hard per-summary
         # character ceiling layered on top of that dynamic budget
         # (belt-and-suspenders for models that ignore the "be concise"
@@ -2518,7 +2518,7 @@ DEFAULT_CONFIG = {
         # Timeout (seconds) for each !`cmd` snippet when inline_shell is on.
         "inline_shell_timeout": 10,
         # Run the keyword/pattern security scanner on skills the agent
-        # writes via skill_manage (create/edit/patch).  Off by default
+        # writes via manage_skill (create/edit/patch).  Off by default
         # because the agent can already execute the same code paths via
         # terminal() with no gate, so the scan adds friction (blocks
         # skills that mention risky keywords in prose) without meaningful
@@ -2528,7 +2528,7 @@ DEFAULT_CONFIG = {
         # External hub installs (trusted/community sources) are always
         # scanned regardless of this setting.
         "guard_agent_created": False,
-        # Approval gate for skill_manage (create/edit/patch/write_file/delete/
+        # Approval gate for manage_skill (create/edit/patch/write_file/delete/
         # remove_file), applied to BOTH foreground agent turns and the
         # background self-improvement review fork.
         #   false (default) — write freely; the gate is off (pre-gate behaviour)
@@ -3384,19 +3384,19 @@ DEFAULT_CONFIG = {
     },
 
 
-    # X (Twitter) Search via xAI's built-in x_search Responses tool.
+    # X (Twitter) Search via xAI's built-in search_x Responses tool.
     # The tool registers when xAI credentials are available (SuperGrok
-    # OAuth or XAI_API_KEY) AND the x_search toolset is enabled in
+    # OAuth or XAI_API_KEY) AND the search_x toolset is enabled in
     # `hermes tools`. These settings tune the backing Responses API call.
-    "x_search": {
+    "search_x": {
         # xAI model used for the Responses call. grok-4.5 is the
-        # recommended default; any Grok model with x_search tool
+        # recommended default; any Grok model with search_x tool
         # access works.
         "model": "grok-4.5",
         # Optional reasoning effort sent to xAI Responses API models that
         # support it. Leave null to preserve the selected model's default.
         "reasoning_effort": None,
-        # Request timeout in seconds (minimum 30). x_search can take
+        # Request timeout in seconds (minimum 30). search_x can take
         # 60-120s for complex queries — the default is generous.
         "timeout_seconds": 180,
         # Number of automatic retries on 5xx / ReadTimeout / ConnectionError.
@@ -3502,7 +3502,7 @@ DEFAULT_CONFIG = {
     "paste_collapse_char_threshold": 2000,
 
     # Computer Use (cua-driver) toolset settings.
-    "computer_use": {
+    "use_computer": {
         # cua-driver ships with anonymous usage telemetry (PostHog) ENABLED
         # by default upstream. Hermes disables it for our users unless they
         # explicitly opt in here. When false (default), Hermes sets
@@ -3595,7 +3595,7 @@ OPTIONAL_ENV_VARS = {
         "prompt": "OpenRouter API key",
         "url": "https://openrouter.ai/keys",
         "password": True,
-        "tools": ["vision_analyze"],
+        "tools": ["analyze_vision"],
         "category": "provider",
         "advanced": True,
     },
@@ -3993,7 +3993,7 @@ OPTIONAL_ENV_VARS = {
         "description": "Exa API key for AI-native web search and contents",
         "prompt": "Exa API key",
         "url": "https://exa.ai/",
-        "tools": ["web_search", "web_extract"],
+        "tools": ["search_web", "extract_web"],
         "password": True,
         "category": "tool",
     },
@@ -4001,7 +4001,7 @@ OPTIONAL_ENV_VARS = {
         "description": "Parallel API key for AI-native web search and extract",
         "prompt": "Parallel API key",
         "url": "https://parallel.ai/",
-        "tools": ["web_search", "web_extract"],
+        "tools": ["search_web", "extract_web"],
         "password": True,
         "category": "tool",
     },
@@ -4009,7 +4009,7 @@ OPTIONAL_ENV_VARS = {
         "description": "Firecrawl API key for web search and scraping",
         "prompt": "Firecrawl API key",
         "url": "https://firecrawl.dev/",
-        "tools": ["web_search", "web_extract"],
+        "tools": ["search_web", "extract_web"],
         "password": True,
         "category": "tool",
     },
@@ -4057,7 +4057,7 @@ OPTIONAL_ENV_VARS = {
         "description": "Tavily API key for AI-native web search and extract",
         "prompt": "Tavily API key",
         "url": "https://app.tavily.com/home",
-        "tools": ["web_search", "web_extract"],
+        "tools": ["search_web", "extract_web"],
         "password": True,
         "category": "tool",
     },
@@ -4065,7 +4065,7 @@ OPTIONAL_ENV_VARS = {
         "description": "URL of your SearXNG instance for free self-hosted web search",
         "prompt": "SearXNG URL (e.g. http://localhost:8080)",
         "url": "https://searxng.github.io/searxng/",
-        "tools": ["web_search"],
+        "tools": ["search_web"],
         "password": False,
         "category": "tool",
     },
@@ -4073,7 +4073,7 @@ OPTIONAL_ENV_VARS = {
         "description": "Brave Search API subscription token (free tier: 2,000 queries/mo)",
         "prompt": "Brave Search subscription token",
         "url": "https://brave.com/search/api/",
-        "tools": ["web_search"],
+        "tools": ["search_web"],
         "password": True,
         "category": "tool",
     },
@@ -4081,7 +4081,7 @@ OPTIONAL_ENV_VARS = {
         "description": "Browserbase API key for cloud browser (optional — local browser works without this)",
         "prompt": "Browserbase API key",
         "url": "https://browserbase.com/",
-        "tools": ["browser_navigate", "browser_click"],
+        "tools": ["navigate_browser", "click_browser"],
         "password": True,
         "category": "tool",
     },
@@ -4089,7 +4089,7 @@ OPTIONAL_ENV_VARS = {
         "description": "Browserbase project ID (optional — only needed for cloud browser)",
         "prompt": "Browserbase project ID",
         "url": "https://browserbase.com/",
-        "tools": ["browser_navigate", "browser_click"],
+        "tools": ["navigate_browser", "click_browser"],
         "password": False,
         "category": "tool",
     },
@@ -4097,14 +4097,14 @@ OPTIONAL_ENV_VARS = {
         "description": "Browser Use API key for cloud browser (optional — local browser works without this)",
         "prompt": "Browser Use API key",
         "url": "https://browser-use.com/",
-        "tools": ["browser_navigate", "browser_click"],
+        "tools": ["navigate_browser", "click_browser"],
         "password": True,
         "category": "tool",
     },
     "FIRECRAWL_BROWSER_TTL": {
         "description": "Firecrawl browser session TTL in seconds (optional, default 300)",
         "prompt": "Browser session TTL (seconds)",
-        "tools": ["browser_navigate", "browser_click"],
+        "tools": ["navigate_browser", "click_browser"],
         "password": False,
         "category": "tool",
     },
@@ -4112,7 +4112,7 @@ OPTIONAL_ENV_VARS = {
         "description": "Browser engine for local mode: auto (default Chrome), lightpanda (faster, no screenshots), chrome",
         "prompt": "Browser engine (auto/lightpanda/chrome)",
         "url": "https://github.com/vercel-labs/agent-browser",
-        "tools": ["browser_navigate", "browser_snapshot", "browser_click", "browser_vision"],
+        "tools": ["navigate_browser", "snapshot_browser", "click_browser", "browser_vision"],
         "password": False,
         "category": "tool",
         "advanced": True,
@@ -4121,7 +4121,7 @@ OPTIONAL_ENV_VARS = {
         "description": "Camofox browser server URL for local anti-detection browsing (e.g. http://localhost:9377)",
         "prompt": "Camofox server URL",
         "url": "https://github.com/jo-inc/camofox-browser",
-        "tools": ["browser_navigate", "browser_click"],
+        "tools": ["navigate_browser", "click_browser"],
         "password": False,
         "category": "tool",
     },
@@ -4129,7 +4129,7 @@ OPTIONAL_ENV_VARS = {
         "description": "Optional bearer token sent as Authorization header to a remote/authenticated Camofox server",
         "prompt": "Camofox API key",
         "url": "https://github.com/jo-inc/camofox-browser",
-        "tools": ["browser_navigate", "browser_click"],
+        "tools": ["navigate_browser", "click_browser"],
         "password": True,
         "category": "tool",
         "advanced": True,
@@ -4138,7 +4138,7 @@ OPTIONAL_ENV_VARS = {
         "description": "FAL API key for image and video generation",
         "prompt": "FAL API key",
         "url": "https://fal.ai/",
-        "tools": ["image_generate", "video_generate"],
+        "tools": ["generate_image", "generate_video"],
         "password": True,
         "category": "tool",
     },
@@ -4146,7 +4146,7 @@ OPTIONAL_ENV_VARS = {
         "description": "Krea API key for Krea 2 image generation (Medium + Large)",
         "prompt": "Krea API key",
         "url": "https://www.krea.ai/settings/api-tokens",
-        "tools": ["image_generate"],
+        "tools": ["generate_image"],
         "password": True,
         "category": "tool",
     },
@@ -8508,7 +8508,7 @@ def show_config():
     auxiliary = config.get('auxiliary', {})
     aux_tasks = {
         "Vision":      auxiliary.get('vision', {}),
-        "Web extract": auxiliary.get('web_extract', {}),
+        "Web extract": auxiliary.get('extract_web', {}),
     }
     has_overrides = any(
         t.get('provider', 'auto') != 'auto' or t.get('model', '')

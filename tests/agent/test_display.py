@@ -31,7 +31,7 @@ def test_cute_tool_message_falls_back_when_renderer_raises(monkeypatch):
 
     monkeypatch.setattr(display_module, "_get_cute_tool_message", _boom)
 
-    assert get_cute_tool_message("web_extract", {"urls": []}, 0.25) == (
+    assert get_cute_tool_message("extract_web", {"urls": []}, 0.25) == (
         "┊ ⚡ web_extra completed  0.2s"
     )
 
@@ -106,7 +106,7 @@ class TestBuildToolPreview:
         assert result == "python -m pytest -q"
 
     def test_web_search_preview(self):
-        result = build_tool_preview("web_search", {"query": "hello world"})
+        result = build_tool_preview("search_web", {"query": "hello world"})
         assert result is not None
         assert "hello world" in result
 
@@ -121,21 +121,21 @@ class TestBuildToolPreview:
 
     def test_browser_type_preview_redacts_api_key(self):
         secret = "sk-proj-ABCD1234567890EFGH"
-        result = build_tool_preview("browser_type", {"ref": "@e3", "text": secret})
+        result = build_tool_preview("type_browser", {"ref": "@e3", "text": secret})
         assert result is not None
         assert secret not in result
         assert "sk-pro" in result and "..." in result
 
     def test_browser_type_preview_keeps_normal_text(self):
         text = "hello world search query"
-        result = build_tool_preview("browser_type", {"ref": "@e3", "text": text})
+        result = build_tool_preview("type_browser", {"ref": "@e3", "text": text})
         assert result is not None
         assert text in result
 
     def test_browser_type_display_args_redact_api_key(self):
         secret = "ghp_ABCDEFGHIJ1234567890"
         safe_args = redact_tool_args_for_display(
-            "browser_type", {"ref": "@e3", "text": secret}
+            "type_browser", {"ref": "@e3", "text": secret}
         )
         assert secret not in str(safe_args)
         assert safe_args["ref"] == "@e3"
@@ -144,7 +144,7 @@ class TestBuildToolPreview:
     def test_browser_type_display_args_keep_normal_text(self):
         text = "my_normal_password_123"
         safe_args = redact_tool_args_for_display(
-            "browser_type", {"ref": "@e3", "text": text}
+            "type_browser", {"ref": "@e3", "text": text}
         )
         assert safe_args == {"ref": "@e3", "text": text}
 
@@ -206,7 +206,7 @@ class TestBuildToolPreview:
         assert result == '-memory: "<missing old_text>"'
 
     def test_session_search_preview(self):
-        result = build_tool_preview("session_search", {"query": "find something"})
+        result = build_tool_preview("search_session", {"query": "find something"})
         assert result is not None
         assert "find something" in result
 
@@ -315,7 +315,7 @@ class TestCuteToolMessagePreviewLength:
     def test_browser_type_cute_message_redacts_api_key(self):
         secret = "sk-proj-ABCD1234567890EFGH"
         line = get_cute_tool_message(
-            "browser_type",
+            "type_browser",
             {"ref": "@password", "text": secret},
             0.1,
             result='{"success": true, "typed": "sk-pro...EFGH"}',
@@ -327,7 +327,7 @@ class TestCuteToolMessagePreviewLength:
     def test_browser_type_cute_message_keeps_normal_text(self):
         text = "hello world"
         line = get_cute_tool_message(
-            "browser_type",
+            "type_browser",
             {"ref": "@search", "text": text},
             0.1,
             result='{"success": true, "typed": "hello world"}',
@@ -359,7 +359,7 @@ class TestEditDiffPreview:
         assert any("48;2;" in line for line in rendered)
 
     def test_extract_edit_diff_ignores_non_edit_tools(self):
-        assert extract_edit_diff("web_search", '{"diff": "--- a\\n+++ b\\n"}') is None
+        assert extract_edit_diff("search_web", '{"diff": "--- a\\n+++ b\\n"}') is None
 
     def test_extract_edit_diff_uses_local_snapshot_for_write_file(self, tmp_path):
         target = tmp_path / "note.txt"
@@ -455,19 +455,19 @@ class TestBuildToolLabel:
 
     def test_web_search_uses_for_connector(self):
         from agent.display import build_tool_label
-        label = build_tool_label("web_search", {"query": "weather in NYC"})
+        label = build_tool_label("search_web", {"query": "weather in NYC"})
         assert label == 'Searching the web for weather in NYC'
 
     def test_web_extract_reads_url(self):
         from agent.display import build_tool_label
-        label = build_tool_label("web_extract", {"urls": ["https://example.com/page"]})
+        label = build_tool_label("extract_web", {"urls": ["https://example.com/page"]})
         assert label is not None
         assert label.startswith("Reading ")
         assert "example.com/page" in label
 
     def test_browser_navigate_browses_url(self):
         from agent.display import build_tool_label
-        label = build_tool_label("browser_navigate", {"url": "https://news.site"})
+        label = build_tool_label("navigate_browser", {"url": "https://news.site"})
         assert label == "Browsing https://news.site"
 
     def test_read_file_uses_basename(self):
@@ -484,14 +484,14 @@ class TestBuildToolLabel:
 
     def test_verb_only_for_no_preview_tools(self):
         from agent.display import build_tool_label
-        # session_search is verb-only — no redundant query echo
-        label = build_tool_label("session_search", {"query": "auth refactor"})
+        # search_session is verb-only — no redundant query echo
+        label = build_tool_label("search_session", {"query": "auth refactor"})
         assert label == "Searching past sessions"
 
     def test_verb_only_when_no_preview_available(self):
         from agent.display import build_tool_label
-        # image_generate with empty args still yields the verb (no preview)
-        label = build_tool_label("image_generate", {})
+        # generate_image with empty args still yields the verb (no preview)
+        label = build_tool_label("generate_image", {})
         assert label == "Generating image"
 
     def test_unknown_tool_falls_back_to_preview(self):
@@ -509,9 +509,9 @@ class TestBuildToolLabel:
         )
         set_friendly_tool_labels(False)
         args = {"query": "weather in NYC"}
-        label = build_tool_label("web_search", args)
+        label = build_tool_label("search_web", args)
         # With the feature off, must match the raw preview exactly
-        assert label == build_tool_preview("web_search", args)
+        assert label == build_tool_preview("search_web", args)
         assert "Searching the web" not in (label or "")
 
     def test_every_known_verb_renders_without_error(self):
@@ -523,7 +523,7 @@ class TestBuildToolLabel:
 
 
 class TestToolActionPhrases:
-    """Action-aware standalone phrases for cronjob / skill_manage / memory."""
+    """Action-aware standalone phrases for cronjob / manage_skill / memory."""
 
     @pytest.fixture(autouse=True)
     def _enable_friendly(self):
@@ -567,7 +567,7 @@ class TestToolActionPhrases:
             "remove_file": "Removing skill file",
         }
         for action, phrase in expected.items():
-            label = build_tool_label("skill_manage", {"action": action, "name": "my-skill"})
+            label = build_tool_label("manage_skill", {"action": action, "name": "my-skill"})
             assert label.startswith(phrase), f"{action} → {label}"
             assert "my-skill" in label, f"{action} should carry the skill name"
 
@@ -592,7 +592,7 @@ class TestToolActionPhrases:
     def test_status_phrase_uses_action_phrase(self):
         from agent.display import build_status_phrase
         assert build_status_phrase("cronjob", {"action": "list"}) == "is reading scheduled jobs…"
-        assert build_status_phrase("skill_manage", {"action": "delete", "name": "x"}) == "is deleting skill x…"
+        assert build_status_phrase("manage_skill", {"action": "delete", "name": "x"}) == "is deleting skill x…"
         assert build_status_phrase("memory", {"action": "add"}) == "is saving to memory…"
 
     def test_status_phrase_verb_mode_falls_back_generic(self):
@@ -612,7 +612,7 @@ class TestBuildStatusPhrase:
 
     def test_search_tool_uses_for_connector(self):
         from agent.display import build_status_phrase
-        phrase = build_status_phrase("web_search", {"query": "slack api limits"})
+        phrase = build_status_phrase("search_web", {"query": "slack api limits"})
         assert phrase == "is searching the web for slack api limits…"
 
     def test_verb_only_when_args_none(self):
@@ -657,5 +657,5 @@ class TestBuildStatusPhrase:
 
     def test_no_preview_tools_stay_verb_only(self):
         from agent.display import build_status_phrase
-        phrase = build_status_phrase("skills_list", {"category": "devops"})
+        phrase = build_status_phrase("list_skills", {"category": "devops"})
         assert phrase == "is listing skills…"

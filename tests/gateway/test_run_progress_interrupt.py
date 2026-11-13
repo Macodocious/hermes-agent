@@ -70,7 +70,7 @@ class PreInterruptAgent:
         return self._interrupt_requested
 
     def run_conversation(self, message, conversation_history=None, task_id=None):
-        self.tool_progress_callback("tool.started", "web_search", "first search", {})
+        self.tool_progress_callback("tool.started", "search_web", "first search", {})
         time.sleep(0.35)  # let the drain loop process
         return {"final_response": "done", "messages": [], "api_calls": 1}
 
@@ -79,7 +79,7 @@ class InterruptedAgent:
     """Fires tool.started events AFTER interrupt — all should be suppressed.
 
     Mirrors the failure mode in the bug report: LLM returned N parallel
-    web_search calls, interrupt flag flipped, remaining events still
+    search_web calls, interrupt flag flipped, remaining events still
     rendered as bubbles.  With the fix, none of these should appear.
     """
 
@@ -97,11 +97,11 @@ class InterruptedAgent:
     def run_conversation(self, message, conversation_history=None, task_id=None):
         # Parallel tool batch — in production these come from one LLM
         # response with 5 tool_calls.  All are post-interrupt.
-        self.tool_progress_callback("tool.started", "web_search", "cognee hermes", {})
-        self.tool_progress_callback("tool.started", "web_search", "McBee deer hunting", {})
-        self.tool_progress_callback("tool.started", "web_search", "kuzu graph db", {})
-        self.tool_progress_callback("tool.started", "web_search", "moonshot kimi api", {})
-        self.tool_progress_callback("tool.started", "web_search", "platform.moonshot.cn", {})
+        self.tool_progress_callback("tool.started", "search_web", "cognee hermes", {})
+        self.tool_progress_callback("tool.started", "search_web", "McBee deer hunting", {})
+        self.tool_progress_callback("tool.started", "search_web", "kuzu graph db", {})
+        self.tool_progress_callback("tool.started", "search_web", "moonshot kimi api", {})
+        self.tool_progress_callback("tool.started", "search_web", "platform.moonshot.cn", {})
         time.sleep(0.35)  # let the drain loop attempt to process the queue
         return {"final_response": "interrupted", "messages": [], "api_calls": 1}
 
@@ -223,7 +223,7 @@ async def test_progress_suppressed_when_agent_is_interrupted(monkeypatch, tmp_pa
     """Post-interrupt tool.started events must not render as bubbles.
 
     This is Bug B from the screenshot: user sends `stop`, agent acks with
-    ⚡ Interrupting, but 5 more 🔍 web_search bubbles still render because
+    ⚡ Interrupting, but 5 more 🔍 search_web bubbles still render because
     their tool.started events were already parsed from the LLM response.
     With the fix, progress_callback and the drain loop both check
     is_interrupted and skip these events.

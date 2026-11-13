@@ -226,15 +226,15 @@ _last_resolved_tool_names: List[str] = []
 # =============================================================================
 
 _LEGACY_TOOLSET_MAP = {
-    "web_tools": ["web_search", "web_extract"],
+    "web_tools": ["search_web", "extract_web"],
     "terminal_tools": ["terminal"],
-    "vision_tools": ["vision_analyze"],
-    "image_tools": ["image_generate"],
-    "skills_tools": ["skills_list", "skill_view", "skill_manage"],
+    "vision_tools": ["analyze_vision"],
+    "image_tools": ["generate_image"],
+    "skills_tools": ["list_skills", "view_skill", "manage_skill"],
     "browser_tools": [
-        "browser_navigate", "browser_snapshot", "browser_click",
-        "browser_type", "browser_scroll", "browser_back",
-        "browser_press", "browser_get_images",
+        "navigate_browser", "snapshot_browser", "click_browser",
+        "type_browser", "scroll_browser", "back_browser",
+        "press_browser", "get_browser_images",
         "browser_vision", "browser_console"
     ],
     "cronjob_tools": ["cronjob"],
@@ -451,7 +451,7 @@ def _compute_tool_definitions(
     available_tool_names = {t["function"]["name"] for t in filtered_tools}
 
     # Rebuild execute_code schema to only list sandbox tools that are actually
-    # available.  Without this, the model sees "web_search is available in
+    # available.  Without this, the model sees "search_web is available in
     # execute_code" even when the API key isn't configured or the toolset is
     # disabled (#560-discord).
     if "execute_code" in available_tool_names:
@@ -492,18 +492,18 @@ def _compute_tool_definitions(
                         filtered_tools[i] = {"type": "function", "function": dynamic}
                         break
 
-    # Strip web tool cross-references from browser_navigate description when
-    # web_search / web_extract are not available.  The static schema says
-    # "prefer web_search or web_extract" which causes the model to hallucinate
+    # Strip web tool cross-references from navigate_browser description when
+    # search_web / extract_web are not available.  The static schema says
+    # "prefer search_web or extract_web" which causes the model to hallucinate
     # those tools when they're missing.
-    if "browser_navigate" in available_tool_names:
-        web_tools_available = {"web_search", "web_extract"} & available_tool_names
+    if "navigate_browser" in available_tool_names:
+        web_tools_available = {"search_web", "extract_web"} & available_tool_names
         if not web_tools_available:
             for i, td in enumerate(filtered_tools):
-                if td.get("function", {}).get("name") == "browser_navigate":
+                if td.get("function", {}).get("name") == "navigate_browser":
                     desc = td["function"].get("description", "")
                     desc = desc.replace(
-                        " For simple information retrieval, prefer web_search or web_extract (faster, cheaper).",
+                        " For simple information retrieval, prefer search_web or extract_web (faster, cheaper).",
                         "",
                     )
                     filtered_tools[i] = {
@@ -633,7 +633,7 @@ def _resolve_active_context_length() -> int:
 # because they need agent-level state (TodoStore, MemoryStore, etc.).
 # The registry still holds their schemas; dispatch just returns a stub error
 # so if something slips through, the LLM sees a sensible message.
-_AGENT_LOOP_TOOLS = {"todo", "memory", "session_search", "delegate_task"}
+_AGENT_LOOP_TOOLS = {"todo", "memory", "search_session", "delegate_task"}
 _READ_SEARCH_TOOLS = {"read_file", "search_files"}
 
 
@@ -1075,7 +1075,7 @@ def handle_function_call(
         function_name: Name of the function to call.
         function_args: Arguments for the function.
         task_id: Unique identifier for terminal/browser session isolation.
-        user_task: The user's original task (for browser_snapshot context).
+        user_task: The user's original task (for snapshot_browser context).
         enabled_tools: Tool names enabled for this session.  When provided,
                        execute_code uses this list to determine which sandbox
                        tools to generate.  Falls back to the process-global

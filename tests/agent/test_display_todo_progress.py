@@ -243,20 +243,20 @@ class TestTodoSkinIntegration:
 
 
 class TestWebExtractDisplay:
-    """get_cute_tool_message for web_extract handles dict objects from web_search results.
+    """get_cute_tool_message for extract_web handles dict objects from search_web results.
 
-    Reproduces and verifies fix for #61693 where web_search result dicts
-    caused AttributeError when web_extract tried to extract domain names.
+    Reproduces and verifies fix for #61693 where search_web result dicts
+    caused AttributeError when extract_web tried to extract domain names.
     """
 
     def test_web_extract_with_dict_url_field(self):
-        """Dict with 'url' field (standard web_search result shape)."""
+        """Dict with 'url' field (standard search_web result shape)."""
         args = {
             "urls": [
                 {"url": "https://example.com/path", "title": "Example", "snippet": "..."}
             ]
         }
-        msg = get_cute_tool_message("web_extract", args, 0.5)
+        msg = get_cute_tool_message("extract_web", args, 0.5)
         assert "example.com" in msg
         assert "📄" in msg
         assert "0.5s" in msg
@@ -269,7 +269,7 @@ class TestWebExtractDisplay:
                 {"href": "http://test.org/page", "title": "Test", "snippet": "..."}
             ]
         }
-        msg = get_cute_tool_message("web_extract", args, 0.3)
+        msg = get_cute_tool_message("extract_web", args, 0.3)
         assert "test.org" in msg
 
     def test_web_extract_with_dict_no_url_field(self):
@@ -279,13 +279,13 @@ class TestWebExtractDisplay:
                 {"title": "No URL", "snippet": "Missing url field"}
             ]
         }
-        msg = get_cute_tool_message("web_extract", args, 0.2)
+        msg = get_cute_tool_message("extract_web", args, 0.2)
         assert "📄" in msg
         assert "pages" in msg
         assert "0.2s" in msg
 
     def test_web_extract_with_non_string_item_uses_generic_label(self):
-        msg = get_cute_tool_message("web_extract", {"urls": [123]}, 0.2)
+        msg = get_cute_tool_message("extract_web", {"urls": [123]}, 0.2)
         assert "pages" in msg
 
     def test_web_extract_with_multiple_dicts(self):
@@ -297,7 +297,7 @@ class TestWebExtractDisplay:
                 {"url": "https://example.com/page3"},
             ]
         }
-        msg = get_cute_tool_message("web_extract", args, 0.6)
+        msg = get_cute_tool_message("extract_web", args, 0.6)
         assert "example.com" in msg
         assert "+2" in msg  # 3 URLs total, +2 beyond first
 
@@ -309,13 +309,13 @@ class TestWebExtractDisplay:
                 {"url": "https://dict.com/page", "title": "Dict URL"},
             ]
         }
-        msg = get_cute_tool_message("web_extract", args, 0.4)
+        msg = get_cute_tool_message("extract_web", args, 0.4)
         # First item is a string, so domain should come from it
         assert "direct.com" in msg
 
     def test_web_extract_empty_urls(self):
         """Empty urls list - shows 'pages' placeholder."""
         args = {"urls": []}
-        msg = get_cute_tool_message("web_extract", args, 0.1)
+        msg = get_cute_tool_message("extract_web", args, 0.1)
         assert "pages" in msg
         assert "📄" in msg

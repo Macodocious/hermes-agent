@@ -99,11 +99,11 @@ class TestGetCommandTimeoutRace:
         )
 
     def test_max_call_site_pattern_never_raises(self):
-        """The exact expression from browser_navigate must not raise TypeError."""
+        """The exact expression from navigate_browser must not raise TypeError."""
         # Force the corrupted state the bug used to produce.
         self.bt._command_timeout_resolved = True
         self.bt._cached_command_timeout = None
 
-        # This is the literal line from browser_navigate() after the fix.
+        # This is the literal line from navigate_browser() after the fix.
         timeout = max(self.bt._safe_command_timeout(), 60)
         assert timeout == 60

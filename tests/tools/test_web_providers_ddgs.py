@@ -6,7 +6,7 @@ Covers:
 - Result normalization (title, url, description, position)
 - Process-isolated timeout / interrupt / GIL-hold / reap (#68096)
 - _is_backend_available("ddgs") / _get_backend() integration
-- web_extract returns a search-only error when ddgs is active
+- extract_web returns a search-only error when ddgs is active
 """
 from __future__ import annotations
 
@@ -376,7 +376,7 @@ class TestDDGSBackendWiring:
 
 
 # ---------------------------------------------------------------------------
-# ddgs is search-only: web_extract returns a clear error
+# ddgs is search-only: extract_web returns a clear error
 # ---------------------------------------------------------------------------
 
 

@@ -156,7 +156,7 @@ class TestDoctorToolAvailabilityOverrides:
 
         available, unavailable = doctor._apply_doctor_tool_availability_overrides(
             [],
-            [{"name": "kanban", "env_vars": [], "tools": ["kanban_show"]}],
+            [{"name": "kanban", "env_vars": [], "tools": ["show_kanban"]}],
         )
 
         assert available == ["kanban"]
@@ -164,7 +164,7 @@ class TestDoctorToolAvailabilityOverrides:
 
     def test_leaves_kanban_unavailable_when_worker_env_is_set(self, monkeypatch):
         monkeypatch.setenv("HERMES_KANBAN_TASK", "probe")
-        kanban_entry = {"name": "kanban", "env_vars": [], "tools": ["kanban_show"]}
+        kanban_entry = {"name": "kanban", "env_vars": [], "tools": ["show_kanban"]}
 
         available, unavailable = doctor._apply_doctor_tool_availability_overrides(
             [],
@@ -176,7 +176,7 @@ class TestDoctorToolAvailabilityOverrides:
 
     def test_leaves_non_worker_kanban_failure_unavailable(self, monkeypatch):
         monkeypatch.delenv("HERMES_KANBAN_TASK", raising=False)
-        kanban_entry = {"name": "kanban", "env_vars": [], "tools": ["kanban_show", "not_a_kanban_tool"]}
+        kanban_entry = {"name": "kanban", "env_vars": [], "tools": ["show_kanban", "not_a_kanban_tool"]}
 
         available, unavailable = doctor._apply_doctor_tool_availability_overrides(
             [],
@@ -668,7 +668,7 @@ def test_run_doctor_termux_does_not_mark_browser_available_without_agent_browser
     monkeypatch.setattr(doctor_mod.shutil, "which", lambda cmd: "/data/data/com.termux/files/usr/bin/node" if cmd in {"node", "npm"} else None)
 
     fake_model_tools = types.SimpleNamespace(
-        check_tool_availability=lambda *a, **kw: (["terminal"], [{"name": "browser", "env_vars": [], "tools": ["browser_navigate"]}]),
+        check_tool_availability=lambda *a, **kw: (["terminal"], [{"name": "browser", "env_vars": [], "tools": ["navigate_browser"]}]),
         TOOLSET_REQUIREMENTS={
             "terminal": {"name": "terminal"},
             "browser": {"name": "browser"},

@@ -129,7 +129,7 @@ Session ID 在退出 CLI session 时显示，也可通过 `hermes sessions list`
 摘要内容：
 - 显示**用户消息**（金色 `●`）和**助手回复**（绿色 `◆`）
 - **截断**长消息（用户 300 字符，助手 200 字符/3 行）
-- **折叠工具调用**为带工具名称的计数（例如 `[3 tool calls: terminal, web_search]`）
+- **折叠工具调用**为带工具名称的计数（例如 `[3 tool calls: terminal, search_web]`）
 - **隐藏**系统消息、工具结果和内部推理
 - **最多**显示最近 10 轮，并以"... N earlier messages ..."指示器标注
 - 使用**暗色样式**与活跃对话区分
@@ -434,7 +434,7 @@ Database size: 12.4 MB
 
 ## Session 搜索工具
 
-Agent 内置了 `session_search` 工具，使用 SQLite 的 FTS5 引擎对所有历史对话进行全文搜索，并允许 agent 滚动浏览找到的任何 session。无需 LLM 调用、无需摘要、无截断。每种调用形式都从数据库返回实际消息。
+Agent 内置了 `search_session` 工具，使用 SQLite 的 FTS5 引擎对所有历史对话进行全文搜索，并允许 agent 滚动浏览找到的任何 session。无需 LLM 调用、无需摘要、无截断。每种调用形式都从数据库返回实际消息。
 
 ### 三种调用形式
 
@@ -443,7 +443,7 @@ Agent 内置了 `session_search` 工具，使用 SQLite 的 FTS5 引擎对所有
 **1. 发现——传入 `query`：**
 
 ```python
-session_search(query="auth refactor", limit=3)
+search_session(query="auth refactor", limit=3)
 ```
 
 运行 FTS5，按 session 谱系去重，返回前 N 个 session。每个结果包含：
@@ -460,7 +460,7 @@ session_search(query="auth refactor", limit=3)
 **2. 滚动——传入 `session_id` + `around_message_id`：**
 
 ```python
-session_search(session_id="20260510_174648_805cc2", around_message_id=590803, window=10)
+search_session(session_id="20260510_174648_805cc2", around_message_id=590803, window=10)
 ```
 
 返回以锚点为中心的 ±`window` 条消息窗口。无 FTS5，无书签——只是切片。在发现调用后需要比默认 ±5 窗口更多上下文时使用。
@@ -475,7 +475,7 @@ session_search(session_id="20260510_174648_805cc2", around_message_id=590803, wi
 **3. 浏览——无参数：**
 
 ```python
-session_search()
+search_session()
 ```
 
 按时间顺序返回最近的 session（标题、预览、时间戳）。当用户询问"我在做什么"而未指定主题时很有用。
@@ -498,7 +498,7 @@ session_search()
 
 Agent 被提示在以下情况自动使用 session 搜索：
 
-> *"当用户引用过去对话中的内容，或你怀疑存在相关的先前上下文时，在要求用户重复之前先使用 session_search 召回。"*
+> *"当用户引用过去对话中的内容，或你怀疑存在相关的先前上下文时，在要求用户重复之前先使用 search_session 召回。"*
 
 典型触发词：「我们之前做过这个」、「还记得吗」、「上次」、「正如我提到的」，或任何当前窗口中没有的项目/人物/概念的引用。
 
@@ -582,7 +582,7 @@ state.db 后可安全删除。
 - 实际删除了行的清理操作完成后，`state.db` 会执行 `VACUUM` 以回收磁盘空间（SQLite 在普通 DELETE 后不会缩小文件）
 - 清理最多每 `sessions.min_interval_hours`（默认 24）小时运行一次；上次运行时间戳记录在 `state.db` 内部，因此在同一 `HERMES_HOME` 下的所有 Hermes 进程间共享
 
-默认为**关闭**——session 历史对 `session_search` 召回很有价值，静默删除可能会让用户感到意外。在 `~/.hermes/config.yaml` 中启用：
+默认为**关闭**——session 历史对 `search_session` 召回很有价值，静默删除可能会让用户感到意外。在 `~/.hermes/config.yaml` 中启用：
 
 ```yaml
 sessions:
@@ -609,5 +609,5 @@ hermes sessions prune --older-than 30 --yes
 ```
 
 :::tip
-数据库增长缓慢（典型情况：数百个 session 约 10–15 MB），session 历史为跨历史对话的 `session_search` 召回提供支持，因此自动清理默认关闭。如果你运行繁重的 gateway/cron 工作负载且 `state.db` 明显影响性能（已观察到的故障模式：约 1000 个 session 的 384 MB state.db 导致 FTS5 插入和 `/resume` 列表变慢），则启用它。使用 `hermes sessions prune` 进行一次性清理，无需开启自动清理。
+数据库增长缓慢（典型情况：数百个 session 约 10–15 MB），session 历史为跨历史对话的 `search_session` 召回提供支持，因此自动清理默认关闭。如果你运行繁重的 gateway/cron 工作负载且 `state.db` 明显影响性能（已观察到的故障模式：约 1000 个 session 的 384 MB state.db 导致 FTS5 插入和 `/resume` 列表变慢），则启用它。使用 `hermes sessions prune` 进行一次性清理，无需开启自动清理。
 :::

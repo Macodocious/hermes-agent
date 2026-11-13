@@ -1180,7 +1180,7 @@ class TestPrompt:
     async def test_prompt_propagates_hermes_session_id_env(self, agent, monkeypatch):
         """ACP must propagate the originating session id to the agent loop
         via ``HERMES_SESSION_ID`` so tools that want to stamp side-effects
-        with it (e.g. ``kanban_create``) can read the env var inside
+        with it (e.g. ``create_kanban``) can read the env var inside
         ``run_conversation``. The variable must be visible during the
         agent call AND restored afterwards so a re-used executor thread
         doesn't leak one session's id into another."""

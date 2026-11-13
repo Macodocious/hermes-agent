@@ -147,7 +147,7 @@ class TestHooksTest:
         with patch("hermes_cli.config.load_config", return_value=cfg):
             out = _run(SimpleNamespace(
                 hooks_action="test", event="pre_tool_call",
-                for_tool="web_search", payload_file=None,
+                for_tool="search_web", payload_file=None,
             ))
         assert "No shell hooks" in out
 

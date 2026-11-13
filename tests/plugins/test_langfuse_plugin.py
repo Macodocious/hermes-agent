@@ -723,10 +723,10 @@ class TestToolCallOutputBackfill:
         state.turn_tool_calls.append({
             "id": "call-1",
             "type": "function",
-            "name": "web_extract",
+            "name": "extract_web",
             "arguments": '{"urls": ["https://example.com"]}',
             "function": {
-                "name": "web_extract",
+                "name": "extract_web",
                 "arguments": '{"urls": ["https://example.com"]}',
             },
         })
@@ -744,7 +744,7 @@ class TestToolCallOutputBackfill:
         monkeypatch.setattr(mod, "_end_observation", fake_end_observation)
 
         mod.on_post_tool_call(
-            tool_name="web_extract",
+            tool_name="extract_web",
             args={"urls": ["https://example.com"]},
             result='{"results": [{"url": "https://example.com", "content": "Example Domain"}]}',
             task_id="task-1",
@@ -765,14 +765,14 @@ class TestToolCallOutputBackfill:
 
         messages = [{
             "role": "tool",
-            "name": "web_extract",
+            "name": "extract_web",
             "tool_call_id": "call-1",
             "content": '{"ok": true}',
         }]
 
         assert mod._serialize_messages(messages) == [{
             "role": "tool",
-            "name": "web_extract",
+            "name": "extract_web",
             "tool_call_id": "call-1",
             "content": {"ok": True},
         }]
@@ -782,7 +782,7 @@ class TestToolCallOutputBackfill:
         mod = importlib.import_module("plugins.observability.langfuse")
 
         class _Fn:
-            name = "web_extract"
+            name = "extract_web"
             arguments = '{"urls": ["https://example.com"]}'
 
         class _ToolCall:
@@ -793,10 +793,10 @@ class TestToolCallOutputBackfill:
         assert mod._serialize_tool_calls([_ToolCall()]) == [{
             "id": "call-1",
             "type": "function",
-            "name": "web_extract",
+            "name": "extract_web",
             "arguments": '{"urls": ["https://example.com"]}',
             "function": {
-                "name": "web_extract",
+                "name": "extract_web",
                 "arguments": '{"urls": ["https://example.com"]}',
             },
         }]
@@ -851,7 +851,7 @@ class TestToolObservationKeying:
         mod = self._make_mod()
         obs_a, obs_b = object(), object()
         state = mod.TraceState(trace_id="t", root_ctx=None, root_span=None)
-        state.pending_tools_by_name["web_extract"] = [obs_a, obs_b]
+        state.pending_tools_by_name["extract_web"] = [obs_a, obs_b]
 
         task_key = mod._trace_key("task-1", "sess-1")
         monkeypatch.setitem(mod._TRACE_STATE, task_key, state)
@@ -864,17 +864,17 @@ class TestToolObservationKeying:
         monkeypatch.setattr(mod, "_end_observation", fake_end)
 
         mod.on_post_tool_call(
-            tool_name="web_extract", args={}, result='{"val": "a"}',
+            tool_name="extract_web", args={}, result='{"val": "a"}',
             task_id="task-1", session_id="sess-1", tool_call_id="",
         )
         mod.on_post_tool_call(
-            tool_name="web_extract", args={}, result='{"val": "b"}',
+            tool_name="extract_web", args={}, result='{"val": "b"}',
             task_id="task-1", session_id="sess-1", tool_call_id="",
         )
 
         assert calls[0] == (obs_a, {"val": "a"})
         assert calls[1] == (obs_b, {"val": "b"})
-        assert state.pending_tools_by_name.get("web_extract") is None
+        assert state.pending_tools_by_name.get("extract_web") is None
 
     def test_threaded_post_calls_preserve_fifo_under_lock(self, monkeypatch):
         """The actual concurrency contract: when 8 threads race to drain
@@ -887,7 +887,7 @@ class TestToolObservationKeying:
         n = 8
         observations = [object() for _ in range(n)]
         state = mod.TraceState(trace_id="t", root_ctx=None, root_span=None)
-        state.pending_tools_by_name["web_extract"] = list(observations)
+        state.pending_tools_by_name["extract_web"] = list(observations)
 
         task_key = mod._trace_key("task-thr", "sess-thr")
         monkeypatch.setitem(mod._TRACE_STATE, task_key, state)
@@ -906,7 +906,7 @@ class TestToolObservationKeying:
         def worker():
             barrier.wait()
             mod.on_post_tool_call(
-                tool_name="web_extract", args={}, result='{"ok": true}',
+                tool_name="extract_web", args={}, result='{"ok": true}',
                 task_id="task-thr", session_id="sess-thr", tool_call_id="",
             )
 
@@ -919,7 +919,7 @@ class TestToolObservationKeying:
         # Every observation was consumed exactly once; queue is empty.
         assert len(recorded) == n
         assert set(map(id, recorded)) == set(map(id, observations))
-        assert state.pending_tools_by_name.get("web_extract") is None
+        assert state.pending_tools_by_name.get("extract_web") is None
 
     def test_explicit_tool_call_id_uses_tools_dict(self, monkeypatch):
         """When tool_call_id is present, pending_tools_by_name is not touched."""

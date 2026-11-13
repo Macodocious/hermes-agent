@@ -19,14 +19,14 @@ import pytest
 VALID = {
     "todo",
     "patch",
-    "browser_click",
-    "browser_navigate",
-    "web_search",
+    "click_browser",
+    "navigate_browser",
+    "search_web",
     "read_file",
     "write_file",
     "terminal",
     "execute_code",
-    "session_search",
+    "search_session",
 }
 
 
@@ -48,13 +48,13 @@ class TestExistingBehaviorStillWorks:
     """Pre-existing repairs must keep working (no regressions)."""
 
     def test_lowercase_already_matches(self, repair):
-        assert repair("browser_click") == "browser_click"
+        assert repair("click_browser") == "click_browser"
 
     def test_uppercase_simple(self, repair):
         assert repair("TERMINAL") == "terminal"
 
     def test_dash_to_underscore(self, repair):
-        assert repair("web-search") == "web_search"
+        assert repair("web-search") == "search_web"
 
     def test_space_to_underscore(self, repair):
         assert repair("write file") == "write_file"
@@ -71,10 +71,10 @@ class TestClassLikeEmissions:
     """Regression coverage for #14784 — CamelCase + _tool suffix variants."""
 
     def test_camel_case_no_suffix(self, repair):
-        assert repair("BrowserClick") == "browser_click"
+        assert repair("BrowserClick") == "click_browser"
 
     def test_camel_case_with_underscore_tool_suffix(self, repair):
-        assert repair("BrowserClick_tool") == "browser_click"
+        assert repair("BrowserClick_tool") == "click_browser"
 
     def test_camel_case_with_Tool_class_suffix(self, repair):
         assert repair("PatchTool") == "patch"
@@ -127,7 +127,7 @@ class TestVolcEngineXmlPollution:
 
         terminal" parameter="command" string="true
         execute_code" parameter="code" string="true
-        session_search" parameter="session_id" string="true
+        search_session" parameter="session_id" string="true
 
     The fix trims at the first ``"``/``'``/``<``/``>`` so the rest of
     the repair pipeline can resolve the cleaned name to a real tool.
@@ -143,14 +143,14 @@ class TestVolcEngineXmlPollution:
         assert repair(polluted) == "execute_code"
 
     def test_session_search_with_xml_attribute_pollution(self, repair):
-        polluted = 'session_search" parameter="session_id" string="true'
-        assert repair(polluted) == "session_search"
+        polluted = 'search_session" parameter="session_id" string="true'
+        assert repair(polluted) == "search_session"
 
     def test_camel_case_tool_with_xml_pollution(self, repair):
         # If the polluted prefix is CamelCase / suffixed, the rest of
         # the pipeline (CamelCase -> snake_case, _tool strip) still runs.
         polluted = 'BrowserClick_tool" parameter="selector" string="true'
-        assert repair(polluted) == "browser_click"
+        assert repair(polluted) == "click_browser"
 
     def test_tool_name_with_trailing_quote_only(self, repair):
         # Minimal leak — just a stray trailing quote, no full attribute.
@@ -167,7 +167,7 @@ class TestVolcEngineXmlPollution:
     def test_clean_tool_name_unaffected_by_sanitizer(self, repair):
         # Pure passthrough — no XML/quote chars, no change.
         assert repair("execute_code") == "execute_code"
-        assert repair("session_search") == "session_search"
+        assert repair("search_session") == "search_session"
 
     def test_space_separated_name_still_normalizes(self, repair):
         # Critical: the XML strip must NOT consume whitespace, or the

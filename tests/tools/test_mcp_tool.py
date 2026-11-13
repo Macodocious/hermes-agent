@@ -4087,7 +4087,7 @@ class TestMCPBuiltinCollisionGuard:
         from tools.mcp_tool import _discover_and_register_server, _servers, MCPServerTask
 
         mock_registry = ToolRegistry()
-        mock_tools = [_make_mcp_tool("web_search", "Search the web")]
+        mock_tools = [_make_mcp_tool("search_wiki", "Search the wiki")]
         mock_session = MagicMock()
 
         async def fake_connect(name, config):
@@ -4102,8 +4102,8 @@ class TestMCPBuiltinCollisionGuard:
                 _discover_and_register_server("minimax", {"command": "test", "args": []})
             )
 
-        assert "mcp__minimax__web_search" in registered
-        assert mock_registry.get_toolset_for_tool("mcp__minimax__web_search") == "mcp-minimax"
+        assert "mcp__minimax__search_wiki" in registered
+        assert mock_registry.get_toolset_for_tool("mcp__minimax__search_wiki") == "mcp-minimax"
 
         _servers.pop("minimax", None)
 
@@ -4327,7 +4327,7 @@ class TestMcpParallelToolCalls:
     def test_is_mcp_tool_parallel_safe_non_mcp_tool(self):
         """Non-MCP tool names always return False."""
         from tools.mcp_tool import is_mcp_tool_parallel_safe
-        assert is_mcp_tool_parallel_safe("web_search") is False
+        assert is_mcp_tool_parallel_safe("search_web") is False
         assert is_mcp_tool_parallel_safe("read_file") is False
         assert is_mcp_tool_parallel_safe("terminal") is False
         assert is_mcp_tool_parallel_safe("") is False

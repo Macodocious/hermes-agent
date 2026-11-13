@@ -24,7 +24,7 @@ class TestPostSetupGate:
         monkeypatch.setattr(tools_config.shutil, "which", lambda name: None)
 
         assert tools_config._toolset_needs_configuration_prompt(
-            "computer_use", {}
+            "use_computer", {}
         ) is True
 
     def test_cua_driver_installed_skips_setup(self, monkeypatch, tmp_path):
@@ -40,7 +40,7 @@ class TestPostSetupGate:
         )
 
         assert tools_config._toolset_needs_configuration_prompt(
-            "computer_use", {}
+            "use_computer", {}
         ) is False
 
     def test_post_setup_predicate_exception_does_not_block(self, monkeypatch):

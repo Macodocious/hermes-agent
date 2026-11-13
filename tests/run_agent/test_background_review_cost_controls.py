@@ -150,11 +150,11 @@ def test_digest_records_tool_names_in_arc():
     old = [
         _msg("user", "do the thing"),
         _msg("assistant", "", tool_calls=[
-            {"function": {"name": "skill_view", "arguments": "{}"}},
+            {"function": {"name": "view_skill", "arguments": "{}"}},
             {"function": {"name": "patch", "arguments": "{}"}}]),
     ]
     msgs = old + [_msg("user", f"tail{i}") for i in range(30)]
     out = br._digest_history(msgs, tail=10)
     digest = out[0]["content"]
     assert "USER: do the thing" in digest
-    assert "tools: skill_view, patch" in digest
+    assert "tools: view_skill, patch" in digest

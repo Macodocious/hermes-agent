@@ -211,12 +211,12 @@ class TestMcpRegistrationE2E:
             # Fire two tool calls
             if agent.tool_progress_callback:
                 agent.tool_progress_callback("tool.started", "read_file", "read: /etc/hosts", {"path": "/etc/hosts"})
-                agent.tool_progress_callback("tool.started", "web_search", "web search: test", {"query": "test"})
+                agent.tool_progress_callback("tool.started", "search_web", "web search: test", {"query": "test"})
 
             if agent.step_callback:
                 agent.step_callback(1, [
                     {"name": "read_file", "result": '{"content": "127.0.0.1 localhost"}'},
-                    {"name": "web_search", "result": '{"data": {"web": []}}'},
+                    {"name": "search_web", "result": '{"data": {"web": []}}'},
                 ])
 
             return {"final_response": "Done.", "messages": []}

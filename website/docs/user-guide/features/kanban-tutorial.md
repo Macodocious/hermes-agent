@@ -10,7 +10,7 @@ hermes dashboard             # opens http://127.0.0.1:9119 in your browser
 # click Kanban in the left nav
 ```
 
-The dashboard is the most comfortable place for **you** to watch the system. Agent workers the dispatcher spawns never see the dashboard or the CLI — they drive the board through a dedicated `kanban_*` [toolset](./kanban#how-workers-interact-with-the-board) (`kanban_show`, `kanban_list`, `kanban_complete`, `kanban_block`, `kanban_heartbeat`, `kanban_comment`, `kanban_create`, `kanban_link`, `kanban_unblock`). All three surfaces — dashboard, CLI, worker tools — route through the same per-board SQLite DB (`~/.hermes/kanban.db` for the default board, `~/.hermes/kanban/boards/<slug>/kanban.db` for any board you create later), so each board is consistent no matter which side of the fence a change came from.
+The dashboard is the most comfortable place for **you** to watch the system. Agent workers the dispatcher spawns never see the dashboard or the CLI — they drive the board through a dedicated `kanban_*` [toolset](./kanban#how-workers-interact-with-the-board) (`show_kanban`, `list_kanban`, `complete_kanban`, `block_kanban`, `heartbeat_kanban`, `comment_kanban`, `create_kanban`, `link_kanban`, `unblock_kanban`). All three surfaces — dashboard, CLI, worker tools — route through the same per-board SQLite DB (`~/.hermes/kanban.db` for the default board, `~/.hermes/kanban/boards/<slug>/kanban.db` for any board you create later), so each board is consistent no matter which side of the fence a change came from.
 
 This tutorial uses the `default` board throughout. If you want multiple isolated queues (one per project / repo / domain), see [Boards (multi-project)](./kanban#boards-multi-project) in the overview — the same CLI / dashboard / worker flows apply per board, and workers physically cannot see tasks on other boards.
 
@@ -65,15 +65,15 @@ On the next dispatcher tick (60s by default, or immediately if you hit **Nudge d
 
 ```python
 # worker tool calls — NOT commands you run
-kanban_show()
+show_kanban()
 # → returns title, body, worker_context, parents, prior attempts, comments
 
 # (worker reads worker_context, uses terminal/file tools to design the schema,
 #  write migrations, run its own checks, commit — the real work happens here)
 
-kanban_heartbeat(note="schema drafted, writing migrations now")
+heartbeat_kanban(note="schema drafted, writing migrations now")
 
-kanban_complete(
+complete_kanban(
     summary="users(id, email, pw_hash), sessions(id, user_id, jti, expires_at); "
             "refresh tokens stored as sessions with type='refresh'",
     metadata={
@@ -84,9 +84,9 @@ kanban_complete(
 )
 ```
 
-`kanban_show` defaults `task_id` to `$HERMES_KANBAN_TASK`, so the worker doesn't need to know its own id. `kanban_complete` writes the summary + metadata onto the current `task_runs` row, closes that run, and transitions the task to `done` — all in one atomic hop through `kanban_db`.
+`show_kanban` defaults `task_id` to `$HERMES_KANBAN_TASK`, so the worker doesn't need to know its own id. `complete_kanban` writes the summary + metadata onto the current `task_runs` row, closes that run, and transitions the task to `done` — all in one atomic hop through `kanban_db`.
 
-When `SCHEMA` hits `done`, the dependency engine promotes `API` to `ready` automatically. The API worker, when it picks up, will call `kanban_show()` and see `SCHEMA`'s summary and metadata attached to the parent handoff — so it knows the schema decisions without re-reading a long design doc.
+When `SCHEMA` hits `done`, the dependency engine promotes `API` to `ready` automatically. The API worker, when it picks up, will call `show_kanban()` and see `SCHEMA`'s summary and metadata attached to the parent handoff — so it knows the schema decisions without re-reading a long design doc.
 
 Click the completed schema task on the board and the drawer shows everything:
 
@@ -139,7 +139,7 @@ Now filter the board to `content-ops` (or just search for "Transcribe") and you 
 
 Two transcribes done, one running, two ready waiting for the next dispatcher tick. The In Progress column is grouped by profile (the "Lanes by profile" default) so you see each worker's active task without scanning a mixed list. The dispatcher will promote the next ready task to running as soon as the current one completes. With three daemons working on three assignee pools in parallel, the whole content queue drains without further human input.
 
-**Everything Story 1 said about structured handoff still applies here.** A translator worker completing a call emits `kanban_complete(summary="translated 4 pages, style matched existing marketing voice", metadata={"duration_seconds": 720, "tokens_used": 2100})` — useful for analytics and for any downstream task that depends on this one.
+**Everything Story 1 said about structured handoff still applies here.** A translator worker completing a call emits `complete_kanban(summary="translated 4 pages, style matched existing marketing voice", metadata={"duration_seconds": 720, "tokens_used": 2100})` — useful for analytics and for any downstream task that depends on this one.
 
 ## Story 3 — Role pipeline with retry
 
@@ -156,8 +156,8 @@ The interesting one is the implementation task, because it was blocked and retri
 ```python
 # --- PM worker spawns on $SPEC and writes the acceptance criteria ---
 # worker tool calls
-kanban_show()
-kanban_complete(
+show_kanban()
+complete_kanban(
     summary="spec approved; POST /forgot-password sends email, "
             "GET /reset/:token renders form, POST /reset applies new password",
     metadata={"acceptance": [
@@ -170,10 +170,10 @@ kanban_complete(
 
 # --- Engineer worker spawns on $IMPL (first attempt) ---
 # worker tool calls
-kanban_show()   # reads $SPEC's summary + acceptance metadata in worker_context
+show_kanban()   # reads $SPEC's summary + acceptance metadata in worker_context
 # (engineer writes code, runs tests, opens PR)
 # Reviewer feedback arrives — engineer decides the concerns are valid and blocks
-kanban_block(
+block_kanban(
     reason="Review: password strength check missing, reset link isn't "
            "single-use (can be replayed within 30min)",
 )
@@ -192,11 +192,11 @@ The dispatcher promotes `$IMPL` back to `ready` and, on the next tick, respawns 
 ```python
 # --- Engineer worker spawns on $IMPL (second attempt) ---
 # worker tool calls
-kanban_show()
+show_kanban()
 # → worker_context now includes the run 1 block reason, so this worker knows
 #   which two things to fix instead of re-reading the whole spec
 # (engineer adds zxcvbn check, makes reset tokens single-use, re-runs tests)
-kanban_complete(
+complete_kanban(
     summary="added zxcvbn strength check, reset tokens are now single-use "
             "(stored + deleted on success)",
     metadata={
@@ -224,7 +224,7 @@ The reviewer picks up next. When they open `Review password reset PR`, they see:
 
 ![Reviewer's drawer view of the pipeline](/img/kanban-tutorial/09-drawer-pipeline-review.png)
 
-The parent link is the completed implementation. When the reviewer's worker spawns on `Review password reset PR` and calls `kanban_show()`, the returned `worker_context` includes the parent's most-recent-completed-run summary + metadata — so the reviewer reads "added zxcvbn strength check, reset tokens are now single-use" and has the list of changed files in hand before looking at a diff.
+The parent link is the completed implementation. When the reviewer's worker spawns on `Review password reset PR` and calls `show_kanban()`, the returned `worker_context` includes the parent's most-recent-completed-run summary + metadata — so the reviewer reads "added zxcvbn strength check, reset tokens are now single-use" and has the list of changed files in hand before looking at a diff.
 
 ## Story 4 — Circuit breaker and crash recovery
 
@@ -283,16 +283,16 @@ Run 1 — `crashed`, with the error `OOM kill at row 2.3M (process 99999 gone)`.
 
 ## Structured handoff — why `summary` and `metadata` matter
 
-In every story above, workers called `kanban_complete(summary=..., metadata=...)` at the end. That's not decoration — it's the primary handoff channel between stages of a workflow.
+In every story above, workers called `complete_kanban(summary=..., metadata=...)` at the end. That's not decoration — it's the primary handoff channel between stages of a workflow.
 
-When a worker on task B is spawned and calls `kanban_show()`, the `worker_context` it gets back includes:
+When a worker on task B is spawned and calls `show_kanban()`, the `worker_context` it gets back includes:
 
 - B's **prior attempts** (previous runs: outcome, summary, error, metadata) so a retrying worker doesn't repeat a failed path.
 - **Parent task results** — for each parent, the most-recent completed run's summary and metadata — so downstream workers see why and how the upstream work was done.
 
 This replaces the "dig through comments and the work output" dance that plagues flat kanban systems. A PM writes acceptance criteria in the spec's metadata, and the engineer's worker sees them structurally in the parent handoff. An engineer records which tests they ran and how many passed, and the reviewer's worker has that list in hand before opening a diff.
 
-The bulk-close guard exists because this data is per-run. `hermes kanban complete a b c --summary X` (you, from the CLI) is refused — copy-pasting the same summary to three tasks is almost always wrong. Bulk close without the handoff flags still works for the common "I finished a pile of admin tasks" case. The tool surface doesn't expose a bulk variant at all; `kanban_complete` is always single-task-at-a-time for the same reason.
+The bulk-close guard exists because this data is per-run. `hermes kanban complete a b c --summary X` (you, from the CLI) is refused — copy-pasting the same summary to three tasks is almost always wrong. Bulk close without the handoff flags still works for the common "I finished a pile of admin tasks" case. The tool surface doesn't expose a bulk variant at all; `complete_kanban` is always single-task-at-a-time for the same reason.
 
 ## Inspecting a task currently running
 

@@ -32,7 +32,7 @@ class TestHandleFunctionCall:
 
     def test_exception_returns_json_error(self):
         # Even if something goes wrong, should return valid JSON
-        result = handle_function_call("web_search", None)  # None args may cause issues
+        result = handle_function_call("search_web", None)  # None args may cause issues
         parsed = json.loads(result)
         assert isinstance(parsed, dict)
         assert "error" in parsed
@@ -46,7 +46,7 @@ class TestHandleFunctionCall:
             patch("hermes_cli.plugins.invoke_hook") as mock_invoke_hook,
         ):
             result = handle_function_call(
-                "web_search",
+                "search_web",
                 {"q": "test"},
                 task_id="task-1",
                 tool_call_id="call-1",
@@ -57,7 +57,7 @@ class TestHandleFunctionCall:
         assert mock_invoke_hook.call_args_list == [
             call(
                 "pre_tool_call",
-                tool_name="web_search",
+                tool_name="search_web",
                 args={"q": "test"},
                 task_id="task-1",
                 session_id="session-1",
@@ -69,7 +69,7 @@ class TestHandleFunctionCall:
             ),
             call(
                 "post_tool_call",
-                tool_name="web_search",
+                tool_name="search_web",
                 args={"q": "test"},
                 result='{"ok":true}',
                 task_id="task-1",
@@ -85,7 +85,7 @@ class TestHandleFunctionCall:
             ),
             call(
                 "transform_tool_result",
-                tool_name="web_search",
+                tool_name="search_web",
                 args={"q": "test"},
                 result='{"ok":true}',
                 task_id="task-1",
@@ -111,7 +111,7 @@ class TestHandleFunctionCall:
             patch("hermes_cli.plugins.has_hook", return_value=True),
             patch("hermes_cli.plugins.invoke_hook") as mock_invoke_hook,
         ):
-            handle_function_call("web_search", {"q": "test"}, task_id="t1")
+            handle_function_call("search_web", {"q": "test"}, task_id="t1")
 
         kwargs_by_hook = {
             c.args[0]: c.kwargs for c in mock_invoke_hook.call_args_list
@@ -141,7 +141,7 @@ class TestHandleFunctionCall:
             patch("hermes_cli.plugins.has_hook", return_value=False),
             patch("hermes_cli.plugins.invoke_hook") as mock_invoke_hook,
         ):
-            result = handle_function_call("web_search", {"q": "test"}, task_id="t1")
+            result = handle_function_call("search_web", {"q": "test"}, task_id="t1")
 
         assert result == '{"ok":true}'
         fired = {c.args[0] for c in mock_invoke_hook.call_args_list}
@@ -185,7 +185,7 @@ class TestHandleFunctionCall:
 
         result = json.loads(
             handle_function_call(
-                "web_search",
+                "search_web",
                 {"q": "test"},
                 task_id="task-1",
                 tool_call_id="tool-1",
@@ -211,11 +211,11 @@ class TestAgentLoopTools:
     def test_expected_tools_in_set(self):
         assert "todo" in _AGENT_LOOP_TOOLS
         assert "memory" in _AGENT_LOOP_TOOLS
-        assert "session_search" in _AGENT_LOOP_TOOLS
+        assert "search_session" in _AGENT_LOOP_TOOLS
         assert "delegate_task" in _AGENT_LOOP_TOOLS
 
     def test_no_regular_tools_in_set(self):
-        assert "web_search" not in _AGENT_LOOP_TOOLS
+        assert "search_web" not in _AGENT_LOOP_TOOLS
         assert "terminal" not in _AGENT_LOOP_TOOLS
 
 
@@ -270,7 +270,7 @@ class TestPreToolCallBlocking:
         monkeypatch.setattr("tools.file_tools.notify_other_tool_call",
                             lambda task_id: notifications.append(task_id))
 
-        result = json.loads(handle_function_call("web_search", {"q": "test"}, task_id="t1"))
+        result = json.loads(handle_function_call("search_web", {"q": "test"}, task_id="t1"))
         assert result == {"error": "Blocked"}
         assert notifications == []
 
@@ -312,7 +312,7 @@ class TestPreToolCallBlocking:
         monkeypatch.setattr("model_tools.registry.dispatch",
                             lambda *a, **kw: json.dumps({"ok": True}))
 
-        handle_function_call("web_search", {"q": "test"}, task_id="t1",
+        handle_function_call("search_web", {"q": "test"}, task_id="t1",
                              skip_pre_tool_call_hook=True)
 
         # Single-fire contract: when skip=True the caller already fired
@@ -352,13 +352,13 @@ class TestPreToolCallBlocking:
 
         # Step 1: caller checks for a block directive (this fires pre_tool_call once).
         block = get_pre_tool_call_block_message(
-            "web_search", {"q": "test"}, task_id="t1",
+            "search_web", {"q": "test"}, task_id="t1",
         )
         assert block is None
 
         # Step 2: caller dispatches with skip=True so the hook isn't re-fired.
         handle_function_call(
-            "web_search", {"q": "test"}, task_id="t1",
+            "search_web", {"q": "test"}, task_id="t1",
             skip_pre_tool_call_hook=True,
         )
 
@@ -400,11 +400,11 @@ class TestBackwardCompat:
         assert isinstance(names, list)
         assert len(names) > 0
         # Should contain well-known tools
-        assert "web_search" in names
+        assert "search_web" in names
         assert "terminal" in names
 
     def test_get_toolset_for_tool(self):
-        result = get_toolset_for_tool("web_search")
+        result = get_toolset_for_tool("search_web")
         assert result is not None
         assert isinstance(result, str)
 
@@ -513,7 +513,7 @@ class TestDisabledToolsetsPlatformBundle:
         names_normal = {t["function"]["name"] for t in tools_normal}
         names_no_web = {t["function"]["name"] for t in tools_no_web}
 
-        web_tools = {"web_search", "web_extract"}
+        web_tools = {"search_web", "extract_web"}
         removed = names_normal - names_no_web
         # web tools should be removed (if they were present)
         present_web = web_tools & names_normal
@@ -529,7 +529,7 @@ class TestDisabledToolsetsPlatformBundle:
 
         delta = bundle_non_core_tools("hermes-yuanbao")
         # The delta is the bundle's platform-specific tools, NOT core.
-        assert "yb_send_dm" in delta
+        assert "send_yb_dm" in delta
         assert not (delta & set(_HERMES_CORE_TOOLS)), "core tools must not be in the removal delta"
 
     def test_bundle_non_core_tools_unknown_falls_back(self):
@@ -548,9 +548,9 @@ class TestDisabledToolsetsPostureToolset:
     def test_disabling_coding_preserves_core_but_atomic_disables_still_remove(self):
         from model_tools import get_tool_definitions
 
-        # web_search is check_fn-gated (needs an API key); probe only the core
+        # search_web is check_fn-gated (needs an API key); probe only the core
         # tools actually present in baseline so gating cannot mask the fix.
-        core_probe = {"terminal", "read_file", "write_file", "web_search", "execute_code"}
+        core_probe = {"terminal", "read_file", "write_file", "search_web", "execute_code"}
 
         baseline = {
             t["function"]["name"]

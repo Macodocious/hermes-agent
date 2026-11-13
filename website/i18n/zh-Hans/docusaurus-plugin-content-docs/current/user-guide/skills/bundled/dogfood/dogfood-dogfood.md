@@ -34,7 +34,7 @@ description: "网页应用探索性 QA：发现缺陷、收集证据、生成报
 
 ## 前提条件
 
-- 浏览器工具集必须可用（`browser_navigate`、`browser_snapshot`、`browser_click`、`browser_type`、`browser_vision`、`browser_console`、`browser_scroll`、`browser_back`、`browser_press`）
+- 浏览器工具集必须可用（`navigate_browser`、`snapshot_browser`、`click_browser`、`type_browser`、`browser_vision`、`browser_console`、`scroll_browser`、`back_browser`、`press_browser`）
 - 用户提供目标 URL 和测试范围
 
 ## 输入
@@ -72,12 +72,12 @@ description: "网页应用探索性 QA：发现缺陷、收集证据、生成报
 
 1. **导航**至该页面：
    ```
-   browser_navigate(url="https://example.com/page")
+   navigate_browser(url="https://example.com/page")
    ```
 
 2. **获取快照**以了解 DOM 结构：
    ```
-   browser_snapshot()
+   snapshot_browser()
    ```
 
 3. **检查控制台**中的 JavaScript 错误：
@@ -93,10 +93,10 @@ description: "网页应用探索性 QA：发现缺陷、收集证据、生成报
    `annotate=true` 标志会在交互元素上叠加编号标签 `[N]`。每个 `[N]` 对应后续浏览器命令中的引用 `@eN`。
 
 5. **系统化测试交互元素**：
-   - 点击按钮和链接：`browser_click(ref="@eN")`
-   - 填写表单：`browser_type(ref="@eN", text="test input")`
-   - 测试键盘导航：`browser_press(key="Tab")`、`browser_press(key="Enter")`
-   - 滚动内容：`browser_scroll(direction="down")`
+   - 点击按钮和链接：`click_browser(ref="@eN")`
+   - 填写表单：`type_browser(ref="@eN", text="test input")`
+   - 测试键盘导航：`press_browser(key="Tab")`、`press_browser(key="Enter")`
+   - 滚动内容：`scroll_browser(direction="down")`
    - 使用无效输入测试表单验证
    - 测试空提交
 
@@ -159,13 +159,13 @@ description: "网页应用探索性 QA：发现缺陷、收集证据、生成报
 
 | 工具 | 用途 |
 |------|---------|
-| `browser_navigate` | 跳转至指定 URL |
-| `browser_snapshot` | 获取 DOM 文本快照（无障碍树） |
-| `browser_click` | 通过引用（`@eN`）或文本点击元素 |
-| `browser_type` | 在输入框中输入文字 |
-| `browser_scroll` | 在页面上向上/向下滚动 |
-| `browser_back` | 在浏览器历史中后退 |
-| `browser_press` | 按下键盘按键 |
+| `navigate_browser` | 跳转至指定 URL |
+| `snapshot_browser` | 获取 DOM 文本快照（无障碍树） |
+| `click_browser` | 通过引用（`@eN`）或文本点击元素 |
+| `type_browser` | 在输入框中输入文字 |
+| `scroll_browser` | 在页面上向上/向下滚动 |
+| `back_browser` | 在浏览器历史中后退 |
+| `press_browser` | 按下键盘按键 |
 | `browser_vision` | 截图 + AI 分析；使用 `annotate=true` 显示元素标签 |
 | `browser_console` | 获取 JS 控制台输出和错误 |
 

@@ -64,9 +64,9 @@ sleep 3
 screencapture -w -o /tmp/findmy.png
 ```
 
-Then use `vision_analyze` to read the screenshot:
+Then use `analyze_vision` to read the screenshot:
 ```
-vision_analyze(image_url="/tmp/findmy.png", question="What devices/items are shown and what are their locations?")
+analyze_vision(image_url="/tmp/findmy.png", question="What devices/items are shown and what are their locations?")
 ```
 
 ### Switch Between Tabs
@@ -110,7 +110,7 @@ peekaboo image --app "FindMy" --path /tmp/findmy-detail.png
 
 Then analyze with vision:
 ```
-vision_analyze(image_url="/tmp/findmy-detail.png", question="What is the location shown for this device/item? Include address and coordinates if visible.")
+analyze_vision(image_url="/tmp/findmy-detail.png", question="What is the location shown for this device/item? Include address and coordinates if visible.")
 ```
 
 ## Workflow: Track AirTag Location Over Time
@@ -144,6 +144,6 @@ Analyze each screenshot with vision to extract coordinates, then compile a route
 ## Rules
 
 1. Keep FindMy app in the foreground when tracking AirTags (updates stop when minimized)
-2. Use `vision_analyze` to read screenshot content — don't try to parse pixels
+2. Use `analyze_vision` to read screenshot content — don't try to parse pixels
 3. For ongoing tracking, use a cronjob to periodically capture and log locations
 4. Respect privacy — only track devices/items the user owns

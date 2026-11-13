@@ -89,8 +89,8 @@ generator output for visual consistency. Hands off per-scene `VISUAL_SPEC.md`.
   `touchdesigner-mcp` for real-time visuals, etc.)
 - **Outputs:** `scenes/scene-NN/VISUAL_SPEC.md`, review comments on renderer
   tasks
-- **Reviews via:** `video_analyze` (sends full clip to multimodal LLM for
-  native review), `vision_analyze` for spot-checking frames, ffprobe summaries
+- **Reviews via:** `analyze_video` (sends full clip to multimodal LLM for
+  native review), `analyze_vision` for spot-checking frames, ffprobe summaries
 
 ## Production roles
 
@@ -251,8 +251,8 @@ production) and the editor (who reviews for assembly).
 
 - **Toolsets:** kanban, terminal, file, video, vision
 - **Skills:** none — kanban guidance is auto-injected into every kanban worker
-- **Review tools:** `video_analyze` (native clip review via multimodal LLM),
-  `vision_analyze` (frame/thumbnail review), ffprobe
+- **Review tools:** `analyze_video` (native clip review via multimodal LLM),
+  `analyze_vision` (frame/thumbnail review), ffprobe
 - **Outputs:** `review-notes.md`, comments on tasks
 
 ### brand-cop

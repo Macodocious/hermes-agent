@@ -733,7 +733,7 @@ Generate some audio.
 class TestSkillDirectoryHeader:
     """The activation message must expose the absolute skill directory and
     explain how to resolve relative paths, so skills with bundled scripts
-    don't force the agent into a second ``skill_view()`` round-trip."""
+    don't force the agent into a second ``view_skill()`` round-trip."""
 
     def test_header_contains_absolute_skill_dir(self, tmp_path):
         with patch("tools.skills_tool.SKILLS_DIR", tmp_path):
@@ -755,7 +755,7 @@ class TestSkillDirectoryHeader:
 
         assert msg is not None
         # The supporting-files block must emit both the relative form (so the
-        # agent can call skill_view on it) and the absolute form (so it can
+        # agent can call view_skill on it) and the absolute form (so it can
         # run the script directly via terminal).
         assert "scripts/run.js" in msg
         assert str(skill_dir / "scripts" / "run.js") in msg

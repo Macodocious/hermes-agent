@@ -154,7 +154,7 @@ def make_tool_progress_cb(
         queue.append(tc_id)
 
         snapshot = None
-        if name in {"write_file", "patch", "skill_manage"}:
+        if name in {"write_file", "patch", "manage_skill"}:
             try:
                 from agent.display import capture_local_edit_snapshot
 

@@ -342,7 +342,7 @@ pytest tests/ -q
 - **`search_files`** — 查找错误字符串、追踪函数调用、定位模式
 - **`read_file`** — 带行号读取源代码，用于精确分析
 - **`terminal`** — 运行测试、检查 git 历史、复现缺陷
-- **`web_search`/`web_extract`** — 研究错误信息、查阅库文档
+- **`search_web`/`extract_web`** — 研究错误信息、查阅库文档
 
 ### 与 delegate_task 配合使用
 

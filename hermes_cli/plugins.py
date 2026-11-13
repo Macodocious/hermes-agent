@@ -221,7 +221,7 @@ VALID_HOOKS: Set[str] = {
     #                              dispatcher or `hermes kanban dispatch`),
     #                              right before the worker subprocess spawns.
     #   - kanban_task_completed -> the WORKER process, when it calls
-    #                              kanban_complete (or a CLI/manual complete).
+    #                              complete_kanban (or a CLI/manual complete).
     #   - kanban_task_blocked   -> the WORKER process (worker-initiated block)
     #                              or whichever process drove the block.
     # A plugin that needs to observe every transition centrally should hook in
@@ -513,7 +513,7 @@ class PluginContext:
         """Register a tool in the global registry **and** track it as plugin-provided.
 
         Pass ``override=True`` to replace an existing built-in tool with the
-        same name (e.g. swap the default ``browser_navigate`` for a custom
+        same name (e.g. swap the default ``navigate_browser`` for a custom
         CDP-backed implementation). Without it, attempting to register a name
         already claimed by a different toolset is rejected.
 
@@ -760,7 +760,7 @@ class PluginContext:
         ``provider`` must be an instance of
         :class:`agent.image_gen_provider.ImageGenProvider`. The
         ``provider.name`` attribute is what ``image_gen.provider`` in
-        ``config.yaml`` matches against when routing ``image_generate``
+        ``config.yaml`` matches against when routing ``generate_image``
         tool calls.
         """
         from agent.image_gen_provider import ImageGenProvider
@@ -827,7 +827,7 @@ class PluginContext:
         ``provider`` must be an instance of
         :class:`agent.video_gen_provider.VideoGenProvider`. The
         ``provider.name`` attribute is what ``video_gen.provider`` in
-        ``config.yaml`` matches against when routing ``video_generate``
+        ``config.yaml`` matches against when routing ``generate_video``
         tool calls.
         """
         from agent.video_gen_provider import VideoGenProvider
@@ -855,7 +855,7 @@ class PluginContext:
         :class:`agent.web_search_provider.WebSearchProvider`. The
         ``provider.name`` attribute is what ``web.search_backend`` /
         ``web.extract_backend`` / ``web.backend`` in ``config.yaml``
-        matches against when routing ``web_search`` / ``web_extract``
+        matches against when routing ``search_web`` / ``extract_web``
         tool calls.
         """
         from agent.web_search_provider import WebSearchProvider
@@ -1180,7 +1180,7 @@ class PluginContext:
         Args:
             key: stable task key (snake_case). Used in config ``auxiliary.<key>``
                 and env vars ``AUXILIARY_<KEY_UPPER>_*``. Must not shadow a
-                built-in task key (vision, compression, web_extract, approval,
+                built-in task key (vision, compression, extract_web, approval,
                 mcp, title_generation, skills_hub, curator).
             display_name: human-readable name shown in the picker.
             description: short one-line description shown next to the name.
@@ -1313,7 +1313,7 @@ class PluginContext:
         """Register a read-only skill provided by this plugin.
 
         The skill becomes resolvable as ``'<plugin_name>:<name>'`` via
-        ``skill_view()``.  It does **not** enter the flat
+        ``view_skill()``.  It does **not** enter the flat
         ``~/.hermes/skills/`` tree and is **not** listed in the system
         prompt's ``<available_skills>`` index — plugin skills are
         opt-in explicit loads only.

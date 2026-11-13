@@ -17,7 +17,7 @@ def test_install_script_does_not_autodetect_system_browser_on_path() -> None:
 
     Auto-detection silently bound the install to whatever ``command -v
     chromium`` resolved to — most damagingly a Snap Chromium, whose sandbox
-    blocks agent-browser's control socket and hangs every browser_navigate. The
+    blocks agent-browser's control socket and hangs every navigate_browser. The
     fallback was dropped in favor of always using the bundled Playwright
     Chromium, so the old PATH-scan and "use the system browser" path are gone.
     """

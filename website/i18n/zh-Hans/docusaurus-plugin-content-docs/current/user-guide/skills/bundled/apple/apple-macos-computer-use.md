@@ -8,7 +8,7 @@ description: "在后台驱动 macOS 桌面——截图、鼠标、键盘、滚�
 
 # Macos Computer Use
 
-在后台驱动 macOS 桌面——截图、鼠标、键盘、滚动、拖拽——不抢占用户的光标、键盘焦点或 Space。适用于任何支持工具调用的模型。当 `computer_use` 工具可用时加载此 skill。
+在后台驱动 macOS 桌面——截图、鼠标、键盘、滚动、拖拽——不抢占用户的光标、键盘焦点或 Space。适用于任何支持工具调用的模型。当 `use_computer` 工具可用时加载此 skill。
 
 ## Skill 元数据
 
@@ -29,7 +29,7 @@ description: "在后台驱动 macOS 桌面——截图、鼠标、键盘、滚�
 
 # macOS Computer Use（通用，适配任意模型）
 
-你拥有一个 `computer_use` 工具，可在**后台**驱动 Mac。
+你拥有一个 `use_computer` 工具，可在**后台**驱动 Mac。
 你的操作**不会**移动用户的光标、抢占键盘焦点或切换 Space。
 用户可以在编辑器中继续输入，而你在另一个 Space 的 Safari 中点击操作。这与 pyautogui 风格的自动化截然相反。
 
@@ -40,7 +40,7 @@ description: "在后台驱动 macOS 桌面——截图、鼠标、键盘、滚�
 **第一步——先截图。** 几乎每个任务都从以下操作开始：
 
 ```
-computer_use(action="capture", mode="som", app="Safari")
+use_computer(action="capture", mode="som", app="Safari")
 ```
 
 返回一张截图，其中每个可交互元素都有编号覆盖层，以及如下 AX 树索引：
@@ -55,7 +55,7 @@ computer_use(action="capture", mode="som", app="Safari")
 **第二步——按元素索引点击。** 这是最重要的操作习惯：
 
 ```
-computer_use(action="click", element=7)
+use_computer(action="click", element=7)
 ```
 
 对所有模型而言，这比像素坐标可靠得多。Claude 对两者都经过训练；其他模型通常只在使用索引时才可靠。
@@ -63,7 +63,7 @@ computer_use(action="click", element=7)
 **第三步——验证。** 任何改变状态的操作后，重新截图。你可以通过内联请求操作后截图来节省一次往返：
 
 ```
-computer_use(action="click", element=7, capture_after=True)
+use_computer(action="click", element=7, capture_after=True)
 ```
 
 ## 截图模式
@@ -117,13 +117,13 @@ focus_app         app="Safari"  raise_window=false   (default: don't raise)
 优先使用元素索引：
 
 ```
-computer_use(action="drag", from_element=3, to_element=17)
+use_computer(action="drag", from_element=3, to_element=17)
 ```
 
 在空白画布上进行框选时，使用坐标：
 
 ```
-computer_use(action="drag",
+use_computer(action="drag",
              from_coordinate=[100, 200],
              to_coordinate=[400, 500])
 ```
@@ -133,13 +133,13 @@ computer_use(action="drag",
 在某个元素下方滚动视口（最常见用法）：
 
 ```
-computer_use(action="scroll", direction="down", amount=5, element=12)
+use_computer(action="scroll", direction="down", amount=5, element=12)
 ```
 
 或在指定坐标处滚动：
 
 ```
-computer_use(action="scroll", direction="down", amount=3, coordinate=[500, 400])
+use_computer(action="scroll", direction="down", amount=3, coordinate=[500, 400])
 ```
 
 ## 管理焦点
@@ -168,8 +168,8 @@ computer_use(action="scroll", direction="down", amount=3, coordinate=[500, 400])
 - **点击无效**——重新截图并验证。有时之前不可见的模态框现在正在阻挡输入。先关闭它（通常是 `escape` 或点击关闭按钮），再重试。
 - **"blocked pattern in type text"**——你尝试 `type` 的 shell 命令匹配了危险模式黑名单（`curl ... | bash`、`sudo rm -rf` 等）。请拆分命令或重新考虑方案。
 
-## 何时不使用 `computer_use`
+## 何时不使用 `use_computer`
 
-- 可通过 `browser_*` 工具完成的 Web 自动化——这些工具使用真实的无头 Chromium，比驱动用户的 GUI 浏览器更可靠。仅在任务需要用户实际 Mac 应用时才使用 `computer_use`（原生 Mail、Messages、Finder、Figma、Logic、游戏，以及任何非 Web 应用）。
+- 可通过 `browser_*` 工具完成的 Web 自动化——这些工具使用真实的无头 Chromium，比驱动用户的 GUI 浏览器更可靠。仅在任务需要用户实际 Mac 应用时才使用 `use_computer`（原生 Mail、Messages、Finder、Figma、Logic、游戏，以及任何非 Web 应用）。
 - 文件编辑——使用 `read_file` / `write_file` / `patch`，而非在编辑器窗口中 `type`。
 - Shell 命令——使用 `terminal`，而非在 Terminal.app 中 `type`。

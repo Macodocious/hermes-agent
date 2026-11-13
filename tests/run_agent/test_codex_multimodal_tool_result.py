@@ -2,7 +2,7 @@
 
 Tool messages can contain a list of OpenAI-style content parts
 (``[{type:"text"...}, {type:"image_url"...}]``) when the
-``vision_analyze`` native fast path returns image bytes for the main model.
+``analyze_vision`` native fast path returns image bytes for the main model.
 This file verifies the Codex Responses adapter:
 
   1. Converts that list into ``function_call_output.output`` as an array of
@@ -28,14 +28,14 @@ def _build_messages_with_multimodal_tool_result():
                 "id": "call_abc",
                 "type": "function",
                 "function": {
-                    "name": "vision_analyze",
+                    "name": "analyze_vision",
                     "arguments": '{"image_url": "/tmp/foo.png", "question": "describe"}',
                 },
             }],
         },
         {
             "role": "tool",
-            "name": "vision_analyze",
+            "name": "analyze_vision",
             "tool_call_id": "call_abc",
             "content": [
                 {"type": "text", "text": "Image loaded."},
@@ -98,7 +98,7 @@ class TestPreflightAcceptsArrayOutput:
             {
                 "type": "function_call",
                 "call_id": "call_abc",
-                "name": "vision_analyze",
+                "name": "analyze_vision",
                 "arguments": "{}",
             },
             {
@@ -121,7 +121,7 @@ class TestPreflightAcceptsArrayOutput:
         raw = [
             {
                 "type": "function_call",
-                "call_id": "call_abc", "name": "vision_analyze", "arguments": "{}",
+                "call_id": "call_abc", "name": "analyze_vision", "arguments": "{}",
             },
             {
                 "type": "function_call_output",
@@ -144,7 +144,7 @@ class TestPreflightAcceptsArrayOutput:
         raw = [
             {
                 "type": "function_call",
-                "call_id": "call_x", "name": "vision_analyze", "arguments": "{}",
+                "call_id": "call_x", "name": "analyze_vision", "arguments": "{}",
             },
             {
                 "type": "function_call_output",

@@ -44,7 +44,7 @@ EXCLUDED_SKILL_DIRS = frozenset(
 )
 
 # Supporting files live inside a skill package and are loaded explicitly via
-# skill_view(skill, file_path=...). They are not standalone skills and must not
+# view_skill(skill, file_path=...). They are not standalone skills and must not
 # be scanned for active SKILL.md/DESCRIPTION.md entries, even if a Curator or
 # archive workflow preserves a complete old skill package under references/.
 SKILL_SUPPORT_DIRS = frozenset(("references", "templates", "assets", "scripts"))
@@ -226,7 +226,7 @@ def skill_matches_platform(frontmatter: Dict[str, Any]) -> bool:
 # a *relevance* gate, not a hard-compatibility gate (that is what ``platforms:``
 # is for). A skill tagged for an environment it isn't relevant to is hidden from
 # the skills index / offer surfaces so it does not add noise for users who will
-# never need it — but it can ALWAYS still be loaded explicitly (``skill_view``,
+# never need it — but it can ALWAYS still be loaded explicitly (``view_skill``,
 # ``--skills``), because an explicit request is explicit consent.
 #
 # Detection is cached for the process lifetime via ``_ENV_DETECT_CACHE``.
@@ -295,7 +295,7 @@ def skill_matches_environment(frontmatter: Dict[str, Any]) -> bool:
 
     This is an OFFER-time filter: it controls whether a skill shows up in the
     skills index / autocomplete / slash-command list. It is intentionally NOT
-    enforced by ``skill_view`` or ``--skills`` preloading — an explicit load is
+    enforced by ``view_skill`` or ``--skills`` preloading — an explicit load is
     explicit consent, and load-bearing force-loads (e.g. a dispatcher pinning
     a task to a specialist skill via ``--skills``) must always succeed
     regardless of how the offer surfaces filter the skill.
@@ -524,11 +524,11 @@ def get_all_skills_dirs() -> List[Path]:
 
 
 def normalize_skill_lookup_name(identifier: str) -> str:
-    """Normalize a skill identifier to a ``skill_view()``-safe relative path.
+    """Normalize a skill identifier to a ``view_skill()``-safe relative path.
 
     Slash commands and cron jobs may store absolute paths to skills that live
     under ``~/.hermes/skills/`` (including via symlinks) or configured
-    ``skills.external_dirs``. ``skill_view()`` rejects absolute names for
+    ``skills.external_dirs``. ``view_skill()`` rejects absolute names for
     security, so callers must translate trusted absolute paths to their
     relative form first.
     """
@@ -542,9 +542,9 @@ def normalize_skill_lookup_name(identifier: str) -> str:
 
     # Look the primary skills root up on tools.skills_tool at CALL time
     # (not via get_skills_dir()): callers and tests patch
-    # ``tools.skills_tool.SKILLS_DIR`` and skill_view() itself resolves
+    # ``tools.skills_tool.SKILLS_DIR`` and view_skill() itself resolves
     # against that module attribute, so normalization must agree with the
-    # exact root skill_view() will enforce.  Import deferred to avoid a
+    # exact root view_skill() will enforce.  Import deferred to avoid a
     # module cycle (tools.skills_tool imports agent.skill_utils).
     try:
         from tools import skills_tool as _skills_tool
@@ -562,7 +562,7 @@ def normalize_skill_lookup_name(identifier: str) -> str:
     # symlinks. Slash-command discovery can legitimately find a skill via
     # ~/.hermes/skills/<name> where <name> is a symlink to a checked-out
     # skill elsewhere. Resolving first turns that trusted visible path into
-    # an arbitrary absolute path that skill_view() refuses to load.
+    # an arbitrary absolute path that view_skill() refuses to load.
     for root in trusted_roots:
         try:
             return str(identifier_path.relative_to(root))
@@ -574,7 +574,7 @@ def normalize_skill_lookup_name(identifier: str) -> str:
     except Exception:
         logger.debug(
             "Skill identifier %r is an absolute path outside trusted skills "
-            "roots — passing through unchanged (skill_view will reject it)",
+            "roots — passing through unchanged (view_skill will reject it)",
             raw_identifier,
         )
         return raw_identifier
@@ -801,7 +801,7 @@ def iter_skill_index_files(skills_dir: Path, filename: str):
     support directories. Support directories (references/templates/assets/
     scripts) can contain arbitrary markdown and even archived package
     ``SKILL.md`` files, but they are progressive-disclosure data loaded through
-    ``skill_view(..., file_path=...)`` rather than active skill roots.
+    ``view_skill(..., file_path=...)`` rather than active skill roots.
     """
     skills_dir_str = str(skills_dir)
     matches: list[str] = []

@@ -14,7 +14,7 @@ def _make_agent() -> AIAgent:
         {
             "type": "function",
             "function": {
-                "name": "web_search",
+                "name": "search_web",
                 "description": "search",
                 "parameters": {"type": "object", "properties": {}},
             },
@@ -43,7 +43,7 @@ def _tool_call(call_id: str, arguments: str):
     return SimpleNamespace(
         id=call_id,
         type="function",
-        function=SimpleNamespace(name="web_search", arguments=arguments),
+        function=SimpleNamespace(name="search_web", arguments=arguments),
     )
 
 
@@ -89,7 +89,7 @@ def test_malformed_arguments_are_rejected_without_blocking_valid_sibling(
         execute = getattr(agent, f"_execute_tool_calls_{dispatch_mode}")
         execute(assistant_message, messages, "task-1")
 
-    assert executed == [("web_search", {"query": "valid"}, "call-good")]
+    assert executed == [("search_web", {"query": "valid"}, "call-good")]
     assert [message["tool_call_id"] for message in messages] == ["call-bad", "call-good"]
     assert len([message for message in messages if message["tool_call_id"] == "call-bad"]) == 1
 

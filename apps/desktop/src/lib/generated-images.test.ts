@@ -51,7 +51,7 @@ describe('generatedImageEchoSources', () => {
             image: '/host/cat.png',
             success: true
           },
-          toolName: 'image_generate',
+          toolName: 'generate_image',
           type: 'tool-call'
         }
       ])
@@ -66,7 +66,7 @@ describe('dedupeGeneratedImageEchoesInParts', () => {
         { text: 'Here is your peacock! ![peacock](/host/p.png) Enjoy.', type: 'text' },
         {
           result: { host_image: '/host/p.png', image: '/host/p.png', success: true },
-          toolName: 'image_generate',
+          toolName: 'generate_image',
           type: 'tool-call'
         }
       ])
@@ -74,7 +74,7 @@ describe('dedupeGeneratedImageEchoesInParts', () => {
       { text: 'Here is your peacock! Enjoy.', type: 'text' },
       {
         result: { host_image: '/host/p.png', image: '/host/p.png', success: true },
-        toolName: 'image_generate',
+        toolName: 'generate_image',
         type: 'tool-call'
       }
     ])
@@ -91,7 +91,7 @@ describe('dedupeGeneratedImageEchoesInParts', () => {
             image: '/host/cat.png',
             success: true
           },
-          toolName: 'image_generate',
+          toolName: 'generate_image',
           type: 'tool-call'
         }
       ])
@@ -103,7 +103,7 @@ describe('dedupeGeneratedImageEchoesInParts', () => {
           image: '/host/cat.png',
           success: true
         },
-        toolName: 'image_generate',
+        toolName: 'generate_image',
         type: 'tool-call'
       }
     ])
@@ -112,7 +112,7 @@ describe('dedupeGeneratedImageEchoesInParts', () => {
   it('leaves pending generations untouched so the agent prose survives', () => {
     const parts = [
       { text: 'Another peacock, coming up!', type: 'text' },
-      { result: undefined, toolName: 'image_generate', type: 'tool-call' }
+      { result: undefined, toolName: 'generate_image', type: 'tool-call' }
     ]
 
     expect(dedupeGeneratedImageEchoesInParts(parts)).toEqual(parts)

@@ -6,7 +6,7 @@ description: "How to build a video-generation backend plugin for Hermes Agent"
 
 # Building a Video Generation Provider Plugin
 
-Video-gen provider plugins register a backend that services every `video_generate` tool call. Built-in providers (xAI, FAL) ship as plugins. Add a new one, or override a bundled one, by dropping a directory into `plugins/video_gen/<name>/`.
+Video-gen provider plugins register a backend that services every `generate_video` tool call. Built-in providers (xAI, FAL) ship as plugins. Add a new one, or override a bundled one, by dropping a directory into `plugins/video_gen/<name>/`.
 
 :::tip
 Video-gen mirrors [Image Generation Provider Plugins](/developer-guide/image-gen-provider-plugin) almost line-for-line — if you've built an image-gen backend, you already know the shape. The main differences: a `capabilities()` method advertising modalities/aspect-ratios/durations, and a routing convention (pass `image_url` to use image-to-video, omit it to use text-to-video — the provider picks the right endpoint internally).
@@ -14,7 +14,7 @@ Video-gen mirrors [Image Generation Provider Plugins](/developer-guide/image-gen
 
 ## The unified surface (one tool, two modalities)
 
-The `video_generate` tool exposes two modalities through one parameter:
+The `generate_video` tool exposes two modalities through one parameter:
 
 - **Text-to-video** — call with `prompt` only. The provider routes to its text-to-video endpoint.
 - **Image-to-video** — call with `prompt` + `image_url`. The provider routes to its image-to-video endpoint.
@@ -29,7 +29,7 @@ Hermes scans for video-gen backends in three places:
 2. **User** — `~/.hermes/plugins/video_gen/<name>/` (opt-in via `plugins.enabled`)
 3. **Pip** — packages declaring a `hermes_agent.plugins` entry point
 
-Each plugin's `register(ctx)` function calls `ctx.register_video_gen_provider(...)`. The active provider is picked by `video_gen.provider` in `config.yaml`; `hermes tools` → Video Generation walks users through selection. Unlike `image_generate`, there is no in-tree legacy backend — every provider is a plugin.
+Each plugin's `register(ctx)` function calls `ctx.register_video_gen_provider(...)`. The active provider is picked by `video_gen.provider` in `config.yaml`; `hermes tools` → Video Generation walks users through selection. Unlike `generate_image`, there is no in-tree legacy backend — every provider is a plugin.
 
 ## Directory structure
 
@@ -164,7 +164,7 @@ requires_env:
   - MY_API_KEY
 ```
 
-## The `video_generate` schema
+## The `generate_video` schema
 
 The tool exposes one schema across every backend. Providers ignore parameters they don't support.
 

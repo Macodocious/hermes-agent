@@ -2,7 +2,7 @@
 """unbroker - deterministic CLI helper.
 
 The Hermes agent orchestrates scanning and opt-out submission with native tools
-(`web_extract`, `browser_navigate`, email mechanisms). THIS CLI owns the
+(`extract_web`, `navigate_browser`, email mechanisms). THIS CLI owns the
 deterministic state: config, dossiers + consent, the broker DB, tier planning,
 the ledger + audit log, draft/template rendering, and reports.
 
@@ -461,7 +461,7 @@ def cmd_fanout(args) -> None:
         brief = (
             f"You are scan worker {i} of {len(grouping['batches'])} for the `unbroker` skill. First "
             f"load the `unbroker` skill and read its references/methods.md. Use the `web` toolset "
-            f"(web_search `site:` + web_extract), NOT `browser` (browser navigation is heavy and times "
+            f"(search_web `site:` + extract_web), NOT `browser` (browser navigation is heavy and times "
             f"out). Subject id: {args.subject}. Handle ONLY these brokers: {', '.join(ids)}. "
             f"For EACH broker: read references/brokers/<id>.json; run EVERY search vector from "
             f"`pdd.py plan {args.subject}` (filtered to your brokers); build URLs from search.url_patterns "
@@ -635,7 +635,7 @@ def cmd_verify_link(args) -> None:
         sys.exit("error: provide --text '<email body>' (or --file) from the broker's confirmation email")
     link = email_modes.extract_verification_link(text, b)
     _out({"broker": args.broker, "verification_link": link,
-          "next": ("browser_navigate the link IN THE SAME browser (sessions are browser-bound), "
+          "next": ("navigate_browser the link IN THE SAME browser (sessions are browser-bound), "
                    f"complete the flow, then `record {args.subject} {args.broker} awaiting_processing`"
                    if link else
                    "no broker/opt-out-scoped link found in that text; confirm you opened the right email")})
@@ -674,7 +674,7 @@ def cmd_poll_verification(args) -> None:
                                       **ledger_mod.followup_fields("verification_pending", b, d))
             results.append({"broker": bid, "verification_link": hit["link"],
                             "email_from": hit.get("from"), "email_subject": hit.get("subject"),
-                            "next": f"browser_navigate the link IN THE AGENT'S OWN BROWSER, complete "
+                            "next": f"navigate_browser the link IN THE AGENT'S OWN BROWSER, complete "
                                     f"the flow, then `record {args.subject} {bid} awaiting_processing` "
                                     f"(or confirmed_removed only after a verifying re-scan)"})
         else:

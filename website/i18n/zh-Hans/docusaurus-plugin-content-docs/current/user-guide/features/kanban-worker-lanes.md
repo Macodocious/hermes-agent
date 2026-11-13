@@ -41,7 +41,7 @@ Hermes Kanban 拥有生命周期的真实状态——`ready` → `running` → `
 | `HERMES_KANBAN_WORKSPACE` | *本*任务工作区的绝对路径 |
 | `HERMES_KANBAN_RUN_ID` | 当前运行的 id（用于生命周期门控） |
 | `HERMES_KANBAN_CLAIM_LOCK` | claim 锁字符串（`<host>:<pid>:<uuid>`） |
-| `HERMES_PROFILE` | worker 自身的 profile 名称（用于 `kanban_comment` 作者归因） |
+| `HERMES_PROFILE` | worker 自身的 profile 名称（用于 `comment_kanban` 作者归因） |
 | `HERMES_TENANT` | 租户命名空间（如果任务有的话） |
 
 对于非 Hermes 通道（通过插件注册），插件提供自己的 `spawn_fn` 可调用对象，接收 `task`、`workspace` 和 `board`，并返回可选的 pid 用于崩溃检测。
@@ -50,8 +50,8 @@ Hermes Kanban 拥有生命周期的真实状态——`ready` → `running` → `
 
 每次 claim 必须以以下之一结束：
 
-- `kanban_complete(summary=..., metadata=...)` — 任务成功，状态切换为 `done`。
-- `kanban_block(reason=...)` — 任务等待人工输入，状态切换为 `blocked`。调度器在 `kanban_unblock` 运行时重新生成。
+- `complete_kanban(summary=..., metadata=...)` — 任务成功，状态切换为 `done`。
+- `block_kanban(reason=...)` — 任务等待人工输入，状态切换为 `blocked`。调度器在 `unblock_kanban` 运行时重新生成。
 - worker 进程退出而未调用任何工具。内核回收该进程并发出 `crashed`（PID 已消亡）、`gave_up`（连续失败断路器触发）或 `timed_out`（超过 max_runtime）。这是失败路径；健康的 worker 不会在此结束。
 
 kanban 内核强制要求每次运行恰好由其中一项终止。既未调用任何终止工具又正常退出的 worker 将被视为崩溃。
@@ -61,10 +61,10 @@ kanban 内核强制要求每次运行恰好由其中一项终止。既未调用�
 对于大多数涉及代码变更的任务，worker 完成的那一刻并不意味着真正*完成*——还需要人工审查。kanban 内核不强制执行这一区分（"涉及代码变更的任务"定义模糊，且在每个代码 worker 上强制 block 而非 complete 会破坏不需要审查的流程）。这是叠加在上层的约定：
 
 - **使用 block 而非 complete**，`reason` 以 `review-required: ` 为前缀，使仪表板 / `hermes kanban show` 将该行显示为等待审查。
-- **先将结构化元数据写入 `kanban_comment`**，因为 `kanban_block` 只携带人类可读的 `reason`。Comment 是持久的注解通道——所有与审计相关的字段（changed_files、tests_run、diff_path 或 PR url、决策记录）都应放在这里。
-- **Reviewer 批准并解除阻塞**，这将重新生成 worker 并附带 comment 线程用于后续跟进；或通过另一条 comment 要求修改，下一次 worker 运行时将通过 `kanban_show` 的上下文看到这些内容。
+- **先将结构化元数据写入 `comment_kanban`**，因为 `block_kanban` 只携带人类可读的 `reason`。Comment 是持久的注解通道——所有与审计相关的字段（changed_files、tests_run、diff_path 或 PR url、决策记录）都应放在这里。
+- **Reviewer 批准并解除阻塞**，这将重新生成 worker 并附带 comment 线程用于后续跟进；或通过另一条 comment 要求修改，下一次 worker 运行时将通过 `show_kanban` 的上下文看到这些内容。
 
-自动注入的 `KANBAN_GUIDANCE` 同时涵盖 `kanban_complete`（真正终态的任务——拼写修复、文档变更、研究报告）和 `review-required` block 模式。
+自动注入的 `KANBAN_GUIDANCE` 同时涵盖 `complete_kanban`（真正终态的任务——拼写修复、文档变更、研究报告）和 `review-required` block 模式。
 
 ## 日志与审计追踪
 
@@ -72,7 +72,7 @@ kanban 内核强制要求每次运行恰好由其中一项终止。既未调用�
 
 - `task_runs` 行携带 `log_path`、退出码（如有）、摘要和元数据。
 - `task_events` 行携带每次状态转换（`promoted`、`claimed`、`heartbeat`、`completed`、`blocked`、`gave_up`、`crashed`、`timed_out`、`reclaimed`、`claim_extended`）。
-- `kanban_show` 同时返回两者，因此 reviewer（或后续 worker）读取任务时无需访问仪表板即可获得完整历史。
+- `show_kanban` 同时返回两者，因此 reviewer（或后续 worker）读取任务时无需访问仪表板即可获得完整历史。
 
 仪表板以摘要、元数据块和退出状态徽章渲染运行历史。CLI 用户可运行 `hermes kanban tail <task_id>` 实时跟踪，或运行 `hermes kanban runs <task_id>` 查看历史尝试列表。
 
@@ -86,11 +86,11 @@ kanban 内核强制要求每次运行恰好由其中一项终止。既未调用�
 
 ### Orchestrator profile 通道
 
-profile 通道的特化形态：orchestrator 是一个 Hermes profile，其工具集包含 `kanban`，但排除了用于实现的 `terminal` / `file` / `code` / `web`。其职责是通过 `kanban_create` + `kanban_link` 将高层目标分解为子任务，然后退出。orchestrator skill 编码了反诱惑规则。
+profile 通道的特化形态：orchestrator 是一个 Hermes profile，其工具集包含 `kanban`，但排除了用于实现的 `terminal` / `file` / `code` / `web`。其职责是通过 `create_kanban` + `link_kanban` 将高层目标分解为子任务，然后退出。orchestrator skill 编码了反诱惑规则。
 
 ## 添加外部 CLI worker 通道
 
-将非 Hermes CLI 工具（Codex CLI、Claude Code CLI、OpenCode CLI、本地编码模型运行器等）接入 kanban worker 通道*尚未形成成熟路径*。调度器的 spawn 函数是可插拔的（`spawn_fn` 是 `dispatch_once` 的参数），插件可以为非 Hermes assignee 注册自己的 `spawn_fn`，但周边集成工作——将 CLI 的退出码封装为 `kanban_complete` / `kanban_block` 调用、将 CLI 的工作区/沙箱约定映射到调度器的 `HERMES_KANBAN_WORKSPACE` 环境变量、处理认证和每个 CLI 的策略——仍是每个集成各自的设计工作。
+将非 Hermes CLI 工具（Codex CLI、Claude Code CLI、OpenCode CLI、本地编码模型运行器等）接入 kanban worker 通道*尚未形成成熟路径*。调度器的 spawn 函数是可插拔的（`spawn_fn` 是 `dispatch_once` 的参数），插件可以为非 Hermes assignee 注册自己的 `spawn_fn`，但周边集成工作——将 CLI 的退出码封装为 `complete_kanban` / `block_kanban` 调用、将 CLI 的工作区/沙箱约定映射到调度器的 `HERMES_KANBAN_WORKSPACE` 环境变量、处理认证和每个 CLI 的策略——仍是每个集成各自的设计工作。
 
 如果你考虑添加 CLI 通道，请提交一个 issue，描述具体的 CLI 以及你希望实现的工作流。上述契约是任何此类通道必须满足的约束；实现形态（每个 CLI 一个插件，还是通过配置参数化的通用 CLI 运行器插件）尚未确定。
 

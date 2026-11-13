@@ -43,8 +43,8 @@ _FILE_EDIT_TOOLS: Mapping[str, str] = {
     "write_file": "path",
     "patch": "path",
     "read_file": "path",
-    "skill_manage": "file_path",
-    "skill_view": "file_path",
+    "manage_skill": "file_path",
+    "view_skill": "file_path",
 }
 
 

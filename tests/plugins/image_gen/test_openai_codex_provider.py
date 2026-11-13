@@ -341,7 +341,7 @@ class TestCapabilityErrorDetection:
         ("status_code", "body"),
         [
             (401, "Tool choice 'image_generation' not found in 'tools' parameter."),
-            (400, "Tool choice 'web_search' not found in 'tools' parameter."),
+            (400, "Tool choice 'search_web' not found in 'tools' parameter."),
             (400, "The image_generation request was rejected by moderation."),
             (500, "Tool choice 'image_generation' not found in 'tools' parameter."),
         ],

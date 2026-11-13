@@ -188,7 +188,7 @@ class TestCamofoxSnapshot:
         monkeypatch.setenv("CAMOFOX_URL", "http://localhost:9377")
         result = json.loads(camofox_snapshot(task_id="no_such_task"))
         assert result["success"] is False
-        assert "browser_navigate" in result["error"]
+        assert "navigate_browser" in result["error"]
 
     @patch("tools.browser_camofox.requests.post")
     @patch("tools.browser_camofox.requests.get")
@@ -445,10 +445,10 @@ class TestBrowserToolRouting:
         monkeypatch.setenv("CAMOFOX_URL", "http://localhost:9377")
         mock_post.return_value = _mock_response(json_data={"tabId": "tab_rt", "url": "https://example.com"})
 
-        from tools.browser_tool import browser_navigate
+        from tools.browser_tool import navigate_browser
         # Bypass SSRF check for test URL
         with patch("tools.browser_tool._is_safe_url", return_value=True):
-            result = json.loads(browser_navigate("https://example.com", task_id="t_route"))
+            result = json.loads(navigate_browser("https://example.com", task_id="t_route"))
         assert result["success"] is True
 
     def test_check_requirements_passes_with_camofox(self, monkeypatch):

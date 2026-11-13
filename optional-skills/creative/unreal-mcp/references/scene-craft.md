@@ -223,7 +223,7 @@ real filmback/lens/DoF controls.
   PNG/EXR sequences or stills at arbitrary resolution with anti-aliasing
   temporal sample counts. First render after opening a project stalls on
   shader compilation — warn the user, don't declare it hung.
-- Judge results by looking: read the file back and `vision_analyze` every
+- Judge results by looking: read the file back and `analyze_vision` every
   capture against the brief.
 
 ## Editor Python quick reference

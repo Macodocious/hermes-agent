@@ -5,7 +5,7 @@ description: |
   scrolling, dragging — without stealing the cursor, keyboard focus,
   or switching virtual desktops / Spaces. Cross-platform: macOS,
   Windows, Linux. Works with any tool-capable model. Load this skill
-  whenever the `computer_use` tool is available.
+  whenever the `use_computer` tool is available.
 version: 2.0.0
 platforms: [macos, windows, linux]
 metadata:
@@ -17,7 +17,7 @@ metadata:
 
 # Computer Use (universal, any-model, cross-platform)
 
-You have a `computer_use` tool that drives the user's desktop in the
+You have a `use_computer` tool that drives the user's desktop in the
 **background** — your actions do NOT move the user's cursor, steal
 keyboard focus, or switch virtual desktops / Spaces. The user can keep
 typing in their editor while you click around in a browser in another
@@ -28,17 +28,17 @@ or an open model on a local OpenAI-compatible endpoint. There is no
 Anthropic-native schema to learn.
 
 Hermes drives [cua-driver](https://github.com/trycua/cua) under the hood
-for the platform plumbing. The Hermes-side `computer_use` tool exposed
+for the platform plumbing. The Hermes-side `use_computer` tool exposed
 in this skill is a higher-level Hermes vocabulary; the raw cua-driver
 MCP tools (which a different agent harness would see) are NOT what you
-call — call the `computer_use` actions documented below.
+call — call the `use_computer` actions documented below.
 
 ## The canonical workflow
 
 **Step 1 — Capture first.** Almost every task starts with:
 
 ```
-computer_use(action="capture", mode="som", app="<the app you're driving>")
+use_computer(action="capture", mode="som", app="<the app you're driving>")
 ```
 
 Returns a screenshot with numbered overlays on every interactable
@@ -59,7 +59,7 @@ AT-SPI) — treat them as labels, not as strict types.
 habit:
 
 ```
-computer_use(action="click", element=7)
+use_computer(action="click", element=7)
 ```
 
 Much more reliable than pixel coordinates for every model. Claude was
@@ -69,7 +69,7 @@ trained on both; other models are often only reliable with indices.
 can save a round-trip by asking for the post-action capture inline:
 
 ```
-computer_use(action="click", element=7, capture_after=True)
+use_computer(action="click", element=7, capture_after=True)
 ```
 
 ## Capture modes
@@ -138,9 +138,9 @@ Walk it in order:
    tldraw offline's "Run Script"), DirectInput games, raw-input canvases.
 
 ```
-computer_use(action="click", element=7)
+use_computer(action="click", element=7)
 # → {effect: "suspected_noop", escalation: {recommended: "foreground", ...}}
-computer_use(action="click", element=7, delivery_mode="foreground")
+use_computer(action="click", element=7, delivery_mode="foreground")
 # → {effect: "unverifiable", path: "x11_pixel_fg"}   then re-capture to confirm
 ```
 
@@ -184,13 +184,13 @@ shortcut to use.
 Prefer element indices:
 
 ```
-computer_use(action="drag", from_element=3, to_element=17)
+use_computer(action="drag", from_element=3, to_element=17)
 ```
 
 For a rubber-band selection on empty canvas, use coordinates:
 
 ```
-computer_use(action="drag",
+use_computer(action="drag",
              from_coordinate=[100, 200],
              to_coordinate=[400, 500])
 ```
@@ -200,13 +200,13 @@ computer_use(action="drag",
 Scroll the viewport under an element (most common):
 
 ```
-computer_use(action="scroll", direction="down", amount=5, element=12)
+use_computer(action="scroll", direction="down", amount=5, element=12)
 ```
 
 Or at a specific point:
 
 ```
-computer_use(action="scroll", direction="down", amount=3, coordinate=[500, 400])
+use_computer(action="scroll", direction="down", amount=3, coordinate=[500, 400])
 ```
 
 ## Managing what's focused
@@ -260,11 +260,11 @@ in your conversation context.
 | `blocked pattern in type text` | You tried to `type` a shell command matching the dangerous-pattern block list (`curl ... \| bash`, `sudo rm -rf`, etc.). Break the command up or reconsider |
 | Anything else weird | **First action: ask the user to run `hermes computer-use doctor`.** It runs the cua-driver `health_report` MCP tool and prints a structured per-check matrix. Their output tells you (and them) exactly what's wrong |
 
-## When NOT to use `computer_use`
+## When NOT to use `use_computer`
 
 - **Web automation you can do via `browser_*` tools** — those use a
   real headless Chromium and are more reliable than driving the user's
-  GUI browser. Reach for `computer_use` specifically when the task
+  GUI browser. Reach for `use_computer` specifically when the task
   needs the user's actual native apps (Finder/Explorer/Files, Mail/
   Outlook/Thunderbird, native chat clients, Figma, Logic, games,
   anything non-web).
@@ -276,7 +276,7 @@ in your conversation context.
 ## Going deeper — read the cua-driver skill pack
 
 Hermes intentionally keeps THIS skill focused on the Hermes-side
-`computer_use` action vocabulary. The platform-specific deep dives
+`use_computer` action vocabulary. The platform-specific deep dives
 (macOS no-foreground contract, Windows UIA + Session 0, Linux AT-SPI +
 X11/Wayland nuances, recording trajectory + video, browser-page
 interaction, etc.) live in cua-driver's skill pack — same content the

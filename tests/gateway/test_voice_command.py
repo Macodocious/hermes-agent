@@ -397,7 +397,7 @@ class TestAutoVoiceReply:
             "tool_calls": [{
                 "id": "call_1",
                 "type": "function",
-                "function": {"name": "web_search", "arguments": "{}"},
+                "function": {"name": "search_web", "arguments": "{}"},
             }],
         }]
         assert self._call(runner, "all", MessageType.TEXT, agent_messages=messages) is True

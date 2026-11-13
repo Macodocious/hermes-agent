@@ -1633,7 +1633,7 @@ def _dump_subagent_timeout_diagnostic(
 def _spill_summary_to_file(task_index: int, summary: str) -> Optional[str]:
     """Write a subagent's full summary to the delegation cache and return path.
 
-    Mirrors web_extract's ``_store_full_text``: the file lands in
+    Mirrors extract_web's ``_store_full_text``: the file lands in
     ``cache/delegation`` which is mounted read-only into remote backends
     (Docker/Modal/SSH) via ``credential_files._CACHE_DIRS``, so the parent's
     terminal/``read_file`` tools can page through the complete text on any
@@ -1660,7 +1660,7 @@ def _trim_summary_with_footer(
 ) -> tuple[str, Optional[str]]:
     """Return (model_text, spill_path) for one over-budget summary.
 
-    Mirrors web_extract's ``_truncate_with_footer``: keep a head+tail window
+    Mirrors extract_web's ``_truncate_with_footer``: keep a head+tail window
     (~75% head / ~25% tail, snapped to line boundaries) so the subagent's
     opening AND its closing (outcomes / files-changed / issues, which live at
     the end) both survive, spill the full text to disk, and append a footer

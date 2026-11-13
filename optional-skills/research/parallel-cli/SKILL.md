@@ -19,7 +19,7 @@ This is an optional third-party workflow, not a Hermes core capability.
 
 Important expectations:
 - Parallel is a paid service with a free tier, not a fully free local tool.
-- It overlaps with Hermes native `web_search` / `web_extract`, so do not prefer it by default for ordinary lookups.
+- It overlaps with Hermes native `search_web` / `extract_web`, so do not prefer it by default for ordinary lookups.
 - Prefer this skill when the user mentions Parallel specifically or needs capabilities like Parallel's enrichment, FindAll, or monitor workflows.
 
 `parallel-cli` is designed for agents:
@@ -37,7 +37,7 @@ Prefer this skill when:
 - You need async deep research jobs that can be launched and polled later
 - You need structured enrichment, FindAll entity discovery, or monitoring
 
-Prefer Hermes native `web_search` / `web_extract` for quick one-off lookups when Parallel is not specifically requested.
+Prefer Hermes native `search_web` / `extract_web` for quick one-off lookups when Parallel is not specifically requested.
 
 ## Installation
 

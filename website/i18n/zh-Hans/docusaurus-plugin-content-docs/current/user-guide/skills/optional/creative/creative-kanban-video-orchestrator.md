@@ -124,7 +124,7 @@ director profile 从此接管，通过 kanban 工具集将工作分解并路由�
 
 监控模式：定期轮询 `kanban list`，用 `kanban show <id>` 检查任何超出预期时长的 RUNNING 任务，并检查心跳。当某个 worker 的输出未通过审核时，标准介入方式为：
 
-1. 在 worker 的任务上附上具体反馈评论（`kanban_comment`）
+1. 在 worker 的任务上附上具体反馈评论（`comment_kanban`）
 2. 以原任务为父任务创建重新运行任务
 3. 调整简报范围，让 director 重新分解
 
@@ -140,7 +140,7 @@ director profile 从此接管，通过 kanban 工具集将工作分解并路由�
 
 2. **团队要匹配视频。** 不要对每个项目都复用同一套 4-profile 配置。没有节拍分析 profile 的 MV 会出错。没有编剧 profile 的叙事短片会产生不连贯的场景。参见 `references/role-archetypes.md`。
 
-3. **每个项目一个工作区。** 同一视频的所有 profiles 共享同一个 `dir:` 工作区。任务通过共享文件系统和结构化交接传递产物。**每个** `kanban_create` 调用都传入 `workspace_kind="dir"` + `workspace_path="<绝对项目路径>"`。
+3. **每个项目一个工作区。** 同一视频的所有 profiles 共享同一个 `dir:` 工作区。任务通过共享文件系统和结构化交接传递产物。**每个** `create_kanban` 调用都传入 `workspace_kind="dir"` + `workspace_path="<绝对项目路径>"`。
 
 4. **每个项目使用独立 tenant。** 使用项目专属 tenant（`--tenant <project-slug>`）。保持 dashboard 范围清晰，防止与其他正在进行的 kanban 交叉污染。
 

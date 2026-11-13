@@ -220,7 +220,7 @@ def finalize_turn(
         # both exhausted the task budget and must advance the failure circuit.
         #
         # We route through ``_record_task_failure(outcome="timed_out")``
-        # rather than ``kanban_block`` so this counts toward the dispatcher's
+        # rather than ``block_kanban`` so this counts toward the dispatcher's
         # consecutive-failure circuit breaker (#29747 gap 2).
         _kanban_task = os.environ.get("HERMES_KANBAN_TASK")
         if _kanban_task:
@@ -696,7 +696,7 @@ def finalize_turn(
     _should_review_skills = False
     if (agent._skill_nudge_interval > 0
             and agent._iters_since_skill >= agent._skill_nudge_interval
-            and "skill_manage" in agent.valid_tool_names):
+            and "manage_skill" in agent.valid_tool_names):
         _should_review_skills = True
         agent._iters_since_skill = 0
 

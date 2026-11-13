@@ -4,7 +4,7 @@ Web Search Provider Registry
 
 Central map of registered web providers. Populated by plugins at import-time
 via :meth:`PluginContext.register_web_search_provider`; consumed by the
-``web_search`` and ``web_extract`` tool wrappers in :mod:`tools.web_tools` to
+``search_web`` and ``extract_web`` tool wrappers in :mod:`tools.web_tools` to
 dispatch each call to the active backend.
 
 Active selection

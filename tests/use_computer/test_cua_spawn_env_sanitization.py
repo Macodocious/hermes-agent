@@ -50,7 +50,7 @@ def test_resolve_mcp_invocation_sanitizes_env(monkeypatch):
     monkeypatch.setenv("PATH", "/usr/bin:/bin")
     monkeypatch.delenv("HERMES_CUA_TELEMETRY", raising=False)
 
-    from tools.computer_use import cua_backend
+    from tools.use_computer import cua_backend
 
     captured = {}
     manifest = json.dumps({"mcp_invocation": {"command": "cua-driver", "args": ["mcp"]}})
@@ -68,7 +68,7 @@ def test_update_check_sanitizes_env(monkeypatch):
     monkeypatch.setenv("PATH", "/usr/bin:/bin")
     monkeypatch.delenv("HERMES_CUA_TELEMETRY", raising=False)
 
-    from tools.computer_use import cua_backend
+    from tools.use_computer import cua_backend
 
     captured = {}
     payload = json.dumps({
@@ -89,7 +89,7 @@ def test_permissions_run_sanitizes_env(monkeypatch):
     monkeypatch.setenv("PATH", "/usr/bin:/bin")
     monkeypatch.delenv("HERMES_CUA_TELEMETRY", raising=False)
 
-    from tools.computer_use import permissions
+    from tools.use_computer import permissions
 
     captured = {}
     monkeypatch.setattr(
@@ -107,7 +107,7 @@ def test_doctor_sanitized_env_helper(monkeypatch):
     monkeypatch.setenv("PATH", "/usr/bin:/bin")
     monkeypatch.delenv("HERMES_CUA_TELEMETRY", raising=False)
 
-    from tools.computer_use import doctor
+    from tools.use_computer import doctor
     import inspect
 
     env = doctor._sanitized_cua_env()

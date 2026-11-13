@@ -264,7 +264,7 @@ class TestPreApiCallSteerDrain:
         messages = [
             {"role": "user", "content": "do something"},
             {"role": "assistant", "content": "let me check", "tool_calls": [
-                {"id": "tc1", "function": {"name": "web_search", "arguments": "{}"}}
+                {"id": "tc1", "function": {"name": "search_web", "arguments": "{}"}}
             ]},
             {"role": "tool", "content": "search results", "tool_call_id": "tc1"},
         ]

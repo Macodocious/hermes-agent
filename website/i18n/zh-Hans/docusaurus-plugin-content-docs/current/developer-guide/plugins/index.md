@@ -380,7 +380,7 @@ with open(_DATA_FILE) as f:
 
 ### 捆绑技能
 
-插件可以随附技能文件，代理通过 `skill_view("plugin:skill")` 加载。在 `__init__.py` 中注册：
+插件可以随附技能文件，代理通过 `view_skill("plugin:skill")` 加载。在 `__init__.py` 中注册：
 
 ```
 ~/.hermes/plugins/my-plugin/
@@ -407,12 +407,12 @@ def register(ctx):
 代理现在可以通过命名空间名称加载你的技能：
 
 ```python
-skill_view("my-plugin:my-workflow")   # → 插件版本
-skill_view("my-workflow")              # → 内置版本（不受影响）
+view_skill("my-plugin:my-workflow")   # → 插件版本
+view_skill("my-workflow")              # → 内置版本（不受影响）
 ```
 
 **关键特性：**
-- 插件技能是**只读**的——它们不会进入 `~/.hermes/skills/`，也无法通过 `skill_manage` 编辑。
+- 插件技能是**只读**的——它们不会进入 `~/.hermes/skills/`，也无法通过 `manage_skill` 编辑。
 - 插件技能**不会**列在系统提示词的 `<available_skills>` 索引中——需要显式加载。
 - 裸技能名称不受影响——命名空间防止与内置技能冲突。
 - 代理加载插件技能时，会在前面添加一个捆绑上下文横幅，列出同一插件的兄弟技能。
@@ -499,12 +499,12 @@ ctx.register_tool(
 
 ### 覆盖内置工具
 
-要用你自己的实现替换内置工具（例如将默认浏览器工具替换为有头 Chrome CDP 后端，或将 `web_search` 替换为自定义企业索引），传入 `override=True`：
+要用你自己的实现替换内置工具（例如将默认浏览器工具替换为有头 Chrome CDP 后端，或将 `search_web` 替换为自定义企业索引），传入 `override=True`：
 
 ```python
 def register(ctx):
     ctx.register_tool(
-        name="browser_navigate",             # 与内置工具同名
+        name="navigate_browser",             # 与内置工具同名
         toolset="plugin_my_browser",         # 你自己的 toolset 命名空间
         schema={...},
         handler=my_custom_navigate,

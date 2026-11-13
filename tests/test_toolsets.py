@@ -29,7 +29,7 @@ class TestGetToolset:
     def test_known_toolset(self):
         ts = get_toolset("web")
         assert ts is not None
-        assert "web_search" in ts["tools"]
+        assert "search_web" in ts["tools"]
 
     def test_merges_registry_tools_into_builtin_toolset(self, monkeypatch):
         reg = ToolRegistry()
@@ -44,7 +44,7 @@ class TestGetToolset:
 
         ts = get_toolset("web")
         assert ts is not None
-        assert set(ts["tools"]) == {"web_search", "web_extract", "web_search_plus"}
+        assert set(ts["tools"]) == {"search_web", "extract_web", "web_search_plus"}
 
     def test_unknown_returns_none(self):
         assert get_toolset("nonexistent") is None
@@ -53,13 +53,13 @@ class TestGetToolset:
 class TestResolveToolset:
     def test_leaf_toolset(self):
         tools = resolve_toolset("web")
-        assert set(tools) == {"web_search", "web_extract"}
+        assert set(tools) == {"search_web", "extract_web"}
 
     def test_composite_toolset(self):
         tools = resolve_toolset("debugging")
         assert "terminal" in tools
-        assert "web_search" in tools
-        assert "web_extract" in tools
+        assert "search_web" in tools
+        assert "extract_web" in tools
 
     def test_cycle_detection(self):
         # Create a cycle: A includes B, B includes A
@@ -108,8 +108,8 @@ class TestResolveToolset:
 class TestResolveMultipleToolsets:
     def test_combines_and_deduplicates(self):
         tools = resolve_multiple_toolsets(["web", "terminal"])
-        assert "web_search" in tools
-        assert "web_extract" in tools
+        assert "search_web" in tools
+        assert "extract_web" in tools
         assert "terminal" in tools
         # No duplicates
         assert len(tools) == len(set(tools))
@@ -168,12 +168,12 @@ class TestCreateCustomToolset:
         create_custom_toolset(
             name="_test_custom",
             description="Test toolset",
-            tools=["web_search"],
+            tools=["search_web"],
             includes=["terminal"],
         )
         try:
             tools = resolve_toolset("_test_custom")
-            assert "web_search" in tools
+            assert "search_web" in tools
             assert "terminal" in tools
             assert validate_toolset("_test_custom") is True
         finally:
@@ -240,7 +240,7 @@ class TestReadOnlyToolset:
     # from the read toolset.
     _FORBIDDEN = {
         "write_file", "patch", "terminal", "process", "read_terminal",
-        "close_terminal", "execute_code", "computer_use", "skill_manage",
+        "close_terminal", "execute_code", "use_computer", "manage_skill",
     }
 
     def test_exposes_code_reads(self):
@@ -281,10 +281,10 @@ class TestPluginToolsets:
 
 class TestDefaultPlatformWebSearchCoverage:
     def test_hermes_whatsapp_toolset_includes_web_search(self):
-        assert "web_search" in resolve_toolset("hermes-whatsapp")
+        assert "search_web" in resolve_toolset("hermes-whatsapp")
 
     def test_hermes_api_server_toolset_includes_web_search(self):
-        assert "web_search" in resolve_toolset("hermes-api-server")
+        assert "search_web" in resolve_toolset("hermes-api-server")
 
 
 class TestResolveToolsetIncludeRegistry:
@@ -313,7 +313,7 @@ class TestResolveToolsetIncludeRegistry:
         # 'debugging' has direct tools [terminal, process] and includes [web, file]
         static = set(resolve_toolset("debugging", include_registry=False))
         assert {"terminal", "process"} <= static
-        assert "web_search" in static
+        assert "search_web" in static
         assert "read_file" in static
 
     def test_all_alias_accepts_include_registry(self):

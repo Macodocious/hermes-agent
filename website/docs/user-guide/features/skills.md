@@ -105,7 +105,7 @@ commands).
 # A local SDK or doc directory — read with read_file / search_files
 /learn the REST client in ~/projects/acme-sdk, focus on auth + pagination
 
-# An online doc page — fetched with web_extract
+# An online doc page — fetched with extract_web
 /learn https://docs.example.com/api/quickstart
 
 # The workflow you just walked the agent through in this conversation
@@ -124,7 +124,7 @@ with a directory field, a URL field, and an open-ended text box; it composes a
 
 There is no model-tool footprint: `/learn` builds a standards-guided prompt and
 hands it to the agent as a normal turn. The agent saves the result with the
-`skill_manage` tool, so the [write-approval gate](#gating-agent-skill-writes-skillswrite_approval)
+`manage_skill` tool, so the [write-approval gate](#gating-agent-skill-writes-skillswrite_approval)
 applies if you have it on.
 
 ## Progressive Disclosure
@@ -132,9 +132,9 @@ applies if you have it on.
 Skills use a token-efficient loading pattern:
 
 ```
-Level 0: skills_list()           → [{name, description, category}, ...]   (~3k tokens)
-Level 1: skill_view(name)        → Full content + metadata       (varies)
-Level 2: skill_view(name, path)  → Specific reference file       (varies)
+Level 0: list_skills()           → [{name, description, category}, ...]   (~3k tokens)
+Level 1: view_skill(name)        → Full content + metadata       (varies)
+Level 2: view_skill(name, path)  → Specific reference file       (varies)
 ```
 
 The agent only loads the full skill content when it actually needs it.
@@ -191,7 +191,7 @@ platforms: [macos]            # macOS only (e.g., iMessage, Apple Reminders, Fin
 platforms: [macos, linux]     # macOS and Linux
 ```
 
-When set, the skill is automatically hidden from the system prompt, `skills_list()`, and slash commands on incompatible platforms. If omitted, the skill loads on all platforms.
+When set, the skill is automatically hidden from the system prompt, `list_skills()`, and slash commands on incompatible platforms. If omitted, the skill loads on all platforms.
 
 ## Skill output and media delivery
 
@@ -231,7 +231,7 @@ metadata:
   hermes:
     fallback_for_toolsets: [web]      # Show ONLY when these toolsets are unavailable
     requires_toolsets: [terminal]     # Show ONLY when these toolsets are available
-    fallback_for_tools: [web_search]  # Show ONLY when these specific tools are unavailable
+    fallback_for_tools: [search_web]  # Show ONLY when these specific tools are unavailable
     requires_tools: [terminal]        # Show ONLY when these specific tools are available
 ```
 
@@ -242,7 +242,7 @@ metadata:
 | `requires_toolsets` | Skill is **hidden** when the listed toolsets are unavailable. Shown when they're present. |
 | `requires_tools` | Same, but checks individual tools. |
 
-**Example:** The built-in `duckduckgo-search` skill uses `fallback_for_toolsets: [web]`. When you have `FIRECRAWL_API_KEY` set, the web toolset is available and the agent uses `web_search` — the DuckDuckGo skill stays hidden. If the API key is missing, the web toolset is unavailable and the DuckDuckGo skill automatically appears as a fallback.
+**Example:** The built-in `duckduckgo-search` skill uses `fallback_for_toolsets: [web]`. When you have `FIRECRAWL_API_KEY` set, the web toolset is available and the agent uses `search_web` — the DuckDuckGo skill stays hidden. If the API key is missing, the web toolset is unavailable and the DuckDuckGo skill automatically appears as a fallback.
 
 Skills without any conditional fields behave exactly as before — they're always shown.
 
@@ -330,10 +330,10 @@ Paths support `~` expansion and `${VAR}` environment variable substitution.
 
 ### How it works
 
-- **Create locally, update in place**: New agent-created skills are written to `~/.hermes/skills/`. Existing skills are modified where they are found, including skills under `external_dirs`, when the agent uses `skill_manage` actions such as `patch`, `edit`, `write_file`, `remove_file`, or `delete`.
+- **Create locally, update in place**: New agent-created skills are written to `~/.hermes/skills/`. Existing skills are modified where they are found, including skills under `external_dirs`, when the agent uses `manage_skill` actions such as `patch`, `edit`, `write_file`, `remove_file`, or `delete`.
 - **External dirs are not a write-protection boundary**: If an external skill directory is writable by the Hermes process, agent-managed skill updates can change files in that directory. Use filesystem permissions or a separate profile/toolset setup if shared external skills must stay read-only.
 - **Local precedence**: If the same skill name exists in both the local dir and an external dir, the local version wins.
-- **Full integration**: External skills appear in the system prompt index, `skills_list`, `skill_view`, and as `/skill-name` slash commands — no different from local skills.
+- **Full integration**: External skills appear in the system prompt index, `list_skills`, `view_skill`, and as `/skill-name` slash commands — no different from local skills.
 - **Non-existent paths are silently skipped**: If a configured directory doesn't exist, Hermes ignores it without errors. Useful for optional shared directories that may not be present on every machine.
 
 ### Example
@@ -439,9 +439,9 @@ Use a bundle when:
 
 A bundle is just a YAML alias — it doesn't install skills for you. The skills themselves must already be present (in `~/.hermes/skills/` or an external skill directory). Otherwise the bundle invocation just skips the missing ones.
 
-## Agent-Managed Skills (skill_manage tool)
+## Agent-Managed Skills (manage_skill tool)
 
-The agent can create, update, and delete its own skills via the `skill_manage` tool. This is the agent's **procedural memory** — when it figures out a non-trivial workflow, it saves the approach as a skill for future reuse.
+The agent can create, update, and delete its own skills via the `manage_skill` tool. This is the agent's **procedural memory** — when it figures out a non-trivial workflow, it saves the approach as a skill for future reuse.
 
 Skills and memory work together in the self-improvement loop: memory stores
 small durable facts that should always be in context, while skills store longer
@@ -484,7 +484,7 @@ skills:
   write_approval: false     # false = write freely (default) | true = require approval
 ```
 
-When `write_approval: true`, every `skill_manage` write (create / edit /
+When `write_approval: true`, every `manage_skill` write (create / edit /
 patch / delete / write_file / remove_file) is **staged** instead of committed —
 a SKILL.md is too large to review inline, so staging applies regardless of
 whether the write came from a foreground turn or the background review.

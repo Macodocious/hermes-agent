@@ -41,7 +41,7 @@ description: "使用 Scrapling 进行网页抓取——HTTP 获取、隐身浏�
 - 抓取需要真实浏览器的 JS 渲染页面
 - 绕过 Cloudflare Turnstile 或机器人检测
 - 使用爬虫抓取多个页面
-- 当内置 `web_extract` 工具无法返回所需数据时
+- 当内置 `extract_web` 工具无法返回所需数据时
 
 ## 安装
 

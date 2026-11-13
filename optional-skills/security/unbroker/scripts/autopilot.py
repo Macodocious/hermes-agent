@@ -266,7 +266,7 @@ def next_actions(dossier: dict, brokers_list: list[dict], cfg: dict,
                 "broker_ids": ids,
                 "command": f"python3 scripts/pdd.py plan {subject_id}",
                 "how": "run every search_vector per broker via the methods.md ladder "
-                       "(web_extract -> site: probe -> browser), record a verdict per broker",
+                       "(extract_web -> site: probe -> browser), record a verdict per broker",
             })
 
     # 2) in-flight email verifications: poll the inbox (or hand to the human in draft mode)
@@ -282,7 +282,7 @@ def next_actions(dossier: dict, brokers_list: list[dict], cfg: dict,
                     "type": "poll_verification", "via": "imap",
                     "broker_id": bid,
                     "command": f"python3 scripts/pdd.py poll-verification {subject_id} --broker {bid}",
-                    "then": "browser_navigate the returned link IN THE SAME AGENT BROWSER (sessions are "
+                    "then": "navigate_browser the returned link IN THE SAME AGENT BROWSER (sessions are "
                             "browser-bound), complete the flow, then record: awaiting_processing",
                 })
             elif email_mode == "browser":
@@ -290,7 +290,7 @@ def next_actions(dossier: dict, brokers_list: list[dict], cfg: dict,
                     "type": "poll_verification", "via": "browser", "broker_id": bid,
                     "how": "open the broker's confirmation email in the operator's logged-in webmail "
                            f"(browser_*), then `python3 scripts/pdd.py verify-link {subject_id} {bid} "
-                           "--text '<email body>'` to score the link, browser_navigate it in the SAME "
+                           "--text '<email body>'` to score the link, navigate_browser it in the SAME "
                            "browser, then record awaiting_processing",
                 })
             else:
@@ -335,7 +335,7 @@ def next_actions(dossier: dict, brokers_list: list[dict], cfg: dict,
                 "type": "indirect_web_form",
                 "broker_id": bid, "confirm_first": confirm_first,
                 "optout_url": row.get("optout_url"),
-                "steps": [f"browser_navigate {row.get('optout_url')}",
+                "steps": [f"navigate_browser {row.get('optout_url')}",
                           "submit ONLY the subject's own identifiers (the fields the form requires) to "
                           "remove them from the third party's record; disclose nothing extra",
                           "confirm the success state, screenshot into evidence/"],

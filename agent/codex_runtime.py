@@ -301,8 +301,8 @@ _CODEX_TOOL_ITEM_TYPES = frozenset(
 # agent's tool_progress_callback — so the inner call can never surface
 # its own native progress event. The codex-level mcpToolCall event IS
 # the display event for those calls; we strip the mcp.hermes-tools.*
-# namespacing and emit the bare tool name (web_search, browser_navigate,
-# vision_analyze, ...) since the user thinks of these as Hermes tools,
+# namespacing and emit the bare tool name (search_web, navigate_browser,
+# analyze_vision, ...) since the user thinks of these as Hermes tools,
 # not as MCP calls.
 _INTERNAL_MCP_SERVER = "hermes-tools"
 
@@ -325,7 +325,7 @@ def _codex_item_to_tool_name(item: dict) -> str:
     if item_type == "dynamicToolCall":
         return item.get("tool") or "dynamic"
     if item_type == "webSearch":
-        return "web_search"
+        return "search_web"
     return item_type or "unknown"
 
 
@@ -778,7 +778,7 @@ def run_codex_app_server_turn(
     if (
         agent._skill_nudge_interval > 0
         and agent._iters_since_skill >= agent._skill_nudge_interval
-        and "skill_manage" in agent.valid_tool_names
+        and "manage_skill" in agent.valid_tool_names
     ):
         should_review_skills = True
         agent._iters_since_skill = 0
@@ -826,7 +826,7 @@ def run_codex_app_server_turn(
         # messages.extend). The inbound user turn was already flushed at turn
         # start (turn_context._persist_session) and the flush dedups via
         # _DB_PERSISTED_MARKER, so state.db ends up with each real message
-        # exactly once and session_search / conversation-distill see the full
+        # exactly once and search_session / conversation-distill see the full
         # gateway conversation. Report agent_persisted=True so the gateway
         # skips its own append_to_transcript DB write — writing again there
         # would re-INSERT the already-flushed user turn (append_message has no

@@ -49,11 +49,11 @@ function toolset(overrides: Record<string, unknown> = {}) {
   return {
     name: 'web',
     label: 'Web Search',
-    description: 'web_search, web_extract',
+    description: 'search_web, extract_web',
     enabled: true,
     available: true,
     configured: true,
-    tools: ['web_search', 'web_extract'],
+    tools: ['search_web', 'extract_web'],
     ...overrides
   }
 }
@@ -134,8 +134,8 @@ describe('SkillsView toolset management', () => {
       toolset({
         name: 'vision',
         label: 'Vision / Image Analysis',
-        description: 'vision_analyze',
-        tools: ['vision_analyze']
+        description: 'analyze_vision',
+        tools: ['analyze_vision']
       })
     ])
     getToolsetConfig.mockResolvedValue({ has_category: false, active_provider: null, providers: [] })

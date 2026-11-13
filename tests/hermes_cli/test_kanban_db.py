@@ -1403,7 +1403,7 @@ def test_claim_succeeds_once_parents_done(kanban_home):
 
 
 def test_create_with_parents_stays_todo_until_parents_done(kanban_home):
-    """kanban_create(parents=[...]) must land in 'todo' and only promote on parent done."""
+    """create_kanban(parents=[...]) must land in 'todo' and only promote on parent done."""
     with kb.connect() as conn:
         parent = kb.create_task(conn, title="parent", assignee="a")
         child = kb.create_task(

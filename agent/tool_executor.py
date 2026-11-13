@@ -120,7 +120,7 @@ def _budget_for_agent(agent) -> BudgetConfig:
 # Maximum number of concurrent worker threads for parallel tool execution.
 # Mirrors the constant in ``run_agent`` for tests/imports that look here.
 _MAX_TOOL_WORKERS = 8
-# Keep this above the stock auxiliary.web_extract timeout (360s) so the batch
+# Keep this above the stock auxiliary.extract_web timeout (360s) so the batch
 # guard does not preempt a slow-but-valid summarization attempt.
 _DEFAULT_CONCURRENT_TOOL_TIMEOUT_S = 420.0
 
@@ -494,7 +494,7 @@ def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effe
         # Reset nudge counters only for a structurally valid invocation.
         if function_name == "memory":
             agent._turns_since_memory = 0
-        elif function_name == "skill_manage":
+        elif function_name == "manage_skill":
             agent._iters_since_skill = 0
 
         # ── Tool Search unwrap ────────────────────────────────────────
@@ -911,7 +911,7 @@ def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effe
 
                     # Check for interrupt — the per-thread interrupt signal
                     # already causes individual tools (terminal, execute_code)
-                    # to abort, but tools without interrupt checks (web_search,
+                    # to abort, but tools without interrupt checks (search_web,
                     # read_file) will run to completion. Cancel any futures
                     # that haven't started yet so we don't block on them.
                     if agent._interrupt_requested:
@@ -1281,7 +1281,7 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
         # Reset nudge counters when the relevant tool is actually used
         elif function_name == "memory":
             agent._turns_since_memory = 0
-        elif function_name == "skill_manage":
+        elif function_name == "manage_skill":
             agent._iters_since_skill = 0
 
         if not agent.quiet_mode and getattr(agent, "tool_progress_mode", "all") != "off":
@@ -1455,13 +1455,13 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
             tool_duration = time.time() - tool_start_time
             if agent._should_emit_quiet_tool_messages():
                 agent._vprint(f"  {_get_cute_tool_message_impl('switch_context', function_args, tool_duration, result=function_result)}")
-        elif function_name == "session_search":
+        elif function_name == "search_session":
             def _execute(next_args: dict) -> Any:
                 session_db = agent._get_session_db_for_recall()
                 if not session_db:
                     from hermes_state import format_session_db_unavailable
                     return json.dumps({"success": False, "error": format_session_db_unavailable()})
-                from tools.session_search_tool import session_search as _session_search
+                from tools.session_search_tool import search_session as _session_search
                 return _session_search(
                     query=next_args.get("query", ""),
                     role_filter=next_args.get("role_filter"),
@@ -1483,7 +1483,7 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
             )
             tool_duration = time.time() - tool_start_time
             if agent._should_emit_quiet_tool_messages():
-                agent._vprint(f"  {_get_cute_tool_message_impl('session_search', function_args, tool_duration, result=function_result)}")
+                agent._vprint(f"  {_get_cute_tool_message_impl('search_session', function_args, tool_duration, result=function_result)}")
         elif function_name == "memory":
             def _execute(next_args: dict) -> Any:
                 target = next_args.get("target", "memory")
@@ -1770,7 +1770,7 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
         # Log tool errors to the persistent error log so [error] tags
         # in the UI always have a corresponding detailed entry on disk.
         _is_error_result, _ = _detect_tool_failure(function_name, function_result)
-        # The agent-runtime tools above (todo, session_search, memory,
+        # The agent-runtime tools above (todo, search_session, memory,
         # context-engine, memory-manager, clarify, delegate_task) are
         # dispatched inline — they never reach handle_function_call, so the
         # executor is the one that has to fire post_tool_call. For

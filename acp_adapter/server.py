@@ -1503,7 +1503,7 @@ class HermesACPAgent(acp.Agent):
             # race on the flag (GHSA-96vc-wcxf-jjff).
             interactive_token = set_hermes_interactive_context(True)
             # Propagate the originating ACP session id to tools that want to
-            # tag side-effects with it (e.g. ``kanban_create`` stamps it on
+            # tag side-effects with it (e.g. ``create_kanban`` stamps it on
             # the new task so clients can render a per-session board). Save
             # and restore around the agent call so a re-used executor thread
             # never leaks one session's id into the next session's tools.

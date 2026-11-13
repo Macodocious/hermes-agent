@@ -64,7 +64,7 @@ description: "以统一的教育视觉语言生成扁平、简约、支持明暗
 
 加载 HTML 模板：
 ```
-skill_view(name="concept-diagrams", file_path="templates/template.html")
+view_skill(name="concept-diagrams", file_path="templates/template.html")
 ```
 
 模板内嵌完整 CSS 设计系统（`c-*` 颜色类、文本类、明暗变量、箭头标记样式）。你生成的 SVG 依赖这些类存在于宿主页面中。
@@ -276,7 +276,7 @@ skill_view(name="concept-diagrams", file_path="templates/template.html")
 
 ```python
 # 1. Load the template
-template = skill_view("concept-diagrams", "templates/template.html")
+template = view_skill("concept-diagrams", "templates/template.html")
 
 # 2. Fill in title, subtitle, and paste your SVG
 html = template.replace(
@@ -353,7 +353,7 @@ with socketserver.TCPServer(('127.0.0.1', 0), http.server.SimpleHTTPRequestHandl
 
 使用以下命令加载任意示例：
 ```
-skill_view(name="concept-diagrams", file_path="examples/<filename>")
+view_skill(name="concept-diagrams", file_path="examples/<filename>")
 ```
 
 ---

@@ -80,7 +80,7 @@ hermes acp --check
 
 ### Browser tools (optional)
 
-Browser tools (`browser_navigate`, `browser_click`, etc.) depend on the
+Browser tools (`navigate_browser`, `click_browser`, etc.) depend on the
 `agent-browser` npm package and Chromium, which aren't part of the Python
 wheel. Install them with:
 

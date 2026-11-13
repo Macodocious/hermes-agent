@@ -2,7 +2,7 @@
 
 When a cloud browser provider (Browserbase / Browser-Use / Firecrawl) is
 configured globally, ``browser.auto_local_for_private_urls`` (default True)
-causes ``browser_navigate`` to transparently spawn a local Chromium sidecar
+causes ``navigate_browser`` to transparently spawn a local Chromium sidecar
 for URLs whose host resolves to a private/loopback/LAN address, while
 public URLs continue to hit the cloud session in the same conversation.
 

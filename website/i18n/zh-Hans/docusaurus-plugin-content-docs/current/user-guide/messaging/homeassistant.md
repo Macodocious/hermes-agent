@@ -50,7 +50,7 @@ Home Assistant 将作为已连接平台出现，与其他消息平台（Telegram
 
 Hermes Agent 注册了四个智能家居控制工具：
 
-### `ha_list_entities`
+### `list_ha_entities`
 
 列出 Home Assistant 实体，可按域（domain）或区域（area）过滤。
 
@@ -65,7 +65,7 @@ List all lights in the living room
 
 返回实体 ID、状态及友好名称。
 
-### `ha_get_state`
+### `get_ha_state`
 
 获取单个实体的详细状态，包括所有属性（亮度、颜色、温度设定值、传感器读数等）。
 
@@ -79,7 +79,7 @@ What's the current state of climate.thermostat?
 
 返回：状态、所有属性、最后变更/更新时间戳。
 
-### `ha_list_services`
+### `list_ha_services`
 
 列出可用于设备控制的服务（操作）。显示每种设备类型可执行的操作及其接受的参数。
 
@@ -91,7 +91,7 @@ What's the current state of climate.thermostat?
 What services are available for climate devices?
 ```
 
-### `ha_call_service`
+### `call_ha_service`
 
 调用 Home Assistant 服务以控制设备。
 
@@ -105,18 +105,18 @@ What services are available for climate devices?
 
 ```
 Turn on the living room lights
-→ ha_call_service(domain="light", service="turn_on", entity_id="light.living_room")
+→ call_ha_service(domain="light", service="turn_on", entity_id="light.living_room")
 ```
 
 ```
 Set the thermostat to 22 degrees in heat mode
-→ ha_call_service(domain="climate", service="set_temperature",
+→ call_ha_service(domain="climate", service="set_temperature",
     entity_id="climate.thermostat", data={"temperature": 22, "hvac_mode": "heat"})
 ```
 
 ```
 Set living room lights to blue at 50% brightness
-→ ha_call_service(domain="light", service="turn_on",
+→ call_ha_service(domain="light", service="turn_on",
     entity_id="light.living_room", data={"brightness": 128, "color_name": "blue"})
 ```
 
@@ -214,11 +214,11 @@ Home Assistant 工具强制执行安全限制：
 User: Start my morning routine
 
 Agent:
-1. ha_call_service(domain="light", service="turn_on",
+1. call_ha_service(domain="light", service="turn_on",
      entity_id="light.bedroom", data={"brightness": 128})
-2. ha_call_service(domain="climate", service="set_temperature",
+2. call_ha_service(domain="climate", service="set_temperature",
      entity_id="climate.thermostat", data={"temperature": 22})
-3. ha_call_service(domain="media_player", service="turn_on",
+3. call_ha_service(domain="media_player", service="turn_on",
      entity_id="media_player.kitchen_speaker")
 ```
 
@@ -228,11 +228,11 @@ Agent:
 User: Is the house secure?
 
 Agent:
-1. ha_list_entities(domain="binary_sensor")
+1. list_ha_entities(domain="binary_sensor")
      → checks door/window sensors
-2. ha_get_state(entity_id="alarm_control_panel.home")
+2. get_ha_state(entity_id="alarm_control_panel.home")
      → checks alarm status
-3. ha_list_entities(domain="lock")
+3. list_ha_entities(domain="lock")
      → checks lock states
 4. Reports: "All doors closed, alarm is armed_away, all locks engaged."
 ```
@@ -245,8 +245,8 @@ Agent:
 [Home Assistant] Front Door: triggered (was cleared)
 
 Agent automatically:
-1. ha_get_state(entity_id="binary_sensor.front_door")
-2. ha_call_service(domain="light", service="turn_on",
+1. get_ha_state(entity_id="binary_sensor.front_door")
+2. call_ha_service(domain="light", service="turn_on",
      entity_id="light.hallway")
 3. Sends notification: "Front door opened. Hallway lights turned on."
 ```

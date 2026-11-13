@@ -1154,7 +1154,7 @@ if __name__ == "__main__":
 from tools.registry import registry, tool_error
 
 IMAGE_GENERATE_SCHEMA = {
-    "name": "image_generate",
+    "name": "generate_image",
     # Placeholder — the real description is rebuilt dynamically at
     # get_tool_definitions() time so it reflects the active backend's actual
     # capabilities (whether the selected model supports image-to-image /
@@ -1352,7 +1352,7 @@ def _dispatch_to_plugin_provider(
                 "error": (
                     f"Provider '{getattr(provider, 'name', '?')}' does not "
                     f"support image-to-image / editing (its generate() "
-                    f"signature is out of date with the image_generate schema). "
+                    f"signature is out of date with the generate_image schema). "
                     f"Omit image_url for text-to-image, or pick a backend that "
                     f"supports editing via `hermes tools` → Image Generation."
                 ),
@@ -1656,7 +1656,7 @@ def _build_dynamic_image_schema() -> Dict[str, Any]:
 
 
 registry.register(
-    name="image_generate",
+    name="generate_image",
     toolset="image_gen",
     schema=IMAGE_GENERATE_SCHEMA,
     handler=_handle_image_generate,

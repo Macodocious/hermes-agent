@@ -228,9 +228,9 @@ Save the assembled prompt to `prompts/infographic.md` using `write_file`.
 
 ### Step 6: Generate Image
 
-Use the `image_generate` tool with the assembled prompt from Step 5.
+Use the `generate_image` tool with the assembled prompt from Step 5.
 
-- Map aspect ratio to image_generate's format: `16:9` → `landscape`, `9:16` → `portrait`, `1:1` → `square`
+- Map aspect ratio to generate_image's format: `16:9` → `landscape`, `9:16` → `portrait`, `1:1` → `square`
 - For custom ratios, pick the closest named aspect
 - On failure, auto-retry once
 - Save the resulting image URL/path to the output directory
@@ -253,4 +253,4 @@ Report: topic, layout, style, aspect, language, output path, files created.
 2. **Strip secrets** — always scan source content for API keys, tokens, or credentials before including in any output file.
 3. **One message per section** — each infographic section should convey one clear concept. Overloading sections reduces readability.
 4. **Style consistency** — the style definition from the references file must be applied consistently across the entire infographic. Don't mix styles.
-5. **image_generate aspect ratios** — the tool only supports `landscape`, `portrait`, and `square`. Custom ratios like `3:4` should map to the nearest option (portrait in that case).
+5. **generate_image aspect ratios** — the tool only supports `landscape`, `portrait`, and `square`. Custom ratios like `3:4` should map to the nearest option (portrait in that case).

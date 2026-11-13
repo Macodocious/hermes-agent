@@ -200,7 +200,7 @@ class TestAsyncCallLlmUnsupportedTemperatureRetry:
                   side_effect=lambda resp, _task, **_kw: resp),
         ):
             result = await async_call_llm(
-                task="session_search",
+                task="search_session",
                 messages=[{"role": "user", "content": "query"}],
                 temperature=0.3,
                 max_tokens=500,
@@ -238,7 +238,7 @@ class TestAsyncCallLlmUnsupportedTemperatureRetry:
         ):
             with pytest.raises(RuntimeError, match="Invalid value"):
                 await async_call_llm(
-                    task="session_search",
+                    task="search_session",
                     messages=[{"role": "user", "content": "x"}],
                     temperature=0.3,
                     max_tokens=500,

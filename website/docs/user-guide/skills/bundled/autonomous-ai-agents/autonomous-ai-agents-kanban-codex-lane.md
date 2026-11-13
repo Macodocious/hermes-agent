@@ -32,7 +32,7 @@ The following is the complete skill definition that Hermes loads when this skill
 
 ## Overview
 
-This skill defines the lightweight Hermes+Codex dual-lane convention for Kanban workers. Hermes is always the task owner: it calls `kanban_show`, decides whether Codex is appropriate, creates or selects an isolated workspace, starts and monitors Codex, reconciles any diff, runs verification, and writes the final `kanban_complete` or `kanban_block` handoff. Codex is an input lane only. Codex output is not a task completion signal, not a trusted reviewer, and not allowed to write durable Kanban state directly.
+This skill defines the lightweight Hermes+Codex dual-lane convention for Kanban workers. Hermes is always the task owner: it calls `show_kanban`, decides whether Codex is appropriate, creates or selects an isolated workspace, starts and monitors Codex, reconciles any diff, runs verification, and writes the final `complete_kanban` or `block_kanban` handoff. Codex is an input lane only. Codex output is not a task completion signal, not a trusted reviewer, and not allowed to write durable Kanban state directly.
 
 The convention exists so a Hermes worker can use Codex for bounded implementation help without changing the dispatcher. The dispatcher must still spawn Hermes workers. A worker may optionally spawn Codex inside its own run, then accept, partially accept, or reject the lane after independent review and tests.
 
@@ -57,7 +57,7 @@ Do not use the Codex lane when any of these are true:
 
 ## Ownership Rules
 
-1. Hermes owns the Kanban lifecycle. Codex must never call `kanban_complete`, `kanban_block`, `kanban_create`, gateway messaging, or any Hermes board CLI as a substitute for the worker.
+1. Hermes owns the Kanban lifecycle. Codex must never call `complete_kanban`, `block_kanban`, `create_kanban`, gateway messaging, or any Hermes board CLI as a substitute for the worker.
 2. Hermes owns final acceptance. Treat Codex commits/diffs as untrusted patches until reviewed and verified.
 3. Hermes owns test execution. Codex may run tests, but those runs are advisory; repeat required verification from Hermes with the repo's canonical wrapper.
 4. Hermes owns safety. If Codex changes safety boundaries, risk gates, live trading behavior, or secrets handling, reject the lane even if tests pass.
@@ -192,7 +192,7 @@ process(action="log", session_id=session_id, limit=200)
 process(action="wait", session_id=session_id, timeout=300)
 ```
 
-Send a Kanban heartbeat every few minutes for lanes longer than two minutes, e.g. `kanban_heartbeat(note="Codex lane running in <WORKTREE>; waiting for tests/diff")`.
+Send a Kanban heartbeat every few minutes for lanes longer than two minutes, e.g. `heartbeat_kanban(note="Codex lane running in <WORKTREE>; waiting for tests/diff")`.
 
 Kill conditions:
 
@@ -231,7 +231,7 @@ Acceptance outcomes:
 - `rejected`: No Codex changes were accepted; reason is documented.
 - `timed_out`: Codex exceeded the lane budget; useful artifacts may or may not exist.
 
-## kanban_complete Metadata Schema
+## complete_kanban Metadata Schema
 
 Include this object under `metadata.codex_lane` for every task where the lane was considered. If Codex was not used, set `used: false` and explain why in `rejected_reason` or a sibling `notes` field.
 
@@ -291,5 +291,5 @@ For tasks that intentionally skip Codex:
 - [ ] Prompt included task scope, ownership rules, PMB safety constraints when applicable, and verification commands.
 - [ ] Hermes reviewed `git diff` and safety-sensitive files.
 - [ ] Hermes ran canonical tests independently.
-- [ ] `kanban_complete.metadata.codex_lane` follows the schema above.
+- [ ] `complete_kanban.metadata.codex_lane` follows the schema above.
 - [ ] Temporary processes and unnecessary worktrees were cleaned up.

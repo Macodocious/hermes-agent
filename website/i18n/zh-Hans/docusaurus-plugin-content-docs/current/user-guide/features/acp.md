@@ -80,7 +80,7 @@ hermes acp --check
 
 ### 浏览器工具（可选）
 
-浏览器工具（`browser_navigate`、`browser_click` 等）依赖 `agent-browser` npm 包和 Chromium，这些不包含在 Python wheel 中。通过以下命令安装：
+浏览器工具（`navigate_browser`、`click_browser` 等）依赖 `agent-browser` npm 包和 Chromium，这些不包含在 Python wheel 中。通过以下命令安装：
 
 ```bash
 hermes acp --setup-browser           # 交互式（下载约 400 MB 前会提示确认）

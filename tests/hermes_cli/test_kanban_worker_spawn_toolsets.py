@@ -45,7 +45,7 @@ platform_toolsets:
     - delegation
     - file
     - memory
-    - session_search
+    - search_session
     - skills
     - terminal
     - web

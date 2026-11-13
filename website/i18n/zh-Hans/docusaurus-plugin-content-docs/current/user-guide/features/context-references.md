@@ -99,7 +99,7 @@ Context references 受大小限制，以防止超出模型的 context window（�
 
 Context references 主要是 **CLI 功能**。它们在交互式 CLI 中有效，`@` 触发 tab 补全，引用在消息发送给 agent 之前完成展开。
 
-在**消息平台**（Telegram、Discord 等）中，`@` 语法不会被 gateway 展开——消息原样透传。agent 本身仍可通过 `read_file`、`search_files` 和 `web_extract` 工具引用文件。
+在**消息平台**（Telegram、Discord 等）中，`@` 语法不会被 gateway 展开——消息原样透传。agent 本身仍可通过 `read_file`、`search_files` 和 `extract_web` 工具引用文件。
 
 ## 与 Context 压缩的交互
 

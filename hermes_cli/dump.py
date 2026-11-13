@@ -27,7 +27,7 @@ def _dotenv_key_names() -> set[str]:
     exports. ``hermes debug share`` runs in a terminal, so ``os.getenv`` reflects
     the shell's environment, which can include exported keys the managed backend
     never sees. Comparing against this set lets the dump flag that mismatch (the
-    exact trap behind #48504-style "no web_search" reports: key exported in the
+    exact trap behind #48504-style "no search_web" reports: key exported in the
     shell, absent from .env, invisible to the launchd backend).
     """
     try:
@@ -401,7 +401,7 @@ def run_dump(args):
         # backend (launchd/systemd/desktop `serve`) loads .env, not the login
         # shell, so it likely can't see this key — even though the dump reads
         # "set". Flag it so support doesn't chase a phantom "key is configured"
-        # (the actual cause of gated tools like web_search going missing).
+        # (the actual cause of gated tools like search_web going missing).
         if val and env_var not in dotenv_keys:
             display += " (shell only — not in .env; managed/desktop backend may not see it)"
         # A credential added via `hermes auth add openrouter` lives in the

@@ -46,16 +46,16 @@ def test_nudge_when_no_terminal_tool(clear_kanban_env):
                 {
                     "id": "1",
                     "type": "function",
-                    "function": {"name": "kanban_heartbeat", "arguments": "{}"},
+                    "function": {"name": "heartbeat_kanban", "arguments": "{}"},
                 }
             ],
         },
-        {"role": "tool", "name": "kanban_heartbeat", "tool_call_id": "1", "content": "ok"},
+        {"role": "tool", "name": "heartbeat_kanban", "tool_call_id": "1", "content": "ok"},
     ]
     nudge = build_kanban_stop_nudge(messages=messages, attempts=0)
     assert nudge is not None
-    assert "kanban_complete" in nudge
-    assert "kanban_block" in nudge
+    assert "complete_kanban" in nudge
+    assert "block_kanban" in nudge
     assert "t_46be8aa5" in nudge
     assert "protocol violation" in nudge.lower() or "protocol" in nudge.lower()
 
@@ -70,11 +70,11 @@ def test_no_nudge_after_kanban_complete(clear_kanban_env):
                 {
                     "id": "1",
                     "type": "function",
-                    "function": {"name": "kanban_complete", "arguments": "{}"},
+                    "function": {"name": "complete_kanban", "arguments": "{}"},
                 }
             ],
         },
-        {"role": "tool", "name": "kanban_complete", "tool_call_id": "1", "content": "done"},
+        {"role": "tool", "name": "complete_kanban", "tool_call_id": "1", "content": "done"},
     ]
     assert session_called_kanban_terminal(messages) is True
     assert build_kanban_stop_nudge(messages=messages) is None
@@ -83,7 +83,7 @@ def test_no_nudge_after_kanban_complete(clear_kanban_env):
 def test_no_nudge_after_kanban_block(clear_kanban_env):
     clear_kanban_env.setenv("HERMES_KANBAN_TASK", "t_abc")
     messages = [
-        {"role": "tool", "name": "kanban_block", "tool_call_id": "1", "content": "blocked"},
+        {"role": "tool", "name": "block_kanban", "tool_call_id": "1", "content": "blocked"},
     ]
     assert build_kanban_stop_nudge(messages=messages) is None
 

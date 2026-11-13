@@ -9,7 +9,7 @@
   "search": {
     "method": "url_pattern",
     "url": "https://radaris.com/",
-    "fetch": "web_extract",
+    "fetch": "extract_web",
     "match_signal": "View Profile",
     "by": [
       "name",
@@ -20,7 +20,7 @@
       "name": "https://radaris.com/p/{First}/{Last}/"
     },
     "url_format_quirks": [
-      "Name profile page: /p/{First}/{Last}/ with First/Last Capitalized and a TRAILING slash, e.g. /p/Jane/Public/ . Readable via web_extract (no hard bot gate as of 2026-06-30).",
+      "Name profile page: /p/{First}/{Last}/ with First/Last Capitalized and a TRAILING slash, e.g. /p/Jane/Public/ . Readable via extract_web (no hard bot gate as of 2026-06-30).",
       "The page aggregates: a 'phone numbers & home addresses' table (the DIRECT hit for the subject), a relatives/namesakes carousel ('Review the potential relatives'), and resume/CV records. The subject's removable row is in the address table; the carousel entries are OTHER people - disambiguate by address/age before acting.",
       "Page is noisy with testimonials/reviews boilerplate; the signal blocks are 'phone numbers & home addresses N' and 'resumes & CV records N'."
     ]

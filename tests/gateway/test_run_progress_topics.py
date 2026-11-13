@@ -136,7 +136,7 @@ class FakeAgent:
         if cb is not None:
             cb("tool.started", "terminal", "pwd", {})
             time.sleep(0.35)
-            cb("tool.started", "browser_navigate", "https://example.com", {})
+            cb("tool.started", "navigate_browser", "https://example.com", {})
             time.sleep(0.35)
         return {
             "final_response": "done",
@@ -1671,7 +1671,7 @@ class MultiTerminalCommandAgent:
         cb("tool.started", "terminal", "echo one", {"command": "echo one"})
         cb("tool.started", "terminal", "echo two", {"command": "echo two"})
         cb("tool.started", "terminal", "echo three", {"command": "echo three"})
-        cb("tool.started", "web_search", "query stuff", {"query": "query stuff"})
+        cb("tool.started", "search_web", "query stuff", {"query": "query stuff"})
         cb("tool.started", "terminal", "echo four", {"command": "echo four"})
         time.sleep(0.35)
         return {"final_response": "done", "messages": [], "api_calls": 1}
@@ -1724,7 +1724,7 @@ async def test_consecutive_terminal_progress_collapses_headers(monkeypatch, tmp_
     for cmd in ("echo one", "echo two", "echo three", "echo four"):
         assert cmd in final
     # Exactly TWO terminal headers: one for the first run of three calls,
-    # one for the terminal call after web_search broke the streak.
+    # one for the terminal call after search_web broke the streak.
     assert final.count("terminal\n```") == 2
 
 

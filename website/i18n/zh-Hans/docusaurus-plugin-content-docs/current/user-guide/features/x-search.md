@@ -1,32 +1,32 @@
 ---
 title: X (Twitter) 搜索
-description: 使用 xAI 内置的 x_search Responses 工具在 agent 内搜索 X (Twitter) 帖子和话题串——支持 SuperGrok OAuth 登录或 XAI_API_KEY。
+description: 使用 xAI 内置的 search_x Responses 工具在 agent 内搜索 X (Twitter) 帖子和话题串——支持 SuperGrok OAuth 登录或 XAI_API_KEY。
 sidebar_label: X (Twitter) 搜索
 sidebar_position: 7
 ---
 
 # X (Twitter) 搜索
 
-`x_search` 工具让 agent 可以直接搜索 X (Twitter) 的帖子、账号和话题串。其底层依托 xAI 在 Responses API（`https://api.x.ai/v1/responses`）上内置的 `x_search` 工具——Grok 在服务端执行搜索，并返回带有原始帖子引用的综合结果。
+`search_x` 工具让 agent 可以直接搜索 X (Twitter) 的帖子、账号和话题串。其底层依托 xAI 在 Responses API（`https://api.x.ai/v1/responses`）上内置的 `search_x` 工具——Grok 在服务端执行搜索，并返回带有原始帖子引用的综合结果。
 
-**当你明确需要 X 上的当前讨论、反应或观点时，请使用此工具而非 `web_search`。** 对于一般网页内容，继续使用 `web_search` / `web_extract`。
+**当你明确需要 X 上的当前讨论、反应或观点时，请使用此工具而非 `search_web`。** 对于一般网页内容，继续使用 `search_web` / `extract_web`。
 
 ## 认证
 
-满足以下**任一** xAI 凭据路径时，`x_search` 即会注册：
+满足以下**任一** xAI 凭据路径时，`search_x` 即会注册：
 
 | 凭据 | 来源 | 配置方式 |
 |------|------|---------|
 | **SuperGrok / X Premium+ OAuth**（推荐） | 在 `accounts.x.ai` 浏览器登录，自动刷新 | `hermes auth add xai-oauth` — 参见 [xAI Grok OAuth (SuperGrok / X Premium+)](../../guides/xai-grok-oauth.md) |
 | **`XAI_API_KEY`** | 付费 xAI API 密钥 | 在 `~/.hermes/.env` 中设置 |
 
-两者使用相同的 endpoint 和相同的请求体，区别仅在于 bearer token。**当两者同时配置时，SuperGrok OAuth 优先**，x_search 将消耗你的订阅配额而非付费 API 用量。
+两者使用相同的 endpoint 和相同的请求体，区别仅在于 bearer token。**当两者同时配置时，SuperGrok OAuth 优先**，search_x 将消耗你的订阅配额而非付费 API 用量。
 
 工具的 `check_fn` 在每次重建模型工具列表时都会运行 xAI 凭据解析器。返回 `True` 表示 bearer token 可获取、非空，且（若已过期）已成功刷新。刷新失败的已撤销 token 会将该工具从 schema 中隐藏，模型将无法感知其存在。
 
 ## 启用工具
 
-当 xAI 凭据（OAuth token 或 `XAI_API_KEY`）存在时自动启用。如不需要，可通过 `hermes tools` → Search → x_search 显式禁用。
+当 xAI 凭据（OAuth token 或 `XAI_API_KEY`）存在时自动启用。如不需要，可通过 `hermes tools` → Search → search_x 显式禁用。
 
 ```bash
 hermes tools
@@ -44,17 +44,17 @@ hermes tools
 
 ```yaml
 # ~/.hermes/config.yaml
-x_search:
+search_x:
   # 用于 Responses 调用的 xAI 模型。
   # grok-4.5 是推荐的默认值；任何支持
-  # x_search 工具访问权限的 Grok 模型均可使用。
+  # search_x 工具访问权限的 Grok 模型均可使用。
   model: grok-4.5
 
   # 可选推理强度：low、medium、high 或 xhigh。省略时使用所选模型的默认值。
   # xhigh 仅适用于明确支持它的模型，例如 grok-4.20-multi-agent。
   # reasoning_effort: low
 
-  # 请求超时时间（秒）。复杂查询的 x_search 可能需要 60–120 秒，
+  # 请求超时时间（秒）。复杂查询的 search_x 可能需要 60–120 秒，
   # 默认值较为宽松。最小值：30。
   timeout_seconds: 180
 
@@ -68,7 +68,7 @@ Responses API。不支持可配置推理的模型应留空。无效值会在发�
 
 ## 工具参数
 
-agent 调用 `x_search` 时使用以下参数：
+agent 调用 `search_x` 时使用以下参数：
 
 | 参数 | 类型 | 说明 |
 |------|------|------|
@@ -109,7 +109,7 @@ agent 调用 `x_search` 时使用以下参数：
 
 agent 将：
 
-1. 以 `query="reactions to new Grok image features"`、`allowed_x_handles=["xai"]` 调用 `x_search`
+1. 以 `query="reactions to new Grok image features"`、`allowed_x_handles=["xai"]` 调用 `search_x`
 2. 获取综合回答及指向具体帖子的引用列表
 3. 回复包含答案和参考来源
 
@@ -119,9 +119,9 @@ agent 将：
 
 当两种认证路径均失败时，工具会显示此错误。请在 `~/.hermes/.env` 中设置 `XAI_API_KEY`，或运行 `hermes auth add xai-oauth` 并完成浏览器登录。然后重启会话，让 agent 重新加载工具注册表。
 
-### "`x_search` is not enabled for this model"
+### "`search_x` is not enabled for this model"
 
-配置的 `x_search.model` 没有访问服务端 `x_search` 工具的权限。请切换至 `grok-4.5`（默认值）或其他支持该工具的 Grok 模型。当前支持列表请查阅 [xAI 文档](https://docs.x.ai/)。
+配置的 `search_x.model` 没有访问服务端 `search_x` 工具的权限。请切换至 `grok-4.5`（默认值）或其他支持该工具的 Grok 模型。当前支持列表请查阅 [xAI 文档](https://docs.x.ai/)。
 
 ### 工具未出现在 schema 中
 
@@ -138,7 +138,7 @@ agent 将：
 
 - **账号名拼写错误。** 去掉 `@`，仔细核对拼写，并确认该账号存在。
 - **日期范围过窄**，或滑过了今日帖子；请扩大范围后重试。
-- **xAI 索引缺口。** 部分活跃账号即使定期发帖，也会间歇性地无法在 `x_search` 中出现。请等待几分钟后重试，或在需要精确获取某账号时间线时使用 `xurl` 技能直接调用 X API。
+- **xAI 索引缺口。** 部分活跃账号即使定期发帖，也会间歇性地无法在 `search_x` 中出现。请等待几分钟后重试，或在需要精确获取某账号时间线时使用 `xurl` 技能直接调用 X API。
 
 ## 另请参阅
 

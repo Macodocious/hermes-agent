@@ -14,7 +14,7 @@ Only `SKILL.md` was modified. All 45 reference files are verbatim copies.
 | Trigger | `/baoyu-infographic` slash command | Natural language skill matching |
 | User config | EXTEND.md file (project/user/XDG paths) | Removed — not part of Hermes infra |
 | User prompts | `AskUserQuestion` (batched) | `clarify` tool (one at a time) |
-| Image generation | baoyu-imagine (Bun/TypeScript) | `image_generate` tool |
+| Image generation | baoyu-imagine (Bun/TypeScript) | `generate_image` tool |
 | Platform support | Linux/macOS/Windows/WSL/PowerShell | Linux/macOS only |
 | File operations | Bash commands | Hermes file tools (write_file, read_file) |
 

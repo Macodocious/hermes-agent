@@ -1,6 +1,6 @@
-"""Tests for the image-to-image / editing surface of ``image_generate``.
+"""Tests for the image-to-image / editing surface of ``generate_image``.
 
-Mirrors the video-gen image-to-video tests: the unified ``image_generate``
+Mirrors the video-gen image-to-video tests: the unified ``generate_image``
 tool routes to a provider's edit endpoint when ``image_url`` /
 ``reference_image_urls`` is supplied, otherwise to text-to-image. Coverage:
 
@@ -377,7 +377,7 @@ class TestDynamicSchema:
         from tools.registry import discover_builtin_tools, registry
 
         discover_builtin_tools()
-        entry = registry._tools["image_generate"]
+        entry = registry._tools["generate_image"]
         assert entry.dynamic_schema_overrides is not None
         out = entry.dynamic_schema_overrides()
         assert "description" in out

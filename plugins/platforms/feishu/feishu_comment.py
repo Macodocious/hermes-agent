@@ -867,10 +867,10 @@ def _select_whole_timeline(
 
 _COMMON_INSTRUCTIONS = """
 This is a Feishu document comment thread, not an IM chat.
-Do NOT call feishu_drive_add_comment or feishu_drive_reply_comment yourself.
+Do NOT call add_feishu_drive_comment or reply_feishu_drive_comment yourself.
 Your reply will be posted automatically. Just output the reply text.
 Use the thread timeline above as the main context.
-If the quoted content is not enough, use feishu_doc_read to read nearby context.
+If the quoted content is not enough, use read_feishu_doc to read nearby context.
 The quoted content is your primary anchor — insert/summarize/explain requests are about it.
 Do not guess document content you haven't read.
 Reply in the same language as the user's comment unless they request otherwise.

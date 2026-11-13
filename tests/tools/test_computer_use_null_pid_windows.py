@@ -37,7 +37,7 @@ _PNG_B64 = (
 
 class TestIngestWindows:
     def test_skips_window_with_null_pid(self):
-        from tools.computer_use.cua_backend import _ingest_windows
+        from tools.use_computer.cua_backend import _ingest_windows
 
         raw = [
             {"app_name": "Desktop", "pid": None, "window_id": 1, "z_index": 0},
@@ -51,7 +51,7 @@ class TestIngestWindows:
         assert out[0]["window_id"] == 77
 
     def test_skips_window_with_null_window_id(self):
-        from tools.computer_use.cua_backend import _ingest_windows
+        from tools.use_computer.cua_backend import _ingest_windows
 
         raw = [
             {"app_name": "Panel", "pid": 10, "window_id": None, "z_index": 0},
@@ -64,7 +64,7 @@ class TestIngestWindows:
 
     def test_coerces_numeric_strings_like_the_original_int_call(self):
         # The original `int(w["pid"])` accepted numeric strings; preserve that.
-        from tools.computer_use.cua_backend import _ingest_windows
+        from tools.use_computer.cua_backend import _ingest_windows
 
         out = _ingest_windows(
             [{"app_name": "Term", "pid": "200", "window_id": "9", "z_index": 0}]
@@ -75,7 +75,7 @@ class TestIngestWindows:
         assert isinstance(out[0]["pid"], int)
 
     def test_preserves_fields_capture_relies_on(self):
-        from tools.computer_use.cua_backend import _ingest_windows
+        from tools.use_computer.cua_backend import _ingest_windows
 
         out = _ingest_windows([
             {
@@ -101,7 +101,7 @@ class TestIngestWindows:
 def _backend_with_windows(raw_windows):
     """A CuaDriverBackend whose session returns `raw_windows` from
     list_windows and a valid PNG from screenshot."""
-    from tools.computer_use.cua_backend import CuaDriverBackend
+    from tools.use_computer.cua_backend import CuaDriverBackend
 
     backend = CuaDriverBackend()
     session = MagicMock()

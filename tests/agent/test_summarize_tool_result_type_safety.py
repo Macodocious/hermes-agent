@@ -75,28 +75,28 @@ class TestTypeSafety:
     def test_vision_analyze_question_bool(self):
         """bool value for 'question' should not raise TypeError."""
         args = json.dumps({"question": True})
-        result = _summarize_tool_result("vision_analyze", args, "analysis")
-        assert "vision_analyze" in result
+        result = _summarize_tool_result("analyze_vision", args, "analysis")
+        assert "analyze_vision" in result
         assert "True" in result
 
     def test_vision_analyze_question_int(self):
         """int value for 'question' should not raise TypeError."""
         args = json.dumps({"question": 123})
-        result = _summarize_tool_result("vision_analyze", args, "analysis")
-        assert "vision_analyze" in result
+        result = _summarize_tool_result("analyze_vision", args, "analysis")
+        assert "analyze_vision" in result
         assert "123" in result
 
     def test_vision_analyze_question_list(self):
         """list value for 'question' should not raise TypeError."""
         args = json.dumps({"question": ["a", "b"]})
-        result = _summarize_tool_result("vision_analyze", args, "analysis")
-        assert "vision_analyze" in result
+        result = _summarize_tool_result("analyze_vision", args, "analysis")
+        assert "analyze_vision" in result
 
     def test_vision_analyze_question_dict(self):
         """dict value for 'question' should not raise TypeError."""
         args = json.dumps({"question": {"key": "value"}})
-        result = _summarize_tool_result("vision_analyze", args, "analysis")
-        assert "vision_analyze" in result
+        result = _summarize_tool_result("analyze_vision", args, "analysis")
+        assert "analyze_vision" in result
 
 
 class TestNormalStringArguments:
@@ -157,15 +157,15 @@ class TestNormalStringArguments:
     def test_vision_analyze_normal_question(self):
         """Normal question should be included."""
         args = json.dumps({"question": "What is this?"})
-        result = _summarize_tool_result("vision_analyze", args, "It's a cat")
-        assert "vision_analyze" in result
+        result = _summarize_tool_result("analyze_vision", args, "It's a cat")
+        assert "analyze_vision" in result
         assert "What is this?" in result
 
     def test_vision_analyze_long_question_truncated(self):
         """Long questions should be truncated."""
         long_q = "?" * 100
         args = json.dumps({"question": long_q})
-        result = _summarize_tool_result("vision_analyze", args, "answer")
+        result = _summarize_tool_result("analyze_vision", args, "answer")
         assert len(result) < 150
 
 
@@ -227,8 +227,8 @@ class TestBackstopWrapper:
         hostile_values = [None, True, 42, 3.14, ["a"], {"k": "v"}]
         tools = [
             "terminal", "read_file", "write_file", "search_files", "patch",
-            "browser_navigate", "web_search", "web_extract", "delegate_task",
-            "execute_code", "skill_view", "vision_analyze", "memory",
+            "navigate_browser", "search_web", "extract_web", "delegate_task",
+            "execute_code", "view_skill", "analyze_vision", "memory",
             "cronjob", "process", "totally_unknown_tool",
         ]
         keys = ["command", "path", "content", "pattern", "url", "query",

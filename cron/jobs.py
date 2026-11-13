@@ -2279,7 +2279,7 @@ def rewrite_skill_refs(
     as pruned), any cron job that lists ``X`` in its ``skills`` field will
     fail to load ``X`` at run time — the scheduler logs a warning and
     skips the skill, so the job runs without the instructions it was
-    scheduled to follow. See cron/scheduler.py where ``skill_view`` is
+    scheduled to follow. See cron/scheduler.py where ``view_skill`` is
     called per skill name.
 
     This function repairs cron jobs in-place:

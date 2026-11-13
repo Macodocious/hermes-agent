@@ -72,7 +72,7 @@ class TestAnthropicMcpPrefixStrip:
         block = _make_tool_use_block("mcp__read_file")
         response = _make_response(block)
 
-        registry = _FakeRegistry({"read_file", "terminal", "web_search"})
+        registry = _FakeRegistry({"read_file", "terminal", "search_web"})
         with patch("tools.registry.registry", registry):
             result = transport.normalize_response(response, strip_tool_prefix=True)
 
@@ -114,15 +114,15 @@ class TestAnthropicMcpPrefixStrip:
     def test_no_strip_when_not_mcp_prefixed(self):
         """Non-``mcp__`` names are untouched regardless of strip flag."""
         transport = self._get_transport()
-        block = _make_tool_use_block("web_search")
+        block = _make_tool_use_block("search_web")
         response = _make_response(block)
 
-        registry = _FakeRegistry({"web_search"})
+        registry = _FakeRegistry({"search_web"})
         with patch("tools.registry.registry", registry):
             result = transport.normalize_response(response, strip_tool_prefix=True)
 
         assert len(result.tool_calls) == 1
-        assert result.tool_calls[0].name == "web_search"
+        assert result.tool_calls[0].name == "search_web"
 
     def test_preserves_name_when_no_original_in_registry(self):
         """Neither the single-underscore nor bare original is registered.

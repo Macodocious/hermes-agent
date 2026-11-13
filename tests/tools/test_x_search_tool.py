@@ -73,7 +73,7 @@ def test_x_search_posts_responses_request(monkeypatch):
     assert captured["json"]["model"] == "grok-4.5"
     assert captured["json"]["store"] is False
     assert "reasoning" not in captured["json"]
-    assert tool_def["type"] == "x_search"
+    assert tool_def["type"] == "search_x"
     assert tool_def["allowed_x_handles"] == ["xai", "grok"]
     assert tool_def["from_date"] == "2026-04-01"
     assert tool_def["to_date"] == "2026-04-10"
@@ -149,12 +149,12 @@ def test_x_search_returns_structured_http_error(monkeypatch):
 
     class _FailingResponse:
         status_code = 403
-        text = '{"code":"forbidden","error":"x_search is not enabled for this model"}'
+        text = '{"code":"forbidden","error":"search_x is not enabled for this model"}'
 
         def json(self):
             return {
                 "code": "forbidden",
-                "error": "x_search is not enabled for this model",
+                "error": "search_x is not enabled for this model",
             }
 
         def raise_for_status(self):
@@ -169,9 +169,9 @@ def test_x_search_returns_structured_http_error(monkeypatch):
 
     assert result["success"] is False
     assert result["provider"] == "xai"
-    assert result["tool"] == "x_search"
+    assert result["tool"] == "search_x"
     assert result["error_type"] == "HTTPError"
-    assert result["error"] == "forbidden: x_search is not enabled for this model"
+    assert result["error"] == "forbidden: search_x is not enabled for this model"
 
 
 def test_x_search_retries_read_timeout_then_succeeds(monkeypatch):
@@ -398,7 +398,7 @@ def test_x_search_check_fn_false_when_resolver_raises(monkeypatch):
 
 
 def test_x_search_honors_config_model_and_timeout(monkeypatch, tmp_path):
-    """``x_search.model`` and ``x_search.timeout_seconds`` override the defaults."""
+    """``search_x.model`` and ``search_x.timeout_seconds`` override the defaults."""
     from tools.x_search_tool import x_search_tool
 
     monkeypatch.setenv("XAI_API_KEY", "xai-test-key")
@@ -432,7 +432,7 @@ def test_x_search_honors_config_reasoning_effort(monkeypatch, tmp_path):
     monkeypatch.setenv("XAI_API_KEY", "xai-test-key")
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     (tmp_path / "config.yaml").write_text(
-        "x_search:\n  reasoning_effort: low\n  retries: 0\n",
+        "search_x:\n  reasoning_effort: low\n  retries: 0\n",
         encoding="utf-8",
     )
     captured = {}
@@ -464,19 +464,19 @@ def test_x_search_rejects_invalid_config_reasoning_effort(monkeypatch):
     result = json.loads(x_search_tool(query="anything"))
 
     assert result["error"] == (
-        "x_search.reasoning_effort must be one of: low, medium, high, xhigh "
+        "search_x.reasoning_effort must be one of: low, medium, high, xhigh "
         "(got 'minimal')"
     )
 
 
 def test_x_search_registered_in_registry_with_check_fn():
-    """The tool is registered under the x_search toolset with the gating check_fn."""
+    """The tool is registered under the search_x toolset with the gating check_fn."""
     import tools.x_search_tool  # noqa: F401 — ensures registration runs
     from tools.registry import registry
 
-    entry = registry.get_entry("x_search")
+    entry = registry.get_entry("search_x")
     assert entry is not None
-    assert entry.toolset == "x_search"
+    assert entry.toolset == "search_x"
     assert entry.check_fn is not None
     assert entry.check_fn.__name__ == "check_x_search_requirements"
     assert "XAI_API_KEY" in entry.requires_env

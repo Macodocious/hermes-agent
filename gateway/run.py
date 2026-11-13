@@ -1121,7 +1121,7 @@ def _last_transcript_timestamp(history: Optional[List[Dict[str, Any]]]) -> Any:
 _AUTO_APPEND_MEDIA_TOOL_NAMES = {
     "text_to_speech",
     "text_to_speech_tool",
-    "image_generate",
+    "generate_image",
 }
 
 # ---- helpers: detect interrupted tool tails & auto-continue noise ----------
@@ -1264,7 +1264,7 @@ def _strip_auto_continue_noise(content: Any) -> Any:
     return text
 
 # Tools in this set return their deliverable artifact as a JSON payload with a
-# local-file path field rather than a literal ``MEDIA:`` tag (e.g. image_generate
+# local-file path field rather than a literal ``MEDIA:`` tag (e.g. generate_image
 # returns ``{"success": true, "image": "/abs/path.png"}``). The auto-append path
 # extracts the path from these fields so delivery is deterministic and does not
 # depend on the model restating the path in its final reply.
@@ -1336,10 +1336,10 @@ def _collect_auto_append_media_tags(
             continue
         content = str(msg.get("content") or "")
         tool_name = tool_name_by_call_id.get(call_id)
-        # JSON-payload tools (image_generate) return a local-file path in a
+        # JSON-payload tools (generate_image) return a local-file path in a
         # known field rather than a MEDIA: tag. Extract it so delivery is
         # deterministic even when the model omits the path from its reply.
-        if tool_name == "image_generate" and "MEDIA:" not in content:
+        if tool_name == "generate_image" and "MEDIA:" not in content:
             try:
                 payload = json.loads(content)
             except Exception:
@@ -1371,12 +1371,12 @@ def _collect_history_media_paths(agent_history: List[Dict[str, Any]]) -> set:
     Used to dedup auto-appended MEDIA tags so the same file is not re-sent on
     later turns. Must cover BOTH delivery shapes:
       * ``MEDIA:<path>`` text tags in tool results, and
-      * ``image_generate`` JSON-payload paths (``host_image`` / ``image`` /
+      * ``generate_image`` JSON-payload paths (``host_image`` / ``image`` /
         ``agent_visible_image``), which carry no MEDIA: tag.
 
     Missing the JSON-payload shape caused #46627: after a compression
     boundary the auto-append fallback rescans full history, re-discovers an
-    earlier ``image_generate`` result whose path was never in the dedup set,
+    earlier ``generate_image`` result whose path was never in the dedup set,
     and re-emits the MEDIA tag every turn.
     """
     paths: set = set()
@@ -1400,7 +1400,7 @@ def _collect_history_media_paths(agent_history: List[Dict[str, Any]]) -> set:
                     paths.add(p)
             continue
         cid = str(msg.get("tool_call_id") or msg.get("call_id") or "")
-        if tool_name_by_call_id.get(cid) == "image_generate":
+        if tool_name_by_call_id.get(cid) == "generate_image":
             try:
                 payload = json.loads(content)
             except Exception:
@@ -1804,11 +1804,11 @@ if _config_path.exists():
                         os.environ[_env_var] = str(_val)
         # Compression config is read directly from config.yaml by run_agent.py
         # and auxiliary_client.py — no env var bridging needed.
-        # Auxiliary model/direct-endpoint overrides (vision, web_extract,
+        # Auxiliary model/direct-endpoint overrides (vision, extract_web,
         # approval, plus any plugin-registered auxiliary tasks).
         # Each task has provider/model/base_url/api_key; bridge non-default
         # values to env vars named AUXILIARY_<KEY_UPPER>_*. The legacy
-        # hard-coded list (vision/web_extract/approval) is replaced by a
+        # hard-coded list (vision/extract_web/approval) is replaced by a
         # dynamic loop so plugin-registered tasks benefit from the same
         # config→env bridging without core knowing about each one.
         _auxiliary_cfg = _cfg.get("auxiliary", {})
@@ -1816,7 +1816,7 @@ if _config_path.exists():
             # Built-in tasks that previously had explicit env-var bridging.
             # Kept here as the canonical bridged set; plugin tasks are added
             # below via the plugin auxiliary registry.
-            _aux_bridged_keys = {"vision", "web_extract", "approval"}
+            _aux_bridged_keys = {"vision", "extract_web", "approval"}
             try:
                 from hermes_cli.plugins import get_plugin_auxiliary_tasks
                 for _entry in get_plugin_auxiliary_tasks():
@@ -3515,7 +3515,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         except Exception:
             logger.debug("approvals.mode startup check skipped", exc_info=True)
 
-        # Initialize session database for session_search tool support
+        # Initialize session database for search_session tool support
         self._session_db = None
         try:
             from hermes_state import AsyncSessionDB, SessionDB
@@ -6842,7 +6842,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 agent.close()
         except Exception:
             pass
-        # Auxiliary async clients (session_search/web/vision/etc.) live in a
+        # Auxiliary async clients (search_session/web/vision/etc.) live in a
         # process-global cache and are created inside worker threads. Clean up
         # any entries whose event loop is now dead so their httpx transports do
         # not accumulate across gateway turns.
@@ -11292,8 +11292,8 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             # Open-ended: rewrite the turn to a standards-guided prompt and fall
             # through to normal agent processing. The live agent gathers the
             # sources the user described (dirs via read_file, URLs via
-            # web_extract, this conversation, pasted text) and authors the skill
-            # via skill_manage. Mirrors the /blueprint fall-through so role
+            # extract_web, this conversation, pasted text) and authors the skill
+            # via manage_skill. Mirrors the /blueprint fall-through so role
             # alternation is preserved. No engine, works on any backend.
             from agent.learn_prompt import build_learn_prompt
 
@@ -12138,7 +12138,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     video_paths.append(path)
 
             if image_paths:
-                # Decide routing: native (attach pixels) vs text (vision_analyze
+                # Decide routing: native (attach pixels) vs text (analyze_vision
                 # pre-run + prepend description).  See agent/image_routing.py.
                 # Offload to a worker thread: the decision does blocking network
                 # I/O — a models.dev fetch on cache miss, and the Ollama
@@ -12163,7 +12163,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     )
                 else:
                     logger.info(
-                        "Image routing: text (mode=%s). Pre-analyzing %d image(s) via vision_analyze.",
+                        "Image routing: text (mode=%s). Pre-analyzing %d image(s) via analyze_vision.",
                         _img_mode, len(image_paths),
                     )
                     # Vision enrichment runs before AIAgent.run_conversation(),
@@ -13103,7 +13103,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                                     # _compress_context ends the old session and creates
                                     # a new session_id.  Write compressed messages into
                                     # the NEW session so the old transcript stays intact
-                                    # and searchable via session_search.
+                                    # and searchable via search_session.
                                     _hyg_new_sid = _hyg_agent.session_id
                                     _hyg_rotated = _hyg_new_sid != session_entry.session_id
                                     _hyg_in_place = bool(
@@ -13383,7 +13383,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         # If the user attached image(s), we run the vision tool eagerly so
         # the conversation model always receives a text description.  The
         # local file path is also included so the model can re-examine the
-        # image later with a more targeted question via vision_analyze.
+        # image later with a more targeted question via analyze_vision.
         #
         # We filter to image paths only (by media_type) so that non-image
         # attachments (documents, audio, etc.) are not sent to the vision
@@ -17331,7 +17331,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         """Resolve image-input routing for the effective model this turn.
 
         Returns ``"native"`` (attach pixels on the user turn) or ``"text"``
-        (pre-analyze with vision_analyze and prepend the description). See
+        (pre-analyze with analyze_vision and prepend the description). See
         agent/image_routing.py for the full decision table.
 
         Gateway sessions can have /model overrides that live outside
@@ -17391,7 +17391,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         Each image is analyzed with a general-purpose prompt.  The resulting
         description *and* the local cache path are injected so the model can:
           1. Immediately understand what the user sent (no extra tool call).
-          2. Re-examine the image with vision_analyze if it needs more detail.
+          2. Re-examine the image with analyze_vision if it needs more detail.
 
         Args:
             user_text:   The user's original caption / message text.
@@ -17423,21 +17423,21 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     description = sanitize_context(description)
                     enriched_parts.append(
                         f"[The user sent an image~ Here's what I can see:\n{description}]\n"
-                        f"[If you need a closer look, use vision_analyze with "
+                        f"[If you need a closer look, use analyze_vision with "
                         f"image_url: {path} ~]"
                     )
                 else:
                     enriched_parts.append(
                         "[The user sent an image but I couldn't quite see it "
                         "this time (>_<) You can try looking at it yourself "
-                        f"with vision_analyze using image_url: {path}]"
+                        f"with analyze_vision using image_url: {path}]"
                     )
             except Exception as e:
                 logger.error("Vision auto-analysis error: %s", e)
                 enriched_parts.append(
                     f"[The user sent an image but something went wrong when I "
                     f"tried to look at it~ You can try examining it yourself "
-                    f"with vision_analyze using image_url: {path}]"
+                    f"with analyze_vision using image_url: {path}]"
                 )
 
         # Combine: vision descriptions first, then the user's original text
@@ -20321,7 +20321,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     # instead of the quoted "todo: …" legacy form.
                     msg = f"{emoji} {preview}"
                 else:
-                    # Action-driven tools (cronjob/skill_manage/memory)
+                    # Action-driven tools (cronjob/manage_skill/memory)
                     # render their complete standalone phrase ("⏰ Reading
                     # scheduled jobs") — a fixed verb + raw action noun
                     # ("Scheduling list") would misstate what the call

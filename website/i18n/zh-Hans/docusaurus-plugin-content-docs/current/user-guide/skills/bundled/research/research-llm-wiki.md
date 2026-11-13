@@ -266,8 +266,8 @@ When new information conflicts with existing content:
 当用户提供来源（URL、文件、粘贴内容）时，将其整合到 wiki 中：
 
 ① **捕获原始来源：**
-   - URL → 使用 `web_extract` 获取 Markdown，保存到 `raw/articles/`
-   - PDF → 使用 `web_extract`（支持 PDF），保存到 `raw/papers/`
+   - URL → 使用 `extract_web` 获取 Markdown，保存到 `raw/articles/`
+   - PDF → 使用 `extract_web`（支持 PDF），保存到 `raw/papers/`
    - 粘贴文本 → 保存到对应的 `raw/` 子目录
    - 文件名应具有描述性：`raw/articles/karpathy-llm-wiki-2026.md`
    - **添加 raw frontmatter**（`source_url`、`ingested`、正文的 `sha256`）。

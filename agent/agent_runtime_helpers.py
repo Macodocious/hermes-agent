@@ -62,7 +62,7 @@ AGENT_RUNTIME_POST_HOOK_TOOL_NAMES = frozenset(
     {
         "todo",
         "declare_task_context",
-        "session_search",
+        "search_session",
         "memory",
         "clarify",
         "read_terminal",
@@ -2529,13 +2529,13 @@ def invoke_tool(agent, function_name: str, function_args: dict, effective_task_i
                 temperature=next_args.get("temperature"),
                 agent=agent,
             ), next_args)
-    elif function_name == "session_search":
+    elif function_name == "search_session":
         def _execute(next_args: dict) -> Any:
             session_db = agent._get_session_db_for_recall()
             if not session_db:
                 from hermes_state import format_session_db_unavailable
                 return _finish_agent_tool(json.dumps({"success": False, "error": format_session_db_unavailable()}), next_args)
-            from tools.session_search_tool import session_search as _session_search
+            from tools.session_search_tool import search_session as _session_search
             return _finish_agent_tool(
                 _session_search(
                     query=next_args.get("query", ""),
@@ -2668,7 +2668,7 @@ def repair_tool_call(agent, tool_name: str) -> str | None:
     # fragments into tool_use.name, e.g.
     #   `terminal" parameter="command" string="true`
     #   `execute_code" parameter="code" string="true`
-    #   `session_search" parameter="session_id" string="true`
+    #   `search_session" parameter="session_id" string="true`
     # We trim at the first unambiguous XML/quote character so the rest
     # of the repair pipeline (lowercase / snake_case / fuzzy match)
     # can resolve the cleaned name to a real tool.

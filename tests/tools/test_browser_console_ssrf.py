@@ -1,6 +1,6 @@
 """Tests that browser_console blocks console messages and errors from eval-navigated private pages.
 
-browser_snapshot, browser_vision, _browser_eval, and browser_get_images all re-check
+snapshot_browser, browser_vision, _browser_eval, and get_browser_images all re-check
 the page URL before returning content. browser_console (in console output mode) must
 do the same to prevent leakage of console log messages and exception details.
 """

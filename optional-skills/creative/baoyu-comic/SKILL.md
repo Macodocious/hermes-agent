@@ -23,7 +23,7 @@ Trigger this skill when the user asks to create a knowledge/educational comic, b
 
 ## Reference Images
 
-Hermes' `image_generate` tool is **prompt-only** — it accepts a text prompt and an aspect ratio, and returns an image URL. It does **NOT** accept reference images. When the user supplies a reference image, use it to **extract traits in text** that get embedded in every page prompt:
+Hermes' `generate_image` tool is **prompt-only** — it accepts a text prompt and an aspect ratio, and returns an image URL. It does **NOT** accept reference images. When the user supplies a reference image, use it to **extract traits in text** that get embedded in every page prompt:
 
 **Intake**: Accept file paths when the user provides them (or pastes images in conversation).
 - File path(s) → copy to `refs/NN-ref-{slug}.{ext}` alongside the comic output for provenance
@@ -48,7 +48,7 @@ references:
     traits: "muted earth tones, soft-edged ink wash, low-contrast backgrounds"
 ```
 
-Character consistency is driven by **text descriptions** in `characters/characters.md` (written in Step 3) that get embedded inline in every page prompt (Step 5). The optional PNG character sheet generated in Step 7.1 is a human-facing review artifact, not an input to `image_generate`.
+Character consistency is driven by **text descriptions** in `characters/characters.md` (written in Step 3) that get embedded inline in every page prompt (Step 5). The optional PNG character sheet generated in Step 7.1 is a human-facing review artifact, not an input to `generate_image`.
 
 ## Options
 
@@ -105,9 +105,9 @@ Output directory: `comic/{topic-slug}/`
 | `analysis.md` | Content analysis |
 | `storyboard.md` | Storyboard with panel breakdown |
 | `characters/characters.md` | Character definitions |
-| `characters/characters.png` | Character reference sheet (downloaded from `image_generate`) |
+| `characters/characters.png` | Character reference sheet (downloaded from `generate_image`) |
 | `prompts/NN-{cover\|page}-[slug].md` | Generation prompts |
-| `NN-{cover\|page}-[slug].png` | Generated images (downloaded from `image_generate`) |
+| `NN-{cover\|page}-[slug].png` | Generated images (downloaded from `generate_image`) |
 | `refs/NN-ref-{slug}.{ext}` | User-supplied reference images (optional, for provenance) |
 
 ## Language Handling
@@ -178,19 +178,19 @@ Use the `clarify` tool to confirm options. Since `clarify` handles one question 
 
 ### Step 7: Image Generation
 
-Use Hermes' built-in `image_generate` tool for all image rendering. Its schema accepts only `prompt` and `aspect_ratio` (`landscape` | `portrait` | `square`); it **returns a URL**, not a local file. Every generated page or character sheet must therefore be downloaded to the output directory.
+Use Hermes' built-in `generate_image` tool for all image rendering. Its schema accepts only `prompt` and `aspect_ratio` (`landscape` | `portrait` | `square`); it **returns a URL**, not a local file. Every generated page or character sheet must therefore be downloaded to the output directory.
 
-**Prompt file requirement (hard)**: write each image's full, final prompt to a standalone file under `prompts/` (naming: `NN-{type}-[slug].md`) BEFORE calling `image_generate`. The prompt file is the reproducibility record.
+**Prompt file requirement (hard)**: write each image's full, final prompt to a standalone file under `prompts/` (naming: `NN-{type}-[slug].md`) BEFORE calling `generate_image`. The prompt file is the reproducibility record.
 
-**Aspect ratio mapping** — the storyboard's `aspect_ratio` field maps to `image_generate`'s format as follows:
+**Aspect ratio mapping** — the storyboard's `aspect_ratio` field maps to `generate_image`'s format as follows:
 
-| Storyboard ratio | `image_generate` format |
+| Storyboard ratio | `generate_image` format |
 |------------------|-------------------------|
 | `3:4`, `9:16`, `2:3` | `portrait` |
 | `4:3`, `16:9`, `3:2` | `landscape` |
 | `1:1` | `square` |
 
-**Download step** — after every `image_generate` call:
+**Download step** — after every `generate_image` call:
 1. Read the URL from the tool result
 2. Fetch the image bytes using an **absolute** output path, e.g.
    `curl -fsSL "<url>" -o /abs/path/to/comic/<slug>/NN-page-<slug>.png`
@@ -198,9 +198,9 @@ Use Hermes' built-in `image_generate` tool for all image rendering. Its schema a
 
 **Never rely on shell CWD persistence for `-o` paths.** The terminal tool's persistent-shell CWD can change between batches (session expiry, `TERMINAL_LIFETIME_SECONDS`, a failed `cd` that leaves you in the wrong directory). `curl -o relative/path.png` is a silent footgun: if CWD has drifted, the file lands somewhere else with no error. **Always pass a fully-qualified absolute path to `-o`**, or pass `workdir=<abs path>` to the terminal tool. Incident Apr 2026: pages 06-09 of a 10-page comic landed at the repo root instead of `comic/<slug>/` because batch 3 inherited a stale CWD from batch 2 and `curl -o 06-page-skills.png` wrote to the wrong directory. The agent then spent several turns claiming the files existed where they didn't.
 
-**7.1 Character sheet** — generate it (to `characters/characters.png`, aspect `landscape`) when the comic is multi-page with recurring characters. Skip for simple presets (e.g., four-panel minimalist) or single-page comics. The prompt file at `characters/characters.md` must exist before invoking `image_generate`. The rendered PNG is a **human-facing review artifact** (so the user can visually verify character design) and a reference for later regenerations or manual prompt edits — it does **not** drive Step 7.2. Page prompts are already written in Step 5 from the **text descriptions** in `characters/characters.md`; `image_generate` cannot accept images as visual input.
+**7.1 Character sheet** — generate it (to `characters/characters.png`, aspect `landscape`) when the comic is multi-page with recurring characters. Skip for simple presets (e.g., four-panel minimalist) or single-page comics. The prompt file at `characters/characters.md` must exist before invoking `generate_image`. The rendered PNG is a **human-facing review artifact** (so the user can visually verify character design) and a reference for later regenerations or manual prompt edits — it does **not** drive Step 7.2. Page prompts are already written in Step 5 from the **text descriptions** in `characters/characters.md`; `generate_image` cannot accept images as visual input.
 
-**7.2 Pages** — each page's prompt MUST already be at `prompts/NN-{cover|page}-[slug].md` before invoking `image_generate`. Because `image_generate` is prompt-only, character consistency is enforced by **embedding character descriptions (sourced from `characters/characters.md`) inline in every page prompt during Step 5**. The embedding is done uniformly whether or not a PNG sheet is produced in 7.1; the PNG is only a review/regeneration aid.
+**7.2 Pages** — each page's prompt MUST already be at `prompts/NN-{cover|page}-[slug].md` before invoking `generate_image`. Because `generate_image` is prompt-only, character consistency is enforced by **embedding character descriptions (sourced from `characters/characters.md`) inline in every page prompt during Step 5**. The embedding is done uniformly whether or not a PNG sheet is produced in 7.1; the PNG is only a review/regeneration aid.
 
 **Backup rule**: existing `prompts/…md` and `…png` files → rename with `-backup-YYYYMMDD-HHMMSS` suffix before regenerating.
 
@@ -238,10 +238,10 @@ Full step-by-step workflow (analysis, storyboard, review gates, regeneration var
 ## Pitfalls
 
 - Image generation: 10-30 seconds per page; auto-retry once on failure
-- **Always download** the URL returned by `image_generate` to a local PNG — downstream tooling (and the user's review) expects files in the output directory, not ephemeral URLs
+- **Always download** the URL returned by `generate_image` to a local PNG — downstream tooling (and the user's review) expects files in the output directory, not ephemeral URLs
 - **Use absolute paths for `curl -o`** — never rely on persistent-shell CWD across batches. Silent footgun: files land in the wrong directory and subsequent `ls` on the intended path shows nothing. See Step 7 "Download step".
 - Use stylized alternatives for sensitive public figures
 - **Step 2 confirmation required** - do not skip
 - **Steps 4/6 conditional** - only if user requested in Step 2
-- **Step 7.1 character sheet** - recommended for multi-page comics, optional for simple presets. The PNG is a review/regeneration aid; page prompts (written in Step 5) use the text descriptions in `characters/characters.md`, not the PNG. `image_generate` does not accept images as visual input
+- **Step 7.1 character sheet** - recommended for multi-page comics, optional for simple presets. The PNG is a review/regeneration aid; page prompts (written in Step 5) use the text descriptions in `characters/characters.md`, not the PNG. `generate_image` does not accept images as visual input
 - **Strip secrets** — scan source content for API keys, tokens, or credentials before writing any output file

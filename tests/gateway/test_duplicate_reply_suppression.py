@@ -249,7 +249,7 @@ class TestOnlyFinalStreamDeliverySuppressesFinalSend:
 
 class TestEmptyResponseNotSuppressed:
     """When the model returns '(empty)' after tool calls (e.g. mimo-v2-pro
-    going silent after web_search), the gateway must NOT suppress delivery
+    going silent after search_web), the gateway must NOT suppress delivery
     even if the stream consumer sent intermediate text earlier.
 
     Without this fix, the user sees partial streaming text ('Let me search

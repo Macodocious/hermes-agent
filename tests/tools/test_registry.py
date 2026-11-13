@@ -56,7 +56,7 @@ class TestRegisterAndDispatch:
         }
         reg.register(
             name="capture",
-            toolset="computer_use",
+            toolset="use_computer",
             schema=_make_schema("capture"),
             handler=lambda args, **kw: multimodal,
         )

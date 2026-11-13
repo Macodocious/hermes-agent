@@ -44,9 +44,9 @@ def test_title_generation_present_in_default_config():
 
 
 def test_session_search_no_longer_appears_in_auxiliary_model_config():
-    """session_search is a direct DB-backed tool, not an auxiliary LLM task."""
-    assert "session_search" not in DEFAULT_CONFIG["auxiliary"]
-    assert "session_search" not in {key for key, _name, _desc in _AUX_TASKS}
+    """search_session is a direct DB-backed tool, not an auxiliary LLM task."""
+    assert "search_session" not in DEFAULT_CONFIG["auxiliary"]
+    assert "search_session" not in {key for key, _name, _desc in _AUX_TASKS}
 
 
 def test_aux_tasks_keys_all_exist_in_default_config():

@@ -71,7 +71,7 @@ def test_writer_event_lines_append_in_order_and_flush_immediately():
 def test_writer_truncates_long_text_with_elision_note():
     w = LiveTranscriptWriter("deleg_trunc", 0, "g")
     w.assistant_text("x" * 5000)
-    w.tool_result("web_search", result="y" * 5000)
+    w.tool_result("search_web", result="y" * 5000)
     text = w.path.read_text(encoding="utf-8")
     assert "…(+" in text  # elision marker present
     # No line carries the full 5000 chars
@@ -160,9 +160,9 @@ def test_observe_maps_child_callback_events_to_lines():
 
 def test_observe_marks_tool_errors():
     w = LiveTranscriptWriter("deleg_err", 0, "g")
-    w.observe("tool.completed", "web_search", None, None,
+    w.observe("tool.completed", "search_web", None, None,
               is_error=True, result="Error: boom")
-    assert "web_search ERROR" in w.path.read_text(encoding="utf-8")
+    assert "search_web ERROR" in w.path.read_text(encoding="utf-8")
 
 
 def test_finalize_records_budget_exhaustion_and_errors():

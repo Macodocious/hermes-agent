@@ -59,7 +59,7 @@ and stable conventions. Memory is injected into every turn, so keep
 it compact and focused on facts that will still matter later.
 ...
 When the user references something from a past conversation or you
-suspect relevant cross-session context exists, use session_search
+suspect relevant cross-session context exists, use search_session
 to recall it before asking them to repeat themselves.
 
 # Tool-use enforcement (for GPT/Codex models only)
@@ -88,7 +88,7 @@ would do or plan to do without actually doing it.
 # Layer 7: Skills index
 ## Skills (mandatory)
 Before replying, scan the skills below. If one clearly matches
-your task, load it with skill_view(name) and follow its instructions.
+your task, load it with view_skill(name) and follow its instructions.
 ...
 <available_skills>
   software-development:

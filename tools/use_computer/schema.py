@@ -1,4 +1,4 @@
-"""Schema for the generic `computer_use` tool.
+"""Schema for the generic `use_computer` tool.
 
 Model-agnostic. Any tool-calling model can drive this. Vision-capable models
 should prefer `capture(mode='som')` then `click(element=N)` — much more
@@ -14,7 +14,7 @@ from typing import Any, Dict
 # One consolidated tool with an `action` discriminator. Keeps the schema
 # compact and the per-turn token cost low.
 COMPUTER_USE_SCHEMA: Dict[str, Any] = {
-    "name": "computer_use",
+    "name": "use_computer",
     "description": (
         "Drive the desktop in the background via cua-driver — screenshots, "
         "mouse, keyboard, scroll, drag — without stealing the user's cursor "

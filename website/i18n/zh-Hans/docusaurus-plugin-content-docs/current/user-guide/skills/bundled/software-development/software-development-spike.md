@@ -96,8 +96,8 @@ Spike 并非不需要调研——你需要调研到足以选定正确方案，�
 
 调研步骤使用 Hermes 工具：
 
-- `web_search("python websocket streaming libraries 2025")` — 查找候选库
-- `web_extract(urls=["https://websockets.readthedocs.io/..."])` — 阅读实际文档（返回 markdown）
+- `search_web("python websocket streaming libraries 2025")` — 查找候选库
+- `extract_web(urls=["https://websockets.readthedocs.io/..."])` — 阅读实际文档（返回 markdown）
 - `terminal("pip show websockets | grep Version")` — 检查项目 venv 中已安装的版本
 
 对于没有文档页面的库，克隆并通过 `read_file` 阅读其 `README.md` / `examples/`。Context7 MCP（如果用户已配置）也是好的来源——`mcp_*_resolve-library-id` 然后 `mcp_*_query-docs`。

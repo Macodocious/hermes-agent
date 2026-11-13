@@ -755,7 +755,7 @@ class TestChatCompletionsKimi:
             {
                 "type": "function",
                 "function": {
-                    "name": "browser_snapshot",
+                    "name": "snapshot_browser",
                     "description": "Snapshot",
                     "parameters": {"type": "object", "properties": {}},
                 },

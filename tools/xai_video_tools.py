@@ -68,10 +68,10 @@ def _normalize_public_video_url(video_url: Any) -> Optional[str]:
 
 
 XAI_VIDEO_EDIT_SCHEMA: Dict[str, Any] = {
-    "name": "xai_video_edit",
+    "name": "edit_xai_video",
     "description": (
         "Edit an existing video with xAI Imagine. This is separate from "
-        "`video_generate` because video editing is provider-specific. "
+        "`generate_video` because video editing is provider-specific. "
         "`video_url` must be the public HTTPS MP4 URL from a prior Imagine "
         "result (`video` or `public_url` on files-cdn)."
     ),
@@ -100,10 +100,10 @@ XAI_VIDEO_EDIT_SCHEMA: Dict[str, Any] = {
 
 
 XAI_VIDEO_EXTEND_SCHEMA: Dict[str, Any] = {
-    "name": "xai_video_extend",
+    "name": "extend_xai_video",
     "description": (
         "Extend an existing video with xAI Imagine. This is separate from "
-        "`video_generate` because video extension is provider-specific. "
+        "`generate_video` because video extension is provider-specific. "
         "`video_url` must be the public HTTPS MP4 URL from a prior Imagine "
         "result (`video` or `public_url` on files-cdn)."
     ),
@@ -187,7 +187,7 @@ def _handle_xai_video_extend(args: Dict[str, Any], **_kw: Any) -> str:
 
 
 registry.register(
-    name="xai_video_edit",
+    name="edit_xai_video",
     toolset="video_gen",
     schema=XAI_VIDEO_EDIT_SCHEMA,
     handler=_handle_xai_video_edit,
@@ -198,7 +198,7 @@ registry.register(
 )
 
 registry.register(
-    name="xai_video_extend",
+    name="extend_xai_video",
     toolset="video_gen",
     schema=XAI_VIDEO_EXTEND_SCHEMA,
     handler=_handle_xai_video_extend,

@@ -9,7 +9,7 @@ the review.
 Responsibilities:
   - Auto-transition lifecycle states based on derived skill activity timestamps
   - Spawn a background review agent that can pin / archive / consolidate /
-    patch agent-created skills via skill_manage
+    patch agent-created skills via manage_skill
   - Persist curator state (last_run_at, paused, etc.) in .curator_state
 
 Strict invariants:
@@ -394,12 +394,12 @@ CURATOR_DRY_RUN_BANNER = (
     "\n"
     "This is a PREVIEW pass. Follow every instruction below EXCEPT:\n"
     "\n"
-    "  • DO NOT call skill_manage with action=patch, create, delete, "
+    "  • DO NOT call manage_skill with action=patch, create, delete, "
     "write_file, or remove_file.\n"
     "  • DO NOT call terminal to mv skill directories into .archive/.\n"
     "  • DO NOT call terminal to mv, cp, rm, or rewrite any file under "
     "~/.hermes/skills/.\n"
-    "  • skills_list and skill_view are FINE — read as much as you need.\n"
+    "  • list_skills and view_skill are FINE — read as much as you need.\n"
     "\n"
     "Your output IS the deliverable. Produce the exact same "
     "human-readable summary and structured YAML block you would "
@@ -478,7 +478,7 @@ CURATOR_REVIEW_PROMPT = (
     "section for each sibling's unique insight, then archive the "
     "siblings.\n"
     "   b. CREATE A NEW UMBRELLA SKILL.md — no existing member is broad "
-    "enough. Use skill_manage action=create to write a new class-level "
+    "enough. Use manage_skill action=create to write a new class-level "
     "skill whose SKILL.md covers the shared workflow and has short "
     "labeled subsections. Archive the now-absorbed narrow siblings.\n"
     "   c. DEMOTE TO REFERENCES/TEMPLATES/SCRIPTS — a sibling has "
@@ -497,7 +497,7 @@ CURATOR_REVIEW_PROMPT = (
     "Package integrity — not optional:\n"
     "Before demoting or archiving a skill, inspect it as a COMPLETE "
     "directory package, not just SKILL.md. A skill root may include "
-    "`references/`, `templates/`, `scripts/`, and `assets/`; `skill_view` "
+    "`references/`, `templates/`, `scripts/`, and `assets/`; `view_skill` "
     "discovers those relative to the skill root. A reference markdown file "
     "inside another skill is NOT a new skill root and does not get its own "
     "linked-file discovery.\n"
@@ -521,13 +521,13 @@ CURATOR_REVIEW_PROMPT = (
     "and look for the NEXT umbrella opportunity. Don't stop after 3 "
     "merges.\n\n"
     "Your toolset:\n"
-    "  - skills_list, skill_view        — read the current landscape\n"
-    "  - skill_manage action=patch      — add sections to the umbrella\n"
-    "  - skill_manage action=create     — create a new umbrella SKILL.md\n"
-    "  - skill_manage action=write_file — add a references/, templates/, "
+    "  - list_skills, view_skill        — read the current landscape\n"
+    "  - manage_skill action=patch      — add sections to the umbrella\n"
+    "  - manage_skill action=create     — create a new umbrella SKILL.md\n"
+    "  - manage_skill action=write_file — add a references/, templates/, "
     "or scripts/ file under an existing skill (the skill must already "
     "exist)\n"
-    "  - skill_manage action=delete     — archive a skill. MUST pass "
+    "  - manage_skill action=delete     — archive a skill. MUST pass "
     "`absorbed_into=<umbrella>` when you've merged its content into another "
     "skill, or `absorbed_into=\"\"` when you're truly pruning with no "
     "forwarding target. This drives cron-job skill-reference migration — "
@@ -626,7 +626,7 @@ def _classify_removed_skills(
     curator archived it for staleness/irrelevance without preserving its
     content elsewhere.
 
-    Heuristic: scan this run's ``skill_manage`` tool calls and look for
+    Heuristic: scan this run's ``manage_skill`` tool calls and look for
     ``write_file``/``patch``/``create``/``edit`` actions whose target skill
     (the ``name`` argument) is NOT the removed skill and whose
     ``file_path`` / ``file_content`` / ``content`` arguments reference the
@@ -639,12 +639,12 @@ def _classify_removed_skills(
     consolidated: List[Dict[str, Any]] = []
     pruned: List[Dict[str, Any]] = []
 
-    # Pre-parse tool calls: we only care about skill_manage.
+    # Pre-parse tool calls: we only care about manage_skill.
     parsed_calls: List[Dict[str, Any]] = []
     for tc in tool_calls or []:
         if not isinstance(tc, dict):
             continue
-        if tc.get("name") != "skill_manage":
+        if tc.get("name") != "manage_skill":
             continue
         raw = tc.get("arguments") or ""
         # Arguments can be a JSON string (standard) or a dict (defensive).
@@ -715,7 +715,7 @@ def _classify_removed_skills(
                     if matched:
                         hit = True
                         evidence = (
-                            f"skill_manage action={args.get('action', '?')} "
+                            f"manage_skill action={args.get('action', '?')} "
                             f"on '{target}' referenced '{name}' "
                             f"in {hay[:80]}"
                         )
@@ -820,7 +820,7 @@ def _extract_absorbed_into_declarations(
 ) -> Dict[str, Dict[str, Any]]:
     """Walk this run's tool calls and extract model-declared absorption targets.
 
-    The curator prompt requires every ``skill_manage(action='delete')`` call
+    The curator prompt requires every ``manage_skill(action='delete')`` call
     to pass ``absorbed_into=<umbrella>`` when consolidating, or
     ``absorbed_into=""`` when truly pruning. This is the single authoritative
     signal for classification — the model's own declaration at the moment of
@@ -829,7 +829,7 @@ def _extract_absorbed_into_declarations(
 
     Returns ``{skill_name: {"into": "<umbrella>" | "", "declared": True}}``.
     Entries with ``into == ""`` are explicit prunings.
-    Skills without a ``skill_manage(delete)`` call, or with one that omitted
+    Skills without a ``manage_skill(delete)`` call, or with one that omitted
     ``absorbed_into``, are not in the returned dict — caller falls back to
     the existing heuristic/YAML logic for those (backward compat with older
     curator runs and any callers that don't populate the arg).
@@ -838,7 +838,7 @@ def _extract_absorbed_into_declarations(
     for tc in tool_calls or []:
         if not isinstance(tc, dict):
             continue
-        if tc.get("name") != "skill_manage":
+        if tc.get("name") != "manage_skill":
             continue
         raw = tc.get("arguments") or ""
         args: Dict[str, Any] = {}
@@ -940,7 +940,7 @@ def _reconcile_classification(
                 continue
             # into_claim is non-empty but target doesn't exist: the model
             # named a nonexistent umbrella at delete time. The tool already
-            # rejects this at the skill_manage layer, so we shouldn't see it
+            # rejects this at the manage_skill layer, so we shouldn't see it
             # in practice — but if it slips through (e.g. the umbrella was
             # deleted LATER in the same run), fall through to the usual
             # signals rather than trusting a broken reference.
@@ -1396,7 +1396,7 @@ def _render_report_markdown(p: Dict[str, Any]) -> str:
     added = p.get("added") or []
     if added:
         lines.append(f"### New skills this run ({len(added)})\n")
-        lines.append("_Usually these are new class-level umbrellas created via `skill_manage action=create`._\n")
+        lines.append("_Usually these are new class-level umbrellas created via `manage_skill action=create`._\n")
         for n in added:
             lines.append(f"- `{n}`")
         lines.append("")
@@ -1519,7 +1519,7 @@ def run_curator_review(
 
     If *dry_run* is True, the automatic stale/archive transitions are SKIPPED
     and the LLM review pass is instructed to produce a report only — no
-    skill_manage mutations, no terminal archive moves. The REPORT.md still
+    manage_skill mutations, no terminal archive moves. The REPORT.md still
     gets written and ``state.last_report_path`` still records it so users
     can read what the curator WOULD have done. A dry-run also honors
     *consolidate*: when consolidation is off, the preview only reports the
@@ -1935,10 +1935,10 @@ def _run_llm_review(prompt: str) -> Dict[str, Any]:
         # Disable recursive nudges — the curator must never spawn its own review.
         review_agent._memory_nudge_interval = 0
         review_agent._skill_nudge_interval = 0
-        # Tag this fork as autonomous background curation so skill_manage's
+        # Tag this fork as autonomous background curation so manage_skill's
         # background-review write guard fires. Without this the fork inherits
         # the default "assistant_tool" origin, is_background_review() is False,
-        # and the external/bundled/hub-installed skill_manage guards never
+        # and the external/bundled/hub-installed manage_skill guards never
         # trigger during the curation pass they exist to protect against.
         # turn_context.py binds this onto the write-origin ContextVar at turn
         # start (see agent/turn_context.py).
@@ -1962,7 +1962,7 @@ def _run_llm_review(prompt: str) -> Dict[str, Any]:
 
         # Collect tool calls for the report. Walk the forked agent's
         # session messages and extract every tool_call made during the
-        # pass. Truncate argument payloads so a giant skill_manage create
+        # pass. Truncate argument payloads so a giant manage_skill create
         # doesn't blow up the report.
         _calls: List[Dict[str, Any]] = []
         for msg in getattr(review_agent, "_session_messages", []) or []:

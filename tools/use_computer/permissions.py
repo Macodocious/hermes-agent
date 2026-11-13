@@ -54,7 +54,7 @@ def _child_env() -> Dict[str, str]:
     gracefully so permission probes never break on a helper import error.
     """
     try:
-        from tools.computer_use.cua_backend import cua_driver_child_env
+        from tools.use_computer.cua_backend import cua_driver_child_env
 
         env = cua_driver_child_env()
     except Exception:

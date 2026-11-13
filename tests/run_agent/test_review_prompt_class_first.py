@@ -58,8 +58,8 @@ def test_skill_review_prompt_prefers_loaded_skills_first():
         "must mention currently-loaded skills"
     )
     # Must name the mechanisms for detecting loaded skills
-    assert "skill_view" in prompt and "/skill" in prompt, (
-        "must name skill_view and /skill-name as loaded-skill signals"
+    assert "view_skill" in prompt and "/skill" in prompt, (
+        "must name view_skill and /skill-name as loaded-skill signals"
     )
 
 
@@ -153,7 +153,7 @@ def test_combined_review_prompt_prefers_loaded_skills_first():
     """Combined prompt must also prefer loaded skills first."""
     prompt = AIAgent._COMBINED_REVIEW_PROMPT
     assert "LOADED" in prompt or "loaded" in prompt
-    assert "skill_view" in prompt and "/skill" in prompt
+    assert "view_skill" in prompt and "/skill" in prompt
 
 
 def test_combined_review_prompt_has_four_step_skill_ladder():
@@ -230,6 +230,6 @@ def test_memory_review_prompt_still_focused_on_user_facts():
     """Memory-only review prompt stays focused on user facts — not touched by this change."""
     prompt = AIAgent._MEMORY_REVIEW_PROMPT
     # The memory-only prompt should NOT drift into skill territory
-    assert "skills_list" not in prompt
+    assert "list_skills" not in prompt
     assert "SURVEY" not in prompt
     assert "memory tool" in prompt

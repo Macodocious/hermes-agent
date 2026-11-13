@@ -111,26 +111,26 @@ class TestDetectToolFailureStructured:
     def test_error_without_success_key_still_flagged(self):
         # Some tools return {"error": "..."} with no explicit success flag.
         result = json.dumps({"error": "remote unavailable"})
-        is_failure, suffix = _detect_tool_failure("web_search", result)
+        is_failure, suffix = _detect_tool_failure("search_web", result)
         assert is_failure is True
         assert suffix == " [remote unavailable]"
 
     def test_message_field_only_with_success_false_flagged(self):
         # When success is False and only 'message' is set, surface it.
         result = json.dumps({"success": False, "message": "rate limited"})
-        is_failure, suffix = _detect_tool_failure("web_search", result)
+        is_failure, suffix = _detect_tool_failure("search_web", result)
         assert is_failure is True
         assert "rate limited" in suffix
 
     def test_successful_result_not_flagged(self):
         result = json.dumps({"success": True, "data": "hello"})
-        assert _detect_tool_failure("web_search", result) == (False, "")
+        assert _detect_tool_failure("search_web", result) == (False, "")
 
     def test_dict_without_error_or_success_uses_generic_heuristic(self):
         # Plain successful dict — should pass through the generic
         # heuristic which only fires on the string "Error" / '"error"' / etc.
         result = json.dumps({"data": "hello"})
-        is_failure, _ = _detect_tool_failure("web_search", result)
+        is_failure, _ = _detect_tool_failure("search_web", result)
         assert is_failure is False
 
 
@@ -174,7 +174,7 @@ class TestGetCuteToolMessageFailureSuffix:
 
     def test_success_has_no_suffix(self):
         ok = json.dumps({"success": True, "data": "hi"})
-        line = get_cute_tool_message("web_search", {"query": "hi"}, 0.2, result=ok)
+        line = get_cute_tool_message("search_web", {"query": "hi"}, 0.2, result=ok)
         assert "[" not in line.split("0.2s", 1)[1]
 
     def test_no_result_has_no_suffix(self):

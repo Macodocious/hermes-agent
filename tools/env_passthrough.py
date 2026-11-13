@@ -8,7 +8,7 @@ so skill-declared vars (and user-configured overrides) pass through.
 
 Two sources feed the allowlist:
 
-1. **Skill declarations** — when a skill is loaded via ``skill_view``, its
+1. **Skill declarations** — when a skill is loaded via ``view_skill``, its
    ``required_environment_variables`` are registered here automatically.
 2. **User config** — ``terminal.env_passthrough`` in config.yaml lets users
    explicitly allowlist vars for non-skill use cases.
@@ -97,8 +97,8 @@ def register_env_passthrough(var_names: Iterable[str]) -> None:
     ``_HERMES_PROVIDER_ENV_BLOCKLIST``) are rejected here to preserve
     the ``execute_code`` sandbox's credential-scrubbing guarantee per
     GHSA-rhgp-j443-p4rf. A skill that needs to talk to a Hermes-managed
-    provider should do so via the agent's main-process tools (web_search,
-    web_extract, etc.) where the credential remains safely in the main
+    provider should do so via the agent's main-process tools (search_web,
+    extract_web, etc.) where the credential remains safely in the main
     process.
 
     Non-Hermes third-party API keys (TENOR_API_KEY, NOTION_TOKEN, etc.)

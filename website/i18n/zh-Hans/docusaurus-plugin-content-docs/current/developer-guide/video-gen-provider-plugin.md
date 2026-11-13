@@ -6,7 +6,7 @@ description: "如何为 Hermes Agent 构建视频生成后端插件"
 
 # 构建视频生成 Provider 插件
 
-视频生成 provider 插件注册一个后端，用于处理所有 `video_generate` 工具调用。内置 provider（xAI、FAL）以插件形式提供。将目录放入 `plugins/video_gen/<name>/` 即可添加新 provider 或覆盖内置 provider。
+视频生成 provider 插件注册一个后端，用于处理所有 `generate_video` 工具调用。内置 provider（xAI、FAL）以插件形式提供。将目录放入 `plugins/video_gen/<name>/` 即可添加新 provider 或覆盖内置 provider。
 
 :::tip
 视频生成与[图像生成 Provider 插件](/developer-guide/image-gen-provider-plugin)几乎一一对应——如果你已构建过图像生成后端，对其结构应已了然于胸。主要区别在于：`capabilities()` 方法用于声明模态（modality）/宽高比/时长，以及路由约定（传入 `image_url` 则使用图生视频，省略则使用文生视频——provider 在内部选择正确的端点）。
@@ -14,7 +14,7 @@ description: "如何为 Hermes Agent 构建视频生成后端插件"
 
 ## 统一接口（一个工具，两种模态）
 
-`video_generate` 工具通过一个参数暴露两种模态：
+`generate_video` 工具通过一个参数暴露两种模态：
 
 - **文生视频（Text-to-video）** — 仅传入 `prompt`。Provider 路由至其文生视频端点。
 - **图生视频（Image-to-video）** — 同时传入 `prompt` 和 `image_url`。Provider 路由至其图生视频端点。
@@ -29,7 +29,7 @@ Hermes 在三个位置扫描视频生成后端：
 2. **用户** — `~/.hermes/plugins/video_gen/<name>/`（通过 `plugins.enabled` 选择启用）
 3. **Pip** — 声明了 `hermes_agent.plugins` 入口点的包
 
-每个插件的 `register(ctx)` 函数调用 `ctx.register_video_gen_provider(...)`。活跃 provider 由 `config.yaml` 中的 `video_gen.provider` 指定；`hermes tools` → Video Generation 引导用户完成选择。与 `image_generate` 不同，此处没有内置的遗留后端——每个 provider 都是插件。
+每个插件的 `register(ctx)` 函数调用 `ctx.register_video_gen_provider(...)`。活跃 provider 由 `config.yaml` 中的 `video_gen.provider` 指定；`hermes tools` → Video Generation 引导用户完成选择。与 `generate_image` 不同，此处没有内置的遗留后端——每个 provider 都是插件。
 
 ## 目录结构
 
@@ -164,7 +164,7 @@ requires_env:
   - MY_API_KEY
 ```
 
-## `video_generate` 参数模式
+## `generate_video` 参数模式
 
 该工具在所有后端中使用统一的参数模式。Provider 忽略其不支持的参数。
 

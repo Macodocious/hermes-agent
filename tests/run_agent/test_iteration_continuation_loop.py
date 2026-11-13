@@ -31,7 +31,7 @@ def _text_response(content="composed report"):
     )
 
 
-def _tool_response(name="web_search", arguments="{}", call_id="call_1"):
+def _tool_response(name="search_web", arguments="{}", call_id="call_1"):
     """A response that keeps the turn mid-work: the tail becomes a tool result."""
     call = SimpleNamespace(
         id=call_id,
@@ -75,7 +75,7 @@ def agent(tmp_path, monkeypatch):
     # Tools are stubbed at the execution seam: each call appends a tool result
     # so the loop re-enters and re-evaluates the budget gate, exactly as a real
     # work-in-progress turn would.
-    instance.valid_tool_names = ["web_search"]
+    instance.valid_tool_names = ["search_web"]
 
     def _fake_execute(assistant_message, messages, effective_task_id, api_call_count=0):
         for call in assistant_message.tool_calls or []:
@@ -109,7 +109,7 @@ def test_continuation_extends_turn_past_exhaustion(agent, monkeypatch):
             return _tool_response()
         return _text_response("final answer after continuation")
 
-    agent.valid_tool_names = ["web_search"]
+    agent.valid_tool_names = ["search_web"]
     agent.max_iterations = 1
     agent.iteration_budget.max_total = 1
     agent._max_iteration_continuations = 1
@@ -159,7 +159,7 @@ def test_continuation_cap_bounds_the_turn(agent, monkeypatch):
         calls["n"] += 1
         return _tool_response(call_id=f"call_{calls['n']}")
 
-    agent.valid_tool_names = ["web_search"]
+    agent.valid_tool_names = ["search_web"]
     agent.max_iterations = 1
     agent.iteration_budget.max_total = 1
     agent._max_iteration_continuations = 2
@@ -190,7 +190,7 @@ def test_cap_zero_disables_continuation(agent, monkeypatch):
         calls["n"] += 1
         return _tool_response(call_id=f"call_{calls['n']}")
 
-    agent.valid_tool_names = ["web_search"]
+    agent.valid_tool_names = ["search_web"]
     agent.max_iterations = 1
     agent.iteration_budget.max_total = 1
     agent._max_iteration_continuations = 0

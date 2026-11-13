@@ -53,7 +53,7 @@ called from the terminal toolset; they don't appear in `always_load`.
 ### Kanban infrastructure
 
 The kanban plugin auto-injects baseline orchestration guidance into every
-worker's system prompt — the `kanban_create` fan-out pattern, claim/handoff
+worker's system prompt — the `create_kanban` fan-out pattern, claim/handoff
 lifecycle, and the "decompose, don't execute" rule for orchestrators. There is
 no kanban skill to load; the guidance is always present for kanban workers.
 
@@ -83,8 +83,8 @@ toolsets. Enable them per-profile by adding the toolset to the profile config.
 
 | Tool | Toolset | What it does | Profile that uses it |
 |------|---------|--------------|----------------------|
-| `video_analyze` | `video` (opt-in — `hermes tools enable video`) | Native video understanding — sends full clip to a multimodal LLM (Gemini via OpenRouter) for review without frame extraction. Supports mp4, webm, mov, avi, mkv. 50 MB cap. Model: `AUXILIARY_VIDEO_MODEL` env → `AUXILIARY_VISION_MODEL` fallback. | reviewer, cinematographer, editor |
-| `vision_analyze` | `vision` (core — enabled by default) | Image/frame analysis — review stills, thumbnails, exported frames. Already available to all profiles without opt-in. | reviewer, cinematographer, concept-artist |
+| `analyze_video` | `video` (opt-in — `hermes tools enable video`) | Native video understanding — sends full clip to a multimodal LLM (Gemini via OpenRouter) for review without frame extraction. Supports mp4, webm, mov, avi, mkv. 50 MB cap. Model: `AUXILIARY_VIDEO_MODEL` env → `AUXILIARY_VISION_MODEL` fallback. | reviewer, cinematographer, editor |
+| `analyze_vision` | `vision` (core — enabled by default) | Image/frame analysis — review stills, thumbnails, exported frames. Already available to all profiles without opt-in. | reviewer, cinematographer, concept-artist |
 
 ## Standard toolset configurations per role
 
@@ -155,8 +155,8 @@ toolsets:
   - kanban
   - terminal
   - file
-  - video               # video_analyze — review full clips natively
-  - vision              # vision_analyze — review stills / exported frames
+  - video               # analyze_video — review full clips natively
+  - vision              # analyze_vision — review stills / exported frames
 skills:
   always_load:
     # the visual skill that matches the project, e.g.:
@@ -195,7 +195,7 @@ empty — the role's work is API-driven and the API key +
 terminal commands suffice (kanban guidance is auto-injected regardless).
 
 For multi-skill renderer setups (rare — usually one variant per skill is
-cleaner) use `--skill <name>` on individual `kanban_create` calls to override
+cleaner) use `--skill <name>` on individual `create_kanban` calls to override
 which skill loads for that specific task.
 
 ### image-generator / image-to-video-generator / voice-talent
@@ -243,8 +243,8 @@ toolsets:
   - kanban
   - terminal
   - file
-  - video              # video_analyze — editor reviews assembled cuts natively
-  - vision             # vision_analyze — spot-check frames
+  - video              # analyze_video — editor reviews assembled cuts natively
+  - vision             # analyze_vision — spot-check frames
 skills:
   always_load: []
 ```
@@ -260,8 +260,8 @@ toolsets:
   - kanban
   - terminal           # for media inspection (ffprobe, etc.)
   - file
-  - video              # video_analyze — review full clips natively
-  - vision             # vision_analyze — review stills / exported frames
+  - video              # analyze_video — review full clips natively
+  - vision             # analyze_vision — review stills / exported frames
 skills:
   always_load: []
 ```
@@ -275,7 +275,7 @@ key is present in `${HERMES_HOME:-~/.hermes}/.env` (or macOS Keychain) before fi
 |---------|---------|---------|
 | ElevenLabs | `ELEVENLABS_API_KEY` | voice-talent |
 | OpenAI | `OPENAI_API_KEY` | image-generator (DALL-E), voice-talent (TTS) |
-| OpenRouter | `OPENROUTER_API_KEY` | reviewer, cinematographer, editor (`video_analyze` routes through `AUXILIARY_VIDEO_MODEL` → OpenRouter) |
+| OpenRouter | `OPENROUTER_API_KEY` | reviewer, cinematographer, editor (`analyze_video` routes through `AUXILIARY_VIDEO_MODEL` → OpenRouter) |
 | FAL | `FAL_KEY` | image-generator (FAL flux models) |
 | Replicate | `REPLICATE_API_TOKEN` | image-generator (alternate provider) |
 | Runway | `RUNWAY_API_KEY` | image-to-video-generator |

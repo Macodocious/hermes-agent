@@ -3,7 +3,7 @@
 When a named custom provider declares per-model supports_vision via the
 legacy list-style custom_providers config, image_routing should honor it
 and route images natively instead of falling through to models.dev or
-the auxiliary vision_analyze path.
+the auxiliary analyze_vision path.
 """
 
 from __future__ import annotations

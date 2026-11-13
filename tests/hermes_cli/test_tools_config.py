@@ -226,7 +226,7 @@ def test_get_platform_tools_homeassistant_toolset_off_for_cron_when_hass_token_m
 
 
 def test_get_platform_tools_x_search_auto_enabled_when_xai_oauth_present(monkeypatch):
-    """x_search toolset auto-enables across platforms when xAI Grok OAuth
+    """search_x toolset auto-enables across platforms when xAI Grok OAuth
     tokens are present, mirroring the HASS_TOKEN → homeassistant rule.
 
     The user already authenticated via SuperGrok OAuth; they shouldn't have
@@ -241,7 +241,7 @@ def test_get_platform_tools_x_search_auto_enabled_when_xai_oauth_present(monkeyp
 
     for plat in ("cli", "cron", "telegram"):
         enabled = _get_platform_tools({}, plat)
-        assert "x_search" in enabled, f"x_search missing for {plat}"
+        assert "search_x" in enabled, f"search_x missing for {plat}"
 
 
 # ─── #35527: platform-restricted default-off toolsets (discord/discord_admin)
@@ -319,16 +319,16 @@ def test_discord_explicit_workaround_still_works():
 
 
 def test_get_platform_tools_x_search_auto_enabled_when_xai_api_key_present(monkeypatch):
-    """x_search toolset auto-enables when XAI_API_KEY is set, even without
+    """search_x toolset auto-enables when XAI_API_KEY is set, even without
     OAuth tokens — the API-key path is a supported credential source."""
     monkeypatch.setenv("XAI_API_KEY", "fake-xai-key")
 
     cli_enabled = _get_platform_tools({}, "cli")
-    assert "x_search" in cli_enabled
+    assert "search_x" in cli_enabled
 
 
 def test_get_platform_tools_x_search_off_when_no_xai_credentials(monkeypatch):
-    """Without any xAI credentials, x_search stays off — preserves the
+    """Without any xAI credentials, search_x stays off — preserves the
     "don't ship the schema to users who can't use it" default."""
     monkeypatch.delenv("XAI_API_KEY", raising=False)
     monkeypatch.setattr(
@@ -336,22 +336,22 @@ def test_get_platform_tools_x_search_off_when_no_xai_credentials(monkeypatch):
     )
 
     cli_enabled = _get_platform_tools({}, "cli")
-    assert "x_search" not in cli_enabled
+    assert "search_x" not in cli_enabled
 
 
 def test_get_platform_tools_x_search_respects_explicit_config(monkeypatch):
     """Once the user has saved an explicit toolset list via `hermes tools`,
-    that list is authoritative — x_search auto-enable does NOT fire even
+    that list is authoritative — search_x auto-enable does NOT fire even
     when xAI creds exist. The saved list represents deliberate choices."""
     monkeypatch.delenv("XAI_API_KEY", raising=False)
     monkeypatch.setattr(
         "hermes_cli.tools_config._xai_credentials_present", lambda: True
     )
 
-    # User explicitly opted into spotify but not x_search via `hermes tools`.
+    # User explicitly opted into spotify but not search_x via `hermes tools`.
     config = {"platform_toolsets": {"cli": ["hermes-cli", "spotify"]}}
     enabled = _get_platform_tools(config, "cli")
-    assert "x_search" not in enabled
+    assert "search_x" not in enabled
     assert "spotify" in enabled
 
 
@@ -366,7 +366,7 @@ def test_get_platform_tools_expands_composite_when_mixed_with_configurable():
 
     # Native tools must reappear.
     for ts in ("terminal", "file", "web", "browser", "memory", "delegation",
-               "code_execution", "todo", "session_search", "skills"):
+               "code_execution", "todo", "search_session", "skills"):
         assert ts in enabled, f"{ts} should be enabled when hermes-cli is listed"
     # User explicitly opted into Spotify — must survive _DEFAULT_OFF_TOOLSETS subtraction.
     assert "spotify" in enabled
@@ -639,7 +639,7 @@ def test_save_platform_tools_does_not_preserve_platform_default_toolsets():
             "cli": [
                 "browser", "clarify", "code_execution", "cronjob",
                 "delegation", "file", "hermes-cli",  # <-- the culprit
-                "memory", "session_search", "skills", "terminal",
+                "memory", "search_session", "skills", "terminal",
                 "todo", "tts", "vision", "web",
             ]
         }
@@ -648,7 +648,7 @@ def test_save_platform_tools_does_not_preserve_platform_default_toolsets():
     # User unchecks image_gen, homeassistant, moa — keeps the rest
     new_selection = {
         "browser", "clarify", "code_execution", "cronjob",
-        "delegation", "file", "memory", "session_search",
+        "delegation", "file", "memory", "search_session",
         "skills", "terminal", "todo", "tts", "vision", "web",
     }
 
@@ -1185,7 +1185,7 @@ def test_numeric_mcp_server_name_does_not_crash_sorted():
 def test_toolset_has_keys_treats_no_key_providers_as_configured():
     config = {}
 
-    assert _toolset_has_keys("computer_use", config) is True
+    assert _toolset_has_keys("use_computer", config) is True
 
 
 def test_computer_use_needs_configuration_when_cua_driver_post_setup_pending():
@@ -1195,7 +1195,7 @@ def test_computer_use_needs_configuration_when_cua_driver_post_setup_pending():
     cua-driver post-setup installer even though the provider has no API keys.
     """
     with patch("shutil.which", return_value=None):
-        assert _toolset_needs_configuration_prompt("computer_use", {}) is True
+        assert _toolset_needs_configuration_prompt("use_computer", {}) is True
 
 
 def test_computer_use_skips_configuration_when_cua_driver_already_installed():
@@ -1204,7 +1204,7 @@ def test_computer_use_skips_configuration_when_cua_driver_already_installed():
         return "/usr/local/bin/cua-driver" if name == "cua-driver" else None
 
     with patch("shutil.which", side_effect=fake_which):
-        assert _toolset_needs_configuration_prompt("computer_use", {}) is False
+        assert _toolset_needs_configuration_prompt("use_computer", {}) is False
 
 
 def test_computer_use_respects_custom_cua_driver_command():
@@ -1214,7 +1214,7 @@ def test_computer_use_respects_custom_cua_driver_command():
 
     with patch.dict("os.environ", {"HERMES_CUA_DRIVER_CMD": "custom-cua"}), \
          patch("shutil.which", side_effect=fake_which):
-        assert _toolset_needs_configuration_prompt("computer_use", {}) is False
+        assert _toolset_needs_configuration_prompt("use_computer", {}) is False
 
 
 def test_computer_use_blank_custom_driver_command_falls_back_to_default():
@@ -1224,7 +1224,7 @@ def test_computer_use_blank_custom_driver_command_falls_back_to_default():
 
     with patch.dict("os.environ", {"HERMES_CUA_DRIVER_CMD": "   "}), \
          patch("shutil.which", side_effect=fake_which):
-        assert _toolset_needs_configuration_prompt("computer_use", {}) is False
+        assert _toolset_needs_configuration_prompt("use_computer", {}) is False
 
 
 def test_computer_use_post_setup_respects_custom_driver_command_when_installed():
@@ -1422,7 +1422,7 @@ def test_get_platform_tools_recovers_non_configurable_toolsets_from_composite():
     }
     fake_toolsets["hermes-_test_platform"] = {
         "description": "test composite",
-        "tools": ["web_search", "web_extract", "terminal", "process", "_test_special_tool"],
+        "tools": ["search_web", "extract_web", "terminal", "process", "_test_special_tool"],
         "includes": [],
     }
 

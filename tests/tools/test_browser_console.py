@@ -134,7 +134,7 @@ class TestBrowserConsole:
         assert result["result"].startswith("ghp_")
 
     def test_redacts_secrets_from_snapshot_output(self):
-        from tools.browser_tool import browser_snapshot
+        from tools.browser_tool import snapshot_browser
 
         fake_key = "xai-" + "BROWSERSNAPSHOTSECRET12345678901234567890"
         snapshot_response = {
@@ -144,7 +144,7 @@ class TestBrowserConsole:
         with patch("tools.browser_tool._last_session_key", return_value="test"), \
              patch("tools.browser_tool._is_camofox_mode", return_value=False), \
              patch("tools.browser_tool._run_browser_command", return_value=snapshot_response):
-            result = json.loads(browser_snapshot(task_id="test"))
+            result = json.loads(snapshot_browser(task_id="test"))
 
         assert result["success"] is True
         assert "BROWSERSNAPSHOTSECRET" not in result["snapshot"]

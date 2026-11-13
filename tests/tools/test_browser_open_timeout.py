@@ -108,5 +108,5 @@ class TestBrowserNavigateOpenTimeout:
         monkeypatch.setattr(bt, "_maybe_start_recording", lambda *a, **kw: None)
         monkeypatch.setattr(bt, "check_website_access", lambda url: None)
 
-        bt.browser_navigate("https://example.com", task_id="task-1")
+        bt.navigate_browser("https://example.com", task_id="task-1")
         assert captured["timeout"] == 120

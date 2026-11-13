@@ -30,7 +30,7 @@ model: openrouter/nousresearch/hermes-3-llama-3.1-405b
 # System prompt additions (ephemeral — not saved to trajectories)
 ephemeral_system_prompt: |
   You are a highly capable research agent. When asked a factual question,
-  always use web_search to find current, accurate information before answering.
+  always use search_web to find current, accurate information before answering.
   Cite at least 2 sources. Be concise and accurate.
 
 # Output directory

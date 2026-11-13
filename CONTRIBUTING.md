@@ -43,7 +43,7 @@ This is the most common question for new contributors. The answer is almost alwa
 ### Make it a Skill when:
 
 - The capability can be expressed as instructions + shell commands + existing tools
-- It wraps an external CLI or API that the agent can call via `terminal` or `web_extract`
+- It wraps an external CLI or API that the agent can call via `terminal` or `extract_web`
 - It doesn't need custom Python integration or API key management baked into the agent
 - Examples: arXiv search, git workflows, Docker management, PDF processing, email via CLI tools
 
@@ -248,7 +248,7 @@ hermes-agent/
 │   ├── approval.py               # Dangerous command detection + per-session approval
 │   ├── terminal_tool.py          # Terminal orchestration (sudo, env lifecycle, backends)
 │   ├── file_operations.py        # read_file, write_file, search, patch, etc.
-│   ├── web_tools.py              # web_search, web_extract (Parallel/Firecrawl + Gemini summarization)
+│   ├── web_tools.py              # search_web, extract_web (Parallel/Firecrawl + Gemini summarization)
 │   ├── vision_tools.py           # Image analysis via multimodal models
 │   ├── delegate_tool.py          # Subagent spawning and parallel task execution
 │   ├── code_execution_tool.py    # Sandboxed Python with RPC tool access
@@ -475,7 +475,7 @@ How the agent confirms it worked.
 
 ### Platform-specific skills
 
-Skills can declare which OS platforms they support via the `platforms` frontmatter field. Skills with this field are automatically hidden from the system prompt, `skills_list()`, and slash commands on incompatible platforms.
+Skills can declare which OS platforms they support via the `platforms` frontmatter field. Skills with this field are automatically hidden from the system prompt, `list_skills()`, and slash commands on incompatible platforms.
 
 ```yaml
 platforms: [macos]            # macOS only (e.g., iMessage, Apple Reminders)
@@ -496,7 +496,7 @@ metadata:
   hermes:
     fallback_for_toolsets: [web]      # Show ONLY when these toolsets are unavailable
     requires_toolsets: [terminal]     # Show ONLY when these toolsets are available
-    fallback_for_tools: [web_search]  # Show ONLY when these specific tools are unavailable
+    fallback_for_tools: [search_web]  # Show ONLY when these specific tools are unavailable
     requires_tools: [terminal]        # Show ONLY when these specific tools are available
 ```
 
@@ -577,7 +577,7 @@ Every new or modernized skill — bundled, optional, or contributed — must mee
    Good: `Search arXiv papers by keyword, author, category, or ID.`
    Bad: `A powerful and comprehensive skill that allows the agent to search arXiv for relevant academic papers using various criteria including keywords, authors, and categories.`
 
-2. **Tools referenced in SKILL.md prose must be native Hermes tools or MCP servers the skill explicitly expects.** When the skill needs a capability, point at the proper tool by name in backticks: `` `terminal` ``, `` `web_extract` ``, `` `web_search` ``, `` `read_file` ``, `` `write_file` ``, `` `patch` ``, `` `search_files` ``, `` `vision_analyze` ``, `` `browser_navigate` ``, `` `delegate_task` ``, `` `image_generate` ``, `` `text_to_speech` ``, `` `cronjob` ``, `` `memory` ``, `` `skill_view` ``, `` `todo` ``, `` `execute_code` ``.
+2. **Tools referenced in SKILL.md prose must be native Hermes tools or MCP servers the skill explicitly expects.** When the skill needs a capability, point at the proper tool by name in backticks: `` `terminal` ``, `` `extract_web` ``, `` `search_web` ``, `` `read_file` ``, `` `write_file` ``, `` `patch` ``, `` `search_files` ``, `` `analyze_vision` ``, `` `navigate_browser` ``, `` `delegate_task` ``, `` `generate_image` ``, `` `text_to_speech` ``, `` `cronjob` ``, `` `memory` ``, `` `view_skill` ``, `` `todo` ``, `` `execute_code` ``.
 
    Do NOT name shell utilities the agent already has wrapped:
 
@@ -587,7 +587,7 @@ Every new or modernized skill — bundled, optional, or contributed — must mee
    | `cat`, `head`, `tail` | `read_file` |
    | `sed`, `awk` | `patch` |
    | `find`, `ls` | `search_files` (with `target='files'`) |
-   | `curl` for content extraction | `web_extract` |
+   | `curl` for content extraction | `extract_web` |
    | `echo > file`, `cat <<EOF` | `write_file` |
 
    If the skill depends on an MCP server, name the MCP server and document its setup in `## Prerequisites`. Third-party CLIs (e.g. `ffmpeg`, `gh`, a specific SDK) are fine to invoke from inside script files, but the prose should frame the interaction as "invoke through the `terminal` tool", not as a manual shell session.
@@ -615,7 +615,7 @@ Every new or modernized skill — bundled, optional, or contributed — must mee
 
 ### Skill guidelines
 
-- **No external dependencies unless absolutely necessary.** Prefer stdlib Python, curl, and existing Hermes tools (`web_extract`, `terminal`, `read_file`).
+- **No external dependencies unless absolutely necessary.** Prefer stdlib Python, curl, and existing Hermes tools (`extract_web`, `terminal`, `read_file`).
 - **Progressive disclosure.** Put the most common workflow first. Edge cases and advanced usage go at the bottom.
 - **Include helper scripts** for XML/JSON parsing or complex logic — don't expect the LLM to write parsers inline every time.
 - **Test it.** Run `hermes --toolsets skills -q "Use the X skill to do Y"` and verify the agent follows the instructions correctly.

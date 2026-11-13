@@ -104,14 +104,14 @@ describe('toChatMessages', () => {
         content: '',
         role: 'assistant',
         timestamp: 1,
-        tool_calls: [{ id: 'img-1', function: { name: 'image_generate', arguments: '{"prompt":"draw a cat"}' } }]
+        tool_calls: [{ id: 'img-1', function: { name: 'generate_image', arguments: '{"prompt":"draw a cat"}' } }]
       },
       {
         content: '{"success":true,"image":"https://cdn.example/cat.png"}',
         role: 'tool',
         timestamp: 2,
         tool_call_id: 'img-1',
-        tool_name: 'image_generate'
+        tool_name: 'generate_image'
       },
       {
         content: 'Here you go.\n\n![Generated image](https://cdn.example/cat.png)',
@@ -122,7 +122,7 @@ describe('toChatMessages', () => {
 
     const toolPart = message.parts.find(
       (part): part is Extract<ChatMessagePart, { type: 'tool-call' }> =>
-        part.type === 'tool-call' && part.toolName === 'image_generate'
+        part.type === 'tool-call' && part.toolName === 'generate_image'
     )
 
     expect(toolPart?.result).toMatchObject({ image: 'https://cdn.example/cat.png', success: true })
@@ -482,7 +482,7 @@ describe('upsertToolPart', () => {
       [],
       {
         context: 'tokyo weather',
-        name: 'web_search'
+        name: 'search_web'
       },
       'running'
     )
@@ -491,7 +491,7 @@ describe('upsertToolPart', () => {
       startedTokyo,
       {
         context: 'reykjavik weather',
-        name: 'web_search'
+        name: 'search_web'
       },
       'running'
     )
@@ -501,7 +501,7 @@ describe('upsertToolPart', () => {
       {
         context: 'tokyo weather',
         message: 'tokyo done',
-        name: 'web_search',
+        name: 'search_web',
         summary: 'Did 5 searches'
       },
       'complete'
@@ -512,7 +512,7 @@ describe('upsertToolPart', () => {
       {
         context: 'reykjavik weather',
         message: 'reykjavik done',
-        name: 'web_search',
+        name: 'search_web',
         summary: 'Did 5 searches'
       },
       'complete'
@@ -520,7 +520,7 @@ describe('upsertToolPart', () => {
 
     const webParts = completedBoth.filter(
       (part): part is Extract<ChatMessagePart, { type: 'tool-call' }> =>
-        part.type === 'tool-call' && part.toolName === 'web_search'
+        part.type === 'tool-call' && part.toolName === 'search_web'
     )
 
     const contexts = webParts.map(part => String((part.args as Record<string, unknown>)?.context || ''))
@@ -543,7 +543,7 @@ describe('upsertToolPart', () => {
       [],
       {
         context: 'auckland weather today and tomorrow forecast',
-        name: 'web_search',
+        name: 'search_web',
         tool_id: 'search-1'
       },
       'running'
@@ -553,7 +553,7 @@ describe('upsertToolPart', () => {
       started,
       {
         duration_s: 1.1,
-        name: 'web_search',
+        name: 'search_web',
         summary: 'Did 5 searches in 1.1s',
         tool_id: 'search-1'
       },
@@ -576,7 +576,7 @@ describe('upsertToolPart', () => {
       [],
       {
         context: 'reykjavik weather today and tomorrow forecast',
-        name: 'web_search'
+        name: 'search_web'
       },
       'running'
     )
@@ -585,7 +585,7 @@ describe('upsertToolPart', () => {
       startedA,
       {
         context: 'kathmandu weather today and tomorrow forecast',
-        name: 'web_search'
+        name: 'search_web'
       },
       'running'
     )
@@ -593,14 +593,14 @@ describe('upsertToolPart', () => {
     const progressed = upsertToolPart(
       startedB,
       {
-        name: 'web_search'
+        name: 'search_web'
       },
       'running'
     )
 
     const webParts = progressed.filter(
       (part): part is Extract<ChatMessagePart, { type: 'tool-call' }> =>
-        part.type === 'tool-call' && part.toolName === 'web_search'
+        part.type === 'tool-call' && part.toolName === 'search_web'
     )
 
     expect(webParts).toHaveLength(2)
@@ -611,7 +611,7 @@ describe('upsertToolPart', () => {
       [],
       {
         context: 'asuncion paraguay weather today and tomorrow forecast',
-        name: 'web_search'
+        name: 'search_web'
       },
       'running'
     )
@@ -621,7 +621,7 @@ describe('upsertToolPart', () => {
       {
         context: 'asuncion paraguay weather today and tomorrow forecast',
         duration_s: 1.1,
-        name: 'web_search',
+        name: 'search_web',
         summary: 'Did 5 searches in 1.1s',
         tool_id: 'search-asuncion'
       },
@@ -630,7 +630,7 @@ describe('upsertToolPart', () => {
 
     const webParts = completed.filter(
       (part): part is Extract<ChatMessagePart, { type: 'tool-call' }> =>
-        part.type === 'tool-call' && part.toolName === 'web_search'
+        part.type === 'tool-call' && part.toolName === 'search_web'
     )
 
     expect(webParts).toHaveLength(1)
@@ -643,7 +643,7 @@ describe('upsertToolPart', () => {
       [],
       {
         context: 'reykjavik tashkent uzbekistan weather today and tomorrow forecast',
-        name: 'web_search'
+        name: 'search_web'
       },
       'running'
     )
@@ -652,7 +652,7 @@ describe('upsertToolPart', () => {
       started,
       {
         context: 'reykjavik tashkent uzbekistan weather today and tomorrow forecast',
-        name: 'web_search',
+        name: 'search_web',
         tool_id: 'search-reykjavik'
       },
       'running'
@@ -660,7 +660,7 @@ describe('upsertToolPart', () => {
 
     const webParts = progressed.filter(
       (part): part is Extract<ChatMessagePart, { type: 'tool-call' }> =>
-        part.type === 'tool-call' && part.toolName === 'web_search'
+        part.type === 'tool-call' && part.toolName === 'search_web'
     )
 
     expect(webParts).toHaveLength(1)
@@ -671,7 +671,7 @@ describe('upsertToolPart', () => {
     const progressA = upsertToolPart(
       [],
       {
-        name: 'web_search',
+        name: 'search_web',
         preview: 'tokyo weather'
       },
       'running'
@@ -680,7 +680,7 @@ describe('upsertToolPart', () => {
     const progressB = upsertToolPart(
       progressA,
       {
-        name: 'web_search',
+        name: 'search_web',
         preview: 'reykjavik weather'
       },
       'running'
@@ -690,7 +690,7 @@ describe('upsertToolPart', () => {
       progressB,
       {
         args: { query: 'tokyo weather' },
-        name: 'web_search',
+        name: 'search_web',
         tool_id: 'search-tokyo'
       },
       'running'
@@ -700,7 +700,7 @@ describe('upsertToolPart', () => {
       startedA,
       {
         args: { query: 'reykjavik weather' },
-        name: 'web_search',
+        name: 'search_web',
         tool_id: 'search-reykjavik'
       },
       'running'
@@ -709,7 +709,7 @@ describe('upsertToolPart', () => {
     const completedA = upsertToolPart(
       startedB,
       {
-        name: 'web_search',
+        name: 'search_web',
         summary: 'Did 5 searches',
         tool_id: 'search-tokyo'
       },
@@ -719,7 +719,7 @@ describe('upsertToolPart', () => {
     const completedB = upsertToolPart(
       completedA,
       {
-        name: 'web_search',
+        name: 'search_web',
         summary: 'Did 5 searches',
         tool_id: 'search-reykjavik'
       },
@@ -729,7 +729,7 @@ describe('upsertToolPart', () => {
     const webParts = completedB
       .filter(
         (part): part is Extract<ChatMessagePart, { type: 'tool-call' }> =>
-          part.type === 'tool-call' && part.toolName === 'web_search'
+          part.type === 'tool-call' && part.toolName === 'search_web'
       )
       .map(part => ({
         id: part.toolCallId,
@@ -751,7 +751,7 @@ describe('upsertToolPart', () => {
       [],
       {
         args: { search_term: 'reykjavik bishkek kyrgyzstan weather today and tomorrow forecast' },
-        name: 'web_search',
+        name: 'search_web',
         tool_id: 'search-bishkek'
       },
       'running'
@@ -770,7 +770,7 @@ describe('upsertToolPart', () => {
       [],
       {
         args: { query: 'suva weather' },
-        name: 'web_search',
+        name: 'search_web',
         result: { data: { web: [{ title: 'Suva forecast', url: 'https://example.test', description: 'Sunny' }] } },
         summary: 'Did 1 search in 0.5s',
         tool_id: 'search-suva'

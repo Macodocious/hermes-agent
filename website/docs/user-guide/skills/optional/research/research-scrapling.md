@@ -41,7 +41,7 @@ The following is the complete skill definition that Hermes loads when this skill
 - Scraping JS-rendered pages that need a real browser
 - Bypassing Cloudflare Turnstile or bot detection
 - Crawling multiple pages with a spider
-- When the built-in `web_extract` tool does not return the data you need
+- When the built-in `extract_web` tool does not return the data you need
 
 ## Installation
 

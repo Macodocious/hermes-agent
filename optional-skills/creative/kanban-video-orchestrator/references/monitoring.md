@@ -41,7 +41,7 @@ deadlocks).
 ### Healthy pipeline indicators
 
 - Tasks transition `READY → RUNNING → DONE` in roughly the expected order
-- Renderers emit periodic `kanban_heartbeat` events with progress (e.g. "frame
+- Renderers emit periodic `heartbeat_kanban` events with progress (e.g. "frame
   240/720")
 - Each task's runtime is well under its `max_runtime_seconds` cap
 - No task accumulates more than 1 retry
@@ -55,7 +55,7 @@ deadlocks).
 | Same task retried 2+ times | Reproducible failure (missing key, bad spec, broken tool) | `hermes kanban show <id>` to read failure events. Fix root cause before re-running. |
 | RUNNING longer than max_runtime | Task is slow but progressing OR genuinely stuck | Check heartbeats with `hermes kanban tail <id>`. If progressing, the dispatcher will SIGTERM eventually anyway — raise `max-runtime` on a re-created task. |
 | Child task READY but parents still RUNNING for >2× expected | Cascade slow, dependency miswired | Check the dependency graph. Inspect the parent: sometimes it completed but its handoff fields (summary, metadata) were empty so the child has nothing to consume. |
-| New tasks not appearing | Director is hung in decomposition | Inspect director task with `kanban show`. Often a malformed `kanban_create` call. |
+| New tasks not appearing | Director is hung in decomposition | Inspect director task with `kanban show`. Often a malformed `create_kanban` call. |
 | Specialist tasks completing instantly | Decomposition created tasks without bodies | Director didn't pass enough context. Re-create with explicit body content. |
 | Tasks created but never picked up | Profile not running, or tenant mismatch, or dispatcher not running | Check `hermes profile list` (profile exists?), `hermes status` (gateway/dispatcher up?), and verify tenant. |
 | Specific renderer task fails → review note → renderer redoes → fails again | Brief is asking for the impossible | Pivot the brief, not the renderer. |

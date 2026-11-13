@@ -17,31 +17,31 @@ class TestHermesApiServerToolset:
 
     def test_toolset_includes_web_tools(self):
         tools = resolve_toolset("hermes-api-server")
-        assert "web_search" in tools
-        assert "web_extract" in tools
+        assert "search_web" in tools
+        assert "extract_web" in tools
 
     def test_toolset_includes_core_tools(self):
         tools = resolve_toolset("hermes-api-server")
         expected = [
             "terminal", "process",
             "read_file", "write_file", "patch", "search_files",
-            "vision_analyze", "image_generate",
+            "analyze_vision", "generate_image",
             "execute_code", "delegate_task",
-            "todo", "memory", "session_search", "cronjob",
+            "todo", "memory", "search_session", "cronjob",
         ]
         for tool in expected:
             assert tool in tools, f"Missing expected tool: {tool}"
 
     def test_toolset_includes_browser_tools(self):
         tools = resolve_toolset("hermes-api-server")
-        for tool in ["browser_navigate", "browser_snapshot", "browser_click",
-                      "browser_type", "browser_scroll", "browser_back",
-                      "browser_press"]:
+        for tool in ["navigate_browser", "snapshot_browser", "click_browser",
+                      "type_browser", "scroll_browser", "back_browser",
+                      "press_browser"]:
             assert tool in tools, f"Missing browser tool: {tool}"
 
     def test_toolset_includes_homeassistant_tools(self):
         tools = resolve_toolset("hermes-api-server")
-        for tool in ["ha_list_entities", "ha_get_state", "ha_list_services", "ha_call_service"]:
+        for tool in ["list_ha_entities", "get_ha_state", "list_ha_services", "call_ha_service"]:
             assert tool in tools, f"Missing HA tool: {tool}"
 
     def test_toolset_excludes_clarify(self):
@@ -113,7 +113,7 @@ class TestApiServerPlatformConfig:
         assert "homeassistant" not in enabled
         assert "discord" not in enabled
         assert "discord_admin" not in enabled
-        assert "x_search" not in enabled
+        assert "search_x" not in enabled
 
 
 class TestApiServerAdapterToolset:

@@ -2,7 +2,7 @@
 
 The main OpenAI client resolves per-provider ``ssl_ca_cert`` / ``ssl_verify`` and
 ``HERMES_CA_BUNDLE`` via ``agent.ssl_verify.resolve_httpx_verify``. Auxiliary calls
-(compression, vision, web_extract, title generation, session_search) build their own
+(compression, vision, extract_web, title generation, search_session) build their own
 keepalive client through ``agent.process_bootstrap.build_keepalive_http_client`` and must
 apply the same TLS settings — otherwise an HTTPS custom_providers endpoint signed by a
 private CA works for chat but fails ``APIConnectionError`` on every auxiliary task.

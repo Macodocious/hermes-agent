@@ -811,7 +811,7 @@ class TestVisionRegistration:
     def test_vision_analyze_registered(self):
         from tools.registry import registry
 
-        entry = registry._tools.get("vision_analyze")
+        entry = registry._tools.get("analyze_vision")
         assert entry is not None
         assert entry.toolset == "vision"
         assert entry.is_async is True
@@ -819,9 +819,9 @@ class TestVisionRegistration:
     def test_schema_has_required_fields(self):
         from tools.registry import registry
 
-        entry = registry._tools.get("vision_analyze")
+        entry = registry._tools.get("analyze_vision")
         schema = entry.schema
-        assert schema["name"] == "vision_analyze"
+        assert schema["name"] == "analyze_vision"
         params = schema.get("parameters", {})
         props = params.get("properties", {})
         assert "image_url" in props
@@ -830,7 +830,7 @@ class TestVisionRegistration:
     def test_handler_is_callable(self):
         from tools.registry import registry
 
-        entry = registry._tools.get("vision_analyze")
+        entry = registry._tools.get("analyze_vision")
         assert callable(entry.handler)
 
 
@@ -1160,7 +1160,7 @@ class TestDownloadRetryClassification:
 
 # ---------------------------------------------------------------------------
 # CPU-burst concurrency cap — a single turn (or several concurrent sessions in
-# one process) can launch dozens of vision_analyze calls at once. Only the
+# one process) can launch dozens of analyze_vision calls at once. Only the
 # CPU-bound encode/resize is bounded (to host cores), so a video-frame storm
 # can't saturate every core and starve the dashboard event loop — while the
 # network-bound LLM calls stay fully concurrent for legitimate multi-image work.

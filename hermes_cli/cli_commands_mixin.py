@@ -1599,7 +1599,7 @@ class CLICommandsMixin:
         directory, a URL, "what we just did", pasted notes. We build a
         standards-guided prompt and inject it onto the agent's input queue; the
         live agent gathers the material with the tools it already has and
-        authors the skill via ``skill_manage``. No engine, no model-tool
+        authors the skill via ``manage_skill``. No engine, no model-tool
         footprint, works on any terminal backend.
         """
         from agent.learn_prompt import build_learn_prompt
@@ -1966,7 +1966,7 @@ class CLICommandsMixin:
 
             os.environ["BROWSER_CDP_URL"] = cdp_url
             # Eagerly start the CDP supervisor so pending_dialogs + frame_tree
-            # show up in the next browser_snapshot.  No-op if already started.
+            # show up in the next snapshot_browser.  No-op if already started.
             try:
                 from tools.browser_tool import _ensure_cdp_supervisor  # type: ignore[import-not-found]
                 _ensure_cdp_supervisor("default")
@@ -1983,7 +1983,7 @@ class CLICommandsMixin:
                 self._pending_input.put(
                     "[System note: The user invoked /browser connect and connected your browser tools to "
                     "a Chromium-family dev/debug browser via Chrome DevTools Protocol. "
-                    "Your browser_navigate, browser_snapshot, browser_click, and other browser tools now "
+                    "Your navigate_browser, snapshot_browser, click_browser, and other browser tools now "
                     "control that CDP browser. The command itself is a signal that using browser tools for "
                     "their current browser-related request is expected; do not wait for separate permission "
                     "just because CDP is connected. This is typically a Hermes-managed isolated debug "

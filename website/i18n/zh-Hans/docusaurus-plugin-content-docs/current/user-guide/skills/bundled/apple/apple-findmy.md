@@ -62,9 +62,9 @@ sleep 3
 screencapture -w -o /tmp/findmy.png
 ```
 
-然后使用 `vision_analyze` 读取截图：
+然后使用 `analyze_vision` 读取截图：
 ```
-vision_analyze(image_url="/tmp/findmy.png", question="What devices/items are shown and what are their locations?")
+analyze_vision(image_url="/tmp/findmy.png", question="What devices/items are shown and what are their locations?")
 ```
 
 ### 切换标签页
@@ -108,7 +108,7 @@ peekaboo image --app "FindMy" --path /tmp/findmy-detail.png
 
 然后使用 vision 进行分析：
 ```
-vision_analyze(image_url="/tmp/findmy-detail.png", question="What is the location shown for this device/item? Include address and coordinates if visible.")
+analyze_vision(image_url="/tmp/findmy-detail.png", question="What is the location shown for this device/item? Include address and coordinates if visible.")
 ```
 
 ## 工作流：随时间追踪 AirTag 位置
@@ -142,6 +142,6 @@ done
 ## 规则
 
 1. 追踪 AirTag 时保持 FindMy 应用在前台（最小化后更新将停止）
-2. 使用 `vision_analyze` 读取截图内容——不要尝试直接解析像素
+2. 使用 `analyze_vision` 读取截图内容——不要尝试直接解析像素
 3. 如需持续追踪，使用 cronjob 定期捕获并记录位置
 4. 尊重隐私——仅追踪用户本人拥有的设备/物品

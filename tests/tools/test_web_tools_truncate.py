@@ -1,4 +1,4 @@
-"""Unit tests for the truncate-and-store web_extract path (no LLM).
+"""Unit tests for the truncate-and-store extract_web path (no LLM).
 
 Covers convert_base64_images_to_links, _truncate_with_footer, _store_full_text,
 _get_extract_char_limit, and the end-to-end web_extract_tool truncation behavior.

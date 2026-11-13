@@ -1,4 +1,4 @@
-"""Entry point for the `computer_use` tool.
+"""Entry point for the `use_computer` tool.
 
 Universal (any-model) desktop control across macOS, Windows, and Linux via
 cua-driver's background computer-use primitive. Replaces #4562's
@@ -48,7 +48,7 @@ import sys
 import threading
 from typing import Any, Dict, List, Optional, Tuple
 
-from tools.computer_use.backend import (
+from tools.use_computer.backend import (
     ActionResult,
     CaptureResult,
     ComputerUseBackend,
@@ -66,7 +66,7 @@ _approval_callback = None
 
 
 def set_approval_callback(cb) -> None:
-    """Register a callback for computer_use approval prompts (used by CLI).
+    """Register a callback for use_computer approval prompts (used by CLI).
 
     Matches the terminal_tool._approval_callback pattern. The callback
     receives (action, args, summary) and returns one of:
@@ -157,7 +157,7 @@ def _get_backend() -> ComputerUseBackend:
         if _backend is None:
             backend_name = os.environ.get("HERMES_COMPUTER_USE_BACKEND", "cua").lower()
             if backend_name in {"cua", "cua-driver", ""}:
-                from tools.computer_use.cua_backend import CuaDriverBackend
+                from tools.use_computer.cua_backend import CuaDriverBackend
                 _backend = CuaDriverBackend()
             elif backend_name == "noop":  # pragma: no cover
                 _backend = _NoopBackend()
@@ -275,7 +275,7 @@ def handle_computer_use(args: Dict[str, Any], **kwargs) -> Any:
         if pat:
             return json.dumps({
                 "error": f"blocked pattern in type text: {pat!r}",
-                "hint": "Dangerous shell patterns cannot be typed via computer_use.",
+                "hint": "Dangerous shell patterns cannot be typed via use_computer.",
             })
 
     if action == "key":
@@ -299,7 +299,7 @@ def handle_computer_use(args: Dict[str, Any], **kwargs) -> Any:
         backend = _get_backend()
     except Exception as e:
         return json.dumps({
-            "error": f"computer_use backend unavailable: {e}",
+            "error": f"use_computer backend unavailable: {e}",
             "hint": "If the cua-driver binary is missing, run `hermes computer-use install`. "
                     "If a Python dependency is missing, the error above shows the exact install command.",
         })
@@ -307,7 +307,7 @@ def handle_computer_use(args: Dict[str, Any], **kwargs) -> Any:
     try:
         return _dispatch(backend, action, args)
     except Exception as e:
-        logger.exception("computer_use %s failed", action)
+        logger.exception("use_computer %s failed", action)
         return json.dumps({"error": f"{action} failed: {e}"})
 
 
@@ -540,7 +540,7 @@ def _image_dimensions_from_b64(image_b64: str) -> Optional[Tuple[int, int]]:
     """Return (width, height) for common inline screenshot formats.
 
     Some providers reject images below 8x8 before the model sees the tool
-    result. Inspecting the encoded bytes here lets computer_use fall back to
+    result. Inspecting the encoded bytes here lets use_computer fall back to
     its AX/SOM text payload instead of sending an unusable placeholder.
     """
     if not image_b64:
@@ -770,7 +770,7 @@ def _shrink_capture_for_vision(raw: bytes, ext: str,
         img.save(out, format="JPEG" if ext == ".jpg" else "PNG")
         return out.getvalue()
     except Exception as exc:
-        logger.debug("computer_use: vision downscale skipped: %s", exc)
+        logger.debug("use_computer: vision downscale skipped: %s", exc)
         return raw
 
 def _should_route_through_aux_vision() -> bool:
@@ -785,23 +785,23 @@ def _should_route_through_aux_vision() -> bool:
     try:
         from agent.auxiliary_client import _read_main_model, _read_main_provider
         from hermes_cli.config import load_config
-        from tools.computer_use.vision_routing import (
+        from tools.use_computer.vision_routing import (
             should_route_capture_to_aux_vision,
         )
     except Exception as exc:  # pragma: no cover - defensive
-        logger.debug("computer_use: aux-vision routing import failed: %s", exc)
+        logger.debug("use_computer: aux-vision routing import failed: %s", exc)
         return False
     try:
         provider = _read_main_provider()
         model = _read_main_model()
         cfg = load_config()
     except Exception as exc:  # pragma: no cover - defensive
-        logger.debug("computer_use: aux-vision routing config read failed: %s", exc)
+        logger.debug("use_computer: aux-vision routing config read failed: %s", exc)
         return False
     try:
         return bool(should_route_capture_to_aux_vision(provider, model, cfg))
     except Exception as exc:  # pragma: no cover - defensive
-        logger.debug("computer_use: aux-vision routing decision failed: %s", exc)
+        logger.debug("use_computer: aux-vision routing decision failed: %s", exc)
         return False
 
 
@@ -809,7 +809,7 @@ def _route_capture_through_aux_vision(
     cap: CaptureResult,
     summary: str,
 ) -> Optional[str]:
-    """Pre-analyse the captured PNG via ``vision_analyze`` and return a text result.
+    """Pre-analyse the captured PNG via ``analyze_vision`` and return a text result.
 
     The captured base64 PNG is materialised to ``$HERMES_HOME/cache/vision/``
     and handed to ``vision_analyze_tool`` with a generic describe prompt.
@@ -833,7 +833,7 @@ def _route_capture_through_aux_vision(
         from model_tools import _run_async
         from tools.vision_tools import vision_analyze_tool
     except Exception as exc:  # pragma: no cover - defensive
-        logger.debug("computer_use: aux-vision import failed: %s", exc)
+        logger.debug("use_computer: aux-vision import failed: %s", exc)
         return None
 
     temp_image_path = None
@@ -841,10 +841,10 @@ def _route_capture_through_aux_vision(
         try:
             raw = _base64.b64decode(cap.png_b64, validate=False)
         except Exception as exc:
-            logger.debug("computer_use: failed to decode capture base64: %s", exc)
+            logger.debug("use_computer: failed to decode capture base64: %s", exc)
             return None
 
-        # Pick an extension that matches the on-disk bytes so vision_analyze's
+        # Pick an extension that matches the on-disk bytes so analyze_vision's
         # MIME sniffing returns the right content-type.
         # Surface 7: prefer the explicit MIME type cua-driver supplied.
         _mime_for_ext = cap.image_mime_type or ""
@@ -873,7 +873,7 @@ def _route_capture_through_aux_vision(
         )
     except Exception as exc:
         logger.warning(
-            "computer_use: auxiliary.vision pre-analysis failed (%s); "
+            "use_computer: auxiliary.vision pre-analysis failed (%s); "
             "returning to caller without aux analysis",
             exc,
         )
@@ -979,7 +979,7 @@ def _element_to_dict(e: UIElement) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 def check_computer_use_requirements() -> bool:
-    """Return True iff computer_use can run on this host.
+    """Return True iff use_computer can run on this host.
 
     Conditions: macOS, Windows, or Linux + cua-driver binary installed (or
     override via env). cua-driver runs on all three; the Linux path is
@@ -990,10 +990,10 @@ def check_computer_use_requirements() -> bool:
     """
     if sys.platform not in ("darwin", "win32", "linux"):
         return False
-    from tools.computer_use.cua_backend import cua_driver_binary_available
+    from tools.use_computer.cua_backend import cua_driver_binary_available
     return cua_driver_binary_available()
 
 
 def get_computer_use_schema() -> Dict[str, Any]:
-    from tools.computer_use.schema import COMPUTER_USE_SCHEMA
+    from tools.use_computer.schema import COMPUTER_USE_SCHEMA
     return COMPUTER_USE_SCHEMA

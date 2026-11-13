@@ -422,7 +422,7 @@ class GatewayKanbanWatchersMixin:
                             )
                             # After delivering the text notification, surface
                             # any artifact paths the worker referenced in
-                            # ``kanban_complete(summary=..., artifacts=[...])``
+                            # ``complete_kanban(summary=..., artifacts=[...])``
                             # (or the legacy ``result`` field) as native
                             # uploads. ``extract_local_files`` finds bare
                             # absolute paths in the summary;
@@ -643,7 +643,7 @@ class GatewayKanbanWatchersMixin:
     ) -> None:
         """Upload artifact files referenced by a completed kanban task.
 
-        Workers passing ``kanban_complete(artifacts=[...])`` ship absolute
+        Workers passing ``complete_kanban(artifacts=[...])`` ship absolute
         file paths through the completion event so downstream humans get
         the deliverable as a native upload instead of a path printed in
         chat.

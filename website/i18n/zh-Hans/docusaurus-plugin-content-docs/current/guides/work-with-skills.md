@@ -70,15 +70,15 @@ excalidraw        Create hand-drawn style diagrams using Excalidraw...
 /excalidraw
 ```
 
-你也可以通过自然对话触发 skills——告诉 Hermes 使用某个特定 skill，它会通过 `skill_view` 工具加载。
+你也可以通过自然对话触发 skills——告诉 Hermes 使用某个特定 skill，它会通过 `view_skill` 工具加载。
 
 ### 渐进式加载
 
 Skills 采用 token 高效的加载模式，agent 不会一次性加载所有内容：
 
-1. **`skills_list()`** — 所有 skills 的紧凑列表（约 3k tokens），在会话开始时加载。
-2. **`skill_view(name)`** — 单个 skill 的完整 SKILL.md 内容，在 agent 判断需要该 skill 时加载。
-3. **`skill_view(name, file_path)`** — skill 内的特定参考文件，仅在需要时加载。
+1. **`list_skills()`** — 所有 skills 的紧凑列表（约 3k tokens），在会话开始时加载。
+2. **`view_skill(name)`** — 单个 skill 的完整 SKILL.md 内容，在 agent 判断需要该 skill 时加载。
+3. **`view_skill(name, file_path)`** — skill 内的特定参考文件，仅在需要时加载。
 
 这意味着 skills 在真正被使用之前不消耗任何 tokens。
 
@@ -102,7 +102,7 @@ hermes skills install https://sharethis.chat/SKILL.md
 
 安装过程：
 1. skill 目录被复制到 `~/.hermes/skills/`
-2. 出现在 `skills_list` 输出中
+2. 出现在 `list_skills` 输出中
 3. 成为可用的斜杠命令
 
 :::tip
@@ -127,13 +127,13 @@ hermes skills list | grep arxiv
 
 ```bash
 # 通过限定名称加载插件 skill
-skill_view("superpowers:writing-plans")
+view_skill("superpowers:writing-plans")
 
 # 同名的内置 skill 不受影响
-skill_view("writing-plans")
+view_skill("writing-plans")
 ```
 
-插件 skills **不会**列在系统 prompt 中，也不出现在 `skills_list` 中。它们是按需加载的——当你知道某个插件提供了某个 skill 时，显式加载它。加载后，agent 会看到一个横幅，列出同一插件的其他 skills。
+插件 skills **不会**列在系统 prompt 中，也不出现在 `list_skills` 中。它们是按需加载的——当你知道某个插件提供了某个 skill 时，显式加载它。加载后，agent 会看到一个横幅，列出同一插件的其他 skills。
 
 关于如何在自己的插件中捆绑 skills，请参见 [构建 Hermes 插件 → 捆绑 skills](/developer-guide/plugins#bundle-skills)。
 
@@ -227,7 +227,7 @@ my-skill/
 在 SKILL.md 中引用这些文件：
 
 ```markdown
-For API details, load the reference: `skill_view("my-skill", "references/api-docs.md")`
+For API details, load the reference: `view_skill("my-skill", "references/api-docs.md")`
 ```
 
 ### 4. 测试
@@ -241,7 +241,7 @@ hermes chat -q "/my-skill help me with the thing"
 Skill 会自动出现——无需注册。放入 `~/.hermes/skills/` 即可立即生效。
 
 :::info
-Agent 也可以使用 `skill_manage` 自行创建和更新 skills。解决复杂问题后，Hermes 可能会主动提议将该方法保存为 skill，以便下次使用。
+Agent 也可以使用 `manage_skill` 自行创建和更新 skills。解决复杂问题后，Hermes 可能会主动提议将该方法保存为 skill，以便下次使用。
 :::
 
 ---

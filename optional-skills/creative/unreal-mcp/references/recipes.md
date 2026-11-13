@@ -91,7 +91,7 @@ Brief: "a sunny clearing with some rocks and a path"
 - INTENT hero still.
   VALUES `HighResShot 3840x2160` from a framed viewpoint (see Recipe C
   Phase 2 for framing rules).
-  VERIFY file exists in Saved/Screenshots; `vision_analyze` against brief;
+  VERIFY file exists in Saved/Screenshots; `analyze_vision` against brief;
   iterate lighting yaw/fog once if flat. 💾 Report actor labels + paths.
 
 ---
@@ -180,7 +180,7 @@ Brief: "make it golden hour and give me a cinematic shot of <subject>"
   piloted camera. For a sequence/turntable instead of a still: this needs a
   Level Sequence with a Camera Cut track + Movie Render Queue — treat as
   its own task; warn about first-render shader-compile stall.
-  VERIFY read file, `vision_analyze`: rim light present? focus falloff on
+  VERIFY read file, `analyze_vision`: rim light present? focus falloff on
   the right plane? horizon off-center? Iterate at most twice, then deliver
   MEDIA: path + what was changed. 💾
 

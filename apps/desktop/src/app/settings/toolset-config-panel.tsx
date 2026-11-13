@@ -707,7 +707,7 @@ export function ToolsetConfigPanel({ toolset, onConfiguredChange }: ToolsetConfi
   return (
     <div className="grid gap-2">
       {toolset === 'web' && cfg.active_search_backend !== undefined && (
-        // The runtime dispatches web_search and web_extract independently
+        // The runtime dispatches search_web and extract_web independently
         // (web.search_backend / web.extract_backend) — show which backend
         // each capability resolves to right now.
         <div className="flex flex-wrap items-center gap-2 px-1">

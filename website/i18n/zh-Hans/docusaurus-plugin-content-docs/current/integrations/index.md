@@ -22,7 +22,7 @@ Hermes 开箱即支持多个 AI 推理提供商。使用 `hermes model` 进行�
 
 ## 网页搜索后端
 
-`web_search` 和 `web_extract` 工具支持四个后端提供商，通过 `config.yaml` 或 `hermes tools` 配置：
+`search_web` 和 `extract_web` 工具支持四个后端提供商，通过 `config.yaml` 或 `hermes tools` 配置：
 
 | 后端 | 环境变量 | 搜索 | 提取 | 爬取 |
 |---------|---------|--------|---------|-------|
@@ -88,7 +88,7 @@ Hermes 可作为 gateway（网关）机器人运行于 19+ 个消息平台，均
 
 ## 家庭自动化
 
-- **[Home Assistant](/user-guide/messaging/homeassistant)** — 通过四个专用工具（`ha_list_entities`、`ha_get_state`、`ha_list_services`、`ha_call_service`）控制智能家居设备。配置 `HASS_TOKEN` 后，Home Assistant 工具集将自动激活。
+- **[Home Assistant](/user-guide/messaging/homeassistant)** — 通过四个专用工具（`list_ha_entities`、`get_ha_state`、`list_ha_services`、`call_ha_service`）控制智能家居设备。配置 `HASS_TOKEN` 后，Home Assistant 工具集将自动激活。
 
 ## 插件
 

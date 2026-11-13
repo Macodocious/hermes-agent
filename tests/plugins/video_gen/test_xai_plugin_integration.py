@@ -1,7 +1,7 @@
 """Integration tests for the xAI video gen plugin's simplified surface.
 
 xAI exposes only text-to-video and image-to-video through the unified
-``video_generate`` tool. We assert the endpoint hit and the payload shape
+``generate_video`` tool. We assert the endpoint hit and the payload shape
 because routing is the part most likely to break silently.
 """
 

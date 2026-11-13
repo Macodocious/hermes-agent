@@ -4023,12 +4023,12 @@ def _tool_summary(name: str, result: str, duration_s: float | None) -> str | Non
     suffix = f" in {dur}" if dur else ""
     text = None
 
-    if name == "web_search" and isinstance(data, dict):
+    if name == "search_web" and isinstance(data, dict):
         n = _count_list(data, "data", "web")
         if n is not None:
             text = f"Did {n} {'search' if n == 1 else 'searches'}"
 
-    elif name == "web_extract" and isinstance(data, dict):
+    elif name == "extract_web" and isinstance(data, dict):
         n = _count_list(data, "results") or _count_list(data, "data", "results")
         if n is not None:
             text = f"Extracted {n} {'page' if n == 1 else 'pages'}"
@@ -5306,7 +5306,7 @@ def _enrich_with_attached_images(user_text: str, image_paths: list[str]) -> str:
         p = Path(path)
         if not p.exists():
             continue
-        hint = f"[You can examine it with vision_analyze using image_url: {p}]"
+        hint = f"[You can examine it with analyze_vision using image_url: {p}]"
         try:
             r = _json.loads(
                 asyncio.run(vision_analyze_tool(image_url=str(p), user_prompt=prompt))
@@ -5653,7 +5653,7 @@ def _handle_busy_submit(
 
     The old rejection forced clients into a deadline-bounded busy-retry that
     silently dropped the send when turn teardown outlived the deadline (e.g. a
-    slow, non-interruptible tool like ``web_search`` running when the user hits
+    slow, non-interruptible tool like ``search_web`` running when the user hits
     stop). The message is instead queued to run as the next turn — and, for the
     default ``interrupt`` policy, the live turn is interrupted so it winds down
     promptly. Drained in ``run``'s tail (see ``_run_prompt_submit``).
@@ -10003,7 +10003,7 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
             # Decide image routing per-turn based on active provider/model.
             # "native" → pass pixels to the main model as OpenAI-style content
             # parts (adapters translate for Anthropic/Gemini/Bedrock/etc.).
-            # "text"   → pre-analyze with vision_analyze and prepend the text.
+            # "text"   → pre-analyze with analyze_vision and prepend the text.
             # See agent/image_routing.py for the full decision table.
             run_message: Any = prompt
             if images:
@@ -13312,7 +13312,7 @@ def _(rid, params: dict) -> dict:
         # Open-ended: build the standards-guided prompt and submit it as a
         # normal agent turn. The live agent gathers whatever the user
         # described (dirs, URLs, this conversation, pasted text) with its own
-        # tools and authors the skill via skill_manage. Works on any backend.
+        # tools and authors the skill via manage_skill. Works on any backend.
         from agent.learn_prompt import build_learn_prompt
 
         return _ok(rid, {"type": "send", "message": build_learn_prompt(arg)})
@@ -15318,7 +15318,7 @@ def _resolve_browser_cdp_url() -> str:
     var first, then ``browser.cdp_url`` from config.yaml) without the
     websocket-resolution step, so the answer reflects user intent
     even when the configured host is not currently reachable.  The
-    actual WS normalization happens in ``browser_navigate`` on the
+    actual WS normalization happens in ``navigate_browser`` on the
     next tool call.
     """
     env_url = os.environ.get("BROWSER_CDP_URL", "").strip()
@@ -15465,7 +15465,7 @@ def _browser_connect(rid, params: dict) -> dict:
     try:
         # ws[s]://.../devtools/browser/<id> endpoints (hosted CDP
         # providers) don't serve the HTTP discovery path; just check
-        # TCP-level reachability and let browser_navigate handshake.
+        # TCP-level reachability and let navigate_browser handshake.
         if parsed.scheme in {"ws", "wss"} and parsed.path.startswith(
             "/devtools/browser/"
         ):
