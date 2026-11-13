@@ -20651,9 +20651,13 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     if _remaining > 0:
                         # Wait out the throttle interval, then loop back to
                         # drain any additional queued messages before sending
-                        # a single batched edit.
+                        # a single batched edit. When nothing else is queued,
+                        # fall through and write: a line buffered here would
+                        # otherwise never render, because a run that ends
+                        # before the next tool line never flushes it again.
                         await asyncio.sleep(_remaining)
-                        continue
+                        if not progress_queue.empty():
+                            continue
 
                     if not _run_still_current():
                         return
