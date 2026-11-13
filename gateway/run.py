@@ -20827,6 +20827,19 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         # Bridge sync status_callback → async adapter.send for context pressure
         _status_adapter = self._adapter_for_source(source)
         _status_chat_id = source.chat_id
+
+        def _live_adapter() -> Optional[Any]:
+            """Re-resolve the platform adapter at send time.
+
+            A turn captures its adapter when the message arrives, but a
+            platform reconnect builds a new adapter instance and swaps it into
+            ``self.adapters`` while nulling the old instance's client. Sends
+            still aimed at the captured object then fail with "Not connected":
+            progress updates go silent, and an approval prompt never appears
+            while the approval wait blocks with nothing to click.
+            """
+            return self._adapter_for_source(source) or _status_adapter
+
         if source.platform == Platform.FEISHU and source.thread_id and event_message_id:
             # Feishu topics only keep messages inside the topic when they are
             # sent via the reply API with reply_in_thread=true. Status/interim,
@@ -20856,7 +20869,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 )
                 return
             _fut = safe_schedule_threadsafe(
-                _send_or_update_status_coro(_status_adapter, _status_chat_id, event_type, prepared_message, _status_thread_metadata),
+                _send_or_update_status_coro(_live_adapter(), _status_chat_id, event_type, prepared_message, _status_thread_metadata),
                 _loop_for_step,
                 logger=logger,
                 log_message=f"status_callback ({event_type}) scheduling error",
@@ -21052,7 +21065,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 if already_streamed or not _status_adapter or not str(display_text or "").strip():
                     return
                 safe_schedule_threadsafe(
-                    _status_adapter.send(
+                    _live_adapter().send(
                         _status_chat_id,
                         display_text,
                         metadata=_status_thread_metadata,
@@ -21700,7 +21713,13 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 # is active.  The approval message send auto-clears the Slack
                 # status; pausing prevents _keep_typing from re-setting it.
                 # Typing resumes in _handle_approve_command/_handle_deny_command.
-                _status_adapter.pause_typing_for_chat(_status_chat_id)
+                #
+                # Resolve the adapter afresh: this closure runs from the agent
+                # thread and can fire minutes after the turn started (the gate
+                # blocks on a user click), so a reconnect in between has already
+                # replaced the adapter a turn captured. See _live_adapter.
+                _notify_adapter = _live_adapter()
+                _notify_adapter.pause_typing_for_chat(_status_chat_id)
 
                 cmd = approval_data.get("command", "")
                 desc = approval_data.get("description", "dangerous command")
@@ -21716,10 +21735,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 # Prefer button-based approval when the adapter supports it.
                 # Check the *class* for the method, not the instance — avoids
                 # false positives from MagicMock auto-attribute creation in tests.
-                if getattr(type(_status_adapter), "send_exec_approval", None) is not None:
+                if getattr(type(_notify_adapter), "send_exec_approval", None) is not None:
                     try:
                         _approval_fut = safe_schedule_threadsafe(
-                            _status_adapter.send_exec_approval(
+                            _notify_adapter.send_exec_approval(
                                 chat_id=_status_chat_id,
                                 command=cmd,
                                 session_key=_approval_session_key,
@@ -21750,7 +21769,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 # typed prefix so Slack/Matrix users are told the form they
                 # can actually type (`!approve`) — typed "/" is blocked in
                 # Slack threads and reserved by Matrix clients.
-                _p = getattr(_status_adapter, "typed_command_prefix", "/")
+                _p = getattr(_notify_adapter, "typed_command_prefix", "/")
                 msg = _format_exec_approval_fallback(
                     cmd,
                     desc,
@@ -21760,7 +21779,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 )
                 try:
                     _approval_send_fut = safe_schedule_threadsafe(
-                        _status_adapter.send(
+                        _notify_adapter.send(
                             _status_chat_id,
                             msg,
                             metadata=_status_thread_metadata,
@@ -21770,7 +21789,18 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                         log_message="Approval text-send scheduling error",
                     )
                     if _approval_send_fut is not None:
-                        _approval_send_fut.result(timeout=15)
+                        _fallback_result = _approval_send_fut.result(timeout=15)
+                        # An unchecked fallback is how a failed prompt turns
+                        # into a silent block: the gate then waits for a click
+                        # on a message that never reached the chat.
+                        if _fallback_result is not None and not getattr(
+                            _fallback_result, "success", True
+                        ):
+                            logger.error(
+                                "Approval text fallback failed (%s) — the approval "
+                                "wait has no prompt in chat to resolve",
+                                getattr(_fallback_result, "error", "unknown error"),
+                            )
                 except Exception as _e:
                     logger.error("Failed to send approval request: %s", _e)
 
