@@ -66,7 +66,7 @@ def _resolve(conn, token: str):
     return None
 
 
-def project_list(task_id: Optional[str] = None) -> str:
+def list_project(task_id: Optional[str] = None) -> str:
     from hermes_cli import projects_db as pdb
 
     with pdb.connect_closing() as conn:
@@ -88,7 +88,7 @@ def project_list(task_id: Optional[str] = None) -> str:
     })
 
 
-def project_create(name: str, path: Optional[str] = None, task_id: Optional[str] = None) -> str:
+def create_project(name: str, path: Optional[str] = None, task_id: Optional[str] = None) -> str:
     name = (name or "").strip()
     if not name:
         return json.dumps({"success": False, "error": "name is required"})
@@ -116,7 +116,7 @@ def project_create(name: str, path: Optional[str] = None, task_id: Optional[str]
     return json.dumps({"success": True, "id": proj.id, "slug": proj.slug, "name": proj.name, "primary_path": primary})
 
 
-def project_switch(project: str, task_id: Optional[str] = None) -> str:
+def switch_project(project: str, task_id: Optional[str] = None) -> str:
     from hermes_cli import projects_db as pdb
 
     with pdb.connect_closing() as conn:
@@ -132,21 +132,21 @@ def project_switch(project: str, task_id: Optional[str] = None) -> str:
 
 
 registry.register(
-    name="project_list",
+    name="list_project",
     toolset="project",
     schema={
-        "name": "project_list",
+        "name": "list_project",
         "description": "List the desktop Projects (named workspaces) and which one is active.",
         "parameters": {"type": "object", "properties": {}},
     },
-    handler=lambda args, **kw: project_list(task_id=kw.get("task_id")),
+    handler=lambda args, **kw: list_project(task_id=kw.get("task_id")),
 )
 
 registry.register(
-    name="project_create",
+    name="create_project",
     toolset="project",
     schema={
-        "name": "project_create",
+        "name": "create_project",
         "description": (
             "Create a desktop Project (a named workspace) and switch this chat into it. "
             "Pass `path` to anchor it to a repo/folder — this chat's workspace moves there "
@@ -162,16 +162,16 @@ registry.register(
             "required": ["name"],
         },
     },
-    handler=lambda args, **kw: project_create(
+    handler=lambda args, **kw: create_project(
         name=args.get("name", ""), path=args.get("path"), task_id=kw.get("task_id")
     ),
 )
 
 registry.register(
-    name="project_switch",
+    name="switch_project",
     toolset="project",
     schema={
-        "name": "project_switch",
+        "name": "switch_project",
         "description": (
             "Switch this chat into an existing desktop Project (by name, slug, or id). "
             "Moves the session's workspace to the project's primary folder and the sidebar "
@@ -185,5 +185,5 @@ registry.register(
             "required": ["project"],
         },
     },
-    handler=lambda args, **kw: project_switch(project=args.get("project", ""), task_id=kw.get("task_id")),
+    handler=lambda args, **kw: switch_project(project=args.get("project", ""), task_id=kw.get("task_id")),
 )

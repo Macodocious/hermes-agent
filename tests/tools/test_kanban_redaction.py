@@ -1,7 +1,7 @@
 """Tests: redact_sensitive_text is applied in kanban tool handlers.
 
-Verifies that secrets embedded in kanban_comment body, kanban_complete
-summary/result/metadata, and kanban_block reason are masked before the
+Verifies that secrets embedded in comment_kanban body, complete_kanban
+summary/result/metadata, and block_kanban reason are masked before the
 values reach the DB.  Uses the same worker_env fixture pattern as
 test_kanban_tools.py.
 """

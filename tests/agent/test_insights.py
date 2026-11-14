@@ -55,7 +55,7 @@ def populated_db(db):
         "s1",
         role="assistant",
         content="Let me load the PR workflow skill.",
-        tool_calls=[{"function": {"name": "skill_view", "arguments": '{"name":"github-pr-workflow"}'}}],
+        tool_calls=[{"function": {"name": "view_skill", "arguments": '{"name":"github-pr-workflow"}'}}],
     )
     db.append_message("s1", role="user", content="Thanks!")
     db.append_message("s1", role="assistant", content="You're welcome!")
@@ -71,8 +71,8 @@ def populated_db(db):
     db.update_token_counts("s2", input_tokens=20000, output_tokens=8000)
     db.append_message("s2", role="user", content="Search the web for something")
     db.append_message("s2", role="assistant", content="Searching...",
-                      tool_calls=[{"function": {"name": "web_search"}}])
-    db.append_message("s2", role="tool", content="results...", tool_name="web_search")
+                      tool_calls=[{"function": {"name": "search_web"}}])
+    db.append_message("s2", role="tool", content="results...", tool_name="search_web")
     db.append_message("s2", role="assistant", content="Here's what I found")
 
     # Session 3: CLI, deepseek-chat, ended, 10 days ago
@@ -98,7 +98,7 @@ def populated_db(db):
         "s3",
         role="assistant",
         content="Load the debugging skill.",
-        tool_calls=[{"function": {"name": "skill_view", "arguments": '{"name":"systematic-debugging"}'}}],
+        tool_calls=[{"function": {"name": "view_skill", "arguments": '{"name":"systematic-debugging"}'}}],
     )
 
     # Session 4: Discord, same model as s1, ended, 1 day ago
@@ -117,8 +117,8 @@ def populated_db(db):
         role="assistant",
         content="Load and update GitHub skills.",
         tool_calls=[
-            {"function": {"name": "skill_view", "arguments": '{"name":"github-pr-workflow"}'}},
-            {"function": {"name": "skill_manage", "arguments": '{"name":"github-code-review"}'}},
+            {"function": {"name": "view_skill", "arguments": '{"name":"github-pr-workflow"}'}},
+            {"function": {"name": "manage_skill", "arguments": '{"name":"github-code-review"}'}},
         ],
     )
 
@@ -413,7 +413,7 @@ class TestInsightsPopulated:
         assert "search_files" in tool_names
         assert "read_file" in tool_names
         assert "patch" in tool_names
-        assert "web_search" in tool_names
+        assert "search_web" in tool_names
 
         # terminal was used 2x in s3
         terminal = next(t for t in tools if t["tool"] == "terminal")

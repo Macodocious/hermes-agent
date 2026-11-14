@@ -22,7 +22,7 @@ def _make_tool_defs(*names: str) -> list[dict]:
     ]
 
 
-def _mock_tool_call(name="web_search", arguments="{}", call_id=None):
+def _mock_tool_call(name="search_web", arguments="{}", call_id=None):
     return SimpleNamespace(
         id=call_id or f"call_{uuid.uuid4().hex[:8]}",
         type="function",
@@ -87,14 +87,14 @@ def _hard_stop_config(**overrides) -> dict:
 
 
 def test_default_sequential_path_warns_repeated_exact_failure_without_blocking_execution():
-    agent = _make_agent("web_search")
+    agent = _make_agent("search_web")
     args = {"query": "same"}
-    _seed_exact_failures(agent, "web_search", args)
+    _seed_exact_failures(agent, "search_web", args)
     starts = []
     progress = []
     agent.tool_start_callback = lambda *a, **k: starts.append((a, k))
     agent.tool_progress_callback = lambda *a, **k: progress.append((a, k))
-    tc = _mock_tool_call("web_search", json.dumps(args), "c-soft")
+    tc = _mock_tool_call("search_web", json.dumps(args), "c-soft")
     msg = SimpleNamespace(content="", tool_calls=[tc])
     messages = []
 
@@ -113,14 +113,14 @@ def test_default_sequential_path_warns_repeated_exact_failure_without_blocking_e
 
 
 def test_config_enabled_hard_stop_blocks_repeated_exact_failure_before_execution():
-    agent = _make_agent("web_search", config=_hard_stop_config())
+    agent = _make_agent("search_web", config=_hard_stop_config())
     args = {"query": "same"}
-    _seed_exact_failures(agent, "web_search", args)
+    _seed_exact_failures(agent, "search_web", args)
     starts = []
     progress = []
     agent.tool_start_callback = lambda *a, **k: starts.append((a, k))
     agent.tool_progress_callback = lambda *a, **k: progress.append((a, k))
-    tc = _mock_tool_call("web_search", json.dumps(args), "c-block")
+    tc = _mock_tool_call("search_web", json.dumps(args), "c-block")
     msg = SimpleNamespace(content="", tool_calls=[tc])
     messages = []
 
@@ -137,10 +137,10 @@ def test_config_enabled_hard_stop_blocks_repeated_exact_failure_before_execution
 
 
 def test_sequential_after_call_appends_guidance_to_tool_result_without_extra_messages():
-    agent = _make_agent("web_search")
+    agent = _make_agent("search_web")
     args = {"query": "same"}
-    _seed_exact_failures(agent, "web_search", args, count=1)
-    tc = _mock_tool_call("web_search", json.dumps(args), "c-warn")
+    _seed_exact_failures(agent, "search_web", args, count=1)
+    tc = _mock_tool_call("search_web", json.dumps(args), "c-warn")
     msg = SimpleNamespace(content="", tool_calls=[tc])
     messages = []
 
@@ -185,17 +185,17 @@ def test_same_tool_failure_warning_tells_model_to_recover_with_tools():
 
 
 def test_config_enabled_hard_stop_concurrent_path_does_not_submit_blocked_calls_and_preserves_result_order():
-    agent = _make_agent("web_search", config=_hard_stop_config())
+    agent = _make_agent("search_web", config=_hard_stop_config())
     blocked_args = {"query": "blocked"}
     allowed_args = {"query": "allowed"}
-    _seed_exact_failures(agent, "web_search", blocked_args)
+    _seed_exact_failures(agent, "search_web", blocked_args)
     starts = []
     progress_events = []
     agent.tool_start_callback = lambda tool_call_id, name, args: starts.append((tool_call_id, name, args))
     agent.tool_progress_callback = lambda event, name, preview, args, **kw: progress_events.append((event, name, args, kw))
     calls = [
-        _mock_tool_call("web_search", json.dumps(blocked_args), "c-block"),
-        _mock_tool_call("web_search", json.dumps(allowed_args), "c-allow"),
+        _mock_tool_call("search_web", json.dumps(blocked_args), "c-block"),
+        _mock_tool_call("search_web", json.dumps(allowed_args), "c-allow"),
     ]
     msg = SimpleNamespace(content="", tool_calls=calls)
     messages = []
@@ -208,11 +208,11 @@ def test_config_enabled_hard_stop_concurrent_path_does_not_submit_blocked_calls_
     with patch("run_agent.handle_function_call", side_effect=fake_handle):
         agent._execute_tool_calls_concurrent(msg, messages, "task-1")
 
-    assert executed == [("web_search", allowed_args, "c-allow")]
+    assert executed == [("search_web", allowed_args, "c-allow")]
     assert [m["tool_call_id"] for m in messages] == ["c-block", "c-allow"]
     assert "repeated_exact_failure_block" in messages[0]["content"]
     assert json.loads(messages[1]["content"]) == {"ok": "allowed"}
-    assert starts == [("c-allow", "web_search", allowed_args)]
+    assert starts == [("c-allow", "search_web", allowed_args)]
     started_events = [event for event in progress_events if event[0] == "tool.started"]
     completed_events = [event for event in progress_events if event[0] == "tool.completed"]
     # The task-notification kwargs (c32300bbcf) ride along on every
@@ -220,16 +220,16 @@ def test_config_enabled_hard_stop_concurrent_path_does_not_submit_blocked_calls_
     # rather than the full kwarg set, so future notification plumbing does
     # not re-break this assertion.
     assert [(e[0], e[1], e[2]) for e in started_events] == [
-        ("tool.started", "web_search", allowed_args)
+        ("tool.started", "search_web", allowed_args)
     ]
     assert len(completed_events) == 1
-    assert completed_events[0][1] == "web_search"
+    assert completed_events[0][1] == "search_web"
 
 
 def test_plugin_pre_tool_block_wins_without_counting_as_toolguard_block():
-    agent = _make_agent("web_search")
+    agent = _make_agent("search_web")
     args = {"query": "same"}
-    tc = _mock_tool_call("web_search", json.dumps(args), "c-plugin")
+    tc = _mock_tool_call("search_web", json.dumps(args), "c-plugin")
     msg = SimpleNamespace(content="", tool_calls=[tc])
     messages = []
 
@@ -241,17 +241,17 @@ def test_plugin_pre_tool_block_wins_without_counting_as_toolguard_block():
 
     mock_hfc.assert_not_called()
     assert "plugin policy" in messages[0]["content"]
-    assert agent._tool_guardrails.before_call("web_search", args).action == "allow"
+    assert agent._tool_guardrails.before_call("search_web", args).action == "allow"
 
 
 def test_default_run_conversation_warns_without_guardrail_halt():
-    agent = _make_agent("web_search", max_iterations=10)
+    agent = _make_agent("search_web", max_iterations=10)
     same_args = {"query": "same"}
     responses = [
         _mock_response(
             content="",
             finish_reason="tool_calls",
-            tool_calls=[_mock_tool_call("web_search", json.dumps(same_args), f"c{i}")],
+            tool_calls=[_mock_tool_call("search_web", json.dumps(same_args), f"c{i}")],
         )
         for i in range(1, 4)
     ]
@@ -275,13 +275,13 @@ def test_default_run_conversation_warns_without_guardrail_halt():
 
 
 def test_config_enabled_hard_stop_run_conversation_returns_controlled_guardrail_halt_without_top_level_error():
-    agent = _make_agent("web_search", max_iterations=10, config=_hard_stop_config())
+    agent = _make_agent("search_web", max_iterations=10, config=_hard_stop_config())
     same_args = {"query": "same"}
     responses = [
         _mock_response(
             content="",
             finish_reason="tool_calls",
-            tool_calls=[_mock_tool_call("web_search", json.dumps(same_args), f"c{i}")],
+            tool_calls=[_mock_tool_call("search_web", json.dumps(same_args), f"c{i}")],
         )
         for i in range(1, 10)
     ]
@@ -303,7 +303,7 @@ def test_config_enabled_hard_stop_run_conversation_returns_controlled_guardrail_
     assert result["completed"] is True
     assert "stopped retrying" in result["final_response"]
     assert result["guardrail"]["code"] == "repeated_exact_failure_block"
-    assert result["guardrail"]["tool_name"] == "web_search"
+    assert result["guardrail"]["tool_name"] == "search_web"
 
     assistant_tool_calls = [m for m in result["messages"] if m.get("role") == "assistant" and m.get("tool_calls")]
     for assistant_msg in assistant_tool_calls:
@@ -320,13 +320,13 @@ def test_guardrail_halt_emits_final_response_through_stream_delta_callback():
     queue and emits a finish chunk with zero content (indistinguishable
     from a crash for Open WebUI and similar clients).
     """
-    agent = _make_agent("web_search", max_iterations=10, config=_hard_stop_config())
+    agent = _make_agent("search_web", max_iterations=10, config=_hard_stop_config())
     same_args = {"query": "same"}
     responses = [
         _mock_response(
             content="",
             finish_reason="tool_calls",
-            tool_calls=[_mock_tool_call("web_search", json.dumps(same_args), f"c{i}")],
+            tool_calls=[_mock_tool_call("search_web", json.dumps(same_args), f"c{i}")],
         )
         for i in range(1, 10)
     ]

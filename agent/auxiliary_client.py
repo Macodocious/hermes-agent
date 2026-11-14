@@ -135,7 +135,7 @@ def _resolve_aux_verify(base_url: Optional[str]) -> Any:
     """Resolve httpx ``verify`` for an auxiliary-client base_url.
 
     Mirrors the main client's TLS resolution so auxiliary calls (compression,
-    vision, web_extract, title generation, etc.) honor per-provider
+    vision, extract_web, title generation, etc.) honor per-provider
     ``ssl_ca_cert`` / ``ssl_verify`` config and the ``HERMES_CA_BUNDLE`` /
     ``SSL_CERT_FILE`` env conventions. Best-effort: any failure falls back to
     the httpx/certifi default (``True``).
@@ -222,7 +222,7 @@ def _create_openai_client(*, api_key: str, base_url: str, **kwargs: Any) -> Any:
 # and the real handoff is lost (#23975). A thread-local flag lets such a
 # task mark its in-flight LLM call as interrupt-protected; the Codex
 # Responses stream's cancellation check honors it. TIMEOUTS still fire
-# (a hung call must die), and all OTHER aux tasks (vision, web_extract,
+# (a hung call must die), and all OTHER aux tasks (vision, extract_web,
 # title_generation, …) remain freely interruptible.
 _aux_interrupt_protection = threading.local()
 
@@ -690,7 +690,7 @@ def build_nvidia_nim_headers(base_url: str | None) -> dict:
 #
 # The tags are computed from agent.portal_tags so the client= marker stays
 # in lockstep with hermes_cli.__version__ across every Portal call site
-# (main loop, aux, compression, web_extract). Do not inline a literal here;
+# (main loop, aux, compression, extract_web). Do not inline a literal here;
 # see agent/portal_tags.py for the rationale.
 from agent.portal_tags import nous_portal_tags as _nous_portal_tags
 
@@ -1263,7 +1263,7 @@ class _AsyncCodexCompletionsAdapter:
     """Async version of the Codex Responses adapter.
 
     Wraps the sync adapter via asyncio.to_thread() so async consumers
-    (web_tools, session_search) can await it as normal.
+    (web_tools, search_session) can await it as normal.
     """
 
     def __init__(self, sync_adapter: _CodexCompletionsAdapter):
@@ -2207,7 +2207,7 @@ def _read_main_model() -> str:
     Runtime override: when an AIAgent is active with a CLI/gateway-provided
     model that differs from config.yaml, ``set_runtime_main()`` records the
     override in a process-local global. This is consulted FIRST so tools
-    that gate on "the active main model" (e.g. ``vision_analyze``'s native
+    that gate on "the active main model" (e.g. ``analyze_vision``'s native
     fast path) see the live runtime, not the persisted config default.
     """
     override = _runtime_main_value("model")
@@ -4136,8 +4136,8 @@ def _task_minimum_context_length(task: Optional[str]) -> Optional[int]:
     Only ``compression`` carries an explicit minimum today (the same
     ``MINIMUM_CONTEXT_LENGTH`` (64K) floor that
     ``check_compression_model_feasibility`` already enforces at startup).
-    Other tasks (``vision``, ``title_generation``, ``web_extract``,
-    ``skills_hub``, ``mcp``, ``session_search``) return ``None`` — they
+    Other tasks (``vision``, ``title_generation``, ``extract_web``,
+    ``skills_hub``, ``mcp``, ``search_session``) return ``None`` — they
     have no per-task context floor and the runtime chain must remain
     permissive for them.
 
@@ -5467,11 +5467,11 @@ def get_text_auxiliary_client(
     """Return (client, default_model_slug) for text-only auxiliary tasks.
 
     Args:
-        task: Optional task name ("compression", "web_extract") to check
+        task: Optional task name ("compression", "extract_web") to check
               for a task-specific provider override.
 
     Callers may override the returned model via config.yaml
-    (e.g. auxiliary.compression.model, auxiliary.web_extract.model).
+    (e.g. auxiliary.compression.model, auxiliary.extract_web.model).
     """
     provider, model, base_url, api_key, api_mode = _resolve_task_provider_model(task or None)
     return resolve_provider_client(
@@ -6983,8 +6983,8 @@ def call_llm(
     handles auth, request formatting, and model-specific arg adjustments.
 
     Args:
-        task: Auxiliary task name ("compression", "vision", "web_extract",
-              "session_search", "skills_hub", "mcp", "title_generation").
+        task: Auxiliary task name ("compression", "vision", "extract_web",
+              "search_session", "skills_hub", "mcp", "title_generation").
               Reads provider:model from config/env. Ignored if provider is set.
         provider: Explicit provider override.
         model: Explicit model override.

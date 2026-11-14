@@ -93,22 +93,22 @@ from hermes_cli.cli_output import (  # noqa: E402 — late import block
 # Each entry: (toolset_name, label, description)
 # These map to keys in toolsets.py TOOLSETS dict.
 CONFIGURABLE_TOOLSETS = [
-    ("web",             "🔍 Web Search & Scraping",    "web_search, web_extract"),
+    ("web",             "🔍 Web Search & Scraping",    "search_web, extract_web"),
     ("browser",         "🌐 Browser Automation",       "navigate, click, type, scroll"),
     ("terminal",        "💻 Terminal & Processes",      "terminal, process"),
     ("file",            "📁 File Operations",           "read, write, patch, search"),
     ("code_execution",  "⚡ Code Execution",            "execute_code"),
-    ("vision",          "👁️  Vision / Image Analysis",  "vision_analyze"),
-    ("video",           "🎬 Video Analysis",            "video_analyze (requires video-capable model)"),
-    ("image_gen",       "🎨 Image Generation",          "image_generate"),
-    ("video_gen",       "🎬 Video Generation",          "video_generate (text/image/reference)"),
-    ("x_search",        "🐦 X (Twitter) Search",        "x_search (requires xAI OAuth or XAI_API_KEY)"),
+    ("vision",          "👁️  Vision / Image Analysis",  "analyze_vision"),
+    ("video",           "🎬 Video Analysis",            "analyze_video (requires video-capable model)"),
+    ("image_gen",       "🎨 Image Generation",          "generate_image"),
+    ("video_gen",       "🎬 Video Generation",          "generate_video (text/image/reference)"),
+    ("search_x",        "🐦 X (Twitter) Search",        "search_x (requires xAI OAuth or XAI_API_KEY)"),
     ("tts",             "🔊 Text-to-Speech",            "text_to_speech"),
     ("skills",          "📚 Skills",                    "list, view, manage"),
     ("todo",            "📋 Task Planning",             "todo"),
     ("memory",          "💾 Memory",                    "persistent memory across sessions"),
     ("context_engine",  "🧩 Context Engine",            "runtime tools from the active context engine"),
-    ("session_search",  "🔎 Session Search",            "search past conversations"),
+    ("search_session",  "🔎 Session Search",            "search past conversations"),
     ("clarify",         "❓ Clarifying Questions",      "clarify"),
     ("delegation",      "👥 Task Delegation",           "delegate_task"),
     ("cronjob",         "⏰ Cron Jobs",                 "create/list/update/pause/resume/run, with optional attached skills"),
@@ -117,7 +117,7 @@ CONFIGURABLE_TOOLSETS = [
     ("discord",         "💬 Discord (read/participate)", "fetch messages, search members, create thread"),
     ("discord_admin",   "🛡️  Discord Server Admin",    "list channels/roles, pin, assign roles"),
     ("yuanbao",          "🤖 Yuanbao",                  "group info, member queries, DM"),
-    ("computer_use",     "🖱️  Computer Use (macOS/Windows/Linux)", "background desktop control via cua-driver"),
+    ("use_computer",     "🖱️  Computer Use (macOS/Windows/Linux)", "background desktop control via cua-driver"),
 ]
 
 
@@ -150,19 +150,19 @@ def gui_toolset_label(label: str) -> str:
 # `hermes tools` → X (Twitter) Search setup walks users through credential
 # setup. The tool's check_fn means the schema still won't appear to the
 # model if the credential later goes missing or expires.
-_DEFAULT_OFF_TOOLSETS = {"homeassistant", "spotify", "discord", "discord_admin", "video", "video_gen", "x_search"}
+_DEFAULT_OFF_TOOLSETS = {"homeassistant", "spotify", "discord", "discord_admin", "video", "video_gen", "search_x"}
 
 
 def _xai_credentials_present() -> bool:
     """Cheap, side-effect-free check for usable xAI credentials.
 
-    Used to auto-enable the ``x_search`` toolset when the user has either
+    Used to auto-enable the ``search_x`` toolset when the user has either
     completed xAI Grok OAuth (SuperGrok / Premium+) or set
     ``XAI_API_KEY``. Does NOT hit the network — only inspects the local
     auth store and environment. The tool's runtime ``check_fn`` still
     gates schema registration if creds later expire or get revoked.
     Also reused by ``provider_readiness_status`` for ``post_setup:
-    "xai_grok"`` picker rows (xAI TTS, Grok OAuth x_search).
+    "xai_grok"`` picker rows (xAI TTS, Grok OAuth search_x).
     """
     try:
         from hermes_cli.auth import _read_xai_oauth_tokens
@@ -470,11 +470,11 @@ TOOL_CATEGORIES = {
             },
         ],
     },
-    "x_search": {
+    "search_x": {
         "name": "X (Twitter) Search",
         "setup_title": "Select xAI Credential Source",
         "setup_note": (
-            "Hermes routes X searches through xAI's built-in x_search "
+            "Hermes routes X searches through xAI's built-in search_x "
             "Responses tool. Both credential sources hit the same "
             "https://api.x.ai/v1/responses endpoint — pick whichever you "
             "already have. SuperGrok OAuth is preferred when both are set "
@@ -579,7 +579,7 @@ TOOL_CATEGORIES = {
             },
         ],
     },
-    "computer_use": {
+    "use_computer": {
         "name": "Computer Use (macOS/Windows/Linux)",
         "icon": "🖱️",
         # Runtime backends ship for macOS, Windows, and Linux (X11 today,
@@ -657,12 +657,12 @@ def _cua_driver_env() -> dict:
     """cua-driver child env with the Hermes telemetry policy applied.
 
     Delegates to ``cua_backend.cua_driver_child_env`` (telemetry disabled by
-    default; user opt-in via ``computer_use.cua_telemetry``). Falls back to the
+    default; user opt-in via ``use_computer.cua_telemetry``). Falls back to the
     current environment if the helper can't be imported, so install/status
     never break on a telemetry-helper error.
     """
     try:
-        from tools.computer_use.cua_backend import cua_driver_child_env
+        from tools.use_computer.cua_backend import cua_driver_child_env
 
         return cua_driver_child_env()
     except Exception:
@@ -892,7 +892,7 @@ def install_cua_driver(upgrade: bool = False) -> bool:
     # re-run the installer as before.
     if binary:
         try:
-            from tools.computer_use.cua_backend import cua_driver_update_check
+            from tools.use_computer.cua_backend import cua_driver_update_check
             _state = cua_driver_update_check()
             if _state is not None and not _state.get("update_available"):
                 _print_success(
@@ -1432,7 +1432,7 @@ def _run_post_setup(post_setup_key: str):
                 _print_info("    Run manually: uv pip install -U ddgs")
                 return
         _print_info("    No API key required. DuckDuckGo enforces server-side rate limits.")
-        _print_info("    Pair with an extract provider if you also need web_extract.")
+        _print_info("    Pair with an extract provider if you also need extract_web.")
 
     elif post_setup_key == "spotify":
         # Run the full `hermes auth spotify` flow — if the user has no
@@ -1819,10 +1819,10 @@ def _get_platform_tools(
             if ts_tools and ts_tools.issubset(all_tool_names):
                 enabled_toolsets.add(ts_key)
 
-        # Auto-enable ``x_search`` when xAI credentials are configured.
+        # Auto-enable ``search_x`` when xAI credentials are configured.
         # Unlike ``homeassistant`` (whose ``ha_*`` tools live inside the
         # platform composite and thus pass the subset check above),
-        # ``x_search`` is its own one-tool toolset that the composite does
+        # ``search_x`` is its own one-tool toolset that the composite does
         # NOT include, so the subset loop never picks it up. Inject it
         # directly here, mirroring the HASS_TOKEN → ``homeassistant`` rule
         # below: once you have working creds, you don't have to also click
@@ -1830,11 +1830,11 @@ def _get_platform_tools(
         # the user has not yet saved an explicit toolset list — once they
         # do, the saved list is authoritative.
         x_search_auto_enabled = (
-            _toolset_allowed_for_platform("x_search", platform)
+            _toolset_allowed_for_platform("search_x", platform)
             and _xai_credentials_present()
         )
         if x_search_auto_enabled:
-            enabled_toolsets.add("x_search")
+            enabled_toolsets.add("search_x")
 
         default_off = set(_DEFAULT_OFF_TOOLSETS)
         # Legacy safety: if the platform's own name matches a default-off
@@ -1853,11 +1853,11 @@ def _get_platform_tools(
         # regressed after #14798 made cron honor per-platform tool config.
         if "homeassistant" in default_off and os.getenv("HASS_TOKEN"):
             default_off.remove("homeassistant")
-        # Symmetric carve-out for x_search auto-enable (see the inject
+        # Symmetric carve-out for search_x auto-enable (see the inject
         # block above). Without this, the default_off subtraction would
         # strip the entry we just added.
-        if x_search_auto_enabled and "x_search" in default_off:
-            default_off.remove("x_search")
+        if x_search_auto_enabled and "search_x" in default_off:
+            default_off.remove("search_x")
         _exempt_explicit_platform_native(
             default_off, platform, explicitly_configured=explicitly_configured
         )

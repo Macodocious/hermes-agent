@@ -1,7 +1,7 @@
 # security-guidance
 
 Pattern-matched security warnings for code the agent writes. When the agent
-calls `write_file`, `patch`, or `skill_manage` with content that matches a
+calls `write_file`, `patch`, or `manage_skill` with content that matches a
 known-dangerous code pattern (eval, pickle.load, yaml.load, os.system,
 subprocess with `shell=True`, `dangerouslySetInnerHTML`, `verify=False`, ECB
 mode, GitHub Actions `${{ github.event.* }}` injection, `torch.load` without

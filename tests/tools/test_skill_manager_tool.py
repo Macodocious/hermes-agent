@@ -18,7 +18,7 @@ from tools.skill_manager_tool import (
     _delete_skill,
     _write_file,
     _remove_file,
-    skill_manage,
+    manage_skill,
     MAX_NAME_LENGTH,
 )
 
@@ -567,28 +567,28 @@ class TestRemoveFile:
 
 
 # ---------------------------------------------------------------------------
-# skill_manage dispatcher
+# manage_skill dispatcher
 # ---------------------------------------------------------------------------
 
 
 class TestSkillManageDispatcher:
     def test_unknown_action(self, tmp_path):
         with _skill_dir(tmp_path):
-            raw = skill_manage(action="explode", name="test")
+            raw = manage_skill(action="explode", name="test")
         result = json.loads(raw)
         assert result["success"] is False
         assert "Unknown action" in result["error"]
 
     def test_create_without_content(self, tmp_path):
         with _skill_dir(tmp_path):
-            raw = skill_manage(action="create", name="test")
+            raw = manage_skill(action="create", name="test")
         result = json.loads(raw)
         assert result["success"] is False
         assert "content" in result["error"].lower()
 
     def test_patch_without_old_string(self, tmp_path):
         with _skill_dir(tmp_path):
-            raw = skill_manage(action="patch", name="test")
+            raw = manage_skill(action="patch", name="test")
         result = json.loads(raw)
         assert result["success"] is False
 
@@ -601,7 +601,7 @@ class TestSkillManageDispatcher:
         or prune it).
         """
         with _skill_dir(tmp_path):
-            raw = skill_manage(action="create", name="test-skill", content=VALID_SKILL_CONTENT)
+            raw = manage_skill(action="create", name="test-skill", content=VALID_SKILL_CONTENT)
             from tools.skill_usage import load_usage
             usage = load_usage()
         result = json.loads(raw)
@@ -617,7 +617,7 @@ class TestSkillManageDispatcher:
         token = set_current_write_origin(BACKGROUND_REVIEW)
         try:
             with _skill_dir(tmp_path):
-                raw = skill_manage(
+                raw = manage_skill(
                     action="create", name="review-sediment", content=VALID_SKILL_CONTENT
                 )
                 from tools.skill_usage import load_usage
@@ -633,17 +633,17 @@ class TestSkillManageDispatcher:
         # Dispatcher must plumb absorbed_into through to _delete_skill so the
         # validation + message suffix paths are exercised end-to-end.
         with _skill_dir(tmp_path):
-            skill_manage(action="create", name="umbrella", content=VALID_SKILL_CONTENT)
-            skill_manage(action="create", name="narrow", content=VALID_SKILL_CONTENT)
-            raw = skill_manage(action="delete", name="narrow", absorbed_into="umbrella")
+            manage_skill(action="create", name="umbrella", content=VALID_SKILL_CONTENT)
+            manage_skill(action="create", name="narrow", content=VALID_SKILL_CONTENT)
+            raw = manage_skill(action="delete", name="narrow", absorbed_into="umbrella")
         result = json.loads(raw)
         assert result["success"] is True
         assert "absorbed into 'umbrella'" in result["message"]
 
     def test_delete_via_dispatcher_rejects_missing_absorbed_target(self, tmp_path):
         with _skill_dir(tmp_path):
-            skill_manage(action="create", name="narrow", content=VALID_SKILL_CONTENT)
-            raw = skill_manage(action="delete", name="narrow", absorbed_into="ghost")
+            manage_skill(action="create", name="narrow", content=VALID_SKILL_CONTENT)
+            raw = manage_skill(action="delete", name="narrow", absorbed_into="ghost")
         result = json.loads(raw)
         assert result["success"] is False
         assert "does not exist" in result["error"]
@@ -662,9 +662,9 @@ class TestSkillManageDispatcher:
                  patch("tools.skill_usage.is_hub_installed", return_value=False), \
                  patch("tools.skill_usage.is_bundled",
                        side_effect=lambda skill_name: skill_name == "bundled"):
-                skill_manage(action="create", name="umbrella", content=VALID_SKILL_CONTENT)
-                skill_manage(action="create", name="bundled", content=VALID_SKILL_CONTENT)
-                raw = skill_manage(
+                manage_skill(action="create", name="umbrella", content=VALID_SKILL_CONTENT)
+                manage_skill(action="create", name="bundled", content=VALID_SKILL_CONTENT)
+                raw = manage_skill(
                     action="delete",
                     name="bundled",
                     absorbed_into="umbrella",
@@ -806,7 +806,7 @@ def _write_external_skill(external_dir: Path, name: str = "ext-skill") -> Path:
 
 
 class TestExternalSkillMutations:
-    """Verify skill_manage can patch/edit/write/remove/delete skills that live
+    """Verify manage_skill can patch/edit/write/remove/delete skills that live
     under skills.external_dirs — in place, without duplicating to local.
 
     Regression for issues #4759 and #4381: the read-only gate used to refuse
@@ -945,7 +945,7 @@ class TestExternalSkillMutations:
                 "agent.skill_utils.get_external_skills_dirs",
                 return_value=[external.resolve()],
             ):
-                raw = skill_manage(
+                raw = manage_skill(
                     action="patch",
                     name="ext-skill",
                     old_string="OLD_MARKER",
@@ -979,7 +979,7 @@ class TestExternalSkillMutations:
             token = set_current_write_origin(BACKGROUND_REVIEW)
             try:
                 with patch("tools.skill_usage.get_record", side_effect=_fake_get_record):
-                    raw = skill_manage(
+                    raw = manage_skill(
                         action="patch",
                         name="my-skill",
                         old_string="Do the thing.",
@@ -1012,7 +1012,7 @@ class TestExternalSkillMutations:
                     "tools.skill_usage.get_record",
                     side_effect=lambda n: {"pinned": False},
                 ):
-                    raw = skill_manage(
+                    raw = manage_skill(
                         action="patch",
                         name="my-skill",
                         old_string="Do the thing.",
@@ -1048,7 +1048,7 @@ class TestExternalSkillMutations:
                     "tools.skill_usage.get_record",
                     side_effect=lambda n: {"created_by": None, "use_count": 50} if n == "manual-skill" else {},
                 ):
-                    raw = skill_manage(
+                    raw = manage_skill(
                         action="delete",
                         name="manual-skill",
                     )
@@ -1086,7 +1086,7 @@ class TestExternalSkillMutations:
                 ), patch(
                     "tools.skill_usage.archive_skill", return_value=(True, "archived"),
                 ):
-                    raw = skill_manage(
+                    raw = manage_skill(
                         action="delete",
                         name="agent-skill",
                         absorbed_into="umbrella",
@@ -1102,7 +1102,7 @@ class TestExternalSkillMutations:
 
 
 # ---------------------------------------------------------------------------
-# Pinned-skill guard — skill_manage refuses only `delete` on pinned skills.
+# Pinned-skill guard — manage_skill refuses only `delete` on pinned skills.
 # Patches and edits go through so pinned skills can still evolve as pitfalls
 # come up. The user unpins via `hermes curator unpin <name>` to delete.
 # ---------------------------------------------------------------------------
@@ -1394,7 +1394,7 @@ class TestCuratorConsolidationDeleteGuard:
         assert not (tmp_path / "user-skill").exists()
 
     def test_dispatcher_preserves_usage_record_on_curator_archive(self, tmp_path, monkeypatch):
-        # skill_manage(delete) post-action telemetry must NOT forget a
+        # manage_skill(delete) post-action telemetry must NOT forget a
         # recoverable curator archive — the record persists as archived so
         # `hermes curator restore` can bring it back.
         from tools import skill_usage
@@ -1402,7 +1402,7 @@ class TestCuratorConsolidationDeleteGuard:
             _create_skill("umbrella", _skill_content("umbrella"))
             _create_skill("narrow", _skill_content("narrow"))
             skill_usage.mark_agent_created("narrow")
-            raw = skill_manage("delete", "narrow", absorbed_into="umbrella")
+            raw = manage_skill("delete", "narrow", absorbed_into="umbrella")
             result = json.loads(raw)
             assert result["success"] is True, result
             rec = skill_usage.get_record("narrow")
@@ -1410,14 +1410,14 @@ class TestCuratorConsolidationDeleteGuard:
         assert rec.get("state") == skill_usage.STATE_ARCHIVED
 
     def test_background_review_patch_requires_skill_view_first(self, tmp_path, monkeypatch):
-        from tools.skills_tool import skill_view
+        from tools.skills_tool import view_skill
         from tools.skill_manager_tool import _reset_background_review_read_marks
 
         _reset_background_review_read_marks()
         with _curator_pass(tmp_path, monkeypatch=monkeypatch):
             _create_skill("reviewed", _skill_content("reviewed"))
 
-            blocked = json.loads(skill_manage(
+            blocked = json.loads(manage_skill(
                 action="patch",
                 name="reviewed",
                 old_string="Step 1: Do the thing.",
@@ -1426,10 +1426,10 @@ class TestCuratorConsolidationDeleteGuard:
             assert blocked["success"] is False
             assert blocked.get("_read_before_write_required") is True
 
-            viewed = json.loads(skill_view("reviewed"))
+            viewed = json.loads(view_skill("reviewed"))
             assert viewed["success"] is True
 
-            allowed = json.loads(skill_manage(
+            allowed = json.loads(manage_skill(
                 action="patch",
                 name="reviewed",
                 old_string="Step 1: Do the thing.",
@@ -1440,7 +1440,7 @@ class TestCuratorConsolidationDeleteGuard:
         _reset_background_review_read_marks()
 
     def test_background_review_support_file_overwrite_requires_that_file_read(self, tmp_path, monkeypatch):
-        from tools.skills_tool import skill_view
+        from tools.skills_tool import view_skill
         from tools.skill_manager_tool import _reset_background_review_read_marks
 
         _reset_background_review_read_marks()
@@ -1451,8 +1451,8 @@ class TestCuratorConsolidationDeleteGuard:
             (ref / "workflow.md").write_text("old workflow\n", encoding="utf-8")
 
             # Reading SKILL.md does not authorize overwriting a linked file.
-            assert json.loads(skill_view("reviewed"))["success"] is True
-            blocked = json.loads(skill_manage(
+            assert json.loads(view_skill("reviewed"))["success"] is True
+            blocked = json.loads(manage_skill(
                 action="write_file",
                 name="reviewed",
                 file_path="references/workflow.md",
@@ -1461,8 +1461,8 @@ class TestCuratorConsolidationDeleteGuard:
             assert blocked["success"] is False
             assert blocked.get("_read_before_write_required") is True
 
-            assert json.loads(skill_view("reviewed", "references/workflow.md"))["success"] is True
-            allowed = json.loads(skill_manage(
+            assert json.loads(view_skill("reviewed", "references/workflow.md"))["success"] is True
+            allowed = json.loads(manage_skill(
                 action="write_file",
                 name="reviewed",
                 file_path="references/workflow.md",

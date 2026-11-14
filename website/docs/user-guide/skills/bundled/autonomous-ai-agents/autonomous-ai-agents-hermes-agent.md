@@ -159,7 +159,7 @@ hermes mcp configure NAME   Toggle tool selection
 
 How the built-in MCP client connects servers (stdio/HTTP), auto-discovers
 their tools, and exposes them as first-class tools, plus catalog install
-(`hermes mcp install <name>`): `skill_view(name="hermes-agent", file_path="references/native-mcp.md")`.
+(`hermes mcp install <name>`): `view_skill(name="hermes-agent", file_path="references/native-mcp.md")`.
 
 ### Gateway (Messaging Platforms)
 
@@ -210,7 +210,7 @@ hermes webhook test NAME    Send a test POST
 ```
 
 Full setup, route config, payload templating, and event-driven agent-run
-patterns: `skill_view(name="hermes-agent", file_path="references/webhooks.md")`.
+patterns: `view_skill(name="hermes-agent", file_path="references/webhooks.md")`.
 
 ### Profiles
 
@@ -438,7 +438,7 @@ Enable/disable via `hermes tools` (interactive) or `hermes tools enable/disable 
 | `tts` | Text-to-speech |
 | `skills` | Skill browsing and management |
 | `memory` | Persistent cross-session memory |
-| `session_search` | Search past conversations |
+| `search_session` | Search past conversations |
 | `delegation` | Subagent task delegation |
 | `cronjob` | Scheduled task management |
 | `clarify` | Ask user clarifying questions |
@@ -712,11 +712,11 @@ sessions still have zero `kanban_*` schema footprint unless configured.
   `show`, `assign`, `link`, `unlink`, `comment`, `complete`, `block`,
   `unblock`, `archive`, `tail`. Less common: `watch`, `stats`, `runs`,
   `log`, `dispatch`, `daemon`, `gc`.
-- **Worker/orchestrator toolset:** `kanban_show`, `kanban_complete`,
-  `kanban_block`, `kanban_heartbeat`, `kanban_comment`, `kanban_create`,
-  `kanban_link`; profiles that explicitly enable the `kanban` toolset
-  outside a dispatcher-spawned task also get `kanban_list` and
-  `kanban_unblock` for board routing.
+- **Worker/orchestrator toolset:** `show_kanban`, `complete_kanban`,
+  `block_kanban`, `heartbeat_kanban`, `comment_kanban`, `create_kanban`,
+  `link_kanban`; profiles that explicitly enable the `kanban` toolset
+  outside a dispatcher-spawned task also get `list_kanban` and
+  `unblock_kanban` for board routing.
 - **Dispatcher** runs inside the gateway by default
   (`kanban.dispatch_in_gateway: true`) — reclaims stale claims,
   promotes ready tasks, atomically claims, spawns assigned profiles.
@@ -866,7 +866,7 @@ Common gateway problems:
 - **Windows-specific issues** (`Alt+Enter` newline, WinError 10106, UTF-8 BOM config, test suite, line endings): see the dedicated **Windows-Specific Quirks** section above.
 
 ### Auxiliary models not working
-If `auxiliary` tasks (vision, compression, session_search) fail silently, the `auto` provider can't find a backend. Either set `OPENROUTER_API_KEY` or `GOOGLE_API_KEY`, or explicitly configure each auxiliary task's provider:
+If `auxiliary` tasks (vision, compression, search_session) fail silently, the `auto` provider can't find a backend. Either set `OPENROUTER_API_KEY` or `GOOGLE_API_KEY`, or explicitly configure each auxiliary task's provider:
 ```bash
 hermes config set auxiliary.vision.provider <your_provider>
 hermes config set auxiliary.vision.model <model_name>

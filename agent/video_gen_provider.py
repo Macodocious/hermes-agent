@@ -5,7 +5,7 @@ Video Generation Provider ABC
 Defines the pluggable-backend interface for video generation. Providers register
 instances via ``PluginContext.register_video_gen_provider()``; the active one
 (selected via ``video_gen.provider`` in ``config.yaml``) services every
-``video_generate`` tool call.
+``generate_video`` tool call.
 
 Providers live in ``<repo>/plugins/video_gen/<name>/`` (built-in, auto-loaded
 as ``kind: backend``) or ``~/.hermes/plugins/video_gen/<name>/`` (user, opt-in
@@ -16,7 +16,7 @@ the two surfaces stay learnable together.
 
 Unified surface
 ---------------
-One tool — ``video_generate`` — covers **text-to-video** and **image-to-video**.
+One tool — ``generate_video`` — covers **text-to-video** and **image-to-video**.
 The router is the presence of ``image_url``: if it's set, the provider routes
 to its image-to-video endpoint; if it's omitted, the provider routes to
 text-to-video. Users pick one **model family** (e.g. Pixverse v6, Veo 3.1,

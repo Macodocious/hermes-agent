@@ -149,7 +149,7 @@ Every Unreal task follows the same loop:
 5. **Verify visually and structurally.** After each milestone, confirm state
    by querying the actors/properties you changed, and capture a viewport
    screenshot when composition matters (see `references/tool-surface.md` for
-   the capture options; `vision_analyze` the image — you are the art
+   the capture options; `analyze_vision` the image — you are the art
    director, judge it).
 6. **Save often.** Editor edits are in-memory until packages/levels are
    saved; an editor crash loses everything since the last save, and MCP

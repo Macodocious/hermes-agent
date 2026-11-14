@@ -9,7 +9,7 @@ endpoint only speaks Anthropic Messages — sending ``kimi-for-coding`` over
 chat.completions returns 404 "resource_not_found_error".  The named
 ``kimi-coding`` provider branch in resolve_provider_client used to build a
 plain OpenAI client, so title generation / vision / compression /
-web_extract all failed on Kimi Coding Plan users.
+extract_web all failed on Kimi Coding Plan users.
 """
 
 from __future__ import annotations

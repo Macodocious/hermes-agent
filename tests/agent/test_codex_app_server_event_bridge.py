@@ -76,8 +76,8 @@ class TestCodexItemToToolName:
 
     def test_dynamic_tool_call_uses_tool_field(self):
         assert _codex_item_to_tool_name(
-            {"type": "dynamicToolCall", "tool": "web_search"}
-        ) == "web_search"
+            {"type": "dynamicToolCall", "tool": "search_web"}
+        ) == "search_web"
 
     def test_hermes_tools_mcp_server_emits_bare_tool_name(self):
         """The hermes-tools MCP server wraps Hermes' own tools for codex;
@@ -85,15 +85,15 @@ class TestCodexItemToToolName:
         so the codex-level event IS the display event — shown without the
         mcp.hermes-tools.* namespacing (from #26541 by @simpolism)."""
         assert _codex_item_to_tool_name(
-            {"type": "mcpToolCall", "server": "hermes-tools", "tool": "web_search"}
-        ) == "web_search"
+            {"type": "mcpToolCall", "server": "hermes-tools", "tool": "search_web"}
+        ) == "search_web"
         assert _codex_item_to_tool_name(
-            {"type": "mcpToolCall", "server": "hermes-tools", "tool": "browser_navigate"}
-        ) == "browser_navigate"
+            {"type": "mcpToolCall", "server": "hermes-tools", "tool": "navigate_browser"}
+        ) == "navigate_browser"
 
     def test_web_search_builtin_maps_to_web_search(self):
         """Codex's built-in webSearch tool gets a bubble too (#26541)."""
-        assert _codex_item_to_tool_name({"type": "webSearch"}) == "web_search"
+        assert _codex_item_to_tool_name({"type": "webSearch"}) == "search_web"
 
     def test_unknown_type_returns_type_string(self):
         assert _codex_item_to_tool_name(
@@ -366,20 +366,20 @@ class TestToolProgressDispatch:
         bridge(_item_started({
             "type": "dynamicToolCall",
             "id": "dyn-1",
-            "tool": "web_search",
+            "tool": "search_web",
             "arguments": {"query": "hermes"},
         }))
         bridge(_item_completed({
             "type": "dynamicToolCall",
             "id": "dyn-1",
-            "tool": "web_search",
+            "tool": "search_web",
             "success": True,
             "contentItems": [{"text": "results"}],
         }))
         names = [
             c.args[1] for c in agent.tool_progress_callback.call_args_list
         ]
-        assert names == ["web_search", "web_search"]
+        assert names == ["search_web", "search_web"]
         completed = agent.tool_progress_callback.call_args_list[1]
         assert completed.kwargs["is_error"] is False
         assert "results" in completed.kwargs["result"]
@@ -401,7 +401,7 @@ class TestToolProgressDispatch:
         }))
         calls = agent.tool_progress_callback.call_args_list
         assert [c.args[0] for c in calls] == ["tool.started", "tool.completed"]
-        assert calls[0].args[1] == "web_search"
+        assert calls[0].args[1] == "search_web"
         assert calls[0].args[2] == "hermes agent docs"
         assert calls[0].args[3] == {"query": "hermes agent docs"}
 

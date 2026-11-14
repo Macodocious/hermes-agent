@@ -144,7 +144,7 @@ Monitoring patterns: poll `kanban list` periodically, inspect any RUNNING task
 that exceeds its expected duration with `kanban show <id>`, and check
 heartbeats. When a worker's output fails review, the standard interventions are:
 
-1. Comment on the worker's task with specific feedback (`kanban_comment`)
+1. Comment on the worker's task with specific feedback (`comment_kanban`)
 2. Create a re-run task with the original as parent
 3. Adjust the brief's scope and let the director re-decompose
 
@@ -171,7 +171,7 @@ task graphs. See **[references/examples.md](https://github.com/NousResearch/herm
 
 3. **One workspace per project.** All profiles for a given video share the same
    `dir:` workspace. Tasks pass artifacts via shared filesystem and structured
-   handoffs. **Every** `kanban_create` call passes
+   handoffs. **Every** `create_kanban` call passes
    `workspace_kind="dir"` + `workspace_path="<absolute project path>"`.
 
 4. **Tenant every project.** Use a project-specific tenant

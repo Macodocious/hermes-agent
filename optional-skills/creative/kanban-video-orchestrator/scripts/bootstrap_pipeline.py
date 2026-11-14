@@ -311,7 +311,7 @@ def render_team_md(plan: dict) -> str:
         "",
         "## Per-task workspace requirement",
         "",
-        "All `kanban_create` calls MUST pass:",
+        "All `create_kanban` calls MUST pass:",
         "```",
         'workspace_kind="dir"',
         f'workspace_path="$HOME/projects/video-pipeline/{plan["slug"]}"',
@@ -408,7 +408,7 @@ def render_soul_md(team_member: dict, plan: dict) -> str:
     common_rules = (
         "- **Read the brief and team graph** before doing anything else.\n"
         "- **Pass `workspace_kind=\"dir\"` and `workspace_path` on every "
-        "`kanban_create` call.** This keeps the team in one shared workspace.\n"
+        "`create_kanban` call.** This keeps the team in one shared workspace.\n"
         f"- **Use tenant `{plan['tenant']}`** on every kanban call.\n"
         "- **Write outputs to predictable paths.** Other profiles depend on "
         "your filename conventions.\n"

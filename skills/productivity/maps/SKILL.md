@@ -154,7 +154,7 @@ python3 $MAPS nearby 36.17 -115.14 cafe --radius 1500
 Present results as a numbered list with names, distances, and the
 `maps_url` field so the user gets a tap-to-open link in chat. For "open
 now?" questions, check the `hours` field; if missing or unclear, verify
-with `web_search` since OSM hours are community-maintained and not always
+with `search_web` since OSM hours are community-maintained and not always
 current.
 
 ## Workflow Examples

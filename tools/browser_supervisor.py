@@ -10,7 +10,7 @@ thread-safe snapshot object that tool handlers consume synchronously.
 The supervisor is NOT in the agent's tool schema. Its output reaches the
 agent via two channels:
 
-1. ``browser_snapshot`` merges supervisor state into its return payload
+1. ``snapshot_browser`` merges supervisor state into its return payload
    (see ``tools/browser_tool.py``).
 2. ``browser_dialog`` tool responds to a pending dialog by calling
    ``respond_to_dialog()`` on the active supervisor.
@@ -269,7 +269,7 @@ class SupervisorSnapshot:
     task_id: str
 
     def to_dict(self) -> Dict[str, Any]:
-        """Serialize for inclusion in ``browser_snapshot`` output."""
+        """Serialize for inclusion in ``snapshot_browser`` output."""
         out: Dict[str, Any] = {
             "pending_dialogs": [d.to_dict() for d in self.pending_dialogs],
             "frame_tree": self.frame_tree,

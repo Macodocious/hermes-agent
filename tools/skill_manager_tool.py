@@ -58,7 +58,7 @@ def mark_background_review_skill_read(path: Path) -> None:
 
     The autonomous review fork is allowed to evolve skills, but it must not
     patch or rewrite content it has only inferred from the transcript.  The
-    skill_view tool calls this after returning file content to the model; write
+    view_skill tool calls this after returning file content to the model; write
     paths below require the corresponding target path to be present when the
     current origin is ``background_review``.
     """
@@ -214,7 +214,7 @@ def _validate_delete_target(skill_dir: Path) -> Optional[str]:
     an arbitrary path the way Kilo Code's HTTP endpoint could (their issue
     #11227: a built-in-skill sentinel resolved to the server cwd and a
     recursive delete wiped the user's entire working directory). This is the
-    matching defense-in-depth for our agent-facing ``skill_manage`` delete
+    matching defense-in-depth for our agent-facing ``manage_skill`` delete
     path: even if discovery or a poisoned tree hands us a bad directory, never
     recursively delete
 
@@ -271,7 +271,7 @@ def _pinned_guard(name: str) -> Optional[str]:
     """Return a refusal message if *name* is pinned, else None.
 
     Pin protects a skill from **deletion** — both the curator's auto-archive
-    passes and the agent's ``skill_manage(action="delete")`` tool call. The
+    passes and the agent's ``manage_skill(action="delete")`` tool call. The
     agent can still patch/edit pinned skills; pin only guards against
     irrecoverable loss, not against content evolution.
 
@@ -284,7 +284,7 @@ def _pinned_guard(name: str) -> Optional[str]:
         if rec.get("pinned"):
             return (
                 f"Skill '{name}' is pinned and cannot be deleted by "
-                f"skill_manage. Ask the user to run "
+                f"manage_skill. Ask the user to run "
                 f"`hermes curator unpin {name}` if they want to delete it. "
                 f"Patches and edits are allowed on pinned skills; only "
                 f"deletion is blocked."
@@ -418,8 +418,8 @@ def _background_review_read_before_write_guard(
         "error": (
             f"Refusing background curator {action} for skill '{name}': "
             f"the current {file_label} content has not been loaded in this "
-            "review turn. Call skill_view(name) for SKILL.md, or "
-            "skill_view(name, file_path=...) for a supporting file, then "
+            "review turn. Call view_skill(name) for SKILL.md, or "
+            "view_skill(name, file_path=...) for a supporting file, then "
             "retry the write using the content just returned."
         ),
         "_read_before_write_required": True,
@@ -441,7 +441,7 @@ def _curator_consolidation_delete_guard(
     """Fail closed on unverified deletes during the curator consolidation pass.
 
     The curator's forked review agent (``is_background_review()``) runs the
-    LLM umbrella-building pass. Its only legitimate ``skill_manage(delete)`` is
+    LLM umbrella-building pass. Its only legitimate ``manage_skill(delete)`` is
     a *verified consolidation*: the skill's content was absorbed into an
     umbrella, declared via ``absorbed_into=<umbrella>`` where the umbrella
     exists on disk (validated separately in ``_delete_skill``).
@@ -453,7 +453,7 @@ def _curator_consolidation_delete_guard(
     automations pointing at names that no longer resolve. The deterministic
     inactivity prune is the only legitimate prune path, and it archives via
     ``skill_usage.archive_skill()`` directly without ever calling
-    ``skill_manage`` — so a bare prune reaching here can only be the LLM pass
+    ``manage_skill`` — so a bare prune reaching here can only be the LLM pass
     pruning without consolidation evidence. Refuse it; keep the skill active.
 
     Returns an error dict to abort the delete, or ``None`` when the delete is
@@ -781,7 +781,7 @@ def _skill_not_found_error(name: str, suffix: str = "") -> str:
                 f"operate via explicit file tools with ``cross_profile=True``."
             )
     else:
-        base += " Use skills_list() to see available skills."
+        base += " Use list_skills() to see available skills."
 
     if suffix:
         base += suffix
@@ -935,7 +935,7 @@ def _create_skill(name: str, content: str, category: str = None) -> Dict[str, An
         result["category"] = category
     result["hint"] = (
         "To add reference files, templates, or scripts, use "
-        "skill_manage(action='write_file', name='{}', file_path='references/example.md', file_content='...')".format(name)
+        "manage_skill(action='write_file', name='{}', file_path='references/example.md', file_content='...')".format(name)
     )
     return result
 
@@ -1331,7 +1331,7 @@ def _remove_file(name: str, file_path: str) -> Dict[str, Any]:
 # =============================================================================
 
 # ContextVar bypass: set while replaying an already-approved staged skill write
-# so skill_manage() does not re-gate (and re-stage) it.
+# so manage_skill() does not re-gate (and re-stage) it.
 import contextvars as _ctxvars
 _skill_gate_bypass: "_ctxvars.ContextVar[bool]" = _ctxvars.ContextVar(
     "skill_gate_bypass", default=False
@@ -1359,7 +1359,7 @@ def _apply_skill_write_gate(action, name, **payload_kwargs):
     if decision.blocked:
         return tool_error(decision.message, success=False)
 
-    # stage — record the full skill_manage kwargs so approval can replay it.
+    # stage — record the full manage_skill kwargs so approval can replay it.
     payload = {"action": action, "name": name}
     payload.update({k: v for k, v in payload_kwargs.items() if v is not None})
     gist = wa.skill_gist(
@@ -1383,7 +1383,7 @@ def apply_skill_pending(payload: Dict[str, Any]) -> str:
     """
     token = _skill_gate_bypass.set(True)
     try:
-        return skill_manage(
+        return manage_skill(
             action=payload.get("action", ""),
             name=payload.get("name", ""),
             content=payload.get("content"),
@@ -1399,7 +1399,7 @@ def apply_skill_pending(payload: Dict[str, Any]) -> str:
         _skill_gate_bypass.reset(token)
 
 
-def skill_manage(
+def manage_skill(
     action: str,
     name: str,
     content: str = None,
@@ -1477,7 +1477,7 @@ def skill_manage(
         # Curator telemetry: bump patch_count on edit/patch/write_file (the actions
         # that mutate an existing skill's guidance), drop the record on delete.
         # Only mark a skill as agent-created when the background self-improvement
-        # review fork creates it — foreground `skill_manage(create)` calls are
+        # review fork creates it — foreground `manage_skill(create)` calls are
         # user-directed, and those skills belong to the user (the curator must
         # not touch them). Best-effort; telemetry failures never break the tool.
         try:
@@ -1505,7 +1505,7 @@ def skill_manage(
 # =============================================================================
 
 SKILL_MANAGE_SCHEMA = {
-    "name": "skill_manage",
+    "name": "manage_skill",
     "description": (
         "Manage skills (create, update, delete). Skills are your procedural "
         "memory — reusable approaches for recurring task types. "
@@ -1530,8 +1530,8 @@ SKILL_MANAGE_SCHEMA = {
         "After difficult/iterative tasks, offer to save as a skill. "
         "Skip for simple one-offs. Confirm with user before creating/deleting.\n\n"
         "Good skills: trigger conditions, numbered steps with exact commands, "
-        "pitfalls section, verification steps. Use skill_view() to see format examples.\n\n"
-        "Pinned skills are protected from deletion only — skill_manage(action='delete') "
+        "pitfalls section, verification steps. Use view_skill() to see format examples.\n\n"
+        "Pinned skills are protected from deletion only — manage_skill(action='delete') "
         "will refuse with a message pointing the user to `hermes curator unpin <name>`. "
         "Patches and edits go through on pinned skills so you can still improve them as "
         "pitfalls come up; pin only guards against irrecoverable loss."
@@ -1556,7 +1556,7 @@ SKILL_MANAGE_SCHEMA = {
                 "description": (
                     "Full SKILL.md content (YAML frontmatter + markdown body). "
                     "Required for 'create' and 'edit'. For 'edit', read the skill "
-                    "first with skill_view() and provide the complete updated text."
+                    "first with view_skill() and provide the complete updated text."
                 )
             },
             "old_string": {
@@ -1623,10 +1623,10 @@ SKILL_MANAGE_SCHEMA = {
 from tools.registry import registry, tool_error
 
 registry.register(
-    name="skill_manage",
+    name="manage_skill",
     toolset="skills",
     schema=SKILL_MANAGE_SCHEMA,
-    handler=lambda args, **kw: skill_manage(
+    handler=lambda args, **kw: manage_skill(
         action=args.get("action", ""),
         name=args.get("name", ""),
         content=args.get("content"),

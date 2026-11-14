@@ -26,7 +26,7 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def _reset():
-    from tools.computer_use.tool import reset_backend_for_tests
+    from tools.use_computer.tool import reset_backend_for_tests
     reset_backend_for_tests()
     yield
     reset_backend_for_tests()
@@ -53,7 +53,7 @@ class _FakeSession:
 
 
 def _make_backend(session: _FakeSession):
-    from tools.computer_use.cua_backend import CuaDriverBackend
+    from tools.use_computer.cua_backend import CuaDriverBackend
     be = CuaDriverBackend.__new__(CuaDriverBackend)
     be._session = session               # type: ignore[attr-defined]
     be._session_id = "test-run"          # type: ignore[attr-defined]
@@ -135,8 +135,8 @@ def test_old_driver_without_structured_content_is_clean():
 
 
 def test_text_response_surfaces_fields_additively():
-    from tools.computer_use.backend import ActionResult
-    from tools.computer_use.tool import _text_response
+    from tools.use_computer.backend import ActionResult
+    from tools.use_computer.tool import _text_response
 
     # Full verdict → all fields present.
     r = ActionResult(ok=True, action="click", effect="suspected_noop",
@@ -202,7 +202,7 @@ def test_bad_delivery_mode_rejected():
 
 def test_dispatcher_threads_delivery_mode_to_backend():
     """End-to-end through the tool dispatcher with the noop backend."""
-    from tools.computer_use import tool as cu
+    from tools.use_computer import tool as cu
     with patch.dict(os.environ, {"HERMES_COMPUTER_USE_BACKEND": "noop"}, clear=False):
         cu.reset_backend_for_tests()
         be = cu._get_backend()
@@ -218,7 +218,7 @@ def test_dispatcher_threads_delivery_mode_to_backend():
 # ---------------------------------------------------------------------------
 
 def test_background_approval_does_not_authorize_foreground():
-    from tools.computer_use import tool as cu
+    from tools.use_computer import tool as cu
 
     seen = []
 
@@ -243,7 +243,7 @@ def test_background_approval_does_not_authorize_foreground():
 
 
 def test_approval_state_is_session_scoped():
-    from tools.computer_use import tool as cu
+    from tools.use_computer import tool as cu
 
     calls = []
 
@@ -264,7 +264,7 @@ def test_approval_state_is_session_scoped():
 
 
 def test_always_approve_covers_foreground():
-    from tools.computer_use import tool as cu
+    from tools.use_computer import tool as cu
 
     calls = []
 
@@ -284,7 +284,7 @@ def test_always_approve_covers_foreground():
 
 
 def test_foreground_summary_warns_about_focus_change():
-    from tools.computer_use.tool import _summarize_action
+    from tools.use_computer.tool import _summarize_action
     s = _summarize_action("click", {"element": 3, "delivery_mode": "foreground"})
     assert "FOREGROUND" in s
     bg = _summarize_action("click", {"element": 3})
@@ -299,7 +299,7 @@ def test_lifecycle_finally_resets_started_for_reentry():
     """After the lifecycle coro exits (MCP drop / crash), _started must be
     False so _require_started() no longer passes into a dead/None session.
     We drive the finally block directly via the coro's cleanup semantics."""
-    from tools.computer_use.cua_backend import _CuaDriverSession
+    from tools.use_computer.cua_backend import _CuaDriverSession
 
     sess = _CuaDriverSession.__new__(_CuaDriverSession)
     sess._session = object()
@@ -316,7 +316,7 @@ def test_lifecycle_finally_resets_started_for_reentry():
 def test_call_tool_restarts_a_dead_session(monkeypatch):
     """call_tool on a session whose lifecycle died (_started False) must
     call start() to rebuild it, not raise 'not started' or hang."""
-    from tools.computer_use.cua_backend import _CuaDriverSession
+    from tools.use_computer.cua_backend import _CuaDriverSession
 
     sess = _CuaDriverSession.__new__(_CuaDriverSession)
     sess._started = False           # dead session

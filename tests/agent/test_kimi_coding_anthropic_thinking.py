@@ -185,7 +185,7 @@ class TestKimiFamilyGetsAdaptiveThinking:
                     {
                         "id": "call_1",
                         "type": "function",
-                        "function": {"name": "skill_view", "arguments": "{}"},
+                        "function": {"name": "view_skill", "arguments": "{}"},
                     }
                 ],
             },

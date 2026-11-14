@@ -70,15 +70,15 @@ Every installed skill is automatically a slash command. Just type its name:
 /excalidraw
 ```
 
-You can also trigger skills through natural conversation — ask Hermes to use a specific skill, and it will load it via the `skill_view` tool.
+You can also trigger skills through natural conversation — ask Hermes to use a specific skill, and it will load it via the `view_skill` tool.
 
 ### Progressive Disclosure
 
 Skills use a token-efficient loading pattern. The agent doesn't load everything at once:
 
-1. **`skills_list()`** — compact list of all skills (~3k tokens). Loaded at session start.
-2. **`skill_view(name)`** — full SKILL.md content for one skill. Loaded when the agent decides it needs that skill.
-3. **`skill_view(name, file_path)`** — a specific reference file within the skill. Only loaded if needed.
+1. **`list_skills()`** — compact list of all skills (~3k tokens). Loaded at session start.
+2. **`view_skill(name)`** — full SKILL.md content for one skill. Loaded when the agent decides it needs that skill.
+3. **`view_skill(name, file_path)`** — a specific reference file within the skill. Only loaded if needed.
 
 This means skills don't cost tokens until they're actually used.
 
@@ -102,7 +102,7 @@ hermes skills install https://sharethis.chat/SKILL.md
 
 What happens:
 1. The skill directory is copied to `~/.hermes/skills/`
-2. It appears in your `skills_list` output
+2. It appears in your `list_skills` output
 3. It becomes available as a slash command
 
 :::tip
@@ -127,13 +127,13 @@ Plugins can bundle their own skills using namespaced names (`plugin:skill`). Thi
 
 ```bash
 # Load a plugin skill by its qualified name
-skill_view("superpowers:writing-plans")
+view_skill("superpowers:writing-plans")
 
 # Built-in skill with the same base name is unaffected
-skill_view("writing-plans")
+view_skill("writing-plans")
 ```
 
-Plugin skills are **not** listed in the system prompt and don't appear in `skills_list`. They're opt-in — load them explicitly when you know a plugin provides one. When loaded, the agent sees a banner listing sibling skills from the same plugin.
+Plugin skills are **not** listed in the system prompt and don't appear in `list_skills`. They're opt-in — load them explicitly when you know a plugin provides one. When loaded, the agent sees a banner listing sibling skills from the same plugin.
 
 For how to ship skills in your own plugin, see [Build a Hermes Plugin → Bundle skills](/developer-guide/plugins#bundle-skills).
 
@@ -227,7 +227,7 @@ my-skill/
 Reference these in your SKILL.md:
 
 ```markdown
-For API details, load the reference: `skill_view("my-skill", "references/api-docs.md")`
+For API details, load the reference: `view_skill("my-skill", "references/api-docs.md")`
 ```
 
 ### 4. Test It
@@ -241,7 +241,7 @@ hermes chat -q "/my-skill help me with the thing"
 The skill appears automatically — no registration needed. Drop it in `~/.hermes/skills/` and it's live.
 
 :::info
-The agent can also create and update skills itself using `skill_manage`. After solving a complex problem, Hermes may offer to save the approach as a skill for next time.
+The agent can also create and update skills itself using `manage_skill`. After solving a complex problem, Hermes may offer to save the approach as a skill for next time.
 :::
 
 ---

@@ -155,7 +155,7 @@ powershell.exe -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms;
 
 1. **上传图像文件**——在本地保存图像，通过 `scp`、VSCode 文件浏览器（拖放）或任何文件传输方式上传到远程服务器，然后通过路径引用。*（计划在未来版本中提供 `/attach <filepath>` 命令。）*
 
-2. **使用 URL**——如果图像可在线访问，直接在消息中粘贴 URL。Agent 可使用 `vision_analyze` 直接查看任意图像 URL。
+2. **使用 URL**——如果图像可在线访问，直接在消息中粘贴 URL。Agent 可使用 `analyze_vision` 直接查看任意图像 URL。
 
 3. **X11 转发**——使用 `ssh -X` 连接以转发 X11。这允许远程机器上的 `xclip` 访问你本地的 X11 剪贴板。需要本地运行 X 服务器（macOS 上为 XQuartz，Linux X11 桌面内置）。大图像传输较慢。
 
@@ -197,14 +197,14 @@ powershell.exe -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms;
 | 你的模型 | 图像处理方式 |
 |---|---|
 | **支持视觉的模型**（GPT-4V、Claude with vision、Gemini、Qwen-VL、MiMo-VL 等） | 使用上述提供商原生图像内容格式，以**真实像素**发送。无文本摘要层。 |
-| **纯文本模型**（DeepSeek V3、较小的开源模型、旧版纯对话端点） | 通过 `vision_analyze` 辅助工具路由——辅助视觉模型描述图像，文本描述注入对话。 |
+| **纯文本模型**（DeepSeek V3、较小的开源模型、旧版纯对话端点） | 通过 `analyze_vision` 辅助工具路由——辅助视觉模型描述图像，文本描述注入对话。 |
 
 无需手动配置——Hermes 在提供商元数据中查找当前模型的能力并自动选择正确路径。实际效果：你可以在会话中途切换视觉模型与非视觉模型，图像处理"开箱即用"，无需更改工作流。纯文本模型会获得关于图像的连贯上下文，而不是一个会被拒绝的损坏多模态载荷。
 
 处理文本描述路径的辅助模型可在 `auxiliary.vision` 下配置——参见[辅助模型](/user-guide/configuration#auxiliary-models)。
 
-### `vision_analyze` 具有相同的双重行为
+### `analyze_vision` 具有相同的双重行为
 
-`vision_analyze` 工具本身遵循相同的路由逻辑。当当前主模型支持视觉，**且**其提供商支持在工具结果中包含图像内容（目前为 Anthropic、OpenAI、Azure-OpenAI 和 Gemini 3.x 技术栈），`vision_analyze` 会跳过辅助描述器，直接将原始图像像素作为多模态工具结果信封返回。主模型在下一轮会原生看到图像——无辅助调用、无文本摘要信息损失、无额外延迟。
+`analyze_vision` 工具本身遵循相同的路由逻辑。当当前主模型支持视觉，**且**其提供商支持在工具结果中包含图像内容（目前为 Anthropic、OpenAI、Azure-OpenAI 和 Gemini 3.x 技术栈），`analyze_vision` 会跳过辅助描述器，直接将原始图像像素作为多模态工具结果信封返回。主模型在下一轮会原生看到图像——无辅助调用、无文本摘要信息损失、无额外延迟。
 
-对于纯文本主模型（或工具结果通道不支持图像的提供商），`vision_analyze` 回退到旧路径：请求已配置的辅助视觉模型描述图像，并以纯文本形式返回描述。无论哪种情况，调用工具的签名相同——工具在运行时根据当前模型决定采用哪条路径。
+对于纯文本主模型（或工具结果通道不支持图像的提供商），`analyze_vision` 回退到旧路径：请求已配置的辅助视觉模型描述图像，并以纯文本形式返回描述。无论哪种情况，调用工具的签名相同——工具在运行时根据当前模型决定采用哪条路径。

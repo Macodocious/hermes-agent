@@ -189,7 +189,7 @@ class TestToolResultContentShortCircuit:
         agent._no_list_tool_content_models = set()  # explicit empty
         monkeypatch.setattr(agent, "_model_supports_vision", lambda: True)
         out = agent._tool_result_content_for_active_model(
-            "computer_use", self._multimodal_result()
+            "use_computer", self._multimodal_result()
         )
         # Proactive downgrade: text summary instead of list with images.
         assert isinstance(out, str)
@@ -201,7 +201,7 @@ class TestToolResultContentShortCircuit:
         agent._no_list_tool_content_models = {("xiaomi", "mimo-v2.5")}
         monkeypatch.setattr(agent, "_model_supports_vision", lambda: True)
         out = agent._tool_result_content_for_active_model(
-            "computer_use", self._multimodal_result()
+            "use_computer", self._multimodal_result()
         )
         # Short-circuit: a plain string summary, no image_url present.
         assert isinstance(out, str)
@@ -215,7 +215,7 @@ class TestToolResultContentShortCircuit:
         agent._no_list_tool_content_models = {("xiaomi", "mimo-v2.5")}
         monkeypatch.setattr(agent, "_model_supports_vision", lambda: True)
         out = agent._tool_result_content_for_active_model(
-            "computer_use", self._multimodal_result()
+            "use_computer", self._multimodal_result()
         )
         assert isinstance(out, str)
         assert "data:image" not in out
@@ -228,7 +228,7 @@ class TestToolResultContentShortCircuit:
         # Deliberately do not assign _no_list_tool_content_models.
         monkeypatch.setattr(agent, "_model_supports_vision", lambda: True)
         out = agent._tool_result_content_for_active_model(
-            "computer_use", self._multimodal_result()
+            "use_computer", self._multimodal_result()
         )
         # Xiaomi proactively downgrades regardless of cache state.
         assert isinstance(out, str)

@@ -298,9 +298,9 @@ python /path/to/excel-author/scripts/recalc.py model.xlsx
 
 - **如果配置了任何结构化金融数据 MCP**（Hermes 支持 MCP——参见 `native-mcp` skill），优先使用它获取时点可比数据、前例交易和文件。
 - **否则**，回退到：
-  - 针对 SEC EDGAR（`https://www.sec.gov/cgi-bin/browse-edgar`）使用 `web_search` / `web_extract` 获取美国文件
+  - 针对 SEC EDGAR（`https://www.sec.gov/cgi-bin/browse-edgar`）使用 `search_web` / `extract_web` 获取美国文件
   - 公司 IR 页面获取新闻稿、财报演示文稿
-  - 使用 `browser_navigate` 访问交互式数据门户
+  - 使用 `navigate_browser` 访问交互式数据门户
   - 用户提供的数据（当上下文中没有时，明确询问）
 - **绝不捏造数据**。如果某个倍数、前例或文件数字无法溯源，将该单元格标记为 `[UNSOURCED]` 并向用户说明。
 

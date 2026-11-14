@@ -3949,7 +3949,7 @@ def test_complete_with_cross_worker_card_is_rejected(kanban_home):
 def test_complete_accepts_cross_worker_card_when_linked_as_child(kanban_home):
     """A card created by a different principal but explicitly linked as
     a child of the completing task is accepted — the worker took
-    ownership via ``kanban_create(parents=[current_task])`` or an
+    ownership via ``create_kanban(parents=[current_task])`` or an
     explicit ``link_tasks`` call, which proves the relationship even
     when ``created_by`` doesn't match.
 
@@ -3988,7 +3988,7 @@ def test_complete_accepts_cross_worker_card_when_linked_as_child(kanban_home):
 
 def test_complete_can_retry_after_phantom_rejection(kanban_home):
     """A worker that hits the hallucinated-card gate must be able to
-    retry kanban_complete on the same task — both with a corrected
+    retry complete_kanban on the same task — both with a corrected
     created_cards list and with an empty list (the documented escape
     hatch). Regression test for #22923, where workers were believed to
     be unrecoverable after the first rejection.
@@ -4469,7 +4469,7 @@ def test_detect_crashed_workers_protocol_violation_first_occurrence_retries(kanb
             "a below-budget violation must not consume the unified failure "
             f"budget, got consecutive_failures={task.consecutive_failures}"
         )
-        assert "kanban_complete" in (task.last_failure_error or ""), (
+        assert "complete_kanban" in (task.last_failure_error or ""), (
             f"expected protocol-violation message, got {task.last_failure_error!r}"
         )
 

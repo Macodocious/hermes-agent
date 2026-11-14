@@ -35,7 +35,7 @@ def test_build_welcome_banner_uses_normalized_toolset_names():
             return_value=(
                 ["web"],
                 [
-                    {"name": "homeassistant", "tools": ["ha_call_service"]},
+                    {"name": "homeassistant", "tools": ["call_ha_service"]},
                     {"name": "honcho", "tools": ["honcho_conclude"]},
                 ],
             ),
@@ -52,11 +52,11 @@ def test_build_welcome_banner_uses_normalized_toolset_names():
             model="anthropic/test-model",
             cwd="/tmp/project",
             tools=[
-                {"function": {"name": "web_search"}},
+                {"function": {"name": "search_web"}},
                 {"function": {"name": "read_file"}},
             ],
             get_toolset_for_tool=lambda name: {
-                "web_search": "web_tools",
+                "search_web": "web_tools",
                 "read_file": "file",
             }.get(name),
         )
@@ -219,7 +219,7 @@ def test_banner_hides_toolsets_not_enabled_for_platform():
                 ["file", "terminal"],
                 [
                     {"name": "discord", "tools": ["discord_fetch_messages"]},
-                    {"name": "feishu_doc", "tools": ["feishu_doc_read"]},
+                    {"name": "feishu_doc", "tools": ["read_feishu_doc"]},
                 ],
             ),
         ),

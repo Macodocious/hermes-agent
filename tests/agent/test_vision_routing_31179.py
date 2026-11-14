@@ -9,7 +9,7 @@ Before the fix:
     image content to a text-only endpoint and producing cryptic
     ``unknown variant 'image_url', expected 'text'`` errors.
   - ``check_vision_requirements`` used the explicit-only path, so
-    ``vision_analyze`` disappeared from the tool list while ``browser_vision``
+    ``analyze_vision`` disappeared from the tool list while ``browser_vision``
     stayed (its check_fn only validated the browser).
 
 The three fixes covered here:
@@ -19,7 +19,7 @@ The three fixes covered here:
      reports ``supports_vision=False`` instead of routing image content to
      a text-only endpoint.
   3. ``check_vision_requirements`` mirrors the runtime fallback chain so
-     ``vision_analyze`` shows up whenever the auto chain can serve vision,
+     ``analyze_vision`` shows up whenever the auto chain can serve vision,
      and ``browser_vision`` gates on vision availability as well.
 """
 
@@ -202,7 +202,7 @@ class TestVisionToolGating:
 
     def test_check_vision_succeeds_for_aliased_openai(self, isolated_home, monkeypatch):
         """The user's exact reported scenario: provider=openai unhides
-        vision_analyze instead of silently dropping it."""
+        analyze_vision instead of silently dropping it."""
         _write_config(isolated_home, """
 auxiliary:
   vision:

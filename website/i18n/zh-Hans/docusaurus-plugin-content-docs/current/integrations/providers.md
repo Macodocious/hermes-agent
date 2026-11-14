@@ -754,7 +754,7 @@ hermes model
 这会将端点保存到 `config.yaml`，在会话间持久保留。
 
 :::caution `--jinja` 是工具调用的必要条件
-没有 `--jinja`，llama-server 会完全忽略 `tools` 参数。模型会尝试在响应文本中写入 JSON 来调用工具，但 Hermes 不会将其识别为工具调用——你会看到原始 JSON（如 `{"name": "web_search", ...}`）作为消息打印出来，而不是实际执行搜索。
+没有 `--jinja`，llama-server 会完全忽略 `tools` 参数。模型会尝试在响应文本中写入 JSON 来调用工具，但 Hermes 不会将其识别为工具调用——你会看到原始 JSON（如 `{"name": "search_web", ...}`）作为消息打印出来，而不是实际执行搜索。
 
 原生工具调用支持（最佳性能）：Llama 3.x、Qwen 2.5（包括 Coder）、Hermes 2/3、Mistral、DeepSeek、Functionary。其他所有模型使用通用处理器，可以工作但效率可能较低。完整列表参见 [llama.cpp 函数调用文档](https://github.com/ggml-org/llama.cpp/blob/master/docs/function-calling.md)。
 
@@ -929,7 +929,7 @@ curl http://172.29.192.1:11434/v1/models       # NAT 模式（使用你的实际
 
 #### 工具调用以文本形式出现而非执行
 
-模型输出类似 `{"name": "web_search", "arguments": {...}}` 的消息，而不是实际调用工具。
+模型输出类似 `{"name": "search_web", "arguments": {...}}` 的消息，而不是实际调用工具。
 
 **原因：** 你的服务器未启用工具调用，或模型不支持通过服务器的工具调用实现。
 

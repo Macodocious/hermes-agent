@@ -222,7 +222,7 @@ describe('chatMessagesEquivalent', () => {
         {
           type: 'tool-call',
           toolCallId: 'img-1',
-          toolName: 'image_generate',
+          toolName: 'generate_image',
           args: { prompt: 'a cat' } as never,
           argsText: '{"prompt":"a cat"}',
           result: { image: 'data:image/png;base64,iVBORw0KG...(large base64)' },
@@ -239,7 +239,7 @@ describe('chatMessagesEquivalent', () => {
         {
           type: 'tool-call',
           toolCallId: 'img-1',
-          toolName: 'image_generate',
+          toolName: 'generate_image',
           args: { prompt: 'a cat' } as never,
           argsText: '{"prompt":"a cat"}',
           result: { image: 'data:image/png;base64,iVBORw0KG...(large base64)' },

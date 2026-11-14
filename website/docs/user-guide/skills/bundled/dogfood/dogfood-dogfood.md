@@ -34,7 +34,7 @@ This skill guides you through systematic exploratory QA testing of web applicati
 
 ## Prerequisites
 
-- Browser toolset must be available (`browser_navigate`, `browser_snapshot`, `browser_click`, `browser_type`, `browser_vision`, `browser_console`, `browser_scroll`, `browser_back`, `browser_press`)
+- Browser toolset must be available (`navigate_browser`, `snapshot_browser`, `click_browser`, `type_browser`, `browser_vision`, `browser_console`, `scroll_browser`, `back_browser`, `press_browser`)
 - A target URL and testing scope from the user
 
 ## Inputs
@@ -72,12 +72,12 @@ For each page or feature in your plan:
 
 1. **Navigate** to the page:
    ```
-   browser_navigate(url="https://example.com/page")
+   navigate_browser(url="https://example.com/page")
    ```
 
 2. **Take a snapshot** to understand the DOM structure:
    ```
-   browser_snapshot()
+   snapshot_browser()
    ```
 
 3. **Check the console** for JavaScript errors:
@@ -93,10 +93,10 @@ For each page or feature in your plan:
    The `annotate=true` flag overlays numbered `[N]` labels on interactive elements. Each `[N]` maps to ref `@eN` for subsequent browser commands.
 
 5. **Test interactive elements** systematically:
-   - Click buttons and links: `browser_click(ref="@eN")`
-   - Fill forms: `browser_type(ref="@eN", text="test input")`
-   - Test keyboard navigation: `browser_press(key="Tab")`, `browser_press(key="Enter")`
-   - Scroll through content: `browser_scroll(direction="down")`
+   - Click buttons and links: `click_browser(ref="@eN")`
+   - Fill forms: `type_browser(ref="@eN", text="test input")`
+   - Test keyboard navigation: `press_browser(key="Tab")`, `press_browser(key="Enter")`
+   - Scroll through content: `scroll_browser(direction="down")`
    - Test form validation with invalid inputs
    - Test empty submissions
 
@@ -159,13 +159,13 @@ Save the report to `{output_dir}/report.md`.
 
 | Tool | Purpose |
 |------|---------|
-| `browser_navigate` | Go to a URL |
-| `browser_snapshot` | Get DOM text snapshot (accessibility tree) |
-| `browser_click` | Click an element by ref (`@eN`) or text |
-| `browser_type` | Type into an input field |
-| `browser_scroll` | Scroll up/down on the page |
-| `browser_back` | Go back in browser history |
-| `browser_press` | Press a keyboard key |
+| `navigate_browser` | Go to a URL |
+| `snapshot_browser` | Get DOM text snapshot (accessibility tree) |
+| `click_browser` | Click an element by ref (`@eN`) or text |
+| `type_browser` | Type into an input field |
+| `scroll_browser` | Scroll up/down on the page |
+| `back_browser` | Go back in browser history |
+| `press_browser` | Press a keyboard key |
 | `browser_vision` | Screenshot + AI analysis; use `annotate=true` for element labels |
 | `browser_console` | Get JS console output and errors |
 

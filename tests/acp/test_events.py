@@ -239,7 +239,7 @@ class TestStepCallback:
         """When result is None (e.g. first iteration), None is passed through."""
         from collections import deque
 
-        tool_call_ids = {"web_search": deque(["tc-aaa"])}
+        tool_call_ids = {"search_web": deque(["tc-aaa"])}
         loop = event_loop_fixture
 
         cb = make_step_cb(mock_conn, "session-1", loop, tool_call_ids, {})
@@ -250,9 +250,9 @@ class TestStepCallback:
             future.result.return_value = None
             mock_rcts.return_value = future
 
-            cb(1, [{"name": "web_search", "result": None}])
+            cb(1, [{"name": "search_web", "result": None}])
 
-        mock_btc.assert_called_once_with("tc-aaa", "web_search", result=None, function_args=None, snapshot=None)
+        mock_btc.assert_called_once_with("tc-aaa", "search_web", result=None, function_args=None, snapshot=None)
 
     def test_step_callback_passes_arguments_and_snapshot(self, mock_conn, event_loop_fixture):
         from collections import deque

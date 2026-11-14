@@ -74,12 +74,12 @@ def _tool_call_history():
                 {
                     "id": "call_1",
                     "type": "function",
-                    "function": {"name": "web_search", "arguments": '{"query":"python tutorials"}'},
+                    "function": {"name": "search_web", "arguments": '{"query":"python tutorials"}'},
                 },
                 {
                     "id": "call_2",
                     "type": "function",
-                    "function": {"name": "web_extract", "arguments": '{"urls":["https://example.com"]}'},
+                    "function": {"name": "extract_web", "arguments": '{"urls":["https://example.com"]}'},
                 },
             ],
         },
@@ -166,8 +166,8 @@ class TestDisplayResumedHistory:
             output = self._capture_display(cli)
 
         assert "2 tool calls" in output
-        assert "web_search" in output
-        assert "web_extract" in output
+        assert "search_web" in output
+        assert "extract_web" in output
 
     def test_tool_only_message_skipped_by_default(self):
         """Assistant messages with only tool_calls (no text) are skipped when

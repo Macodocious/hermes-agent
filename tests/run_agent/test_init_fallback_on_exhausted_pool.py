@@ -6,7 +6,7 @@ from run_agent import AIAgent
 
 
 def _make_tool_defs():
-    return [{"type": "function", "function": {"name": "web_search",
+    return [{"type": "function", "function": {"name": "search_web",
              "description": "search", "parameters": {"type": "object", "properties": {}}}}]
 
 

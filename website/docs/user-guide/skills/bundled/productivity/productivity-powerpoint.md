@@ -238,7 +238,7 @@ pptxgenjs emits chart XML PowerPoint refuses to open, and every other tool accep
 
 ### Visual QA
 
-Convert the slides to images (see [Converting to Images](#converting-to-images)) and inspect every one with `vision_analyze`. After staring at the generating code you tend to see what you expect rather than what rendered, so look at the images fresh (a `delegate_task` subagent works well for this). User-visible defects to look for:
+Convert the slides to images (see [Converting to Images](#converting-to-images)) and inspect every one with `analyze_vision`. After staring at the generating code you tend to see what you expect rather than what rendered, so look at the images fresh (a `delegate_task` subagent works well for this). User-visible defects to look for:
 
 - **Text overflow or text cut off at a box or slide boundary — check this first.** It is the most common defect and always user-visible. (For a font the previewer renders unreliably per Typography, the preview is approximate: trust the ~10% slack you left, not its apparent fit.)
 - Overlapping elements (text through shapes, lines through words, stacked elements)
@@ -264,7 +264,7 @@ pdftoppm -jpeg -r 150 output.pdf slide
 ls -1 "$PWD"/slide-*.jpg
 ```
 
-**Pass the absolute paths printed above directly to `vision_analyze`.** The `rm` clears stale images from prior runs. `pdftoppm` zero-pads based on page count: `slide-1.jpg` for decks under 10 pages, `slide-01.jpg` for 10-99, `slide-001.jpg` for 100+.
+**Pass the absolute paths printed above directly to `analyze_vision`.** The `rm` clears stale images from prior runs. `pdftoppm` zero-pads based on page count: `slide-1.jpg` for decks under 10 pages, `slide-01.jpg` for 10-99, `slide-001.jpg` for 100+.
 
 **After fixes, rerun all four commands above** — the PDF must be regenerated from the edited `.pptx` before `pdftoppm` can reflect your changes.
 

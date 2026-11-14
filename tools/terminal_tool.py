@@ -2588,7 +2588,7 @@ def terminal_tool(
                             "exit-on-first-fail behavior, or the column-2 "
                             "awk-on-tabs poller "
                             "(`awk -F\"\\t\" \"$2==\\\"pending\\\"\"`) for "
-                            "sharded matrices. Load skill_view("
+                            "sharded matrices. Load view_skill("
                             "name='github/hermes-agent-dev', "
                             "file_path='references/green-ci-policy.md') for "
                             "the verbatim snippets. If you must roll a custom "

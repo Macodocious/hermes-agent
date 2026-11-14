@@ -109,7 +109,7 @@ class TestPreToolCheck:
 
         tc3 = MagicMock()
         tc3.id = "tc_3"
-        tc3.function.name = "web_search"
+        tc3.function.name = "search_web"
         tc3.function.arguments = '{"query": "test"}'
 
         assistant_msg = MagicMock()

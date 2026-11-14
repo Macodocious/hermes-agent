@@ -13,9 +13,9 @@ FILE_MUTATING_TOOL_NAMES = frozenset({"write_file", "patch"})
 # cannot mutate either external state or Hermes session state. Unknown/plugin/
 # MCP tools stay effect-capable by default.
 NO_EFFECT_TOOL_NAMES = frozenset({
-    "read_file", "search_files", "session_search", "skill_view", "skills_list",
-    "web_extract", "web_search", "vision_analyze", "browser_snapshot",
-    "browser_get_images", "browser_console", "read_terminal",
+    "read_file", "search_files", "search_session", "view_skill", "list_skills",
+    "extract_web", "search_web", "analyze_vision", "snapshot_browser",
+    "get_browser_images", "browser_console", "read_terminal",
 })
 
 

@@ -331,7 +331,7 @@ class TestDispatchersTriggerPluginDiscovery:
     """
 
     def _clear_registry(self):
-        """Reset the web_search registry to empty and return a callback
+        """Reset the search_web registry to empty and return a callback
         that restores the original contents. Used in a try/finally so the
         snapshot is restored even when the dispatcher under test raises."""
         from agent import web_search_registry

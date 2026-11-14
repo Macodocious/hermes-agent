@@ -368,7 +368,7 @@ terminal:
 
 **1. 技能作用域透传（自动）**
 
-当技能通过 `skill_view` 或 `/skill` 命令加载，且声明了 `required_environment_variables` 时，环境中实际已设置的这些变量会自动注册为透传变量。尚未设置（仍处于待配置状态）的变量**不会**被注册。
+当技能通过 `view_skill` 或 `/skill` 命令加载，且声明了 `required_environment_variables` 时，环境中实际已设置的这些变量会自动注册为透传变量。尚未设置（仍处于待配置状态）的变量**不会**被注册。
 
 ```yaml
 # 在技能的 SKILL.md frontmatter 中
@@ -492,7 +492,7 @@ security:
       - "/etc/hermes/blocked-sites.txt"
 ```
 
-当请求被阻止的 URL 时，工具会返回一条错误，说明该域名已被策略阻止。黑名单在 `web_search`、`web_extract`、`browser_navigate` 及所有支持 URL 的工具中均强制执行。
+当请求被阻止的 URL 时，工具会返回一条错误，说明该域名已被策略阻止。黑名单在 `search_web`、`extract_web`、`navigate_browser` 及所有支持 URL 的工具中均强制执行。
 
 完整详情请参见配置指南中的[网站黑名单](/user-guide/configuration#website-blocklist)。
 

@@ -113,7 +113,7 @@ Toolset 是工具的命名集合。Hermes 通过以下方式解析它们：
 
 4. **注册表过滤** — 解析后的工具名称集合传递给 `registry.get_definitions()`，后者应用 `check_fn` 过滤并返回 OpenAI 格式的 schema。
 
-5. **动态 schema 修补** — 过滤后，`execute_code` 和 `browser_navigate` 的 schema 会被动态调整，仅引用实际通过过滤的工具（防止模型幻觉出不可用的工具）。
+5. **动态 schema 修补** — 过滤后，`execute_code` 和 `navigate_browser` 的 schema 会被动态调整，仅引用实际通过过滤的工具（防止模型幻觉出不可用的工具）。
 
 ### 旧版 toolset 名称
 
@@ -134,7 +134,7 @@ run_agent.py agent 循环
     ↓
 model_tools.handle_function_call(name, args, task_id, user_task)
     ↓
-[Agent 循环工具？] → 由 agent 循环直接处理（todo、memory、session_search、delegate_task）
+[Agent 循环工具？] → 由 agent 循环直接处理（todo、memory、search_session、delegate_task）
     ↓
 [插件 pre-hook] → invoke_hook("pre_tool_call", ...)
     ↓
@@ -166,7 +166,7 @@ registry.dispatch(name, args, **kwargs)
 
 - `todo` — 规划/任务跟踪
 - `memory` — 持久化 memory 写入
-- `session_search` — 跨会话召回
+- `search_session` — 跨会话召回
 - `delegate_task` — 生成子 agent 会话
 
 这些工具的 schema 仍在注册表中注册（供 `get_tool_definitions` 使用），但若调度以某种方式直接到达它们，其 handler 会返回一个存根错误。

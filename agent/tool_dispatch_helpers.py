@@ -10,7 +10,7 @@ Pure module-level utilities extracted from ``run_agent.py``:
 * ``_is_multimodal_tool_result`` / ``_multimodal_text_summary`` /
   ``_append_subdir_hint_to_multimodal`` — envelope helpers for the
   ``{"_multimodal": True, "content": [...], "text_summary": ...}`` dict
-  shape returned by tools like ``computer_use``.
+  shape returned by tools like ``use_computer``.
 * ``_extract_file_mutation_targets`` / ``_extract_landed_file_mutation_paths`` /
   ``_extract_error_preview`` —
   per-turn file-mutation verifier inputs.
@@ -45,17 +45,17 @@ _NEVER_PARALLEL_TOOLS = frozenset({"clarify", "write_file", "patch"})
 
 # Read-only tools with no shared mutable session state.
 _PARALLEL_SAFE_TOOLS = frozenset({
-    "ha_get_state",
-    "ha_list_entities",
-    "ha_list_services",
+    "get_ha_state",
+    "list_ha_entities",
+    "list_ha_services",
     "read_file",
     "search_files",
-    "session_search",
-    "skill_view",
-    "skills_list",
-    "vision_analyze",
-    "web_extract",
-    "web_search",
+    "search_session",
+    "view_skill",
+    "list_skills",
+    "analyze_vision",
+    "extract_web",
+    "search_web",
 })
 
 # File tools can run concurrently when they target independent paths.
@@ -275,7 +275,7 @@ def _paths_overlap(left: Path, right: Path) -> bool:
 def _is_multimodal_tool_result(value: Any) -> bool:
     """True if the value is a multimodal tool result envelope.
 
-    Multimodal handlers (e.g. tools/computer_use) return a dict with
+    Multimodal handlers (e.g. tools/use_computer) return a dict with
     `_multimodal=True`, a `content` key holding OpenAI-style content
     parts, and an optional `text_summary` for string-only fallbacks.
     """
@@ -466,7 +466,7 @@ def make_tool_result_message(
     field (required by the wire format and provider adapters) and the internal
     ``tool_name`` field (written to the session DB messages table).
 
-    Content from high-risk tools (``web_extract``, ``web_search``, ``browser_*``,
+    Content from high-risk tools (``extract_web``, ``search_web``, ``browser_*``,
     ``mcp_*``) gets wrapped in semantic delimiters telling the model the content
     is untrusted data, not instructions.  This is the architectural defense
     against indirect prompt injection from poisoned web pages, GitHub issues,
@@ -507,8 +507,8 @@ def make_tool_result_message(
 # promptware defense.  Skipped for short outputs (under 32 chars) where the
 # overhead of the wrapper outweighs any indirect-injection risk.
 _UNTRUSTED_TOOL_NAMES = frozenset({
-    "web_extract",
-    "web_search",
+    "extract_web",
+    "search_web",
 })
 
 _UNTRUSTED_TOOL_PREFIXES = (

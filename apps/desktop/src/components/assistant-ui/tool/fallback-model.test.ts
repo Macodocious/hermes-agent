@@ -17,7 +17,7 @@ const part = (overrides: Partial<ToolPart>): ToolPart => ({
   isError: false,
   result: {},
   toolCallId: 'call_1',
-  toolName: 'vision_analyze',
+  toolName: 'analyze_vision',
   type: 'tool-call',
   ...overrides
 })
@@ -27,7 +27,7 @@ afterEach(() => {
 })
 
 describe('buildToolView image handling', () => {
-  // vision_analyze reports the input image as a local path; an <img> pointed at
+  // analyze_vision reports the input image as a local path; an <img> pointed at
   // a bare path resolves against the renderer origin and 404s, so we render the
   // tool codicon instead of a broken image.
   it('drops bare filesystem paths', () => {
@@ -78,11 +78,11 @@ describe('buildToolView terminal exit-code status', () => {
   })
 })
 
-describe('buildToolView browser_navigate title', () => {
+describe('buildToolView navigate_browser title', () => {
   it('shows failed title when navigate returns success=false', () => {
     const view = buildToolView(
       part({
-        toolName: 'browser_navigate',
+        toolName: 'navigate_browser',
         args: { url: 'https://hermes-agent.nousresearch.com/docs' },
         result: { success: false, error: 'Command timed out after 60 seconds' }
       }),
@@ -96,7 +96,7 @@ describe('buildToolView browser_navigate title', () => {
   it('shows opened title on success', () => {
     const view = buildToolView(
       part({
-        toolName: 'browser_navigate',
+        toolName: 'navigate_browser',
         args: { url: 'https://hermes-agent.nousresearch.com/docs' },
         result: { success: true, url: 'https://hermes-agent.nousresearch.com/docs', title: 'Docs' }
       }),
@@ -153,7 +153,7 @@ describe('buildToolView title actions', () => {
     const read = buildToolView(part({ args: { path: '/tmp/demo.txt' }, result: undefined, toolName: 'read_file' }), '')
 
     const web = buildToolView(
-      part({ args: { url: 'https://example.com/docs' }, result: undefined, toolName: 'web_extract' }),
+      part({ args: { url: 'https://example.com/docs' }, result: undefined, toolName: 'extract_web' }),
       ''
     )
 
@@ -178,7 +178,7 @@ describe('buildToolView title actions', () => {
   })
 
   it('does not mark completed tool titles as pending actions', () => {
-    const view = buildToolView(part({ args: { url: 'https://example.com/docs' }, toolName: 'web_extract' }), '')
+    const view = buildToolView(part({ args: { url: 'https://example.com/docs' }, toolName: 'extract_web' }), '')
 
     expect(view.title).toBe('Read example.com/docs')
     expect(view.titleAction).toBeUndefined()
@@ -314,7 +314,7 @@ describe('buildToolView title actions', () => {
     const read = buildToolView(part({ args: { path: '/tmp/demo.txt' }, result: undefined, toolName: 'read_file' }), '')
 
     const web = buildToolView(
-      part({ args: { url: 'https://example.com/docs' }, result: undefined, toolName: 'web_extract' }),
+      part({ args: { url: 'https://example.com/docs' }, result: undefined, toolName: 'extract_web' }),
       ''
     )
 
@@ -345,7 +345,7 @@ describe('clampForDisplay', () => {
 // A large tool result (e.g. a 100KB read_file during a `/learn` run) must not
 // be serialized at full size — that JSON.stringify payload is what floods the
 // renderer. buildToolView no longer prettyJson's every result eagerly; the
-// web_search drilldown serializes lazily via prettyJson, which clamps.
+// search_web drilldown serializes lazily via prettyJson, which clamps.
 describe('prettyJson caps serialized result size', () => {
   it('clamps an oversized result', () => {
     const huge = 'y'.repeat(MAX_TOOL_RENDER_CHARS * 3)

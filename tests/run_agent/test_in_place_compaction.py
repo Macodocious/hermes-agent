@@ -266,7 +266,7 @@ class TestInPlaceConfigDefault:
 class TestCompactedTurnsStaySearchable:
     """Teknium's review hinges on the pre-compaction transcript staying
     DISCOVERABLE after in-place compaction. Compaction-archived rows
-    (active=0, compacted=1) must surface in session_search by default, while
+    (active=0, compacted=1) must surface in search_session by default, while
     rewind/undo rows (active=0, compacted=0) must stay hidden. The two share
     the active flag but are distinguished by the compacted flag."""
 

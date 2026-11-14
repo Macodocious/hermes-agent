@@ -8,7 +8,7 @@ Covers:
 - _is_backend_available("brave-free") integration
 - _get_backend() recognizes "brave-free" as a valid configured backend
 - check_web_api_key() includes brave-free in availability check
-- web_extract returns a search-only error when brave-free is active
+- extract_web returns a search-only error when brave-free is active
 """
 from __future__ import annotations
 
@@ -238,7 +238,7 @@ class TestBraveFreeBackendWiring:
 
 
 # ---------------------------------------------------------------------------
-# brave-free is search-only: web_extract returns a clear error
+# brave-free is search-only: extract_web returns a clear error
 # ---------------------------------------------------------------------------
 
 

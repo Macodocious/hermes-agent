@@ -96,8 +96,8 @@ Spikes are not research-free — you research enough to pick the right approach,
 
 Use Hermes tools for the research step:
 
-- `web_search("python websocket streaming libraries 2025")` — find candidates
-- `web_extract(urls=["https://websockets.readthedocs.io/..."])` — read the actual docs (returns markdown)
+- `search_web("python websocket streaming libraries 2025")` — find candidates
+- `extract_web(urls=["https://websockets.readthedocs.io/..."])` — read the actual docs (returns markdown)
 - `terminal("pip show websockets | grep Version")` — check what's installed in the project's venv
 
 For libraries without docs pages, clone and read their `README.md` / `examples/` via `read_file`. Context7 MCP (if the user has it configured) is also a good source — `mcp_*_resolve-library-id` then `mcp_*_query-docs`.

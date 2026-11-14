@@ -18,7 +18,7 @@ about.
 
 ## How it works
 
-The `computer_use` toolset speaks MCP over stdio to
+The `use_computer` toolset speaks MCP over stdio to
 [`cua-driver`](https://github.com/trycua/cua), an open-source background
 computer-use driver. Each platform uses the appropriate accessibility +
 input stack under the hood:
@@ -70,10 +70,10 @@ platform-appropriate prereqs:
 Then start a session with the toolset enabled:
 
 ```
-hermes -t computer_use chat
+hermes -t use_computer chat
 ```
 
-or add `computer_use` to your enabled toolsets in `~/.hermes/config.yaml`.
+or add `use_computer` to your enabled toolsets in `~/.hermes/config.yaml`.
 
 ## `hermes computer-use doctor` — your first triage stop
 
@@ -131,7 +131,7 @@ halo).
 ## Going deeper — the cua-driver skill pack
 
 Hermes intentionally keeps its skill (`skills/computer-use/SKILL.md`)
-focused on the Hermes-side `computer_use` action vocabulary — the
+focused on the Hermes-side `use_computer` action vocabulary — the
 single source of truth the agent loads. For the deeper material —
 platform-specific deep dives, recording semantics, browser page
 interaction — point your agent harness at the cua-driver skill pack
@@ -174,12 +174,12 @@ User prompt: *"Find my latest email from Stripe and summarise what they want me 
 The agent's plan (this is the same shape on macOS / Windows / Linux —
 the model substitutes the platform's idiomatic shortcut and app name):
 
-1. `computer_use(action="capture", mode="som", app="Mail")` — gets a
+1. `use_computer(action="capture", mode="som", app="Mail")` — gets a
    screenshot of the email app with every sidebar item, toolbar button,
    and message row numbered.
-2. `computer_use(action="click", element=14)` — clicks the search field.
-3. `computer_use(action="type", text="from:stripe")`
-4. `computer_use(action="key", keys="return", capture_after=True)` —
+2. `use_computer(action="click", element=14)` — clicks the search field.
+3. `use_computer(action="type", text="from:stripe")`
+4. `use_computer(action="key", keys="return", capture_after=True)` —
    submit and get the new screenshot.
 5. Click the top result, read the body, summarise.
 
@@ -279,7 +279,7 @@ of screenshot context, not ~600K.
     has the recipe.
   - **Linux** requires a reachable display server. Headless servers
     need Xvfb (`Xvfb :99 -screen 0 1920x1080x24`) before
-    `computer_use` can capture or inject events. Pure Wayland sessions
+    `use_computer` can capture or inject events. Pure Wayland sessions
     need an XWayland bridge for screen capture (cua-driver's Wayland
     inject path handles input independently).
 
@@ -312,7 +312,7 @@ To opt back in (let cua-driver use its own default and send telemetry), set
 this in `config.yaml`:
 
 ```yaml
-computer_use:
+use_computer:
   cua_telemetry: true   # default: false (telemetry off)
 ```
 
@@ -385,7 +385,7 @@ HERMES_CUA_DRIVER_CMD=/path/to/cua/libs/cua-driver/rust/target/debug/cua-driver
   version.
 - `hermes computer-use doctor` confirms the binary is reachable and
   exercises the full MCP path end-to-end.
-- In a session, `computer_use(action="capture")` exercises the spawned
+- In a session, `use_computer(action="capture")` exercises the spawned
   `cua-driver mcp` child process.
 
 ### Notes & gotchas
@@ -421,7 +421,7 @@ debug) exactly what's wrong.
 
 Specific failure modes the doctor doesn't catch:
 
-**`computer_use backend unavailable: cua-driver is not installed`** —
+**`use_computer backend unavailable: cua-driver is not installed`** —
 Run `hermes computer-use install` to fetch the cua-driver binary, or
 run `hermes tools` and enable the Computer Use toolset.
 
@@ -450,7 +450,7 @@ autostart pattern — see
 ## See also
 
 - **Hermes-side skill** — `skills/computer-use/SKILL.md` — teaches the
-  Hermes `computer_use` action vocabulary; this is what the agent loads.
+  Hermes `use_computer` action vocabulary; this is what the agent loads.
 - **cua-driver skill pack** — for platform-specific deep dives
   (macOS no-foreground contract, Windows UIA + Session 0, Linux AT-SPI
   + X11/Wayland, recording, browser pages), run

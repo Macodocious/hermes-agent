@@ -11,7 +11,7 @@ Hermes Agent 可以在**后台**驱动你的 Mac 桌面——点击、输入、�
 
 ## 工作原理
 
-`computer_use` 工具集通过 stdio 以 MCP 协议与 [`cua-driver`](https://github.com/trycua/cua) 通信。`cua-driver` 是一个 macOS 驱动，使用 SkyLight 私有 SPI（`SLEventPostToPid`、`SLPSPostEventRecordTo`）以及 `_AXObserverAddNotificationAndCheckRemote` 无障碍 SPI，实现以下功能：
+`use_computer` 工具集通过 stdio 以 MCP 协议与 [`cua-driver`](https://github.com/trycua/cua) 通信。`cua-driver` 是一个 macOS 驱动，使用 SkyLight 私有 SPI（`SLEventPostToPid`、`SLPSPostEventRecordTo`）以及 `_AXObserverAddNotificationAndCheckRemote` 无障碍 SPI，实现以下功能：
 
 - 直接向目标进程投递合成事件——无需 HID 事件 tap，无需光标跳转。
 - 在不提升窗口的情况下切换 AppKit 激活状态——不触发 Space 切换。
@@ -45,9 +45,9 @@ hermes computer-use install
    - **系统设置 → 隐私与安全性 → 屏幕录制** → 允许同一应用。
 4. 启动启用了该工具集的会话：
    ```
-   hermes -t computer_use chat
+   hermes -t use_computer chat
    ```
-   或在 `~/.hermes/config.yaml` 中将 `computer_use` 添加到已启用的工具集列表。
+   或在 `~/.hermes/config.yaml` 中将 `use_computer` 添加到已启用的工具集列表。
 
 ## 保持 cua-driver 最新
 
@@ -64,10 +64,10 @@ cua-driver 项目会定期发布修复（例如 v0.1.6 修复了 UTM 工作流�
 
 Agent 的执行计划：
 
-1. `computer_use(action="capture", mode="som", app="Mail")` — 获取 Mail 的截图，其中每个侧边栏项目、工具栏按钮和邮件行均已编号。
-2. `computer_use(action="click", element=14)` — 点击搜索框（来自截图的第 #14 号元素）。
-3. `computer_use(action="type", text="from:stripe")`
-4. `computer_use(action="key", keys="return", capture_after=True)` — 提交并获取新截图。
+1. `use_computer(action="capture", mode="som", app="Mail")` — 获取 Mail 的截图，其中每个侧边栏项目、工具栏按钮和邮件行均已编号。
+2. `use_computer(action="click", element=14)` — 点击搜索框（来自截图的第 #14 号元素）。
+3. `use_computer(action="type", text="from:stripe")`
+4. `use_computer(action="key", keys="return", capture_after=True)` — 提交并获取新截图。
 5. 点击最顶部的结果，读取正文，进行总结。
 
 整个过程中，你的光标保持原位，Mail 窗口始终不会切换到前台。
@@ -129,7 +129,7 @@ HERMES_COMPUTER_USE_BACKEND=noop   # records calls, no side effects
 
 ## 故障排查
 
-**`computer_use backend unavailable: cua-driver is not installed`** — 运行 `hermes computer-use install` 获取 cua-driver 二进制文件，或运行 `hermes tools` 并启用 Computer Use 工具集。
+**`use_computer backend unavailable: cua-driver is not installed`** — 运行 `hermes computer-use install` 获取 cua-driver 二进制文件，或运行 `hermes tools` 并启用 Computer Use 工具集。
 
 **点击似乎没有效果** — 截图并验证。可能有一个你未注意到的模态框正在阻止输入。使用 `escape` 或关闭按钮将其关闭。
 

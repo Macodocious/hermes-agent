@@ -17,10 +17,10 @@ drive via the AX tree alone.
 
 Wiring
 ------
-* `tool.py`       — registers the `computer_use` tool via tools.registry.
+* `tool.py`       — registers the `use_computer` tool via tools.registry.
 * `backend.py`    — abstract `ComputerUseBackend`; swappable implementation.
 * `cua_backend.py`— default backend; speaks MCP over stdio to `cua-driver`.
-* `schema.py`     — shared schema + docstring for the generic `computer_use`
+* `schema.py`     — shared schema + docstring for the generic `use_computer`
                     tool. Model-agnostic.
 * `capture.py`    — screenshot post-processing (PNG coercion, sizing, SOM
                     overlay if the backend did not).
@@ -34,8 +34,8 @@ agent/prompt_builder.py for the salvaged hunks from PR #4562.
 
 from __future__ import annotations
 
-# Re-export the public surface so `from tools.computer_use import ...` works.
-from tools.computer_use.tool import (  # noqa: F401
+# Re-export the public surface so `from tools.use_computer import ...` works.
+from tools.use_computer.tool import (  # noqa: F401
     handle_computer_use,
     set_approval_callback,
     check_computer_use_requirements,

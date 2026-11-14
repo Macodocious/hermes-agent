@@ -180,12 +180,12 @@ class TestResolveThreshold:
     def test_registry_value_capped_at_default(self, mock_registry):
         """A scaled-down budget caps an oversized registry value (#23767).
 
-        web/terminal/x_search register max_result_size_chars=100_000; a small
+        web/terminal/search_x register max_result_size_chars=100_000; a small
         model's scaled budget must not be re-inflated by that.
         """
         mock_registry.get_max_result_size.return_value = 100_000
         cfg = BudgetConfig(default_result_size=30_000)
-        assert cfg.resolve_threshold("web_search") == 30_000
+        assert cfg.resolve_threshold("search_web") == 30_000
 
     @patch("tools.registry.registry")
     def test_registry_inf_not_capped(self, mock_registry):
@@ -199,7 +199,7 @@ class TestResolveThreshold:
         """Default budget keeps 100K registry tools at 100K (no behavior change)."""
         mock_registry.get_max_result_size.return_value = 100_000
         cfg = BudgetConfig()  # default_result_size == 100_000
-        assert cfg.resolve_threshold("web_search") == 100_000
+        assert cfg.resolve_threshold("search_web") == 100_000
 
 
 # ---------------------------------------------------------------------------

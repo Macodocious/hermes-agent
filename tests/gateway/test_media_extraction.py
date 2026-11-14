@@ -112,7 +112,7 @@ class TestMediaExtraction:
             {
                 "role": "assistant",
                 "tool_calls": [
-                    {"id": "call_skill", "function": {"name": "skill_view"}}
+                    {"id": "call_skill", "function": {"name": "view_skill"}}
                 ],
             },
             {
@@ -161,7 +161,7 @@ caption
         assert voice is True
 
     def test_gateway_auto_append_image_generate_json_path(self):
-        """image_generate returns a local path in JSON (no MEDIA: tag); it is
+        """generate_image returns a local path in JSON (no MEDIA: tag); it is
         auto-appended so delivery doesn't depend on the model restating it."""
         from gateway.run import _collect_auto_append_media_tags
 
@@ -170,7 +170,7 @@ caption
             {
                 "role": "assistant",
                 "tool_calls": [
-                    {"id": "call_img", "function": {"name": "image_generate"}}
+                    {"id": "call_img", "function": {"name": "generate_image"}}
                 ],
             },
             {
@@ -194,7 +194,7 @@ caption
             {
                 "role": "assistant",
                 "tool_calls": [
-                    {"id": "call_img", "function": {"name": "image_generate"}}
+                    {"id": "call_img", "function": {"name": "generate_image"}}
                 ],
             },
             {
@@ -216,7 +216,7 @@ caption
                 {
                     "role": "assistant",
                     "tool_calls": [
-                        {"id": "c", "function": {"name": "image_generate"}}
+                        {"id": "c", "function": {"name": "generate_image"}}
                     ],
                 },
                 {"role": "tool", "tool_call_id": "c", "content": content},
@@ -244,7 +244,7 @@ caption
             {
                 "role": "assistant",
                 "tool_calls": [
-                    {"id": "c", "function": {"name": "image_generate"}}
+                    {"id": "c", "function": {"name": "generate_image"}}
                 ],
             },
             {
@@ -261,7 +261,7 @@ caption
 
     def test_collect_history_media_paths_includes_image_generate_json(self):
         """Regression for #46627: the history media-path collector must pick up
-        image_generate JSON-payload paths (no MEDIA: tag), not just MEDIA:
+        generate_image JSON-payload paths (no MEDIA: tag), not just MEDIA:
         text tags. Otherwise, after a compression boundary the auto-append
         fallback rescans full history, finds the generated path absent from
         the dedup set, and re-emits the same MEDIA tag every turn.
@@ -272,7 +272,7 @@ caption
             {"role": "user", "content": "make a cat"},
             {
                 "role": "assistant",
-                "tool_calls": [{"id": "c", "function": {"name": "image_generate"}}],
+                "tool_calls": [{"id": "c", "function": {"name": "generate_image"}}],
             },
             {
                 "role": "tool",
@@ -302,7 +302,7 @@ caption
         history = [
             {
                 "role": "assistant",
-                "tool_calls": [{"id": "c", "function": {"name": "image_generate"}}],
+                "tool_calls": [{"id": "c", "function": {"name": "generate_image"}}],
             },
             {
                 "role": "tool",

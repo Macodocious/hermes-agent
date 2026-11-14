@@ -900,9 +900,9 @@ def run_conversation(
                 logger.debug("step_callback error (iteration %s): %s", api_call_count, _step_err)
 
         # Track tool-calling iterations for skill nudge.
-        # Counter resets whenever skill_manage is actually used.
+        # Counter resets whenever manage_skill is actually used.
         if (agent._skill_nudge_interval > 0
-                and "skill_manage" in agent.valid_tool_names):
+                and "manage_skill" in agent.valid_tool_names):
             agent._iters_since_skill += 1
         
         # ── Pre-API-call /steer drain ──────────────────────────────────
@@ -5169,7 +5169,7 @@ def run_conversation(
                 # This classification is needed regardless of whether the turn has visible content,
                 # because a substantive tool-only turn must invalidate any older housekeeping fallback.
                 _HOUSEKEEPING_TOOLS = frozenset({
-                    "memory", "todo", "skill_manage", "session_search",
+                    "memory", "todo", "manage_skill", "search_session",
                 })
                 _all_housekeeping = all(
                     tc.function.name in _HOUSEKEEPING_TOOLS
@@ -5198,7 +5198,7 @@ def run_conversation(
                     agent._last_content_with_tools = turn_content
                     # Only mute subsequent output when EVERY tool call in
                     # this turn is post-response housekeeping (memory, todo,
-                    # skill_manage, etc.).  If any substantive tool is present
+                    # manage_skill, etc.).  If any substantive tool is present
                     # (search_files, read_file, write_file, terminal, ...),
                     # keep output visible so the user sees progress.
                     agent._last_content_tools_all_housekeeping = _all_housekeeping
@@ -5938,7 +5938,7 @@ def run_conversation(
                     continue
 
                 # ── Kanban worker terminal-tool stop guard ─────────────
-                # Workers must end with kanban_complete / kanban_block.
+                # Workers must end with complete_kanban / block_kanban.
                 # Models sometimes narrate the next step ("Let me write the
                 # report") and stop with finish_reason=stop — a clean exit
                 # that the dispatcher records as protocol_violation. Nudge
@@ -5974,7 +5974,7 @@ def run_conversation(
                     )
                     agent._emit_status(
                         "⚠️ Kanban worker tried to exit without "
-                        "kanban_complete/kanban_block — nudging to finish"
+                        "complete_kanban/block_kanban — nudging to finish"
                     )
                     # Same finalizer contract as verify-on-stop: clear
                     # final_response while continuing so a later budget

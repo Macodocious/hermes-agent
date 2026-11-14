@@ -98,7 +98,7 @@ hermes-agent/
 │   ├── terminal_tool.py      # 终端编排
 │   ├── process_registry.py   # 后台进程管理
 │   ├── file_tools.py         # read_file、write_file、patch、search_files
-│   ├── web_tools.py          # web_search、web_extract
+│   ├── web_tools.py          # search_web、extract_web
 │   ├── browser_tool.py       # 10 个浏览器自动化工具
 │   ├── code_execution_tool.py # execute_code 沙箱
 │   ├── delegate_tool.py      # 子 agent 委托

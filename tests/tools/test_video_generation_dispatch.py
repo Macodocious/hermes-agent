@@ -1,4 +1,4 @@
-"""Tests for the unified ``video_generate`` tool dispatch surface."""
+"""Tests for the unified ``generate_video`` tool dispatch surface."""
 
 from __future__ import annotations
 

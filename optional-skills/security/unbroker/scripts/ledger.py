@@ -43,7 +43,7 @@ TRANSITIONS: dict[str, set[str]] = {
         "found", "indirect_exposure", "action_selected", "submitted", "verification_pending",
         "awaiting_processing", "confirmed_removed", "blocked",
     },
-    # blocked: automated tools (web_extract/proxyless browser) couldn't read the site. A later pass
+    # blocked: automated tools (extract_web/proxyless browser) couldn't read the site. A later pass
     # -- a stealth/cloud browser OR guiding the operator's own (residential) browser -- can resolve it
     # to any real scan verdict, so blocked reaches not_found / indirect_exposure too, not just found.
     # blocked -> human_task_queued: some blocked sites need an operator step to proceed at all

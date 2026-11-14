@@ -46,7 +46,7 @@ function unique(values: string[]): string[] {
 }
 
 function imageResult(part: ToolLike): Record<string, unknown> | null {
-  if (part.type !== 'tool-call' || part.toolName !== 'image_generate') {
+  if (part.type !== 'tool-call' || part.toolName !== 'generate_image') {
     return null
   }
 
@@ -55,7 +55,7 @@ function imageResult(part: ToolLike): Record<string, unknown> | null {
   return record && record.success !== false ? record : null
 }
 
-/** Display source for a completed `image_generate` result (host path wins). */
+/** Display source for a completed `generate_image` result (host path wins). */
 export function generatedImageFromResult(result: unknown): string | null {
   const record = recordFromUnknown(result)
 

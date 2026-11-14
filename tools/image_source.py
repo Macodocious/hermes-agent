@@ -1,4 +1,4 @@
-"""Single resolver for every vision_analyze image source -> bytes + mime.
+"""Single resolver for every analyze_vision image source -> bytes + mime.
 
 All source handling (data:/http(s)/file/local/container) funnels through
 :func:`resolve_image_source` so size and magic-byte checks are enforced exactly
@@ -18,7 +18,7 @@ but vision read images host-side. This resolver enforces the same boundary:
                                  this stays within the sandbox boundary and never
                                  reaches the host's ``/etc/passwd`` / ``~/.ssh``).
 
-So a prompt-injected ``vision_analyze('/etc/passwd')`` under Docker reads the
+So a prompt-injected ``analyze_vision('/etc/passwd')`` under Docker reads the
 *container's* file (what every other tool sees), not the host's — no escape —
 while container-only images (tmpfs ``/workspace``, root-owned) are still
 deliverable. This is the unified delivery + confinement model: the same

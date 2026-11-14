@@ -87,13 +87,13 @@ def _do_request(client, method, uri, paths=None, queries=None, body=None):
 
 
 # ---------------------------------------------------------------------------
-# feishu_drive_list_comments
+# list_feishu_drive_comments
 # ---------------------------------------------------------------------------
 
 _LIST_COMMENTS_URI = "/open-apis/drive/v1/files/:file_token/comments"
 
 FEISHU_DRIVE_LIST_COMMENTS_SCHEMA = {
-    "name": "feishu_drive_list_comments",
+    "name": "list_feishu_drive_comments",
     "description": (
         "List comments on a Feishu document. "
         "Use is_whole=true to list whole-document comments only."
@@ -166,13 +166,13 @@ def _handle_list_comments(args: dict, **kwargs) -> str:
 
 
 # ---------------------------------------------------------------------------
-# feishu_drive_list_comment_replies
+# list_feishu_drive_comment_replies
 # ---------------------------------------------------------------------------
 
 _LIST_REPLIES_URI = "/open-apis/drive/v1/files/:file_token/comments/:comment_id/replies"
 
 FEISHU_DRIVE_LIST_REPLIES_SCHEMA = {
-    "name": "feishu_drive_list_comment_replies",
+    "name": "list_feishu_drive_comment_replies",
     "description": "List all replies in a comment thread on a Feishu document.",
     "parameters": {
         "type": "object",
@@ -239,17 +239,17 @@ def _handle_list_replies(args: dict, **kwargs) -> str:
 
 
 # ---------------------------------------------------------------------------
-# feishu_drive_reply_comment
+# reply_feishu_drive_comment
 # ---------------------------------------------------------------------------
 
 _REPLY_COMMENT_URI = "/open-apis/drive/v1/files/:file_token/comments/:comment_id/replies"
 
 FEISHU_DRIVE_REPLY_SCHEMA = {
-    "name": "feishu_drive_reply_comment",
+    "name": "reply_feishu_drive_comment",
     "description": (
         "Reply to a local comment thread on a Feishu document. "
         "Use this for local (quoted-text) comments. "
-        "For whole-document comments, use feishu_drive_add_comment instead."
+        "For whole-document comments, use add_feishu_drive_comment instead."
     ),
     "parameters": {
         "type": "object",
@@ -314,13 +314,13 @@ def _handle_reply_comment(args: dict, **kwargs) -> str:
 
 
 # ---------------------------------------------------------------------------
-# feishu_drive_add_comment
+# add_feishu_drive_comment
 # ---------------------------------------------------------------------------
 
 _ADD_COMMENT_URI = "/open-apis/drive/v1/files/:file_token/new_comments"
 
 FEISHU_DRIVE_ADD_COMMENT_SCHEMA = {
-    "name": "feishu_drive_add_comment",
+    "name": "add_feishu_drive_comment",
     "description": (
         "Add a new whole-document comment on a Feishu document. "
         "Use this for whole-document comments or as a fallback when "
@@ -383,7 +383,7 @@ def _handle_add_comment(args: dict, **kwargs) -> str:
 # ---------------------------------------------------------------------------
 
 registry.register(
-    name="feishu_drive_list_comments",
+    name="list_feishu_drive_comments",
     toolset="feishu_drive",
     schema=FEISHU_DRIVE_LIST_COMMENTS_SCHEMA,
     handler=_handle_list_comments,
@@ -395,7 +395,7 @@ registry.register(
 )
 
 registry.register(
-    name="feishu_drive_list_comment_replies",
+    name="list_feishu_drive_comment_replies",
     toolset="feishu_drive",
     schema=FEISHU_DRIVE_LIST_REPLIES_SCHEMA,
     handler=_handle_list_replies,
@@ -407,7 +407,7 @@ registry.register(
 )
 
 registry.register(
-    name="feishu_drive_reply_comment",
+    name="reply_feishu_drive_comment",
     toolset="feishu_drive",
     schema=FEISHU_DRIVE_REPLY_SCHEMA,
     handler=_handle_reply_comment,
@@ -419,7 +419,7 @@ registry.register(
 )
 
 registry.register(
-    name="feishu_drive_add_comment",
+    name="add_feishu_drive_comment",
     toolset="feishu_drive",
     schema=FEISHU_DRIVE_ADD_COMMENT_SCHEMA,
     handler=_handle_add_comment,

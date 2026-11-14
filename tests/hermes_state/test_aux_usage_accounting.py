@@ -276,13 +276,13 @@ class TestAmbientAccountingContext:
         db.create_session("s1", source="cli")
         token = set_accounting_context(db, "s1")
         try:
-            out = _validate_llm_response(_mk_response(), "web_extract", provider="openrouter")
+            out = _validate_llm_response(_mk_response(), "extract_web", provider="openrouter")
         finally:
             reset_accounting_context(token)
         assert out is not None
         rows = _usage_rows(db, "s1")
         assert len(rows) == 1
-        assert rows[0]["task"] == "web_extract"
+        assert rows[0]["task"] == "extract_web"
         assert rows[0]["billing_provider"] == "openrouter"
 
     def test_context_isolated_between_copied_contexts(self, db):

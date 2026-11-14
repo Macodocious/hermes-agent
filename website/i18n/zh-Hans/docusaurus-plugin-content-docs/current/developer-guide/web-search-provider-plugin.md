@@ -6,7 +6,7 @@ description: "如何为 Hermes Agent 构建网页搜索/提取/爬取后端插�
 
 # 构建网页搜索提供商插件
 
-网页搜索提供商插件注册一个后端，用于处理 `web_search`、`web_extract` 以及（可选的）深度爬取工具调用。内置提供商——Firecrawl、SearXNG、Tavily、Exa、Parallel、Brave Search（免费层）和 DDGS——均以插件形式存放于 `plugins/web/<name>/` 目录下。你可以在该目录旁新建一个目录来添加新提供商，或覆盖已有的内置提供商。
+网页搜索提供商插件注册一个后端，用于处理 `search_web`、`extract_web` 以及（可选的）深度爬取工具调用。内置提供商——Firecrawl、SearXNG、Tavily、Exa、Parallel、Brave Search（免费层）和 DDGS——均以插件形式存放于 `plugins/web/<name>/` 目录下。你可以在该目录旁新建一个目录来添加新提供商，或覆盖已有的内置提供商。
 
 :::tip
 网页搜索是 Hermes 支持的多种**后端插件**之一。其他插件（各有其 ABC）包括：[图像生成提供商插件](/developer-guide/image-gen-provider-plugin)、[视频生成提供商插件](/developer-guide/video-gen-provider-plugin)、[记忆提供商插件](/developer-guide/memory-provider-plugin)、[上下文引擎插件](/developer-guide/context-engine-plugin)和[模型提供商插件](/developer-guide/model-provider-plugin)。通用工具/hook/CLI 插件请参阅[构建 Hermes 插件](/developer-guide/plugins)。
@@ -24,9 +24,9 @@ Hermes 在三个位置扫描网页搜索后端：
 
 | 能力 | 配置键 | 回退至 |
 |---|---|---|
-| `web_search` | `web.search_backend` | `web.backend` |
-| `web_extract` | `web.extract_backend` | `web.backend` |
-| `web_extract` 内的深度爬取模式 | `web.extract_backend` | `web.backend` |
+| `search_web` | `web.search_backend` | `web.backend` |
+| `extract_web` | `web.extract_backend` | `web.backend` |
+| `extract_web` 内的深度爬取模式 | `web.extract_backend` | `web.backend` |
 
 若两个键均未设置，Hermes 将根据环境中存在的 API key/URL 自动检测后端。`hermes tools` 会引导用户完成选择。
 
@@ -152,8 +152,8 @@ requires_env:
 | `name` | ✅ | — | 在 `web.*_backend` 配置中使用的稳定 id |
 | `display_name` | — | `name` | 在 `hermes tools` 中显示的标签 |
 | `is_available()` | ✅ | — | 轻量可用性检查——环境变量、可选依赖等 |
-| `supports_search()` | — | `True` | `web_search` 路由的能力标志 |
-| `supports_extract()` | — | `False` | `web_extract` 路由的能力标志 |
+| `supports_search()` | — | `True` | `search_web` 路由的能力标志 |
+| `supports_extract()` | — | `False` | `extract_web` 路由的能力标志 |
 | `search(query, limit)` | 条件必须 | 抛出异常 | 当 `supports_search()` 返回 `True` 时必须实现 |
 | `extract(urls, **kwargs)` | 条件必须 | 抛出异常 | 当 `supports_extract()` 返回 `True` 时必须实现 |
 
@@ -221,9 +221,9 @@ web:
 
 ## Hermes 如何将其接入工具
 
-`web_search` 和 `web_extract` 工具位于 `tools/web_tools.py`。调用时执行以下步骤：
+`search_web` 和 `extract_web` 工具位于 `tools/web_tools.py`。调用时执行以下步骤：
 
-1. 读取相关配置键（`web_search` 对应 `web.search_backend`，`web_extract` 对应 `web.extract_backend`）
+1. 读取相关配置键（`search_web` 对应 `web.search_backend`，`extract_web` 对应 `web.extract_backend`）
 2. 向注册表查询具有该 `name` 的提供商
 3. 检查 `is_available()` 及对应的 `supports_*()` 标志
 4. 调度至 `search()` / `extract()` / `crawl()`，若方法为协程则进行 await
@@ -241,7 +241,7 @@ web:
 - **`plugins/web/ddgs/`** — 无需 key、懒加载 SDK 的提供商。适用于封装 Python 包的后端。
 - **`plugins/web/firecrawl/`** — 完整的多能力提供商（搜索 + 提取 + 爬取），支持多种格式模式。
 - **`plugins/web/searxng/`** — 自托管、通过 URL 配置、无需认证的后端。
-- **`plugins/web/xai/`** — 通过 Grok 服务端 `web_search` 工具实现的 LLM 驱动搜索。展示了如何复用现有的 OAuth/环境变量凭据（`tools/xai_http.py`）而无需新增环境变量，以及如何编写遵守无网络调用约定的轻量 `is_available()`。
+- **`plugins/web/xai/`** — 通过 Grok 服务端 `search_web` 工具实现的 LLM 驱动搜索。展示了如何复用现有的 OAuth/环境变量凭据（`tools/xai_http.py`）而无需新增环境变量，以及如何编写遵守无网络调用约定的轻量 `is_available()`。
 
 ## 通过 pip 分发
 

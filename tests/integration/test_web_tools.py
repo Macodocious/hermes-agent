@@ -128,10 +128,10 @@ class WebToolsTester:
             backend = _get_backend()
             self.log_result("Web Backend API Key", "passed", f"Using {backend} backend")
         
-        # Auxiliary LLM summarization was removed — web_extract is now
+        # Auxiliary LLM summarization was removed — extract_web is now
         # truncate-and-store (no LLM). Keep the flag off so any residual
         # LLM-path assertions stay skipped.
-        self.log_result("Auxiliary LLM", "skipped", "web_extract no longer uses an LLM (truncate-and-store)")
+        self.log_result("Auxiliary LLM", "skipped", "extract_web no longer uses an LLM (truncate-and-store)")
         self.test_llm = False
         
         return True

@@ -6,7 +6,7 @@ description: "如何为 Hermes Agent 构建图像生成后端插件"
 
 # 构建图像生成 Provider 插件
 
-图像生成 provider 插件注册一个后端，用于处理所有 `image_generate` 工具调用——DALL·E、gpt-image、Grok、Flux、Imagen、Stable Diffusion、fal、Replicate、本地 ComfyUI 装置，任何后端均可。内置 provider（OpenAI、OpenAI-Codex、xAI）均以插件形式提供。你可以通过在 `plugins/image_gen/<name>/` 目录下放置一个目录来添加新的 provider，或覆盖内置 provider。
+图像生成 provider 插件注册一个后端，用于处理所有 `generate_image` 工具调用——DALL·E、gpt-image、Grok、Flux、Imagen、Stable Diffusion、fal、Replicate、本地 ComfyUI 装置，任何后端均可。内置 provider（OpenAI、OpenAI-Codex、xAI）均以插件形式提供。你可以通过在 `plugins/image_gen/<name>/` 目录下放置一个目录来添加新的 provider，或覆盖内置 provider。
 
 :::tip
 图像生成是 Hermes 支持的多种**后端插件**之一。其他插件（各有更专用的 ABC）包括：[Memory Provider 插件](/developer-guide/memory-provider-plugin)、[Context Engine 插件](/developer-guide/context-engine-plugin) 和 [Model Provider 插件](/developer-guide/model-provider-plugin)。通用工具/hook/CLI 插件请参阅 [构建 Hermes 插件](/developer-guide/plugins)。
@@ -22,7 +22,7 @@ Hermes 在三个位置扫描图像生成后端：
 
 每个插件的 `register(ctx)` 函数调用 `ctx.register_image_gen_provider(...)` — 将其注册到 `agent/image_gen_registry.py` 中的注册表。活跃 provider 由 `config.yaml` 中的 `image_gen.provider` 指定；`hermes tools` 会引导用户完成选择。
 
-`image_generate` 工具包装器向注册表请求活跃 provider 并分发调用。若未注册任何 provider，工具会显示一条有用的错误信息，指引用户使用 `hermes tools`。
+`generate_image` 工具包装器向注册表请求活跃 provider 并分发调用。若未注册任何 provider，工具会显示一条有用的错误信息，指引用户使用 `hermes tools`。
 
 ## 目录结构
 

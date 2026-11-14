@@ -18,16 +18,16 @@ description: "通过 RPC 工具访问实现程序化 Python 执行——将多�
 
 ```python
 # The agent can write scripts like:
-from hermes_tools import web_search, web_extract
+from hermes_tools import search_web, extract_web
 
-results = web_search("Python 3.13 features", limit=5)
+results = search_web("Python 3.13 features", limit=5)
 for r in results["data"]["web"]:
-    content = web_extract([r["url"]])
+    content = extract_web([r["url"]])
     # ... filter and process ...
 print(summary)
 ```
 
-**脚本内可用工具：** `web_search`、`web_extract`、`read_file`、`write_file`、`search_files`、`patch`、`terminal`（仅前台模式）。
+**脚本内可用工具：** `search_web`、`extract_web`、`read_file`、`write_file`、`search_files`、`patch`、`terminal`（仅前台模式）。
 
 ## Agent 何时使用此功能
 
@@ -60,14 +60,14 @@ print(json.dumps(configs, indent=2))
 ### 多步骤网络调研
 
 ```python
-from hermes_tools import web_search, web_extract
+from hermes_tools import search_web, extract_web
 import json
 
 # Search, extract, and summarize in one turn
-results = web_search("Rust async runtime comparison 2025", limit=5)
+results = search_web("Rust async runtime comparison 2025", limit=5)
 summaries = []
 for r in results["data"]["web"]:
-    page = web_extract([r["url"]])
+    page = extract_web([r["url"]])
     for p in page.get("results", []):
         if p.get("content"):
             summaries.append({
@@ -176,7 +176,7 @@ code_execution:
 
 ## 脚本内工具调用的工作方式
 
-当脚本调用 `web_search("query")` 等函数时：
+当脚本调用 `search_web("query")` 等函数时：
 
 1. 调用被序列化为 JSON，通过 Unix 域套接字发送至父进程
 2. 父进程通过标准 `handle_function_call` 处理器进行分发

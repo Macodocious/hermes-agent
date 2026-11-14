@@ -345,7 +345,7 @@ class TestLightpandaFallbackWarning:
                  result,
                  {"success": True, "data": {"snapshot": "- heading \"Fallback OK\" [ref=e1]", "refs": {"e1": {}}}},
              ]):
-            response = json.loads(bt.browser_navigate("https://example.com", task_id="warn-test"))
+            response = json.loads(bt.navigate_browser("https://example.com", task_id="warn-test"))
 
         assert response["success"] is True
         assert response["browser_engine"] == "chrome"
@@ -372,7 +372,7 @@ class TestLightpandaFallbackWarning:
                  {"success": True, "data": {"title": "Fallback OK", "url": "https://example.com/"}},
                  snapshot_result,
              ]):
-            response = json.loads(bt.browser_navigate("https://example.com", task_id="warn-test2"))
+            response = json.loads(bt.navigate_browser("https://example.com", task_id="warn-test2"))
 
         assert response["success"] is True
         assert response["browser_engine"] == "chrome"
@@ -390,7 +390,7 @@ class TestLightpandaFallbackWarning:
         )
         bt._last_active_session_key["warn-test3"] = "warn-test3"
         with patch("tools.browser_tool._run_browser_command", return_value=result):
-            response = json.loads(bt.browser_click("@e1", task_id="warn-test3"))
+            response = json.loads(bt.click_browser("@e1", task_id="warn-test3"))
 
         assert response["success"] is False
         assert "Lightpanda fallback" in response["fallback_warning"]
@@ -448,7 +448,7 @@ class TestLightpandaFallbackWarning:
         )
         bt._last_active_session_key["warn-images"] = "warn-images"
         with patch("tools.browser_tool._run_browser_command", return_value=result):
-            response = json.loads(bt.browser_get_images(task_id="warn-images"))
+            response = json.loads(bt.get_browser_images(task_id="warn-images"))
 
         assert response["success"] is True
         assert response["browser_engine"] == "chrome"

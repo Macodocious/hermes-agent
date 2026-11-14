@@ -97,10 +97,10 @@ browser:
 
 当某工具的 `use_gateway: true` 时，运行时会把 API 调用路由到 Nous Tool Gateway，而不是使用直连 Key：
 
-1. **网页工具** — `web_search` / `web_extract` 走网关的 Firecrawl 端点  
-2. **文生图** — `image_generate` 走网关的 FAL 端点  
+1. **网页工具** — `search_web` / `extract_web` 走网关的 Firecrawl 端点  
+2. **文生图** — `generate_image` 走网关的 FAL 端点  
 3. **TTS** — `text_to_speech` 走网关的 OpenAI Audio 端点  
-4. **浏览器** — `browser_navigate` 等走网关的 Browser Use 端点  
+4. **浏览器** — `navigate_browser` 等走网关的 Browser Use 端点  
 
 网关使用 Nous Portal 凭据认证（在 `hermes model` 完成后写入 `~/.hermes/auth.json`）。
 

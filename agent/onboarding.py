@@ -174,7 +174,7 @@ def profile_build_directive() -> str:
         "  2. Before ANY external lookup, say what you intend to look up and "
         "get explicit consent for that step. Never read their connected "
         "accounts (email, calendar, etc.) silently — ask each time.\n"
-        "  3. With consent, you may use web_search to confirm public details "
+        "  3. With consent, you may use search_web to confirm public details "
         "(e.g. employer, public profiles) from the data points they gave.\n"
         "  4. Save each confirmed, durable fact with the memory tool using "
         "target=\"user\" — keep entries compact and high-signal.\n"

@@ -213,7 +213,7 @@ T0: this task — decompose
  └── T7: reviewer         "Final QA"                          (parent: T6)
 ```
 
-The director turns this into actual `kanban_create` calls.
+The director turns this into actual `create_kanban` calls.
 
 ## API-key prerequisites check
 
@@ -249,7 +249,7 @@ firing a kanban that will hit credential errors mid-execution.
 
 ## Critical rules
 
-1. **`workspace_kind="dir"` + `workspace_path="<absolute>"` on every kanban_create.** Otherwise profiles can't share artifacts.
+1. **`workspace_kind="dir"` + `workspace_path="<absolute>"` on every create_kanban.** Otherwise profiles can't share artifacts.
 
 2. **Tenant every task.** `--tenant <project-slug>` keeps the dashboard scoped
    and prevents cross-pollination with other ongoing kanbans.
@@ -267,7 +267,7 @@ firing a kanban that will hit credential errors mid-execution.
    - Image-to-video-generator task: 900s (15min)
 
 5. **Heartbeats for long renders.** Tasks expected to run >5min should emit
-   `kanban_heartbeat` periodically with progress. Renderers should report
+   `heartbeat_kanban` periodically with progress. Renderers should report
    frame counts; the editor should report assembly progress.
 
 6. **The `audio/` and `taste/` dirs are populated BEFORE firing the kanban.**

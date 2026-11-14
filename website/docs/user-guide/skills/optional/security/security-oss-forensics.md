@@ -285,7 +285,7 @@ LIMIT 200
 
 **Actions**:
 - For each commit SHA: attempt recovery via direct GitHub URL (`github.com/OWNER/REPO/commit/SHA.patch`)
-- For each domain/IP: check passive DNS, WHOIS records (via `web_extract` on public WHOIS services)
+- For each domain/IP: check passive DNS, WHOIS records (via `extract_web` on public WHOIS services)
 - For each package name: check npm/PyPI for matching malicious package reports
 - For each actor username: check GitHub profile, contribution history, account age
 - Recover force-pushed commits using 3 methods (see [recovery-techniques.md](https://github.com/NousResearch/hermes-agent/blob/main/optional-skills/security/oss-forensics/references/recovery-techniques.md))

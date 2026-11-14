@@ -2387,7 +2387,7 @@ def _resolve_use_tui(args) -> bool:
     workers, cron jobs, and pipelines run ``hermes … chat -q`` with stdout
     on a pipe; booting the Ink TUI there hits its no-TTY bail-out, which
     prints a resume hint and exits 0 — a kanban worker then dies with
-    "exited cleanly without calling kanban_complete — protocol violation"
+    "exited cleanly without calling complete_kanban — protocol violation"
     on every attempt (found dogfooding the desktop kanban board). A user
     who *explicitly* passes ``--tui`` still gets the informative bail-out.
     """
@@ -3436,7 +3436,7 @@ def _clear_stale_openai_base_url():
 _AUX_TASKS: list[tuple[str, str, str]] = [
     ("vision", "Vision", "image/screenshot analysis"),
     ("compression", "Compression", "context summarization"),
-    ("web_extract", "Web extract", "web page summarization"),
+    ("extract_web", "Web extract", "web page summarization"),
     ("approval", "Approval", "smart command approval"),
     ("mcp", "MCP", "MCP tool reasoning"),
     ("title_generation", "Title generation", "session titles"),
@@ -13965,7 +13965,7 @@ def main():
         help="Manage the Computer Use (cua-driver) backend (macOS/Windows/Linux)",
         description=(
             "Install or check the cua-driver binary used by the\n"
-            "`computer_use` toolset. Supported on macOS, Windows, and\n"
+            "`use_computer` toolset. Supported on macOS, Windows, and\n"
             "Linux.\n\n"
             "Use `hermes computer-use install` to fetch and run the\n"
             "upstream cua-driver installer. This is equivalent to the\n"
@@ -14074,7 +14074,7 @@ def main():
             from hermes_cli.tools_config import _cua_driver_cmd
             # Honor HERMES_CUA_DRIVER_CMD for local-build testing — same
             # resolver `install_cua_driver` and the runtime backend use,
-            # so `status` reports what `computer_use` will actually invoke.
+            # so `status` reports what `use_computer` will actually invoke.
             driver_cmd = _cua_driver_cmd()
             path = shutil.which(driver_cmd)
             if path:
@@ -14093,7 +14093,7 @@ def main():
                 else:
                     print(f"cua-driver: installed at {path}")
                 try:
-                    from tools.computer_use.cua_backend import cua_driver_update_check
+                    from tools.use_computer.cua_backend import cua_driver_update_check
                     st = cua_driver_update_check()
                     if st and st.get("update_available"):
                         latest = st.get("latest_version") or "?"
@@ -14111,7 +14111,7 @@ def main():
             print("  Run: hermes computer-use install")
             return
         if action == "doctor":
-            from tools.computer_use.doctor import run_doctor
+            from tools.use_computer.doctor import run_doctor
             code = run_doctor(
                 include=list(getattr(args, "include", []) or []),
                 skip=list(getattr(args, "skip", []) or []),
@@ -14121,11 +14121,11 @@ def main():
         if action == "permissions":
             perms_action = getattr(args, "computer_use_perms_action", None)
             if perms_action == "grant":
-                from tools.computer_use.permissions import request_permissions_grant
+                from tools.use_computer.permissions import request_permissions_grant
                 sys.exit(request_permissions_grant())
             if perms_action == "status":
                 import json as _json
-                from tools.computer_use.permissions import computer_use_status
+                from tools.use_computer.permissions import computer_use_status
                 st = computer_use_status()
                 if bool(getattr(args, "json", False)):
                     print(_json.dumps(st, indent=2, sort_keys=True))

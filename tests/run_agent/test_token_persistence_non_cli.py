@@ -83,11 +83,11 @@ def test_session_search_lazily_opens_db_when_entrypoint_did_not_pass_one(monkeyp
         captured.update(kwargs)
         return json.dumps({"success": True, "results": []})
 
-    session_search_mod.session_search = fake_session_search
+    session_search_mod.search_session = fake_session_search
     monkeypatch.setitem(sys.modules, "tools.session_search_tool", session_search_mod)
 
     agent = _make_agent(None, platform="acp")
-    result = json.loads(agent._invoke_tool("session_search", {"query": "Hermes"}, "task-id"))
+    result = json.loads(agent._invoke_tool("search_session", {"query": "Hermes"}, "task-id"))
 
     assert result["success"] is True
     assert captured["db"] is sentinel_db

@@ -12,7 +12,7 @@ Skill 是为 Hermes Agent 添加新能力的首选方式。与 tool 相比，ski
 
 以下情况创建 **Skill**：
 - 该能力可通过指令 + shell 命令 + 现有 tool 来实现
-- 封装了 agent 可通过 `terminal` 或 `web_extract` 调用的外部 CLI 或 API
+- 封装了 agent 可通过 `terminal` 或 `extract_web` 调用的外部 CLI 或 API
 - 不需要将自定义 Python 集成或 API key 管理内置到 agent 中
 - 示例：arXiv 搜索、git 工作流、Docker 管理、PDF 处理、通过 CLI 工具发送邮件
 
@@ -58,9 +58,9 @@ metadata:
     tags: [Category, Subcategory, Keywords]
     related_skills: [other-skill-name]
     requires_toolsets: [web]            # Optional — only show when these toolsets are active
-    requires_tools: [web_search]        # Optional — only show when these tools are available
+    requires_tools: [search_web]        # Optional — only show when these tools are available
     fallback_for_toolsets: [browser]    # Optional — hide when these toolsets are active
-    fallback_for_tools: [browser_navigate]  # Optional — hide when these tools exist
+    fallback_for_tools: [navigate_browser]  # Optional — hide when these tools exist
     config:                              # Optional — config.yaml settings the skill needs
       - key: my.setting
         description: "What this setting controls"
@@ -103,7 +103,7 @@ platforms: [macos, linux]     # macOS 和 Linux
 platforms: [windows]          # 仅 Windows
 ```
 
-设置后，该 skill 会在不兼容的平台上自动从系统 prompt（提示词）、`skills_list()` 和斜杠命令中隐藏。若省略或留空，则在所有平台上加载（向后兼容）。
+设置后，该 skill 会在不兼容的平台上自动从系统 prompt（提示词）、`list_skills()` 和斜杠命令中隐藏。若省略或留空，则在所有平台上加载（向后兼容）。
 
 ### 条件式 Skill 激活
 
@@ -113,9 +113,9 @@ Skill 可声明对特定 tool 或 toolset 的依赖，以控制该 skill 是否�
 metadata:
   hermes:
     requires_toolsets: [web]           # 若 web toolset 未激活则隐藏
-    requires_tools: [web_search]       # 若 web_search tool 不可用则隐藏
+    requires_tools: [search_web]       # 若 search_web tool 不可用则隐藏
     fallback_for_toolsets: [browser]   # 若 browser toolset 已激活则隐藏
-    fallback_for_tools: [browser_navigate]  # 若 browser_navigate 可用则隐藏
+    fallback_for_tools: [navigate_browser]  # 若 navigate_browser 可用则隐藏
 ```
 
 | 字段 | 行为 |
@@ -125,13 +125,13 @@ metadata:
 | `fallback_for_toolsets` | 当列出的**任意** toolset **已**可用时，skill **隐藏** |
 | `fallback_for_tools` | 当列出的**任意** tool **已**可用时，skill **隐藏** |
 
-**`fallback_for_*` 使用场景：** 创建一个在主要 tool 不可用时作为替代方案的 skill。例如，带有 `fallback_for_tools: [web_search]` 的 `duckduckgo-search` skill 仅在未配置需要 API key 的 web search tool 时显示。
+**`fallback_for_*` 使用场景：** 创建一个在主要 tool 不可用时作为替代方案的 skill。例如，带有 `fallback_for_tools: [search_web]` 的 `duckduckgo-search` skill 仅在未配置需要 API key 的 web search tool 时显示。
 
 **`requires_*` 使用场景：** 创建仅在特定 tool 存在时才有意义的 skill。例如，带有 `requires_toolsets: [web]` 的网页抓取工作流 skill 在 web tool 被禁用时不会出现在 prompt 中。
 
 ### 环境变量要求
 
-Skill 可声明所需的环境变量。当通过 `skill_view` 加载 skill 时，其所需变量会自动注册，以便透传（passthrough）到沙箱执行环境（terminal、execute_code）中。
+Skill 可声明所需的环境变量。当通过 `view_skill` 加载 skill 时，其所需变量会自动注册，以便透传（passthrough）到沙箱执行环境（terminal、execute_code）中。
 
 ```yaml
 required_environment_variables:
@@ -262,7 +262,7 @@ required_credential_files:
 
 ### 无外部依赖
 
-优先使用标准库 Python、curl 以及现有 Hermes tool（`web_extract`、`terminal`、`read_file`）。若确实需要依赖项，请在 skill 中记录安装步骤。
+优先使用标准库 Python、curl 以及现有 Hermes tool（`extract_web`、`terminal`、`read_file`）。若确实需要依赖项，请在 skill 中记录安装步骤。
 
 ### 渐进式披露
 
@@ -293,7 +293,7 @@ To analyse the input, run:
     node ${HERMES_SKILL_DIR}/scripts/analyse.js <input>
 ```
 
-Agent 看到替换后的绝对路径，并使用 `terminal` tool 执行已就绪的命令——无需路径计算，无需额外的 `skill_view` 往返。可在 `config.yaml` 中设置 `skills.template_vars: false` 全局禁用替换。
+Agent 看到替换后的绝对路径，并使用 `terminal` tool 执行已就绪的命令——无需路径计算，无需额外的 `view_skill` 往返。可在 `config.yaml` 中设置 `skills.template_vars: false` 全局禁用替换。
 
 #### 内联 shell 片段（需手动开启）
 

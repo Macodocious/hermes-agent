@@ -174,7 +174,7 @@ located at ~/code/api. I discovered it uses Go version 1.22 and...
 
 ## 会话搜索
 
-除 MEMORY.md 和 USER.md 之外，Agent 还可以使用 `session_search` 工具搜索过去的对话：
+除 MEMORY.md 和 USER.md 之外，Agent 还可以使用 `search_session` 工具搜索过去的对话：
 
 - 所有 CLI 和消息会话均存储在 SQLite（`~/.hermes/state.db`）中，支持 FTS5 全文搜索
 - 搜索查询返回数据库中的实际消息——无 LLM 摘要，无截断
@@ -187,7 +187,7 @@ hermes sessions list    # 浏览过去的会话
 
 有关三种调用形式（发现 / 滚动 / 浏览）和响应格式，请参阅[会话搜索工具](/user-guide/sessions#session-search-tool)。
 
-### session_search 与 memory 的对比
+### search_session 与 memory 的对比
 
 | 特性 | 持久化记忆 | 会话搜索 |
 |------|-----------|---------|

@@ -124,7 +124,7 @@ def _is_kanban_worker_env_gate(item: dict) -> bool:
         return False
 
     tools = item.get("tools") or []
-    return bool(tools) and all(str(tool).startswith("kanban_") for tool in tools)
+    return bool(tools) and all("kanban" in str(tool) for tool in tools)
 
 
 def _doctor_tool_availability_detail(toolset: str) -> str:

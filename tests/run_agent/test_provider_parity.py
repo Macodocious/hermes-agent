@@ -66,7 +66,7 @@ def _reset_auxiliary_provider_state():
 
 
 def _make_agent(monkeypatch, provider, api_mode="chat_completions", base_url="https://openrouter.ai/api/v1", model=None, temperature=None, platform=None):
-    monkeypatch.setattr("run_agent.get_tool_definitions", lambda **kw: _tool_defs("web_search", "terminal"))
+    monkeypatch.setattr("run_agent.get_tool_definitions", lambda **kw: _tool_defs("search_web", "terminal"))
     monkeypatch.setattr("run_agent.check_toolset_requirements", lambda: {})
     monkeypatch.setattr("run_agent.OpenAI", _FakeOpenAI)
     kwargs = dict(
@@ -119,7 +119,7 @@ class TestBuildApiKwargsOpenRouter:
         kwargs = agent._build_api_kwargs(messages)
         assert "tools" in kwargs
         tool_names = [t["function"]["name"] for t in kwargs["tools"]]
-        assert "web_search" in tool_names
+        assert "search_web" in tool_names
 
     def test_no_responses_api_fields(self, monkeypatch):
         agent = _make_agent(monkeypatch, "openrouter")
@@ -720,7 +720,7 @@ class TestBuildApiKwargsCustomEndpoint:
 
         kwargs = agent._build_api_kwargs(messages)
 
-        assert kwargs["tools"][0]["function"]["name"] == "web_search"
+        assert kwargs["tools"][0]["function"]["name"] == "search_web"
         assert "input" not in kwargs
         assert kwargs.get("extra_body", {}) == {}
 
@@ -824,13 +824,13 @@ class TestChatMessagesToResponsesInput:
             "tool_calls": [{
                 "id": "call_abc",
                 "call_id": "call_abc",
-                "function": {"name": "web_search", "arguments": '{"query": "test"}'},
+                "function": {"name": "search_web", "arguments": '{"query": "test"}'},
             }],
         }]
         items = _chat_messages_to_responses_input(messages)
         fc_items = [i for i in items if i.get("type") == "function_call"]
         assert len(fc_items) == 1
-        assert fc_items[0]["name"] == "web_search"
+        assert fc_items[0]["name"] == "search_web"
         assert fc_items[0]["call_id"] == "call_abc"
 
     def test_tool_results_become_function_call_output(self, monkeypatch):
@@ -1060,7 +1060,7 @@ class TestNormalizeCodexResponse:
         response = SimpleNamespace(
             output=[
                 SimpleNamespace(type="function_call", status="completed",
-                    call_id="call_xyz", name="web_search",
+                    call_id="call_xyz", name="search_web",
                     arguments='{"query":"test"}', id="fc_xyz"),
             ],
             status="completed",
@@ -1068,7 +1068,7 @@ class TestNormalizeCodexResponse:
         msg, reason = _normalize_codex_response(response)
         assert reason == "tool_calls"
         assert len(msg.tool_calls) == 1
-        assert msg.tool_calls[0].function.name == "web_search"
+        assert msg.tool_calls[0].function.name == "search_web"
 
     def test_message_items_captured_with_id_and_phase(self, monkeypatch):
         """Exact message items (with id/phase) must be captured for cache replay."""
@@ -1104,7 +1104,7 @@ class TestNormalizeCodexResponse:
         response = SimpleNamespace(
             output=[
                 SimpleNamespace(type="function_call", status="completed",
-                    call_id="call_1", name="web_search", arguments='{}', id="fc_1"),
+                    call_id="call_1", name="search_web", arguments='{}', id="fc_1"),
             ],
             status="completed",
         )

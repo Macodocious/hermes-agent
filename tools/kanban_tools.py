@@ -80,7 +80,7 @@ def _check_kanban_mode() -> bool:
 
 
 def _check_kanban_orchestrator_mode() -> bool:
-    """Board-routing tools (kanban_list, kanban_unblock) are intentionally
+    """Board-routing tools (list_kanban, unblock_kanban) are intentionally
     hidden from task workers.
 
     Dispatcher-spawned workers should close their own task via the
@@ -136,8 +136,8 @@ def _enforce_worker_task_ownership(tid: str) -> Optional[str]:
     """Reject worker-driven destructive calls on foreign task IDs.
 
     A process spawned by the dispatcher has ``HERMES_KANBAN_TASK`` set
-    to its own task id. Tools like ``kanban_complete`` / ``kanban_block``
-    / ``kanban_heartbeat`` mutate run-lifecycle state, so a buggy or
+    to its own task id. Tools like ``complete_kanban`` / ``block_kanban``
+    / ``heartbeat_kanban`` mutate run-lifecycle state, so a buggy or
     prompt-injected worker that passed an explicit ``task_id`` for some
     other task could corrupt sibling or cross-tenant runs (see #19534).
 
@@ -158,8 +158,8 @@ def _enforce_worker_task_ownership(tid: str) -> Optional[str]:
     if tid != env_tid:
         return tool_error(
             f"worker is scoped to task {env_tid}; refusing to mutate "
-            f"{tid}. Use kanban_comment to hand off information to other "
-            f"tasks, or kanban_create to spawn follow-up work."
+            f"{tid}. Use comment_kanban to hand off information to other "
+            f"tasks, or create_kanban to spawn follow-up work."
         )
     return None
 
@@ -211,7 +211,7 @@ def _goal_judge_available() -> bool:
 # ``last_heartbeat_at`` columns to reflect that liveness so the dispatcher
 # watchdog (which reads ``tasks.last_heartbeat_at``, not the agent's
 # in-process timestamp) doesn't reclaim an actively-running worker as
-# stale. The model is not required to call the explicit ``kanban_heartbeat``
+# stale. The model is not required to call the explicit ``heartbeat_kanban``
 # tool for this to work — that tool stays available for workers that want
 # to attach a note or pre-emptively extend a claim across a known-long op.
 #
@@ -327,8 +327,8 @@ def _require_orchestrator_tool(tool_name: str) -> Optional[str]:
     if os.environ.get("HERMES_KANBAN_TASK"):
         return tool_error(
             f"{tool_name} is orchestrator-only; dispatcher-spawned workers "
-            "must use kanban_complete, kanban_block, kanban_heartbeat, or "
-            "kanban_comment for their assigned task."
+            "must use complete_kanban, block_kanban, heartbeat_kanban, or "
+            "comment_kanban for their assigned task."
         )
     return None
 
@@ -434,15 +434,15 @@ def _handle_show(args: dict, **kw) -> str:
             conn.close()
     except ValueError as e:
         # Invalid board slug surfaces as ValueError from _normalize_board_slug.
-        return tool_error(f"kanban_show: {e}")
+        return tool_error(f"show_kanban: {e}")
     except Exception as e:
-        logger.exception("kanban_show failed")
-        return tool_error(f"kanban_show: {e}")
+        logger.exception("show_kanban failed")
+        return tool_error(f"show_kanban: {e}")
 
 
 def _handle_list(args: dict, **kw) -> str:
     """List task summaries with the same core filters as the CLI."""
-    guard = _require_orchestrator_tool("kanban_list")
+    guard = _require_orchestrator_tool("list_kanban")
     if guard:
         return guard
     assignee = args.get("assignee")
@@ -495,10 +495,10 @@ def _handle_list(args: dict, **kw) -> str:
         finally:
             conn.close()
     except ValueError as e:
-        return tool_error(f"kanban_list: {e}")
+        return tool_error(f"list_kanban: {e}")
     except Exception as e:
-        logger.exception("kanban_list failed")
-        return tool_error(f"kanban_list: {e}")
+        logger.exception("list_kanban failed")
+        return tool_error(f"list_kanban: {e}")
 
 
 def _handle_complete(args: dict, **kw) -> str:
@@ -594,7 +594,7 @@ def _handle_complete(args: dict, **kw) -> str:
         try:
             # Goal-mode pre-completion judge gate (Issue #38367).
             # Prevent workers from bypassing the auxiliary judge by
-            # calling kanban_complete before acceptance criteria are met.
+            # calling complete_kanban before acceptance criteria are met.
             # Only enforce when a judge is actually reachable — see
             # _goal_judge_available for why an unavailable judge fails open.
             task = kb.get_task(conn, tid)
@@ -637,10 +637,10 @@ def _handle_complete(args: dict, **kw) -> str:
                 )
             except kb.ArtifactPreservationError as artifact_err:
                 return tool_error(
-                    f"kanban_complete could not preserve the declared artifacts: "
+                    f"complete_kanban could not preserve the declared artifacts: "
                     f"{artifact_err}. Your task is still in-flight and its "
                     f"scratch workspace was kept. Fix the artifact path or "
-                    f"storage error, then retry kanban_complete with the same handoff."
+                    f"storage error, then retry complete_kanban with the same handoff."
                 )
             except kb.HallucinatedCardsError as hall_err:
                 # Structured rejection — surface the phantom ids so the
@@ -649,16 +649,16 @@ def _handle_complete(args: dict, **kw) -> str:
                 #
                 # The task itself was NOT mutated (the gate runs before
                 # the write txn), so the worker can simply call
-                # kanban_complete again. Spell that out — without it the
+                # complete_kanban again. Spell that out — without it the
                 # model often interprets a tool_error as a terminal
                 # failure and either blocks or crashes the run instead
                 # of retrying. See #22923.
                 return tool_error(
-                    f"kanban_complete blocked: the following created_cards "
+                    f"complete_kanban blocked: the following created_cards "
                     f"do not exist or were not created by this worker: "
                     f"{', '.join(hall_err.phantom)}. "
                     f"Your task is still in-flight (no state change). "
-                    f"Retry kanban_complete with the same summary/metadata "
+                    f"Retry complete_kanban with the same summary/metadata "
                     f"and either drop these ids from created_cards, or pass "
                     f"created_cards=[] to skip the card-claim check entirely."
                 )
@@ -671,10 +671,10 @@ def _handle_complete(args: dict, **kw) -> str:
         finally:
             conn.close()
     except ValueError as e:
-        return tool_error(f"kanban_complete: {e}")
+        return tool_error(f"complete_kanban: {e}")
     except Exception as e:
-        logger.exception("kanban_complete failed")
-        return tool_error(f"kanban_complete: {e}")
+        logger.exception("complete_kanban failed")
+        return tool_error(f"complete_kanban: {e}")
 
 
 def _handle_block(args: dict, **kw) -> str:
@@ -700,16 +700,16 @@ def _handle_block(args: dict, **kw) -> str:
             return tool_error(
                 f"kind must be one of {sorted(kb.VALID_BLOCK_KINDS)} (or omit it)"
             )
-        # Goal-mode block gate (Issue #38696, sibling of the kanban_complete
-        # judge gate in #38367). kanban_block is a second exit path out of
+        # Goal-mode block gate (Issue #38696, sibling of the complete_kanban
+        # judge gate in #38367). block_kanban is a second exit path out of
         # the goal loop — run_kanban_goal_loop() treats ANY `blocked` status
         # as terminal, identically to `done`, regardless of kind. Without
-        # this, a worker that learns kanban_complete is gated can just call
-        # kanban_block(reason="anything") to escape the loop instead.
+        # this, a worker that learns complete_kanban is gated can just call
+        # block_kanban(reason="anything") to escape the loop instead.
         # Restrict goal_mode tasks to the kinds that represent a genuine
         # external blocker the worker cannot resolve itself; `capability`
         # and `transient` (or an unset kind) route back through
-        # kanban_complete, which the judge now gates.
+        # complete_kanban, which the judge now gates.
         task = kb.get_task(conn, tid)
         if (
             task
@@ -721,7 +721,7 @@ def _handle_block(args: dict, **kw) -> str:
                 f"goal_mode tasks can only block with kind in "
                 f"{sorted(_GOAL_MODE_BLOCK_ALLOWED_KINDS)} (got {kind!r}). "
                 f"If the task is actually finished or cannot proceed for "
-                f"another reason, call kanban_complete instead — the "
+                f"another reason, call complete_kanban instead — the "
                 f"completion judge will evaluate it."
             )
         try:
@@ -749,10 +749,10 @@ def _handle_block(args: dict, **kw) -> str:
         finally:
             conn.close()
     except ValueError as e:
-        return tool_error(f"kanban_block: {e}")
+        return tool_error(f"block_kanban: {e}")
     except Exception as e:
-        logger.exception("kanban_block failed")
-        return tool_error(f"kanban_block: {e}")
+        logger.exception("block_kanban failed")
+        return tool_error(f"block_kanban: {e}")
 
 
 def _handle_heartbeat(args: dict, **kw) -> str:
@@ -800,10 +800,10 @@ def _handle_heartbeat(args: dict, **kw) -> str:
         finally:
             conn.close()
     except ValueError as e:
-        return tool_error(f"kanban_heartbeat: {e}")
+        return tool_error(f"heartbeat_kanban: {e}")
     except Exception as e:
-        logger.exception("kanban_heartbeat failed")
-        return tool_error(f"kanban_heartbeat: {e}")
+        logger.exception("heartbeat_kanban failed")
+        return tool_error(f"heartbeat_kanban: {e}")
 
 
 def _handle_comment(args: dict, **kw) -> str:
@@ -837,10 +837,10 @@ def _handle_comment(args: dict, **kw) -> str:
         finally:
             conn.close()
     except ValueError as e:
-        return tool_error(f"kanban_comment: {e}")
+        return tool_error(f"comment_kanban: {e}")
     except Exception as e:
-        logger.exception("kanban_comment failed")
-        return tool_error(f"kanban_comment: {e}")
+        logger.exception("comment_kanban failed")
+        return tool_error(f"comment_kanban: {e}")
 
 
 def _handle_attach(args: dict, **kw) -> str:
@@ -891,12 +891,12 @@ def _handle_attach(args: dict, **kw) -> str:
         finally:
             conn.close()
     except kb.AttachmentTooLarge as e:
-        return tool_error(f"kanban_attach: {e}")
+        return tool_error(f"attach_kanban: {e}")
     except ValueError as e:
-        return tool_error(f"kanban_attach: {e}")
+        return tool_error(f"attach_kanban: {e}")
     except Exception as e:
-        logger.exception("kanban_attach failed")
-        return tool_error(f"kanban_attach: {e}")
+        logger.exception("attach_kanban failed")
+        return tool_error(f"attach_kanban: {e}")
 
 
 _MAX_ATTACH_URL_REDIRECTS = 5
@@ -995,10 +995,10 @@ def _handle_attach_url(args: dict, **kw) -> str:
     try:
         data, fetched_ct = _download_url_with_cap(url, kb.KANBAN_ATTACHMENT_MAX_BYTES)
     except ValueError as e:
-        return tool_error(f"kanban_attach_url: {e}")
+        return tool_error(f"attach_kanban_url: {e}")
     except Exception as e:
-        logger.exception("kanban_attach_url download failed")
-        return tool_error(f"kanban_attach_url: failed to fetch {url}: {e}")
+        logger.exception("attach_kanban_url download failed")
+        return tool_error(f"attach_kanban_url: failed to fetch {url}: {e}")
     try:
         _, conn = _connect(board=board)
         try:
@@ -1015,12 +1015,12 @@ def _handle_attach_url(args: dict, **kw) -> str:
         finally:
             conn.close()
     except kb.AttachmentTooLarge as e:
-        return tool_error(f"kanban_attach_url: {e}")
+        return tool_error(f"attach_kanban_url: {e}")
     except ValueError as e:
-        return tool_error(f"kanban_attach_url: {e}")
+        return tool_error(f"attach_kanban_url: {e}")
     except Exception as e:
-        logger.exception("kanban_attach_url failed")
-        return tool_error(f"kanban_attach_url: {e}")
+        logger.exception("attach_kanban_url failed")
+        return tool_error(f"attach_kanban_url: {e}")
 
 
 def _handle_attachments(args: dict, **kw) -> str:
@@ -1175,10 +1175,10 @@ def _handle_create(args: dict, **kw) -> str:
         finally:
             conn.close()
     except ValueError as e:
-        return tool_error(f"kanban_create: {e}")
+        return tool_error(f"create_kanban: {e}")
     except Exception as e:
-        logger.exception("kanban_create failed")
-        return tool_error(f"kanban_create: {e}")
+        logger.exception("create_kanban failed")
+        return tool_error(f"create_kanban: {e}")
 
 
 def _maybe_auto_subscribe(conn: Any, task_id: str) -> bool:
@@ -1186,7 +1186,7 @@ def _maybe_auto_subscribe(conn: Any, task_id: str) -> bool:
 
     Returns True if a subscription row was written, False otherwise (no
     session context, config gate disabled, or best-effort failure). The
-    caller surfaces this in the ``subscribed`` field of the kanban_create
+    caller surfaces this in the ``subscribed`` field of the create_kanban
     response so an orchestrator can decide whether to fall back to an
     explicit ``kanban_notify-subscribe`` or to polling.
 
@@ -1217,7 +1217,7 @@ def _maybe_auto_subscribe(conn: Any, task_id: str) -> bool:
     Failure mode: any exception inside the function is logged at WARNING
     with the offending exception + diagnostic env vars and swallowed.
     We never want a notification bookkeeping failure to fail the
-    kanban_create that the agent is mid-conversation about.
+    create_kanban that the agent is mid-conversation about.
     """
     try:
         cfg = load_config()
@@ -1282,7 +1282,7 @@ def _maybe_auto_subscribe(conn: Any, task_id: str) -> bool:
 
 def _handle_unblock(args: dict, **kw) -> str:
     """Transition a blocked task to ready, or todo while parents remain open."""
-    guard = _require_orchestrator_tool("kanban_unblock")
+    guard = _require_orchestrator_tool("unblock_kanban")
     if guard:
         return guard
     tid = args.get("task_id")
@@ -1303,10 +1303,10 @@ def _handle_unblock(args: dict, **kw) -> str:
         finally:
             conn.close()
     except ValueError as e:
-        return tool_error(f"kanban_unblock: {e}")
+        return tool_error(f"unblock_kanban: {e}")
     except Exception as e:
-        logger.exception("kanban_unblock failed")
-        return tool_error(f"kanban_unblock: {e}")
+        logger.exception("unblock_kanban failed")
+        return tool_error(f"unblock_kanban: {e}")
 
 
 def _handle_link(args: dict, **kw) -> str:
@@ -1325,10 +1325,10 @@ def _handle_link(args: dict, **kw) -> str:
             conn.close()
     except ValueError as e:
         # Covers cycle + self-parent rejections
-        return tool_error(f"kanban_link: {e}")
+        return tool_error(f"link_kanban: {e}")
     except Exception as e:
-        logger.exception("kanban_link failed")
-        return tool_error(f"kanban_link: {e}")
+        logger.exception("link_kanban failed")
+        return tool_error(f"link_kanban: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -1359,7 +1359,7 @@ def _board_schema_prop() -> dict[str, str]:
     return {"type": "string", "description": _DESC_BOARD}
 
 KANBAN_SHOW_SCHEMA = {
-    "name": "kanban_show",
+    "name": "show_kanban",
     "description": (
         "Read a task's full state — title, body, assignee, parent task "
         "handoffs, your prior attempts on this task if any, comments, "
@@ -1382,7 +1382,7 @@ KANBAN_SHOW_SCHEMA = {
 }
 
 KANBAN_LIST_SCHEMA = {
-    "name": "kanban_list",
+    "name": "list_kanban",
     "description": (
         "List Kanban task summaries so an orchestrator profile can discover "
         "work to route. Supports the same core filters as the CLI: assignee, "
@@ -1427,7 +1427,7 @@ KANBAN_LIST_SCHEMA = {
 }
 
 KANBAN_COMPLETE_SCHEMA = {
-    "name": "kanban_complete",
+    "name": "complete_kanban",
     "description": (
         "Mark your current task done with a structured handoff for "
         "downstream workers and humans. Prefer ``summary`` for a "
@@ -1435,7 +1435,7 @@ KANBAN_COMPLETE_SCHEMA = {
         "machine-readable facts in ``metadata`` (changed_files, "
         "tests_run, decisions, findings, etc). At least one of "
         "``summary`` or ``result`` is required. If you created new "
-        "tasks via ``kanban_create`` during this run, list their ids "
+        "tasks via ``create_kanban`` during this run, list their ids "
         "in ``created_cards`` — the kernel verifies them so phantom "
         "references are caught before they leak into downstream "
         "automation. If you produced deliverable files (charts, PDFs, "
@@ -1483,13 +1483,13 @@ KANBAN_COMPLETE_SCHEMA = {
                 "items": {"type": "string"},
                 "description": (
                     "Optional structured manifest of task ids you "
-                    "created via ``kanban_create`` during this run. "
+                    "created via ``create_kanban`` during this run. "
                     "The kernel verifies each id exists and was "
                     "created by this worker's profile; any phantom "
                     "id blocks the completion with an error listing "
                     "what went wrong (auditable in the task's events). "
                     "Only list ids you got back from a successful "
-                    "``kanban_create`` call — do not invent or "
+                    "``create_kanban`` call — do not invent or "
                     "remember ids from prose. Omit the field if you "
                     "did not create any cards."
                 ),
@@ -1522,7 +1522,7 @@ KANBAN_COMPLETE_SCHEMA = {
 }
 
 KANBAN_BLOCK_SCHEMA = {
-    "name": "kanban_block",
+    "name": "block_kanban",
     "description": (
         "Stop work on this task and route it according to WHY you're stuck. "
         "Set ``kind`` to say which: 'dependency' (waiting on another task — "
@@ -1566,7 +1566,7 @@ KANBAN_BLOCK_SCHEMA = {
 }
 
 KANBAN_HEARTBEAT_SCHEMA = {
-    "name": "kanban_heartbeat",
+    "name": "heartbeat_kanban",
     "description": (
         "Signal that you're still alive during a long operation "
         "(training, encoding, large crawls). Call every few minutes so "
@@ -1594,7 +1594,7 @@ KANBAN_HEARTBEAT_SCHEMA = {
 }
 
 KANBAN_COMMENT_SCHEMA = {
-    "name": "kanban_comment",
+    "name": "comment_kanban",
     "description": (
         "Append a comment to a task's thread. Use for durable notes "
         "that should outlive this run (questions for the next worker, "
@@ -1622,14 +1622,14 @@ KANBAN_COMMENT_SCHEMA = {
 }
 
 KANBAN_ATTACH_SCHEMA = {
-    "name": "kanban_attach",
+    "name": "attach_kanban",
     "description": (
         "Attach a file to a task by passing its bytes inline (base64). "
         "Use for genuine file artifacts the next worker or a human should "
         "be able to download — generated reports, images, exports. The "
         "file is stored as a real attachment (not a comment link) under "
         "the task's attachments dir, capped at 25 MB. Prefer "
-        "kanban_attach_url when you only have a URL."
+        "attach_kanban_url when you only have a URL."
     ),
     "parameters": {
         "type": "object",
@@ -1660,7 +1660,7 @@ KANBAN_ATTACH_SCHEMA = {
 }
 
 KANBAN_ATTACH_URL_SCHEMA = {
-    "name": "kanban_attach_url",
+    "name": "attach_kanban_url",
     "description": (
         "Attach a file to a task by URL — Hermes downloads it server-side "
         "and stores it as a real attachment (capped at 25 MB). Use when "
@@ -1718,7 +1718,7 @@ KANBAN_ATTACHMENTS_SCHEMA = {
 }
 
 KANBAN_CREATE_SCHEMA = {
-    "name": "kanban_create",
+    "name": "create_kanban",
     "description": (
         "Create a new kanban task, optionally as a child of the current "
         "one (pass the current task id in ``parents``). Used by "
@@ -1878,7 +1878,7 @@ KANBAN_CREATE_SCHEMA = {
 }
 
 KANBAN_UNBLOCK_SCHEMA = {
-    "name": "kanban_unblock",
+    "name": "unblock_kanban",
     "description": (
         "Unblock a Kanban task. It moves to ready when all parents are done, "
         "or todo while any parent remains open. Orchestrator-only — only "
@@ -1899,7 +1899,7 @@ KANBAN_UNBLOCK_SCHEMA = {
 }
 
 KANBAN_LINK_SCHEMA = {
-    "name": "kanban_link",
+    "name": "link_kanban",
     "description": (
         "Add a parent→child dependency edge after both tasks already "
         "exist. The child won't promote to 'ready' until all parents "
@@ -1922,7 +1922,7 @@ KANBAN_LINK_SCHEMA = {
 # ---------------------------------------------------------------------------
 
 registry.register(
-    name="kanban_show",
+    name="show_kanban",
     toolset="kanban",
     schema=KANBAN_SHOW_SCHEMA,
     handler=_handle_show,
@@ -1931,7 +1931,7 @@ registry.register(
 )
 
 registry.register(
-    name="kanban_list",
+    name="list_kanban",
     toolset="kanban",
     schema=KANBAN_LIST_SCHEMA,
     handler=_handle_list,
@@ -1940,7 +1940,7 @@ registry.register(
 )
 
 registry.register(
-    name="kanban_complete",
+    name="complete_kanban",
     toolset="kanban",
     schema=KANBAN_COMPLETE_SCHEMA,
     handler=_handle_complete,
@@ -1949,7 +1949,7 @@ registry.register(
 )
 
 registry.register(
-    name="kanban_block",
+    name="block_kanban",
     toolset="kanban",
     schema=KANBAN_BLOCK_SCHEMA,
     handler=_handle_block,
@@ -1958,7 +1958,7 @@ registry.register(
 )
 
 registry.register(
-    name="kanban_heartbeat",
+    name="heartbeat_kanban",
     toolset="kanban",
     schema=KANBAN_HEARTBEAT_SCHEMA,
     handler=_handle_heartbeat,
@@ -1967,7 +1967,7 @@ registry.register(
 )
 
 registry.register(
-    name="kanban_comment",
+    name="comment_kanban",
     toolset="kanban",
     schema=KANBAN_COMMENT_SCHEMA,
     handler=_handle_comment,
@@ -1976,7 +1976,7 @@ registry.register(
 )
 
 registry.register(
-    name="kanban_attach",
+    name="attach_kanban",
     toolset="kanban",
     schema=KANBAN_ATTACH_SCHEMA,
     handler=_handle_attach,
@@ -1985,7 +1985,7 @@ registry.register(
 )
 
 registry.register(
-    name="kanban_attach_url",
+    name="attach_kanban_url",
     toolset="kanban",
     schema=KANBAN_ATTACH_URL_SCHEMA,
     handler=_handle_attach_url,
@@ -2003,7 +2003,7 @@ registry.register(
 )
 
 registry.register(
-    name="kanban_create",
+    name="create_kanban",
     toolset="kanban",
     schema=KANBAN_CREATE_SCHEMA,
     handler=_handle_create,
@@ -2012,7 +2012,7 @@ registry.register(
 )
 
 registry.register(
-    name="kanban_unblock",
+    name="unblock_kanban",
     toolset="kanban",
     schema=KANBAN_UNBLOCK_SCHEMA,
     handler=_handle_unblock,
@@ -2021,7 +2021,7 @@ registry.register(
 )
 
 registry.register(
-    name="kanban_link",
+    name="link_kanban",
     toolset="kanban",
     schema=KANBAN_LINK_SCHEMA,
     handler=_handle_link,

@@ -142,7 +142,7 @@ class TestDynamicSchemaBuilder:
         from tools.registry import discover_builtin_tools, registry
 
         discover_builtin_tools()
-        entry = registry._tools["video_generate"]
+        entry = registry._tools["generate_video"]
         assert entry.dynamic_schema_overrides is not None
         out = entry.dynamic_schema_overrides()
         assert "description" in out

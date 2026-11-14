@@ -1624,14 +1624,14 @@ def test_oneshot_wires_session_db_for_recall(monkeypatch):
     monkeypatch.setitem(
         sys.modules,
         "hermes_cli.tools_config",
-        mod("hermes_cli.tools_config", _get_platform_tools=lambda *_args, **_kwargs: {"session_search"}),
+        mod("hermes_cli.tools_config", _get_platform_tools=lambda *_args, **_kwargs: {"search_session"}),
     )
 
     text, result = _run_agent("recall this")
     assert text == "ok"
     assert not result.get("failed")
     assert captured["session_db"] is sentinel_db
-    assert captured["enabled_toolsets"] == ["session_search"]
+    assert captured["enabled_toolsets"] == ["search_session"]
     assert captured["prompt"] == "recall this"
 
 

@@ -327,7 +327,7 @@ class InsightsEngine:
                     continue
                 func = call.get("function", {})
                 tool_name = func.get("name")
-                if tool_name not in {"skill_view", "skill_manage"}:
+                if tool_name not in {"view_skill", "manage_skill"}:
                     continue
 
                 args = func.get("arguments")
@@ -352,7 +352,7 @@ class InsightsEngine:
                         "last_used_at": None,
                     },
                 )
-                if tool_name == "skill_view":
+                if tool_name == "view_skill":
                     entry["view_count"] += 1
                 else:
                     entry["manage_count"] += 1

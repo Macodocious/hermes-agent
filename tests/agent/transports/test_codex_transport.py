@@ -513,8 +513,8 @@ class TestCodexBuildKwargs:
         assert kw.get("reasoning") == {"effort": "high"}
 
     def test_xai_injects_native_web_search_when_client_web_search_present(self, transport):
-        """xAI path swaps a client-side ``web_search`` function for xAI's
-        native server-side ``web_search`` built-in so grok server-side search
+        """xAI path swaps a client-side ``search_web`` function for xAI's
+        native server-side ``search_web`` built-in so grok server-side search
         runs to completion (otherwise the turn stalls as
         reasoning-with-no-answer -> false 'incomplete' -> 3 retries -> fail).
         Non-conflicting client tools are preserved.
@@ -528,7 +528,7 @@ class TestCodexBuildKwargs:
                     "parameters": {"type": "object",
                                    "properties": {"path": {"type": "string"}}}}},
                 {"type": "function", "function": {
-                    "name": "web_search", "description": "Search the web.",
+                    "name": "search_web", "description": "Search the web.",
                     "parameters": {"type": "object",
                                    "properties": {"query": {"type": "string"}}}}},
             ],
@@ -541,9 +541,9 @@ class TestCodexBuildKwargs:
         assert "read_file" in names
 
     def test_xai_does_not_inject_native_web_search_without_client_web_search(self, transport):
-        """The native ``web_search`` built-in is a 1:1 swap for an
-        already-requested client ``web_search`` — NOT an additive grant.  A
-        turn whose toolset has no ``web_search`` (user never enabled the web
+        """The native ``search_web`` built-in is a 1:1 swap for an
+        already-requested client ``search_web`` — NOT an additive grant.  A
+        turn whose toolset has no ``search_web`` (user never enabled the web
         toolset) must not get Grok server-side search force-injected, which
         would silently bypass Hermes's web-provider config and tool-trace
         plumbing for every xai-oauth turn.
@@ -563,48 +563,48 @@ class TestCodexBuildKwargs:
         assert "read_file" in names
 
     def test_xai_drops_clientside_web_search_to_avoid_duplicate(self, transport):
-        """When the client registers its own 'web_search' function, the xAI
+        """When the client registers its own 'search_web' function, the xAI
         path must drop it and rely on the native built-in — otherwise xAI
-        returns HTTP 400 'Duplicate tool names: web_search'."""
+        returns HTTP 400 'Duplicate tool names: search_web'."""
         messages = [{"role": "user", "content": "Search the web."}]
         kw = transport.build_kwargs(
             model="grok-composer-2.5-fast", messages=messages,
             tools=[{"type": "function", "function": {
-                "name": "web_search", "description": "Search the web.",
+                "name": "search_web", "description": "Search the web.",
                 "parameters": {"type": "object",
                                "properties": {"query": {"type": "string"}}}}}],
             is_xai_responses=True,
         )
         tools = kw.get("tools", [])
-        # Exactly one tool named/typed web_search, and it is the native built-in.
+        # Exactly one tool named/typed search_web, and it is the native built-in.
         web_search_entries = [
             t for t in tools
-            if t.get("name") == "web_search" or t.get("type") == "web_search"
+            if t.get("name") == "search_web" or t.get("type") == "web_search"
         ]
         assert len(web_search_entries) == 1
         assert web_search_entries[0] == {"type": "web_search"}
-        # No client-side function form of web_search survives.
+        # No client-side function form of search_web survives.
         assert not any(
-            t.get("type") == "function" and t.get("name") == "web_search"
+            t.get("type") == "function" and t.get("name") == "search_web"
             for t in tools
         )
 
     def test_non_xai_path_does_not_inject_native_web_search(self, transport):
-        """Native web_search injection is scoped to xAI — Codex/GitHub paths
-        keep the client-side web_search function untouched."""
+        """Native search_web injection is scoped to xAI — Codex/GitHub paths
+        keep the client-side search_web function untouched."""
         messages = [{"role": "user", "content": "Search."}]
         kw = transport.build_kwargs(
             model="gpt-5.4", messages=messages,
             tools=[{"type": "function", "function": {
-                "name": "web_search", "description": "Search the web.",
+                "name": "search_web", "description": "Search the web.",
                 "parameters": {"type": "object",
                                "properties": {"query": {"type": "string"}}}}}],
             is_xai_responses=False,
         )
         tools = kw.get("tools", [])
-        assert not any(t.get("type") == "web_search" for t in tools)
+        assert not any(t.get("type") == "search_web" for t in tools)
         assert any(
-            t.get("type") == "function" and t.get("name") == "web_search"
+            t.get("type") == "function" and t.get("name") == "search_web"
             for t in tools
         )
 

@@ -17,7 +17,7 @@ description: "配置 Hermes Agent — config.yaml、providers、模型、API 密
 ├── auth.json       # OAuth provider 凭据（Nous Portal 等）
 ├── SOUL.md         # 主要 agent 身份（系统提示词第 #1 槽位）
 ├── memories/       # 持久记忆（MEMORY.md、USER.md）
-├── skills/         # Agent 创建的技能（通过 skill_manage 工具管理）
+├── skills/         # Agent 创建的技能（通过 manage_skill 工具管理）
 ├── cron/           # 定时任务
 ├── sessions/       # Gateway 会话
 └── logs/           # 日志（errors.log、gateway.log — 机密自动脱敏）
@@ -438,14 +438,14 @@ hermes config set skills.config.myplugin.path ~/myplugin-data
 
 ### Agent 创建技能写入的守卫
 
-当 agent 使用 `skill_manage` 创建、编辑、修补或删除技能时，Hermes 可以选择扫描新/更新的内容以查找危险关键字模式（凭据收集、明显的 prompt 注入、数据外泄指令）。扫描器**默认关闭** —— 合法触及 `~/.ssh/` 或提及 `$OPENAI_API_KEY` 的真实 agent 工作流触发启发式规则过于频繁。如果您希望扫描器在 agent 的技能写入落地前提示您，请重新开启：
+当 agent 使用 `manage_skill` 创建、编辑、修补或删除技能时，Hermes 可以选择扫描新/更新的内容以查找危险关键字模式（凭据收集、明显的 prompt 注入、数据外泄指令）。扫描器**默认关闭** —— 合法触及 `~/.ssh/` 或提及 `$OPENAI_API_KEY` 的真实 agent 工作流触发启发式规则过于频繁。如果您希望扫描器在 agent 的技能写入落地前提示您，请重新开启：
 
 ```yaml
 skills:
   guard_agent_created: true   # 默认：false
 ```
 
-开启后，任何被标记的 `skill_manage` 写入都会以审批提示的形式出现，并附带扫描器的理由。接受的写入落地；拒绝的写入向 agent 返回解释性错误。
+开启后，任何被标记的 `manage_skill` 写入都会以审批提示的形式出现，并附带扫描器的理由。接受的写入落地；拒绝的写入向 agent 返回解释性错误。
 
 ## 内存配置
 
@@ -514,7 +514,7 @@ tool_output:
 agent:
   disabled_toolsets:
     - memory       # 隐藏内存工具 + MEMORY_GUIDANCE 注入
-    - web          # 任何地方都不使用 web_search / web_extract
+    - web          # 任何地方都不使用 search_web / extract_web
 ```
 
 这在每个平台的工具配置（由 `hermes tools` 写入的 `platform_toolsets`）**之后**应用，因此此处列出的工具集始终被删除 —— 即使平台的已保存配置仍然列出它。当您希望有一个"到处关闭 X"的单一开关而不是编辑 `hermes tools` UI 中的 15+ 个平台行时，请使用此选项。
@@ -732,7 +732,7 @@ $ hermes model
 → Configure auxiliary models
 
 [ ] vision               currently: auto / main model
-[ ] web_extract          currently: auto / main model
+[ ] extract_web          currently: auto / main model
 [ ] title_generation     currently: openrouter / google/gemini-3-flash-preview
 [ ] compression          currently: auto / main model
 [ ] approval             currently: auto / main model
@@ -785,7 +785,7 @@ Hermes 中的每个模型槽位 —— 辅助任务、压缩、回退 —— 使
 
 ```yaml
 auxiliary:
-  # 图像分析（vision_analyze 工具 + 浏览器截图）
+  # 图像分析（analyze_vision 工具 + 浏览器截图）
   vision:
     provider: "auto"           # "auto"、"openrouter"、"nous"、"codex"、"main" 等
     model: ""                  # 例如 "openai/gpt-4o"、"google/gemini-2.5-flash"
@@ -795,7 +795,7 @@ auxiliary:
     download_timeout: 30       # 秒 —— 图像 HTTP 下载；慢速连接请增加
 
   # 网页摘要 + 浏览器页面文本提取
-  web_extract:
+  extract_web:
     provider: "auto"
     model: ""                  # 例如 "google/gemini-2.5-flash"
     base_url: ""
@@ -851,7 +851,7 @@ auxiliary:
 ```
 
 :::tip
-每个辅助任务都有可配置的 `timeout`（秒）。默认值：vision 120s、web_extract 360s、approval 30s、compression 120s。如果您为辅助任务使用慢速本地模型，请增加这些值。Vision 还有单独的 `download_timeout`（默认 30s）用于 HTTP 图像下载 —— 对于慢速连接或自托管图像服务器，请增加此值。
+每个辅助任务都有可配置的 `timeout`（秒）。默认值：vision 120s、extract_web 360s、approval 30s、compression 120s。如果您为辅助任务使用慢速本地模型，请增加这些值。Vision 还有单独的 `download_timeout`（默认 30s）用于 HTTP 图像下载 —— 对于慢速连接或自托管图像服务器，请增加此值。
 :::
 
 :::info
@@ -884,7 +884,7 @@ auxiliary:
 | `model` | 该 provider 的模型名称 |
 | `base_url` | （可选）自定义 OpenAI 兼容端点 |
 
-`fallback_chain` 适用于任何辅助任务 —— `compression`、`vision`、`web_extract`、`approval`、`skills_hub`、`mcp` 等。
+`fallback_chain` 适用于任何辅助任务 —— `compression`、`vision`、`extract_web`、`approval`、`skills_hub`、`mcp` 等。
 
 ### OpenRouter 路由和辅助任务的 Pareto Code
 
@@ -1439,7 +1439,7 @@ code_execution:
 
 ## Web 搜索后端
 
-`web_search` 和 `web_extract` 工具支持五种后端 provider。在 `config.yaml` 中或通过 `hermes tools` 配置后端：
+`search_web` 和 `extract_web` 工具支持五种后端 provider。在 `config.yaml` 中或通过 `hermes tools` 配置后端：
 
 ```yaml
 web:
@@ -1460,7 +1460,7 @@ web:
 
 **后端选择：** 如果未设置 `web.backend`，后端从可用的 API 密钥自动检测。如果仅设置了 `SEARXNG_URL`，使用 SearXNG。如果仅设置了 `EXA_API_KEY`，使用 Exa。如果仅设置了 `TAVILY_API_KEY`，使用 Tavily。如果仅设置了 `PARALLEL_API_KEY`，使用 Parallel。否则 Firecrawl 是默认值。
 
-**SearXNG** 是一个免费、自托管、尊重隐私的元搜索引擎，查询 70+ 个搜索引擎。无需 API 密钥 —— 只需将 `SEARXNG_URL` 设置为您的实例（例如 `http://localhost:8080`）。SearXNG 仅限搜索；`web_extract` 需要单独的提取 provider（设置 `web.extract_backend`）。Docker 设置说明请参阅 [Web 搜索设置指南](/user-guide/features/web-search)。
+**SearXNG** 是一个免费、自托管、尊重隐私的元搜索引擎，查询 70+ 个搜索引擎。无需 API 密钥 —— 只需将 `SEARXNG_URL` 设置为您的实例（例如 `http://localhost:8080`）。SearXNG 仅限搜索；`extract_web` 需要单独的提取 provider（设置 `web.extract_backend`）。Docker 设置说明请参阅 [Web 搜索设置指南](/user-guide/features/web-search)。
 
 **自托管 Firecrawl：** 设置 `FIRECRAWL_API_URL` 指向您自己的实例。设置自定义 URL 后，API 密钥变为可选（在服务器上设置 `USE_DB_AUTHENTICATION=***` 以禁用认证）。
 
@@ -1494,8 +1494,8 @@ browser:
 
 **对话框策略：**
 
-- `must_respond`（默认）—— 捕获对话框，在 `browser_snapshot.pending_dialogs` 中显示，等待 agent 调用 `browser_dialog(action=...)`。在 `dialog_timeout_s` 秒内无响应后，对话框被自动关闭以防止页面的 JS 线程永久停滞。
-- `auto_dismiss` —— 捕获，立即关闭。Agent 仍然在事后的 `browser_snapshot.recent_dialogs` 中看到对话框记录，`closed_by="auto_policy"`。
+- `must_respond`（默认）—— 捕获对话框，在 `snapshot_browser.pending_dialogs` 中显示，等待 agent 调用 `browser_dialog(action=...)`。在 `dialog_timeout_s` 秒内无响应后，对话框被自动关闭以防止页面的 JS 线程永久停滞。
+- `auto_dismiss` —— 捕获，立即关闭。Agent 仍然在事后的 `snapshot_browser.recent_dialogs` 中看到对话框记录，`closed_by="auto_policy"`。
 - `auto_accept` —— 捕获，立即接受。适用于有激进 `beforeunload` 提示的页面。
 
 完整对话框工作流请参阅[浏览器功能页面](./features/browser.md#browser_dialog)。
@@ -1566,7 +1566,7 @@ security:
       - "/etc/hermes/blocked-sites.txt"
 ```
 
-启用后，任何匹配被阻止域名模式的 URL 在 web 或浏览器工具执行之前都会被拒绝。这适用于 `web_search`、`web_extract`、`browser_navigate` 以及任何访问 URL 的工具。
+启用后，任何匹配被阻止域名模式的 URL 在 web 或浏览器工具执行之前都会被拒绝。这适用于 `search_web`、`extract_web`、`navigate_browser` 以及任何访问 URL 的工具。
 
 域名规则支持：
 - 精确域名：`admin.example.com`

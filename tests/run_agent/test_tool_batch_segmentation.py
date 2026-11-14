@@ -29,7 +29,7 @@ from agent.tool_dispatch_helpers import (
 )
 
 
-def _tc(name="web_search", arguments="{}", call_id=None):
+def _tc(name="search_web", arguments="{}", call_id=None):
     return SimpleNamespace(
         id=call_id or f"call_{uuid.uuid4().hex[:8]}",
         type="function",
@@ -52,7 +52,7 @@ def _flatten_ids(segments):
 
 class TestPlanToolBatchSegments:
     def test_all_safe_batch_is_single_parallel_segment(self):
-        calls = [_tc("web_search"), _tc("read_file", '{"path":"a.py"}'), _tc("web_extract")]
+        calls = [_tc("search_web"), _tc("read_file", '{"path":"a.py"}'), _tc("extract_web")]
         segments = _plan_tool_batch_segments(calls)
         assert _kinds(segments) == ["parallel"]
         assert _flatten_ids(segments) == [c.id for c in calls]
@@ -60,8 +60,8 @@ class TestPlanToolBatchSegments:
     def test_three_safe_reads_plus_trailing_unsafe_keeps_reads_parallel(self):
         """The headline case: 3 safe reads + 1 unsafe tool must NOT go fully sequential."""
         calls = [
-            _tc("web_search", call_id="r1"),
-            _tc("web_search", call_id="r2"),
+            _tc("search_web", call_id="r1"),
+            _tc("search_web", call_id="r2"),
             _tc("read_file", '{"path":"a.py"}', call_id="r3"),
             _tc("terminal", '{"command":"echo hi"}', call_id="b1"),
         ]
@@ -72,11 +72,11 @@ class TestPlanToolBatchSegments:
 
     def test_barrier_in_middle_splits_runs_and_preserves_order(self):
         calls = [
-            _tc("web_search", call_id="r1"),
-            _tc("web_search", call_id="r2"),
+            _tc("search_web", call_id="r1"),
+            _tc("search_web", call_id="r2"),
             _tc("terminal", '{"command":"make"}', call_id="b1"),
-            _tc("web_search", call_id="r3"),
-            _tc("web_search", call_id="r4"),
+            _tc("search_web", call_id="r3"),
+            _tc("search_web", call_id="r4"),
         ]
         segments = _plan_tool_batch_segments(calls)
         assert _kinds(segments) == ["parallel", "sequential", "parallel"]
@@ -86,10 +86,10 @@ class TestPlanToolBatchSegments:
         # parallel run of 1 gains nothing — demote to sequential and merge
         # with the adjacent barrier segment.
         calls = [
-            _tc("web_search", call_id="r1"),
-            _tc("web_search", call_id="r2"),
+            _tc("search_web", call_id="r1"),
+            _tc("search_web", call_id="r2"),
             _tc("terminal", '{"command":"make"}', call_id="b1"),
-            _tc("web_search", call_id="r3"),
+            _tc("search_web", call_id="r3"),
         ]
         segments = _plan_tool_batch_segments(calls)
         assert _kinds(segments) == ["parallel", "sequential"]
@@ -99,8 +99,8 @@ class TestPlanToolBatchSegments:
         calls = [
             _tc("terminal", '{"command":"a"}', call_id="b1"),
             _tc("terminal", '{"command":"b"}', call_id="b2"),
-            _tc("web_search", call_id="r1"),
-            _tc("web_search", call_id="r2"),
+            _tc("search_web", call_id="r1"),
+            _tc("search_web", call_id="r2"),
         ]
         segments = _plan_tool_batch_segments(calls)
         assert _kinds(segments) == ["sequential", "parallel"]
@@ -108,8 +108,8 @@ class TestPlanToolBatchSegments:
 
     def test_never_parallel_tool_is_a_barrier(self):
         calls = [
-            _tc("web_search", call_id="r1"),
-            _tc("web_search", call_id="r2"),
+            _tc("search_web", call_id="r1"),
+            _tc("search_web", call_id="r2"),
             _tc("clarify", '{"question":"?"}', call_id="c1"),
         ]
         segments = _plan_tool_batch_segments(calls)
@@ -122,12 +122,12 @@ class TestPlanToolBatchSegments:
         never stack them in a parallel segment (N simultaneous approval
         prompts on one turn)."""
         calls = [
-            _tc("web_search", call_id="r1"),
-            _tc("web_search", call_id="r2"),
+            _tc("search_web", call_id="r1"),
+            _tc("search_web", call_id="r2"),
             _tc(name, '{"path":"a.py"}', call_id="m1"),
             _tc(name, '{"path":"b.py"}', call_id="m2"),
-            _tc("web_search", call_id="r3"),
-            _tc("web_search", call_id="r4"),
+            _tc("search_web", call_id="r3"),
+            _tc("search_web", call_id="r4"),
         ]
         segments = _plan_tool_batch_segments(calls)
         kinds = _kinds(segments)
@@ -138,11 +138,11 @@ class TestPlanToolBatchSegments:
 
     def test_malformed_args_call_is_a_barrier_not_a_batch_poison(self):
         calls = [
-            _tc("web_search", call_id="r1"),
-            _tc("web_search", call_id="r2"),
-            _tc("web_search", "{not json", call_id="bad"),
-            _tc("web_search", call_id="r3"),
-            _tc("web_search", call_id="r4"),
+            _tc("search_web", call_id="r1"),
+            _tc("search_web", call_id="r2"),
+            _tc("search_web", "{not json", call_id="bad"),
+            _tc("search_web", call_id="r3"),
+            _tc("search_web", call_id="r4"),
         ]
         segments = _plan_tool_batch_segments(calls)
         assert _kinds(segments) == ["parallel", "sequential", "parallel"]
@@ -150,9 +150,9 @@ class TestPlanToolBatchSegments:
 
     def test_non_dict_args_call_is_a_barrier(self):
         calls = [
-            _tc("web_search", call_id="r1"),
-            _tc("web_search", call_id="r2"),
-            _tc("web_search", '"just a string"', call_id="bad"),
+            _tc("search_web", call_id="r1"),
+            _tc("search_web", call_id="r2"),
+            _tc("search_web", '"just a string"', call_id="bad"),
         ]
         segments = _plan_tool_batch_segments(calls)
         assert _kinds(segments) == ["parallel", "sequential"]
@@ -161,9 +161,9 @@ class TestPlanToolBatchSegments:
         monkeypatch.chdir(tmp_path)
         calls = [
             _tc("read_file", '{"path":"a.py"}', call_id="w1"),
-            _tc("web_search", call_id="r1"),
+            _tc("search_web", call_id="r1"),
             _tc("write_file", '{"path":"a.py","content":"x"}', call_id="w2"),
-            _tc("web_search", call_id="r2"),
+            _tc("search_web", call_id="r2"),
         ]
         segments = _plan_tool_batch_segments(calls)
         # w2 conflicts with w1 → closes the first run; w2+r2 form the second.
@@ -176,8 +176,8 @@ class TestPlanToolBatchSegments:
     def test_path_scoped_tool_without_path_is_a_barrier(self):
         calls = [
             _tc("read_file", "{}", call_id="nopath"),
-            _tc("web_search", call_id="r1"),
-            _tc("web_search", call_id="r2"),
+            _tc("search_web", call_id="r1"),
+            _tc("search_web", call_id="r2"),
         ]
         segments = _plan_tool_batch_segments(calls)
         assert _kinds(segments) == ["sequential", "parallel"]
@@ -185,7 +185,7 @@ class TestPlanToolBatchSegments:
     def test_flattened_segments_always_preserve_emission_order(self):
         calls = [
             _tc("terminal", '{"command":"x"}', call_id="b1"),
-            _tc("web_search", call_id="r1"),
+            _tc("search_web", call_id="r1"),
             _tc("clarify", '{"question":"?"}', call_id="c1"),
             _tc("read_file", '{"path":"a.py"}', call_id="r2"),
             _tc("read_file", '{"path":"b.py"}', call_id="r3"),
@@ -198,19 +198,19 @@ class TestShouldParallelizeBackwardCompat:
     """The boolean gate is now a view over the planner — same answers as before."""
 
     def test_single_call_is_sequential(self):
-        assert not _should_parallelize_tool_batch([_tc("web_search")])
+        assert not _should_parallelize_tool_batch([_tc("search_web")])
 
     def test_all_safe_batch_is_parallel(self):
-        assert _should_parallelize_tool_batch([_tc("web_search"), _tc("web_extract")])
+        assert _should_parallelize_tool_batch([_tc("search_web"), _tc("extract_web")])
 
     def test_mixed_batch_is_not_wholly_parallel(self):
         assert not _should_parallelize_tool_batch(
-            [_tc("web_search"), _tc("terminal", '{"command":"ls"}')]
+            [_tc("search_web"), _tc("terminal", '{"command":"ls"}')]
         )
 
     def test_clarify_anywhere_blocks_whole_batch_parallelism(self):
         assert not _should_parallelize_tool_batch(
-            [_tc("web_search"), _tc("clarify", '{"question":"?"}')]
+            [_tc("search_web"), _tc("clarify", '{"question":"?"}')]
         )
 
 
@@ -238,7 +238,7 @@ def agent():
     with (
         patch(
             "run_agent.get_tool_definitions",
-            return_value=_make_tool_defs("web_search", "terminal"),
+            return_value=_make_tool_defs("search_web", "terminal"),
         ),
         patch("run_agent.check_toolset_requirements", return_value={}),
         patch("run_agent.OpenAI"),
@@ -256,11 +256,11 @@ def agent():
 
 class TestSegmentedDispatchIntegration:
     def test_mixed_batch_runs_safe_prefix_concurrently_and_barrier_after(self, agent):
-        """Two web_search calls must overlap in time; terminal must start only
+        """Two search_web calls must overlap in time; terminal must start only
         after both finish; results land in the model's emission order."""
         calls = [
-            _tc("web_search", '{"query":"a"}', call_id="s1"),
-            _tc("web_search", '{"query":"b"}', call_id="s2"),
+            _tc("search_web", '{"query":"a"}', call_id="s1"),
+            _tc("search_web", '{"query":"b"}', call_id="s2"),
             _tc("terminal", '{"command":"echo done"}', call_id="t1"),
         ]
         msg = SimpleNamespace(content="", tool_calls=calls)
@@ -273,7 +273,7 @@ class TestSegmentedDispatchIntegration:
         def fake_handle(name, args, task_id, **kwargs):
             with events_lock:
                 events.append(("start", name, kwargs["tool_call_id"]))
-            if name == "web_search":
+            if name == "search_web":
                 # Both searches must be in flight at once to pass this
                 # barrier — proves genuine concurrency for the safe prefix.
                 rendezvous.wait()
@@ -291,18 +291,18 @@ class TestSegmentedDispatchIntegration:
         # The barrier (terminal) started only after BOTH searches ended.
         terminal_start = events.index(("start", "terminal", "t1"))
         search_ends = [
-            i for i, e in enumerate(events) if e[0] == "end" and e[1] == "web_search"
+            i for i, e in enumerate(events) if e[0] == "end" and e[1] == "search_web"
         ]
         assert len(search_ends) == 2
         assert all(i < terminal_start for i in search_ends)
 
     def test_mixed_batch_preserves_order_with_barrier_in_middle(self, agent):
         calls = [
-            _tc("web_search", '{"query":"a"}', call_id="s1"),
-            _tc("web_search", '{"query":"b"}', call_id="s2"),
+            _tc("search_web", '{"query":"a"}', call_id="s1"),
+            _tc("search_web", '{"query":"b"}', call_id="s2"),
             _tc("terminal", '{"command":"touch x"}', call_id="t1"),
-            _tc("web_search", '{"query":"c"}', call_id="s3"),
-            _tc("web_search", '{"query":"d"}', call_id="s4"),
+            _tc("search_web", '{"query":"c"}', call_id="s3"),
+            _tc("search_web", '{"query":"d"}', call_id="s4"),
         ]
         msg = SimpleNamespace(content="", tool_calls=calls)
         messages = []
@@ -324,7 +324,7 @@ class TestSegmentedDispatchIntegration:
         assert {"s3", "s4"} == set(executed[t1_pos + 1:])
 
     def test_homogeneous_safe_batch_still_uses_plain_concurrent_path(self, agent):
-        calls = [_tc("web_search", '{"query":"a"}'), _tc("web_search", '{"query":"b"}')]
+        calls = [_tc("search_web", '{"query":"a"}'), _tc("search_web", '{"query":"b"}')]
         msg = SimpleNamespace(content="", tool_calls=calls)
 
         with (
@@ -353,7 +353,7 @@ class TestSegmentedDispatchIntegration:
         conc.assert_not_called()
 
     def test_single_call_uses_sequential_path(self, agent):
-        msg = SimpleNamespace(content="", tool_calls=[_tc("web_search", '{"query":"a"}')])
+        msg = SimpleNamespace(content="", tool_calls=[_tc("search_web", '{"query":"a"}')])
 
         with (
             patch.object(agent, "_execute_tool_calls_concurrent") as conc,
@@ -369,11 +369,11 @@ class TestSegmentedDispatchIntegration:
         segment must be drained with cancelled results — one per call —
         without executing."""
         calls = [
-            _tc("web_search", '{"query":"a"}', call_id="s1"),
-            _tc("web_search", '{"query":"b"}', call_id="s2"),
+            _tc("search_web", '{"query":"a"}', call_id="s1"),
+            _tc("search_web", '{"query":"b"}', call_id="s2"),
             _tc("terminal", '{"command":"long"}', call_id="t1"),
-            _tc("web_search", '{"query":"c"}', call_id="s3"),
-            _tc("web_search", '{"query":"d"}', call_id="s4"),
+            _tc("search_web", '{"query":"c"}', call_id="s3"),
+            _tc("search_web", '{"query":"d"}', call_id="s4"),
         ]
         msg = SimpleNamespace(content="", tool_calls=calls)
         messages = []
@@ -402,8 +402,8 @@ class TestSegmentedDispatchIntegration:
         finalize) — the marker must appear exactly once across the batch,
         never duplicated by segment boundaries."""
         calls = [
-            _tc("web_search", '{"query":"a"}', call_id="s1"),
-            _tc("web_search", '{"query":"b"}', call_id="s2"),
+            _tc("search_web", '{"query":"a"}', call_id="s1"),
+            _tc("search_web", '{"query":"b"}', call_id="s2"),
             _tc("terminal", '{"command":"echo hi"}', call_id="t1"),
         ]
         msg = SimpleNamespace(content="", tool_calls=calls)

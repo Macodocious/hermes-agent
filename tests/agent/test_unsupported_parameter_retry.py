@@ -106,7 +106,7 @@ class TestMaxTokensRetryHardening:
         ):
             with pytest.raises(RuntimeError):
                 call_llm(
-                    task="session_search",
+                    task="search_session",
                     messages=[{"role": "user", "content": "hi"}],
                     temperature=0.3,
                     # max_tokens omitted on purpose
@@ -133,7 +133,7 @@ class TestMaxTokensRetryHardening:
         ):
             with pytest.raises(RuntimeError):
                 await async_call_llm(
-                    task="session_search",
+                    task="search_session",
                     messages=[{"role": "user", "content": "hi"}],
                     temperature=0.3,
                 )

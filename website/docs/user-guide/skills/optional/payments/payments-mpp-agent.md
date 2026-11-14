@@ -62,7 +62,7 @@ Default: if the user already has Stripe Link configured or the 402 challenge spe
   - `https://agents.privy.io/skill.md`
   - `https://agentcash.dev/skill.md`
 
-Use `web_extract` to fetch any of those SKILL.md files if the user picks one.
+Use `extract_web` to fetch any of those SKILL.md files if the user picks one.
 
 ## Procedure (mppx, fastest path)
 
@@ -116,7 +116,7 @@ mppx <url> -v
 
 ## Procedure (Tempo Wallet)
 
-The Tempo Wallet skill at https://tempo.xyz/SKILL.md is the canonical reference; fetch it with `web_extract` and follow it. Headline:
+The Tempo Wallet skill at https://tempo.xyz/SKILL.md is the canonical reference; fetch it with `extract_web` and follow it. Headline:
 
 ```
 tempo wallet login

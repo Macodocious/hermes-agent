@@ -8,7 +8,7 @@ description: "Background maintenance for agent-created skills — usage tracking
 
 The curator is a background maintenance pass for **agent-created skills**. It tracks how often each skill is viewed, used, and patched, moves long-unused skills through `active → stale → archived` states, and periodically spawns a short auxiliary-model review that proposes consolidations or patches drift.
 
-It exists so that skills created via the [self-improvement loop](/user-guide/features/skills#agent-managed-skills-skill_manage-tool) don't pile up forever. Every time the agent solves a novel problem and saves a skill, that skill lands in `~/.hermes/skills/`. Without maintenance, you end up with dozens of narrow near-duplicates that pollute the catalog and waste tokens.
+It exists so that skills created via the [self-improvement loop](/user-guide/features/skills#agent-managed-skills-manage_skill-tool) don't pile up forever. Every time the agent solves a novel problem and saves a skill, that skill lands in `~/.hermes/skills/`. Without maintenance, you end up with dozens of narrow near-duplicates that pollute the catalog and waste tokens.
 
 By default (`prune_builtins: true`) the curator can archive **unused bundled built-in skills** (shipped with the repo) after `archive_after_days` of non-use, alongside the agent-created skills it primarily manages. Hub-installed skills (from [agentskills.io](https://agentskills.io)) are always off-limits. Set `curator.prune_builtins: false` to restore the old agent-created-only behavior, where bundled skills are never touched. The curator also **never auto-deletes** — the worst outcome is archival into `~/.hermes/skills/.archive/`, which is recoverable.
 
@@ -32,13 +32,13 @@ If you want to see what the curator *would* do before it runs for real, run `her
 A run has two phases:
 
 1. **Automatic transitions** (deterministic, no LLM). Skills unused for `stale_after_days` (30) become `stale`; skills unused for `archive_after_days` (90) are moved to `~/.hermes/skills/.archive/`. This is the always-on pruning behavior — it runs whenever the curator is enabled, with no aux-model cost.
-2. **LLM consolidation** (single aux-model pass, `max_iterations=8`) — **OFF by default**. When `curator.consolidate: true`, the forked agent surveys the agent-created skills, can read any of them with `skill_view`, and decides per-skill whether to keep, patch (via `skill_manage`), consolidate overlapping ones into class-level umbrellas, or archive via the terminal tool. Consolidation treats a skill as a full package: if a skill has `references/`, `templates/`, `scripts/`, `assets/`, or relative links to those paths, the curator must either keep it standalone, re-home the needed support files and rewrite paths, or archive the entire package unchanged — not flatten only `SKILL.md` into another skill's `references/` file.
+2. **LLM consolidation** (single aux-model pass, `max_iterations=8`) — **OFF by default**. When `curator.consolidate: true`, the forked agent surveys the agent-created skills, can read any of them with `view_skill`, and decides per-skill whether to keep, patch (via `manage_skill`), consolidate overlapping ones into class-level umbrellas, or archive via the terminal tool. Consolidation treats a skill as a full package: if a skill has `references/`, `templates/`, `scripts/`, `assets/`, or relative links to those paths, the curator must either keep it standalone, re-home the needed support files and rewrite paths, or archive the entire package unchanged — not flatten only `SKILL.md` into another skill's `references/` file.
 
 :::info Consolidation is opt-in
 By default the curator only **prunes** — the deterministic inactivity pass marks skills stale and archives long-unused ones. The opinionated LLM **consolidation** pass (umbrella-building, merging overlapping skills) is off by default because it costs aux-model tokens on every run and makes broad structural changes to your library. Turn it on with `curator.consolidate: true`, or run it once on demand with `hermes curator run --consolidate`.
 :::
 
-Pinned skills are off-limits to both the curator's auto-transitions and the agent's own `skill_manage` tool. See [Pinning a skill](#pinning-a-skill) below.
+Pinned skills are off-limits to both the curator's auto-transitions and the agent's own `manage_skill` tool. See [Pinning a skill](#pinning-a-skill) below.
 
 ## Configuration
 
@@ -152,9 +152,9 @@ Currently, only the **background self-improvement review fork** sets this marker
 — when it creates a new umbrella skill during its periodic review pass (~every 10
 agent turns). The background fork runs with a write origin of `"background_review"`
 (via `tools/skill_provenance.py`), which is the only path that triggers the
-`mark_agent_created()` call in `skill_manage`.
+`mark_agent_created()` call in `manage_skill`.
 
-Skills the foreground agent creates via `skill_manage(action="create")` during a
+Skills the foreground agent creates via `manage_skill(action="create")` during a
 conversation are **not** marked as agent-created — they are considered
 user-directed and the curator intentionally leaves them alone.
 
@@ -182,10 +182,10 @@ section.
 
 ## Pinning a skill
 
-Pinning protects a skill from deletion — both the curator's automated archive passes and the agent's `skill_manage(action="delete")` tool call. Once a skill is pinned:
+Pinning protects a skill from deletion — both the curator's automated archive passes and the agent's `manage_skill(action="delete")` tool call. Once a skill is pinned:
 
 - The **curator** skips it during auto-transitions (`active → stale → archived`), and its LLM review pass is instructed to leave it alone.
-- The **agent's `skill_manage` tool** refuses `delete` on it, pointing the user at `hermes curator unpin <name>`. Patches and edits still go through, so the agent can improve a pinned skill's content as pitfalls come up without a pin/unpin/re-pin dance.
+- The **agent's `manage_skill` tool** refuses `delete` on it, pointing the user at `hermes curator unpin <name>`. Patches and edits still go through, so the agent can improve a pinned skill's content as pitfalls come up without a pin/unpin/re-pin dance.
 
 Pin and unpin with:
 
@@ -225,9 +225,9 @@ The curator maintains a sidecar at `~/.hermes/skills/.usage.json` with one entry
 
 Counters increment when:
 
-- `view_count`: the agent calls `skill_view` on the skill.
+- `view_count`: the agent calls `view_skill` on the skill.
 - `use_count`: the skill is loaded into a conversation's prompt.
-- `patch_count`: `skill_manage patch/edit/write_file/remove_file` runs on the skill.
+- `patch_count`: `manage_skill patch/edit/write_file/remove_file` runs on the skill.
 
 Bundled and hub-installed skills are explicitly excluded from telemetry writes.
 

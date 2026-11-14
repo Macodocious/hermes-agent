@@ -70,15 +70,15 @@ python3 SKILL_DIR/scripts/domain_intel.py bulk example.com github.com --checks s
 ## When to use this vs built-in tools
 
 - **Use this skill** for infrastructure questions: subdomains, SSL certs, WHOIS, DNS records, availability
-- **Use `web_search`** for general research about what a domain/company does
-- **Use `web_extract`** to get the actual content of a webpage
+- **Use `search_web`** for general research about what a domain/company does
+- **Use `extract_web`** to get the actual content of a webpage
 - **Use `terminal` with `curl -I`** for a simple "is this URL reachable" check
 
 | Task | Better tool | Why |
 |------|-------------|-----|
-| "What does example.com do?" | `web_extract` | Gets page content, not DNS/WHOIS data |
-| "Find info about a company" | `web_search` | General research, not domain-specific |
-| "Is this website safe?" | `web_search` | Reputation checks need web context |
+| "What does example.com do?" | `extract_web` | Gets page content, not DNS/WHOIS data |
+| "Find info about a company" | `search_web` | General research, not domain-specific |
+| "Is this website safe?" | `search_web` | Reputation checks need web context |
 | "Check if a URL is reachable" | `terminal` with `curl -I` | Simple HTTP check |
 | "Find subdomains of X" | **This skill** | Only passive source for this |
 | "When does the SSL cert expire?" | **This skill** | Built-in tools can't inspect TLS |

@@ -1,6 +1,6 @@
 """Tests for SessionDB.get_messages_around (anchored-window primitive).
 
-Used by session_search both for the discovery shape (FTS5 match as anchor)
+Used by search_session both for the discovery shape (FTS5 match as anchor)
 and the scroll shape (user-supplied anchor). Returns a window of messages
 around the anchor plus before/after counts so callers can detect session
 boundaries.

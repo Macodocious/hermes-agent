@@ -47,7 +47,7 @@ class TestGuidanceConstants:
     def test_memory_guidance_discourages_task_logs(self):
         assert "durable facts" in MEMORY_GUIDANCE
         assert "Do NOT save task progress" in MEMORY_GUIDANCE
-        assert "session_search" in MEMORY_GUIDANCE
+        assert "search_session" in MEMORY_GUIDANCE
         assert "like a diary" not in MEMORY_GUIDANCE
         assert ">80%" not in MEMORY_GUIDANCE
 
@@ -443,7 +443,7 @@ class TestBuildSkillsSystemPrompt:
         Demoted categories lose their descriptions, never their entries —
         full pruning caused silent capability loss in a real workflow
         (agent-created skills are the model's project memory, and models
-        don't rediscover them via skills_list once the index goes quiet).
+        don't rediscover them via list_skills once the index goes quiet).
         """
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
         for cat, name in (("social-media", "tweet-stuff"), ("github", "pr-review")):
@@ -463,7 +463,7 @@ class TestBuildSkillsSystemPrompt:
         assert "Does tweet-stuff things" not in result
         assert "social-media [names only]" in result
         # Disclosure note explains the demotion and how to load.
-        assert "skill_view" in result
+        assert "view_skill" in result
 
     def test_compact_categories_demote_nested_and_miss_cache_separately(
         self, monkeypatch, tmp_path
@@ -658,7 +658,7 @@ class TestBuildNousSubscriptionPrompt:
             ),
         )
 
-        prompt = build_nous_subscription_prompt({"web_search", "browser_navigate"})
+        prompt = build_nous_subscription_prompt({"search_web", "navigate_browser"})
 
         assert "Browser Use" in prompt
         assert "Modal execution is optional" in prompt
@@ -684,7 +684,7 @@ class TestBuildNousSubscriptionPrompt:
             ),
         )
 
-        prompt = build_nous_subscription_prompt({"image_generate"})
+        prompt = build_nous_subscription_prompt({"generate_image"})
 
         assert "suggest Nous subscription as one option" in prompt
         assert "Do not mention subscription unless" in prompt
@@ -692,7 +692,7 @@ class TestBuildNousSubscriptionPrompt:
     def test_feature_flag_off_returns_empty_prompt(self, monkeypatch):
         monkeypatch.setattr("tools.tool_backend_helpers.managed_nous_tools_enabled", lambda: False)
 
-        prompt = build_nous_subscription_prompt({"web_search"})
+        prompt = build_nous_subscription_prompt({"search_web"})
 
         assert prompt == ""
 
@@ -1600,7 +1600,7 @@ class TestSkillShouldShow:
         assert _skill_should_show(
             {"fallback_for_toolsets": [], "requires_toolsets": [],
              "fallback_for_tools": [], "requires_tools": []},
-            {"web_search"}, {"web"}
+            {"search_web"}, {"web"}
         ) is True
 
     def test_fallback_hidden_when_toolset_available(self):
@@ -1625,12 +1625,12 @@ class TestSkillShouldShow:
 
     def test_fallback_for_tools_hidden_when_tool_available(self):
         conditions = {"fallback_for_toolsets": [], "requires_toolsets": [],
-                      "fallback_for_tools": ["web_search"], "requires_tools": []}
-        assert _skill_should_show(conditions, {"web_search"}, set()) is False
+                      "fallback_for_tools": ["search_web"], "requires_tools": []}
+        assert _skill_should_show(conditions, {"search_web"}, set()) is False
 
     def test_fallback_for_tools_shown_when_tool_missing(self):
         conditions = {"fallback_for_toolsets": [], "requires_toolsets": [],
-                      "fallback_for_tools": ["web_search"], "requires_tools": []}
+                      "fallback_for_tools": ["search_web"], "requires_tools": []}
         assert _skill_should_show(conditions, set(), set()) is True
 
     def test_requires_tools_hidden_when_tool_missing(self):

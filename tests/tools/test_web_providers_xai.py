@@ -678,7 +678,7 @@ class TestXAIBackendWiring:
         assert web_tools._is_backend_available("xai") is False
 
     def test_is_backend_available_does_not_call_resolver(self, monkeypatch):
-        """Regression guard — `_is_backend_available` runs on every web_search
+        """Regression guard — `_is_backend_available` runs on every search_web
         dispatch and every `hermes tools` repaint. It must not invoke the
         OAuth resolver (which can trigger a network refresh)."""
         from tools import web_tools
@@ -700,7 +700,7 @@ class TestXAIBackendWiring:
         does not include xAI — by design, since the no-config legacy
         chain is for users who set env vars but never ran ``hermes tools``,
         and we don't want a stray ``XAI_API_KEY`` (perhaps set for chat
-        inference) to silently re-route web_search through Grok.
+        inference) to silently re-route search_web through Grok.
 
         Note: this does NOT prevent the registry's single-provider
         shortcut (``agent.web_search_registry._resolve``) from selecting

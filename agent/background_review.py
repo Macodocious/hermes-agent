@@ -207,10 +207,10 @@ _SKILL_REVIEW_PROMPT = (
     "pick one when a signal above fired:\n"
     "  1. UPDATE A CURRENTLY-LOADED SKILL. Look back through the "
     "conversation for skills the user loaded via /skill-name or you "
-    "read via skill_view. If any of them covers the territory of the "
+    "read via view_skill. If any of them covers the territory of the "
     "new learning, PATCH that one first. It is the skill that was in "
     "play, so it's the right one to extend.\n"
-    "  2. UPDATE AN EXISTING UMBRELLA (via skills_list + skill_view). "
+    "  2. UPDATE AN EXISTING UMBRELLA (via list_skills + view_skill). "
     "If no loaded skill fits but an existing class-level skill does, "
     "patch it. Add a subsection, a pitfall, or broaden a trigger.\n"
     "  3. ADD A SUPPORT FILE under an existing umbrella. Skills can be "
@@ -229,7 +229,7 @@ _SKILL_REVIEW_PROMPT = (
     "the skill can invoke directly (verification scripts, fixture "
     "generators, deterministic probes, anything the agent should run "
     "rather than hand-type each time).\n"
-    "     Add support files via skill_manage action=write_file with "
+    "     Add support files via manage_skill action=write_file with "
     "file_path starting 'references/', 'templates/', or 'scripts/'. "
     "The umbrella's SKILL.md should gain a one-line pointer to any "
     "new support file so future agents know it exists.\n"
@@ -259,7 +259,7 @@ _SKILL_REVIEW_PROMPT = (
     "`linux/services/`); discipline or activity names stay singular "
     "(`hermes/diagnostics/reasoning-leak` — `diagnostics` is a "
     "discipline, not a collection of skills). Before creating, run "
-    "`skill_view` on any existing umbrella that overlaps the "
+    "`view_skill` on any existing umbrella that overlaps the "
     "namespace you intend to use; if one already exists, prefer "
     "(2) UPDATE AN EXISTING UMBRELLA over (4). Sub-categories must "
     "name a more specific concept than their parent, not a synonym of "
@@ -337,13 +337,13 @@ _COMBINED_REVIEW_PROMPT = (
     "missing, or outdated — patch it now.\n\n"
     "Preference order for skills — pick the earliest that fits:\n"
     "  1. UPDATE A CURRENTLY-LOADED SKILL. Check what skills were "
-    "loaded via /skill-name or skill_view in the conversation. If one "
+    "loaded via /skill-name or view_skill in the conversation. If one "
     "of them covers the learning, PATCH it first. It was in play; "
     "it's the right place.\n"
-    "  2. UPDATE AN EXISTING UMBRELLA (skills_list + skill_view to "
+    "  2. UPDATE AN EXISTING UMBRELLA (list_skills + view_skill to "
     "find the right one). Patch it.\n"
     "  3. ADD A SUPPORT FILE under an existing umbrella via "
-    "skill_manage action=write_file. Three kinds: "
+    "manage_skill action=write_file. Three kinds: "
     "`references/<topic>.md` for session-specific detail OR condensed "
     "knowledge banks (quoted research, API docs excerpts, domain "
     "notes) written concise and task-focused; `templates/<name>.<ext>` "
@@ -376,7 +376,7 @@ _COMBINED_REVIEW_PROMPT = (
     "`linux/services/`); discipline or activity names stay singular "
     "(`hermes/diagnostics/reasoning-leak` — `diagnostics` is a "
     "discipline, not a collection of skills). Before creating, run "
-    "`skill_view` on any existing umbrella that overlaps the "
+    "`view_skill` on any existing umbrella that overlaps the "
     "namespace you intend to use; if one already exists, prefer "
     "(2) UPDATE AN EXISTING UMBRELLA over (4). Sub-categories must "
     "name a more specific concept than their parent, not a synonym of "
@@ -469,7 +469,7 @@ def summarize_background_review_actions(
     # result JSON only says "Entry added"; the call arguments contain action,
     # target, and content previews.  Restricting to notify_tools also prevents
     # helper tools from surfacing as memory work just because they succeeded.
-    notify_tools = {"memory", "skill_manage"}
+    notify_tools = {"memory", "manage_skill"}
     all_tool_call_ids: set = set()
     call_details: dict = {}
     for msg in review_messages or []:
@@ -535,7 +535,7 @@ def summarize_background_review_actions(
         if not isinstance(detail, dict):
             detail = {}
         target = data.get("target", "") or detail.get("target", "")
-        is_skill = detail.get("tool") == "skill_manage"
+        is_skill = detail.get("tool") == "manage_skill"
 
         message_lower = message.lower()
         if not verbose:

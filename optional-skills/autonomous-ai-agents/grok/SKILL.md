@@ -265,8 +265,8 @@ Put global preferences in `~/.grok/config.toml` (not project-scoped
    Premium+ subscription. If login fails or there's no `~/.grok/auth.json`,
    confirm the subscription is active before falling back to `XAI_API_KEY`.
 2. **Don't conflate Hermes' xAI auth with the `grok` CLI's auth.** Hermes'
-   `x_search` runs on its own xAI OAuth; the standalone `grok` CLI has a
-   separate token in `~/.grok/auth.json`. A working `x_search` does NOT mean
+   `search_x` runs on its own xAI OAuth; the standalone `grok` CLI has a
+   separate token in `~/.grok/auth.json`. A working `search_x` does NOT mean
    `grok` is logged in.
 3. **Always pass `--no-auto-update` in automation** — otherwise Grok phones home
    for update checks (and `x.ai`/`storage.googleapis.com` may be unreachable).

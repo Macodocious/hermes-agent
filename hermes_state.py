@@ -3132,8 +3132,8 @@ class SessionDB:
     ) -> None:
         """Record an auxiliary LLM call's usage against *session_id* (issue #23270).
 
-        Auxiliary calls (vision, compression, title_generation, web_extract,
-        session_search, ...) historically discarded their usage, leaving the
+        Auxiliary calls (vision, compression, title_generation, extract_web,
+        search_session, ...) historically discarded their usage, leaving the
         dashboard's per-model analytics blind to aux model spend. This writes
         a per-(model, provider, task) delta into ``session_model_usage`` —
         the same table the main loop's ``update_token_counts`` feeds — WITHOUT
@@ -4428,7 +4428,7 @@ class SessionDB:
           reloads ONLY the compacted set.
         - The archived pre-compaction turns stay on disk (active=0) and stay
           DISCOVERABLE: they are marked compacted=1, and search_messages()
-          includes compacted=1 rows by default — so session_search still finds
+          includes compacted=1 rows by default — so search_session still finds
           them, unlike rewind/undo rows (active=0, compacted=0) which stay
           hidden. They remain in the FTS index (the messages_fts* triggers
           index on INSERT / drop on DELETE and don't key on active/compacted;
@@ -4563,7 +4563,7 @@ class SessionDB:
           - ``messages_after``: count of messages strictly after the anchor
             still in the session (== window unless we hit the end).
 
-        Used by ``session_search`` for both the discovery shape (anchored on the
+        Used by ``search_session`` for both the discovery shape (anchored on the
         FTS5 match) and the scroll shape (anchored on any message id). The
         ``messages_before`` / ``messages_after`` counts let the caller detect
         session boundaries: when either is less than ``window``, the agent has

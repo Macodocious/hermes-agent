@@ -1,4 +1,4 @@
-"""Tests for the native-vision fast path inside vision_analyze.
+"""Tests for the native-vision fast path inside analyze_vision.
 
 When the active main model supports native vision AND the provider supports
 image content inside tool-result messages, ``_handle_vision_analyze`` skips

@@ -189,7 +189,7 @@ Hermes uses separate lightweight models for side tasks. Each task has its own pr
 | Task | What It Does | Config Key |
 |------|-------------|-----------|
 | Vision | Image analysis, browser screenshots | `auxiliary.vision` |
-| Web Extract | Web page summarization | `auxiliary.web_extract` |
+| Web Extract | Web page summarization | `auxiliary.extract_web` |
 | Compression | Context compression summaries | `auxiliary.compression` |
 | Skills Hub | Skill search and discovery | `auxiliary.skills_hub` |
 | MCP | MCP helper operations | `auxiliary.mcp` |
@@ -236,7 +236,7 @@ auxiliary:
     base_url: ""                  # direct endpoint (takes precedence over provider)
     api_key: ""                   # API key for base_url
 
-  web_extract:
+  extract_web:
     provider: "auto"
     model: ""
 
@@ -421,7 +421,7 @@ See [Scheduled Tasks (Cron)](/user-guide/features/cron) for full configuration d
 | Auxiliary tasks (any) — auto users | Full auto-detection chain (main agent model first, then provider chain) on capacity errors | `auxiliary.<task>.provider: auto` |
 | Auxiliary tasks (any) — explicit provider | `fallback_chain` (if set) → main agent model → warn + raise, on capacity errors only | `auxiliary.<task>.fallback_chain` |
 | Vision | Layered (see above) + internal OpenRouter retry | `auxiliary.vision` |
-| Web extraction | Layered (see above) + internal OpenRouter retry | `auxiliary.web_extract` |
+| Web extraction | Layered (see above) + internal OpenRouter retry | `auxiliary.extract_web` |
 | Context compression | Layered (see above); degrades to no-summary if all layers unavailable | `auxiliary.compression` |
 | Skills hub | Layered (see above) | `auxiliary.skills_hub` |
 | MCP helpers | Layered (see above) | `auxiliary.mcp` |

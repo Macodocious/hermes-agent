@@ -1,6 +1,6 @@
 """Tests that browser_console(expression=...) cannot bypass the SSRF guard.
 
-browser_snapshot / browser_vision re-check the page URL before returning
+snapshot_browser / browser_vision re-check the page URL before returning
 content, but ``_browser_eval`` returns arbitrary JS results directly. Two
 sub-paths could read private content without ever touching snapshot/vision:
 

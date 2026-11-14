@@ -339,8 +339,8 @@ def analyze_messages(session_id: str, title: str, messages: List[Dict[str, Any]]
     full_text = "\n".join(full_text_parts)
     lower = full_text.lower()
     terminal_calls = _count_tool(tool_sequence, "terminal")
-    web_calls = _count_tool(tool_sequence, "web_search", "web_extract")
-    web_extract_calls = _count_tool(tool_sequence, "web_extract")
+    web_calls = _count_tool(tool_sequence, "search_web", "extract_web")
+    web_extract_calls = _count_tool(tool_sequence, "extract_web")
     browser_calls = _count_tool(tool_sequence, "browser")
     web_browser_calls = web_calls + browser_calls
     patch_calls = _count_tool(tool_sequence, "patch")
@@ -352,7 +352,7 @@ def analyze_messages(session_id: str, title: str, messages: List[Dict[str, Any]]
     image_vision_calls = _count_tool(tool_sequence, "image", "vision")
     tts_calls = _count_tool(tool_sequence, "tts", "text_to_speech")
     skill_events = _count_tool(tool_sequence, "skill") + len(re.findall(r"\bskill", lower))
-    skill_manage_events = _count_tool(tool_sequence, "skill_manage")
+    skill_manage_events = _count_tool(tool_sequence, "manage_skill")
     memory_events = _count_tool(tool_sequence, "memory", "mnemosyne")
     memory_write_events = _count_tool(tool_sequence, "mnemosyne_remember", "memory")
 
@@ -412,7 +412,7 @@ def analyze_messages(session_id: str, title: str, messages: List[Dict[str, Any]]
         "config_events": len(re.findall(r"config\.ya?ml|\b[a-z0-9_-]+config\.(?:js|ts|json|ya?ml)|\.env(?:\b|\.)|manifest\.json|settings\.json|pyproject\.toml|package\.json", full_text, re.I)),
         "git_history_events": len(re.findall(r"\bgit\s+(rebase|merge|fetch|pull|push|tag|checkout)|merge conflict|conflict\s*\(|rebase --continue", full_text, re.I)),
         "test_events": len(re.findall(r"pytest|unittest|vitest|playwright|npm test|pnpm test|node --check|py_compile|tests? passed|\bOK\b", full_text, re.I)),
-        "screenshot_events": len(re.findall(r"screenshot|playwright|vision_analyze|browser_vision|\.png|image data", full_text, re.I)),
+        "screenshot_events": len(re.findall(r"screenshot|playwright|analyze_vision|browser_vision|\.png|image data", full_text, re.I)),
         "release_events": len(re.findall(r"\bgit\s+tag|release|version bump|changelog|publish|pushed? tag", full_text, re.I)),
         "cache_events": len(re.findall(r"cache hit|prompt caching|cache_read", full_text, re.I)),
         "model_names": set(),
@@ -488,7 +488,7 @@ METRIC_LABELS = {
     "git_events": "git workflow commands",
     "tiny_patch_after_errors_events": "tiny typo-style fixes after error clusters",
     "skill_events": "Hermes skill mentions or tool use",
-    "skill_manage_events": "skill_manage create/patch/delete operations",
+    "skill_manage_events": "manage_skill create/patch/delete operations",
     "memory_events": "memory or Mnemosyne tool events",
     "memory_write_events": "durable memory writes",
     "context_events": "context, compression, token, or cache-pressure mentions",
@@ -500,8 +500,8 @@ METRIC_LABELS = {
     "openrouter_events": "OpenRouter mentions",
     "codex_events": "Codex mentions",
     "cache_events": "prompt-cache/cache-hit mentions",
-    "total_web_calls": "lifetime web_search/web_extract calls",
-    "total_web_extract_calls": "lifetime web_extract calls",
+    "total_web_calls": "lifetime search_web/extract_web calls",
+    "total_web_extract_calls": "lifetime extract_web calls",
     "browser_calls": "lifetime browser automation calls",
     "total_tool_calls": "lifetime Hermes tool calls",
     "total_terminal_calls": "lifetime terminal calls",

@@ -133,7 +133,7 @@ def test_window_closed_midrun_drops_state_then_fresh_turn_on_reopen(server, emit
     # Reopen under a new live sid → a fresh synthetic turn starts.
     emits.clear()
     server._sessions["live-2"] = {"session_key": "child-1", "agent": None}
-    _relay(server, "subagent.tool", tool_name="web_search", child_session_id="child-1")
+    _relay(server, "subagent.tool", tool_name="search_web", child_session_id="child-1")
     assert [(e, s) for e, s, _ in emits if s == "live-2"] == [
         ("message.start", "live-2"),
         ("tool.start", "live-2"),

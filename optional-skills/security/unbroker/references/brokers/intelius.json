@@ -22,7 +22,7 @@
   "search": {
     "method": "url_pattern",
     "url": "https://www.intelius.com/",
-    "fetch": "web_extract",
+    "fetch": "extract_web",
     "match_signal": "result",
     "by": [
       "name",
@@ -35,7 +35,7 @@
       "full_report": "https://www.intelius.com/search/?firstName={First}&lastName={Last}&city={City}&state={ST}&traffic%5Bsource%5D=INTSEO"
     },
     "url_format_quirks": [
-      "Name summary page: /people-search/{First}-{Last}/ (hyphen join; case-insensitive, both Jane-Public and jane-public work). Readable via web_extract (no hard bot gate as of 2026-06-30).",
+      "Name summary page: /people-search/{First}-{Last}/ (hyphen join; case-insensitive, both Jane-Public and jane-public work). Readable via extract_web (no hard bot gate as of 2026-06-30).",
       "State refine: /people-search/{first}-{last}/{state-name}/ with the state SPELLED OUT lowercase, e.g. /jane-public/new-york/ (NOT the 2-letter code).",
       "The summary shows last-known address + a 'possible relatives' list + a FAQ ('Where does X live?'). Corroborate the subject by address before acting; the 'Top People with the Last Name {Last}' block is unrelated namesakes.",
       "Part of PeopleConnect: same data surfaces on Truthfinder/InstantCheckmate/USSearch; one suppression at suppression.peopleconnect.us covers the cluster."

@@ -137,12 +137,12 @@ class TestToolResultContentProactiveDowngrade:
         assert "screenshot" in content
 
     def test_xiaomi_computer_use_gets_text_summary(self):
-        """Xiaomi + computer_use: text summary (not the error dict)."""
+        """Xiaomi + use_computer: text summary (not the error dict)."""
         agent = _make_agent("xiaomi", "mimo-v2.5")
         result = _multimodal_result(text="desktop screenshot")
 
         with patch.object(agent, "_model_supports_vision", return_value=True):
-            content = agent._tool_result_content_for_active_model("computer_use", result)
+            content = agent._tool_result_content_for_active_model("use_computer", result)
 
         # Should be a text summary, not the error dict for non-vision models
         assert isinstance(content, str)

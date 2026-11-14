@@ -184,20 +184,20 @@ searxng-run
 
 ## 工作流：先搜索后提取
 
-SearXNG 返回标题、URL 和摘要——而非完整页面内容。要获取完整页面内容，先搜索，然后使用 `web_extract`、浏览器工具或 `curl` 提取最相关的 URL。
+SearXNG 返回标题、URL 和摘要——而非完整页面内容。要获取完整页面内容，先搜索，然后使用 `extract_web`、浏览器工具或 `curl` 提取最相关的 URL。
 
 ```bash
 # 搜索相关页面
 curl -s "${SEARXNG_URL}/search?q=fastapi+deployment&format=json&limit=3"
 # 输出：包含标题和 URL 的结果列表
 
-# 然后使用 web_extract 提取最佳 URL
+# 然后使用 extract_web 提取最佳 URL
 ```
 
 ## 限制
 
 - **实例可用性**：如果 SearXNG 实例宕机或不可访问，搜索将失败。始终检查 `SEARXNG_URL` 已设置且实例可访问。
-- **无内容提取**：SearXNG 返回摘要，而非完整页面内容。使用 `web_extract`、浏览器工具或 `curl` 获取完整文章。
+- **无内容提取**：SearXNG 返回摘要，而非完整页面内容。使用 `extract_web`、浏览器工具或 `curl` 获取完整文章。
 - **速率限制**：部分公共实例会限制请求。自托管可避免此问题。
 - **引擎覆盖范围**：可用引擎取决于 SearXNG 实例的配置，部分引擎可能被禁用。
 - **结果时效性**：元搜索聚合外部引擎——结果时效性取决于这些引擎。

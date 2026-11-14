@@ -56,9 +56,9 @@ class _StubChild:
         self.platform = "cli"
         self.ephemeral_system_prompt = "sys prompt"
         self.enabled_toolsets = ["web", "terminal"]
-        self.valid_tool_names = {"web_search", "terminal"}
+        self.valid_tool_names = {"search_web", "terminal"}
         self.tools = tool_schema if tool_schema is not None else [
-            {"name": "web_search", "description": "search"},
+            {"name": "search_web", "description": "search"},
             {"name": "terminal", "description": "shell"},
         ]
         self._api_call_count = api_call_count

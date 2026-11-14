@@ -180,17 +180,17 @@ def test_skill_gate_off_allows_create(hermes_home):
     import tools.skill_manager_tool as smt
     importlib.reload(smt)
     from tools import write_approval as wa
-    r = json.loads(smt.skill_manage("create", "free-skill", content=_SKILL))
+    r = json.loads(smt.manage_skill("create", "free-skill", content=_SKILL))
     assert r.get("success") is True
     assert wa.pending_count("skills") == 0
 
 
 def test_skill_gate_on_always_stages(hermes_home):
     # Skills stage even in the foreground (too big to review inline).
-    from tools.skill_manager_tool import skill_manage
+    from tools.skill_manager_tool import manage_skill
     from tools import write_approval as wa
     _set_approval("skills", True)
-    r = json.loads(skill_manage("create", "staged-skill", content=_SKILL))
+    r = json.loads(manage_skill("create", "staged-skill", content=_SKILL))
     assert r.get("staged") is True
     assert "staged-skill" in r.get("gist", "")
     assert wa.pending_count("skills") == 1
@@ -204,7 +204,7 @@ def test_skill_gate_on_then_apply_writes_file(hermes_home):
     importlib.reload(smt)
     from tools import write_approval as wa
     _set_approval("skills", True)
-    r = json.loads(smt.skill_manage("create", "applied-skill", content=_SKILL))
+    r = json.loads(smt.manage_skill("create", "applied-skill", content=_SKILL))
     rec = wa.get_pending("skills", r["pending_id"])
     res = json.loads(smt.apply_skill_pending(rec["payload"]))
     assert res["success"] is True
@@ -212,10 +212,10 @@ def test_skill_gate_on_then_apply_writes_file(hermes_home):
 
 
 def test_skill_create_diff_is_full_content(hermes_home):
-    from tools.skill_manager_tool import skill_manage
+    from tools.skill_manager_tool import manage_skill
     from tools import write_approval as wa
     _set_approval("skills", True)
-    r = json.loads(skill_manage("create", "diff-skill", content=_SKILL))
+    r = json.loads(manage_skill("create", "diff-skill", content=_SKILL))
     rec = wa.get_pending("skills", r["pending_id"])
     diff = wa.skill_pending_diff(rec)
     assert "name: test-skill" in diff
@@ -413,7 +413,7 @@ def test_gateway_context_stages_not_prompts(hermes_home, monkeypatch):
 
 def test_skills_never_prompt_inline_even_with_callback(hermes_home, approval_callback_cleanup):
     # Skills always stage — even when an interactive callback is registered.
-    from tools.skill_manager_tool import skill_manage
+    from tools.skill_manager_tool import manage_skill
     from tools.terminal_tool import set_approval_callback
     from tools import write_approval as wa
     _set_approval("skills", True)
@@ -421,7 +421,7 @@ def test_skills_never_prompt_inline_even_with_callback(hermes_home, approval_cal
     calls = []
     set_approval_callback(lambda c, d, **kw: calls.append(1) or "once")
 
-    r = json.loads(skill_manage(
+    r = json.loads(manage_skill(
         action="create", name="test-inline-skill",
         content="---\nname: test-inline-skill\ndescription: x\n---\nbody\n"))
     assert r.get("staged") is True

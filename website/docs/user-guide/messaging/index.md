@@ -415,8 +415,8 @@ When enabled, the bot sends status messages as it works:
 
 ```text
 💻 `ls -la`...
-🔍 web_search...
-📄 web_extract...
+🔍 search_web...
+📄 extract_web...
 🐍 execute_code...
 ```
 
@@ -567,7 +567,7 @@ Each platform has its own toolset:
 | Signal | `hermes-signal` | Full tools including terminal |
 | SMS | `hermes-sms` | Full tools including terminal |
 | Email | `hermes-email` | Full tools including terminal |
-| Home Assistant | `hermes-homeassistant` | Full tools + HA device control (ha_list_entities, ha_get_state, ha_call_service, ha_list_services) |
+| Home Assistant | `hermes-homeassistant` | Full tools + HA device control (list_ha_entities, get_ha_state, call_ha_service, list_ha_services) |
 | Mattermost | `hermes-mattermost` | Full tools including terminal |
 | Matrix | `hermes-matrix` | Full tools including terminal |
 | DingTalk | `hermes-dingtalk` | Full tools including terminal |

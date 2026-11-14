@@ -207,7 +207,7 @@ class TestMatcher:
             event="pre_tool_call", command="echo", matcher="terminal",
         )
         assert spec.matches_tool("terminal")
-        assert not spec.matches_tool("web_search")
+        assert not spec.matches_tool("search_web")
 
     def test_alternation_matcher(self):
         spec = shell_hooks.ShellHookSpec(
@@ -354,7 +354,7 @@ class TestCallbackSubprocess:
         assert msg == "blocked-by-shell"
 
     def test_matcher_regex_filters_callback(self, tmp_path, monkeypatch):
-        """A matcher set to 'terminal' must not fire for 'web_search'."""
+        """A matcher set to 'terminal' must not fire for 'search_web'."""
         calls = tmp_path / "calls.log"
         script = _write_script(
             tmp_path, "log.sh",
@@ -369,7 +369,7 @@ class TestCallbackSubprocess:
         )
         cb = shell_hooks._make_callback(spec)
         cb(tool_name="terminal", args={"command": "ls"})
-        cb(tool_name="web_search", args={"q": "x"})
+        cb(tool_name="search_web", args={"q": "x"})
         cb(tool_name="file_read", args={"path": "x"})
         assert calls.exists()
         # Only the terminal call wrote to the log
@@ -566,7 +566,7 @@ class TestIdempotentRegistration:
             "hooks": {
                 "pre_tool_call": [
                     {"matcher": "terminal", "command": str(script)},
-                    {"matcher": "web_search", "command": str(script)},
+                    {"matcher": "search_web", "command": str(script)},
                 ],
             },
         }

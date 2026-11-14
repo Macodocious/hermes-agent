@@ -38,14 +38,14 @@ def curator_env(tmp_path, monkeypatch):
 
 
 def test_classify_consolidated_via_write_file_evidence(curator_env):
-    """skill_manage write_file on umbrella references/<removed>.md = consolidated."""
+    """manage_skill write_file on umbrella references/<removed>.md = consolidated."""
     result = curator_env._classify_removed_skills(
         removed=["axolotl-training"],
         added=[],
         after_names={"training-platforms", "keeper"},
         tool_calls=[
             {
-                "name": "skill_manage",
+                "name": "manage_skill",
                 "arguments": json.dumps({
                     "action": "write_file",
                     "name": "training-platforms",
@@ -68,8 +68,8 @@ def test_classify_pruned_when_no_destination_reference(curator_env):
         added=[],
         after_names={"keeper"},
         tool_calls=[
-            {"name": "skills_list", "arguments": "{}"},
-            {"name": "skill_manage", "arguments": json.dumps({
+            {"name": "list_skills", "arguments": "{}"},
+            {"name": "manage_skill", "arguments": json.dumps({
                 "action": "patch", "name": "keeper",
                 "old_string": "foo", "new_string": "bar",
             })},
@@ -88,7 +88,7 @@ def test_classify_consolidated_into_newly_created_umbrella(curator_env):
         after_names={"llm-providers"},
         tool_calls=[
             {
-                "name": "skill_manage",
+                "name": "manage_skill",
                 "arguments": json.dumps({
                     "action": "create",
                     "name": "llm-providers",
@@ -110,7 +110,7 @@ def test_classify_handles_underscore_hyphen_variants(curator_env):
         after_names={"webui"},
         tool_calls=[
             {
-                "name": "skill_manage",
+                "name": "manage_skill",
                 "arguments": json.dumps({
                     "action": "write_file",
                     "name": "webui",
@@ -133,7 +133,7 @@ def test_classify_self_reference_does_not_count(curator_env):
         after_names={"keeper"},
         tool_calls=[
             {
-                "name": "skill_manage",
+                "name": "manage_skill",
                 "arguments": json.dumps({
                     "action": "patch",
                     "name": "doomed",  # same as removed
@@ -155,7 +155,7 @@ def test_classify_destination_must_exist_after_run(curator_env):
         after_names={"keeper"},  # "ghost" not in here
         tool_calls=[
             {
-                "name": "skill_manage",
+                "name": "manage_skill",
                 "arguments": json.dumps({
                     "action": "write_file",
                     "name": "ghost",  # not in after_names
@@ -177,7 +177,7 @@ def test_classify_mixed_run_produces_both_buckets(curator_env):
         after_names={"umbrella", "keeper"},
         tool_calls=[
             {
-                "name": "skill_manage",
+                "name": "manage_skill",
                 "arguments": json.dumps({
                     "action": "write_file",
                     "name": "umbrella",
@@ -206,7 +206,7 @@ def test_classify_handles_malformed_arguments_string(curator_env):
         added=[],
         after_names={"umbrella"},
         tool_calls=[
-            {"name": "skill_manage", "arguments": truncated_raw},
+            {"name": "manage_skill", "arguments": truncated_raw},
         ],
     )
     # Fallback substring match finds "absorbed-skill" in the raw truncated string
@@ -229,7 +229,7 @@ def test_classify_no_false_positive_short_name_in_file_path(curator_env):
         after_names={"conventions"},
         tool_calls=[
             {
-                "name": "skill_manage",
+                "name": "manage_skill",
                 "arguments": json.dumps({
                     "action": "write_file",
                     "name": "conventions",
@@ -255,7 +255,7 @@ def test_classify_no_false_positive_short_name_in_content(curator_env):
         after_names={"umbrella"},
         tool_calls=[
             {
-                "name": "skill_manage",
+                "name": "manage_skill",
                 "arguments": json.dumps({
                     "action": "patch",
                     "name": "umbrella",
@@ -280,7 +280,7 @@ def test_classify_still_matches_exact_word_in_content(curator_env):
         after_names={"gateway"},
         tool_calls=[
             {
-                "name": "skill_manage",
+                "name": "manage_skill",
                 "arguments": json.dumps({
                     "action": "edit",
                     "name": "gateway",
@@ -326,7 +326,7 @@ def test_report_md_splits_consolidated_and_pruned_sections(curator_env):
             "error": None,
             "tool_calls": [
                 {
-                    "name": "skill_manage",
+                    "name": "manage_skill",
                     "arguments": json.dumps({
                         "action": "create",
                         "name": "umbrella",
@@ -600,7 +600,7 @@ def test_reconcile_model_block_visible_in_full_report(curator_env):
             "provider": "p",
             "error": None,
             "tool_calls": [
-                {"name": "skill_manage", "arguments": _json.dumps({
+                {"name": "manage_skill", "arguments": _json.dumps({
                     "action": "create",
                     "name": "llm-providers",
                     "content": "# llm-providers\nIncludes anthropic-api",
@@ -634,7 +634,7 @@ def test_extract_absorbed_into_picks_up_consolidation(curator_env):
     """Delete call with absorbed_into=<umbrella> yields a declaration."""
     declarations = curator_env._extract_absorbed_into_declarations([
         {
-            "name": "skill_manage",
+            "name": "manage_skill",
             "arguments": json.dumps({
                 "action": "delete",
                 "name": "narrow-skill",
@@ -651,7 +651,7 @@ def test_extract_absorbed_into_empty_string_is_explicit_prune(curator_env):
     """absorbed_into='' is recorded as an explicit prune declaration."""
     declarations = curator_env._extract_absorbed_into_declarations([
         {
-            "name": "skill_manage",
+            "name": "manage_skill",
             "arguments": json.dumps({
                 "action": "delete",
                 "name": "stale",
@@ -666,7 +666,7 @@ def test_extract_absorbed_into_missing_arg_ignored(curator_env):
     """Delete call without absorbed_into is skipped — fallback to heuristic."""
     declarations = curator_env._extract_absorbed_into_declarations([
         {
-            "name": "skill_manage",
+            "name": "manage_skill",
             "arguments": json.dumps({
                 "action": "delete",
                 "name": "legacy-skill",
@@ -680,7 +680,7 @@ def test_extract_absorbed_into_ignores_non_delete_actions(curator_env):
     """Patch, create, write_file etc. must not leak into declarations."""
     declarations = curator_env._extract_absorbed_into_declarations([
         {
-            "name": "skill_manage",
+            "name": "manage_skill",
             "arguments": json.dumps({
                 "action": "patch",
                 "name": "umbrella",
@@ -697,7 +697,7 @@ def test_extract_absorbed_into_accepts_dict_arguments(curator_env):
     """arguments can arrive as a dict (defensive path) — still works."""
     declarations = curator_env._extract_absorbed_into_declarations([
         {
-            "name": "skill_manage",
+            "name": "manage_skill",
             "arguments": {
                 "action": "delete",
                 "name": "narrow",
@@ -711,7 +711,7 @@ def test_extract_absorbed_into_accepts_dict_arguments(curator_env):
 def test_extract_absorbed_into_strips_whitespace(curator_env):
     declarations = curator_env._extract_absorbed_into_declarations([
         {
-            "name": "skill_manage",
+            "name": "manage_skill",
             "arguments": json.dumps({
                 "action": "delete",
                 "name": "  narrow  ",
@@ -733,9 +733,9 @@ def test_extract_absorbed_into_ignores_non_skill_manage_calls(curator_env):
 def test_extract_absorbed_into_handles_malformed_arguments(curator_env):
     """Garbage JSON in arguments must not crash the extractor."""
     declarations = curator_env._extract_absorbed_into_declarations([
-        {"name": "skill_manage", "arguments": "{not json"},
-        {"name": "skill_manage", "arguments": None},
-        {"name": "skill_manage"},  # no arguments key at all
+        {"name": "manage_skill", "arguments": "{not json"},
+        {"name": "manage_skill", "arguments": None},
+        {"name": "manage_skill"},  # no arguments key at all
     ])
     assert declarations == {}
 
@@ -917,7 +917,7 @@ def test_rename_summary_consolidation_shows_target(curator_env):
         after_report=[{"name": "document-tools", "state": "active"}],
         tool_calls=[
             {
-                "name": "skill_manage",
+                "name": "manage_skill",
                 "arguments": json.dumps({
                     "action": "delete",
                     "name": "pdf-extraction",
@@ -925,7 +925,7 @@ def test_rename_summary_consolidation_shows_target(curator_env):
                 }),
             },
             {
-                "name": "skill_manage",
+                "name": "manage_skill",
                 "arguments": json.dumps({
                     "action": "delete",
                     "name": "docx-extraction",
@@ -948,7 +948,7 @@ def test_rename_summary_pruned_marked_explicitly(curator_env):
         after_report=[{"name": "keeper", "state": "active"}],
         tool_calls=[
             {
-                "name": "skill_manage",
+                "name": "manage_skill",
                 "arguments": json.dumps({
                     "action": "delete",
                     "name": "old-flaky-thing",
@@ -967,7 +967,7 @@ def test_rename_summary_caps_at_ten_with_more_indicator(curator_env):
     removed = [f"skill-{i}" for i in range(15)]
     tool_calls = [
         {
-            "name": "skill_manage",
+            "name": "manage_skill",
             "arguments": json.dumps({
                 "action": "delete",
                 "name": name,
@@ -996,7 +996,7 @@ def test_rename_summary_mixed_consolidation_and_pruning(curator_env):
         after_report=[{"name": "umbrella", "state": "active"}],
         tool_calls=[
             {
-                "name": "skill_manage",
+                "name": "manage_skill",
                 "arguments": json.dumps({
                     "action": "delete",
                     "name": "merge-me",
@@ -1004,7 +1004,7 @@ def test_rename_summary_mixed_consolidation_and_pruning(curator_env):
                 }),
             },
             {
-                "name": "skill_manage",
+                "name": "manage_skill",
                 "arguments": json.dumps({
                     "action": "delete",
                     "name": "drop-me",
@@ -1037,7 +1037,7 @@ def test_rename_summary_pin_hint_appears_when_consolidation_produced_umbrella(cu
         after_report=[{"name": "document-tools", "state": "active"}],
         tool_calls=[
             {
-                "name": "skill_manage",
+                "name": "manage_skill",
                 "arguments": json.dumps({
                     "action": "delete",
                     "name": "pdf-extraction",
@@ -1045,7 +1045,7 @@ def test_rename_summary_pin_hint_appears_when_consolidation_produced_umbrella(cu
                 }),
             },
             {
-                "name": "skill_manage",
+                "name": "manage_skill",
                 "arguments": json.dumps({
                     "action": "delete",
                     "name": "docx-extraction",
@@ -1066,7 +1066,7 @@ def test_rename_summary_pin_hint_skipped_for_pruned_only_runs(curator_env):
         after_report=[{"name": "keeper", "state": "active"}],
         tool_calls=[
             {
-                "name": "skill_manage",
+                "name": "manage_skill",
                 "arguments": json.dumps({
                     "action": "delete",
                     "name": "old-flaky-thing",
@@ -1074,7 +1074,7 @@ def test_rename_summary_pin_hint_skipped_for_pruned_only_runs(curator_env):
                 }),
             },
             {
-                "name": "skill_manage",
+                "name": "manage_skill",
                 "arguments": json.dumps({
                     "action": "delete",
                     "name": "another-stale",
@@ -1100,7 +1100,7 @@ def test_rename_summary_pin_hint_picks_one_umbrella_when_multiple_absorbed(curat
         ],
         tool_calls=[
             {
-                "name": "skill_manage",
+                "name": "manage_skill",
                 "arguments": json.dumps({
                     "action": "delete",
                     "name": "a-skill",
@@ -1108,7 +1108,7 @@ def test_rename_summary_pin_hint_picks_one_umbrella_when_multiple_absorbed(curat
                 }),
             },
             {
-                "name": "skill_manage",
+                "name": "manage_skill",
                 "arguments": json.dumps({
                     "action": "delete",
                     "name": "b-skill",

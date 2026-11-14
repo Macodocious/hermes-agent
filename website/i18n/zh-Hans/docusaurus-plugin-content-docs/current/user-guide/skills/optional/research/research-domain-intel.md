@@ -70,15 +70,15 @@ python3 SKILL_DIR/scripts/domain_intel.py bulk example.com github.com --checks s
 ## 何时使用此 skill 而非内置工具
 
 - **使用此 skill** 处理基础设施相关问题：子域名、SSL 证书、WHOIS、DNS 记录、可用性检测
-- **使用 `web_search`** 进行关于某个域名或公司的通用研究
-- **使用 `web_extract`** 获取网页的实际内容
+- **使用 `search_web`** 进行关于某个域名或公司的通用研究
+- **使用 `extract_web`** 获取网页的实际内容
 - **使用 `terminal` 配合 `curl -I`** 进行简单的"URL 是否可达"检查
 
 | 任务 | 更合适的工具 | 原因 |
 |------|-------------|-----|
-| "example.com 是做什么的？" | `web_extract` | 获取页面内容，而非 DNS/WHOIS 数据 |
-| "查找某公司的信息" | `web_search` | 通用研究，非域名专项 |
-| "这个网站安全吗？" | `web_search` | 信誉检查需要 Web 上下文 |
+| "example.com 是做什么的？" | `extract_web` | 获取页面内容，而非 DNS/WHOIS 数据 |
+| "查找某公司的信息" | `search_web` | 通用研究，非域名专项 |
+| "这个网站安全吗？" | `search_web` | 信誉检查需要 Web 上下文 |
 | "检查某 URL 是否可达" | `terminal` 配合 `curl -I` | 简单 HTTP 检查 |
 | "查找 X 的子域名" | **此 skill** | 唯一的被动来源 |
 | "SSL 证书何时到期？" | **此 skill** | 内置工具无法检查 TLS |

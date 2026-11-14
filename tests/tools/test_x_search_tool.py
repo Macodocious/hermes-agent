@@ -169,7 +169,7 @@ def test_x_search_returns_structured_http_error(monkeypatch):
 
     assert result["success"] is False
     assert result["provider"] == "xai"
-    assert result["tool"] == "x_search"
+    assert result["tool"] == "search_x"
     assert result["error_type"] == "HTTPError"
     assert result["error"] == "forbidden: x_search is not enabled for this model"
 
@@ -432,7 +432,7 @@ def test_x_search_honors_config_reasoning_effort(monkeypatch, tmp_path):
     monkeypatch.setenv("XAI_API_KEY", "xai-test-key")
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     (tmp_path / "config.yaml").write_text(
-        "x_search:\n  reasoning_effort: low\n  retries: 0\n",
+        "search_x:\n  reasoning_effort: low\n  retries: 0\n",
         encoding="utf-8",
     )
     captured = {}
@@ -464,19 +464,19 @@ def test_x_search_rejects_invalid_config_reasoning_effort(monkeypatch):
     result = json.loads(x_search_tool(query="anything"))
 
     assert result["error"] == (
-        "x_search.reasoning_effort must be one of: low, medium, high, xhigh "
+        "search_x.reasoning_effort must be one of: low, medium, high, xhigh "
         "(got 'minimal')"
     )
 
 
 def test_x_search_registered_in_registry_with_check_fn():
-    """The tool is registered under the x_search toolset with the gating check_fn."""
+    """The tool is registered under the search_x toolset with the gating check_fn."""
     import tools.x_search_tool  # noqa: F401 — ensures registration runs
     from tools.registry import registry
 
-    entry = registry.get_entry("x_search")
+    entry = registry.get_entry("search_x")
     assert entry is not None
-    assert entry.toolset == "x_search"
+    assert entry.toolset == "search_x"
     assert entry.check_fn is not None
     assert entry.check_fn.__name__ == "check_x_search_requirements"
     assert "XAI_API_KEY" in entry.requires_env

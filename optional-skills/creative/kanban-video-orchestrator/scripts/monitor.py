@@ -30,7 +30,7 @@ def hermes_available() -> bool:
     return shutil.which("hermes") is not None
 
 
-def kanban_list(tenant: str) -> list[dict]:
+def list_kanban(tenant: str) -> list[dict]:
     """Returns parsed task rows. Falls back to plain stdout parsing if JSON
     output isn't supported by the installed hermes CLI."""
     try:
@@ -66,7 +66,7 @@ def kanban_list(tenant: str) -> list[dict]:
     return rows
 
 
-def kanban_show(task_id: str) -> dict | None:
+def show_kanban(task_id: str) -> dict | None:
     out = subprocess.run(
         ["hermes", "kanban", "show", task_id, "--json"],
         capture_output=True, text=True, check=False,
@@ -132,7 +132,7 @@ def detect_issues(tasks: list[dict]) -> list[str]:
 
 
 def snapshot(tenant: str) -> tuple[list[dict], list[str]]:
-    tasks = kanban_list(tenant)
+    tasks = list_kanban(tenant)
     issues = detect_issues(tasks)
     return tasks, issues
 

@@ -50,7 +50,7 @@ Home Assistant will appear as a connected platform alongside any other messaging
 
 Hermes Agent registers four tools for smart home control:
 
-### `ha_list_entities`
+### `list_ha_entities`
 
 List Home Assistant entities, optionally filtered by domain or area.
 
@@ -65,7 +65,7 @@ List all lights in the living room
 
 Returns entity IDs, states, and friendly names.
 
-### `ha_get_state`
+### `get_ha_state`
 
 Get detailed state of a single entity, including all attributes (brightness, color, temperature setpoint, sensor readings, etc.).
 
@@ -79,7 +79,7 @@ What's the current state of climate.thermostat?
 
 Returns: state, all attributes, last changed/updated timestamps.
 
-### `ha_list_services`
+### `list_ha_services`
 
 List available services (actions) for device control. Shows what actions can be performed on each device type and what parameters they accept.
 
@@ -91,7 +91,7 @@ List available services (actions) for device control. Shows what actions can be 
 What services are available for climate devices?
 ```
 
-### `ha_call_service`
+### `call_ha_service`
 
 Call a Home Assistant service to control a device.
 
@@ -105,18 +105,18 @@ Call a Home Assistant service to control a device.
 
 ```
 Turn on the living room lights
-→ ha_call_service(domain="light", service="turn_on", entity_id="light.living_room")
+→ call_ha_service(domain="light", service="turn_on", entity_id="light.living_room")
 ```
 
 ```
 Set the thermostat to 22 degrees in heat mode
-→ ha_call_service(domain="climate", service="set_temperature",
+→ call_ha_service(domain="climate", service="set_temperature",
     entity_id="climate.thermostat", data={"temperature": 22, "hvac_mode": "heat"})
 ```
 
 ```
 Set living room lights to blue at 50% brightness
-→ ha_call_service(domain="light", service="turn_on",
+→ call_ha_service(domain="light", service="turn_on",
     entity_id="light.living_room", data={"brightness": 128, "color_name": "blue"})
 ```
 
@@ -214,11 +214,11 @@ Entity IDs are validated against the pattern `^[a-z_][a-z0-9_]*\.[a-z0-9_]+$` to
 User: Start my morning routine
 
 Agent:
-1. ha_call_service(domain="light", service="turn_on",
+1. call_ha_service(domain="light", service="turn_on",
      entity_id="light.bedroom", data={"brightness": 128})
-2. ha_call_service(domain="climate", service="set_temperature",
+2. call_ha_service(domain="climate", service="set_temperature",
      entity_id="climate.thermostat", data={"temperature": 22})
-3. ha_call_service(domain="media_player", service="turn_on",
+3. call_ha_service(domain="media_player", service="turn_on",
      entity_id="media_player.kitchen_speaker")
 ```
 
@@ -228,11 +228,11 @@ Agent:
 User: Is the house secure?
 
 Agent:
-1. ha_list_entities(domain="binary_sensor")
+1. list_ha_entities(domain="binary_sensor")
      → checks door/window sensors
-2. ha_get_state(entity_id="alarm_control_panel.home")
+2. get_ha_state(entity_id="alarm_control_panel.home")
      → checks alarm status
-3. ha_list_entities(domain="lock")
+3. list_ha_entities(domain="lock")
      → checks lock states
 4. Reports: "All doors closed, alarm is armed_away, all locks engaged."
 ```
@@ -245,8 +245,8 @@ When connected as a gateway platform, the agent can react to events:
 [Home Assistant] Front Door: triggered (was cleared)
 
 Agent automatically:
-1. ha_get_state(entity_id="binary_sensor.front_door")
-2. ha_call_service(domain="light", service="turn_on",
+1. get_ha_state(entity_id="binary_sensor.front_door")
+2. call_ha_service(domain="light", service="turn_on",
      entity_id="light.hallway")
 3. Sends notification: "Front door opened. Hallway lights turned on."
 ```

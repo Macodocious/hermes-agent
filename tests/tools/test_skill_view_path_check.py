@@ -1,4 +1,4 @@
-"""Tests for the skill_view path boundary check.
+"""Tests for the view_skill path boundary check.
 
 Regression test: the original check used a hardcoded "/" separator which
 fails on Windows where Path.resolve() returns backslash-separated paths.

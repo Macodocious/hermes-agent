@@ -3,7 +3,7 @@
 Covers the helper that powers ``/reload-skills`` (CLI + gateway slash command).
 The helper rescans the skills directory and returns a diff of what changed.
 It does NOT invalidate the skills system-prompt cache — skills are invoked
-at runtime via ``/skill-name``, ``skills_list``, or ``skill_view`` and don't
+at runtime via ``/skill-name``, ``list_skills``, or ``view_skill`` and don't
 need to live in the system prompt.
 
 ``added`` and ``removed`` are lists of ``{"name": str, "description": str}``

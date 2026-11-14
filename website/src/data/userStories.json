@@ -1030,7 +1030,7 @@
     "date": "2026-04-10",
     "category": "personal-assistant",
     "headline": "How I use Hermes memory: durable facts, session search, skills",
-    "quote": "memory tool — Save/retrieve durable facts across sessions. I save user preferences, environment details, tool quirks, stable conventions. It's injected into every turn. I keep it compact — facts that will still matter later. I do NOT save task progress or temporary state here. session_search — Recall past conversations. skill_manage — Save procedural memory. After complex tasks (5+ tool calls), tricky fixes, or non-trivial workflows, I save the approach as a skill.",
+    "quote": "memory tool — Save/retrieve durable facts across sessions. I save user preferences, environment details, tool quirks, stable conventions. It's injected into every turn. I keep it compact — facts that will still matter later. I do NOT save task progress or temporary state here. search_session — Recall past conversations. manage_skill — Save procedural memory. After complex tasks (5+ tool calls), tricky fixes, or non-trivial workflows, I save the approach as a skill.",
     "size": "lg"
   },
   {

@@ -307,8 +307,8 @@ The CLI shows animated feedback as the agent works:
 **Tool execution feed:**
 ```
   ┊ 💻 terminal `ls -la` (0.3s)
-  ┊ 🔍 web_search (1.2s)
-  ┊ 📄 web_extract (2.1s)
+  ┊ 🔍 search_web (1.2s)
+  ┊ 📄 extract_web (2.1s)
 ```
 
 Cycle through display modes with `/verbose`: `off → new → all → verbose`. This command can also be enabled for messaging platforms — see [configuration](/user-guide/configuration#display-settings).
@@ -362,7 +362,7 @@ CLI sessions are stored in Hermes's SQLite state database under `~/.hermes/state
 - session metadata (ID, title, timestamps, token counters)
 - message history
 - lineage across compressed/resumed sessions
-- full-text search indexes used by `session_search`
+- full-text search indexes used by `search_session`
 
 Some messaging adapters also keep per-platform transcript files alongside the database, but the CLI itself resumes from the SQLite session store.
 

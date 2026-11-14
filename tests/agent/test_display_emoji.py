@@ -90,7 +90,7 @@ class TestGetToolEmoji:
         with mock_patch("agent.display._get_skin", return_value=skin), \
              mock_patch.dict(sys.modules, {"tools.registry": mock_module}):
             assert get_tool_emoji("terminal") == "⚔"  # skin override
-            assert get_tool_emoji("web_search") == "🔍"  # registry fallback
+            assert get_tool_emoji("search_web") == "🔍"  # registry fallback
 
 
 class TestSkinConfigToolEmojis:
@@ -103,7 +103,7 @@ class TestSkinConfigToolEmojis:
 
     def test_skin_config_accepts_tool_emojis(self):
         from hermes_cli.skin_engine import SkinConfig
-        emojis = {"terminal": "⚔", "web_search": "🔮"}
+        emojis = {"terminal": "⚔", "search_web": "🔮"}
         skin = SkinConfig(name="test", tool_emojis=emojis)
         assert skin.tool_emojis == emojis
 

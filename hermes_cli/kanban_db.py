@@ -895,7 +895,7 @@ class Task:
     # against this card's title/body (treated as the goal). If the judge
     # says "not done" and budget remains, the worker is fed a
     # continuation prompt IN THE SAME SESSION and keeps working until the
-    # judge agrees, the goal-turn budget is exhausted (→ kanban_block),
+    # judge agrees, the goal-turn budget is exhausted (→ block_kanban),
     # or the worker explicitly blocks/completes. ``False`` (default) =
     # the classic single-shot worker. ``goal_max_turns`` bounds the loop.
     goal_mode: bool = False
@@ -2497,7 +2497,7 @@ def create_task(
     # invisibly splatter a comma-joined string into one argv slot — the
     # `hermes --skills X,Y` comma syntax is handled in the dispatcher,
     # not here.
-    skills_list: Optional[list[str]] = None
+    list_skills: Optional[list[str]] = None
     if skills is not None:
         cleaned: list[str] = []
         seen: set[str] = set()
@@ -2535,7 +2535,7 @@ def create_task(
                 "(e.g. `blogwatcher`, `github-code-review`); toolsets are runtime "
                 "capabilities (e.g. `web`, `browser`, `terminal`)."
             )
-        skills_list = cleaned
+        list_skills = cleaned
 
     # Idempotency check — return the existing task instead of creating a
     # duplicate. Done BEFORE entering write_txn to keep the fast path fast
@@ -2655,7 +2655,7 @@ def create_task(
                         tenant,
                         idempotency_key,
                         int(max_runtime_seconds) if max_runtime_seconds is not None else None,
-                        json.dumps(skills_list) if skills_list is not None else None,
+                        json.dumps(list_skills) if list_skills is not None else None,
                         int(max_retries) if max_retries is not None else None,
                         1 if goal_mode else 0,
                         int(goal_max_turns) if goal_max_turns is not None else None,
@@ -2677,7 +2677,7 @@ def create_task(
                         "parents": list(parents),
                         "tenant": tenant,
                         "branch_name": branch_name,
-                        "skills": list(skills_list) if skills_list else None,
+                        "skills": list(list_skills) if list_skills else None,
                         "goal_mode": bool(goal_mode) or None,
                     },
                 )
@@ -3029,7 +3029,7 @@ def store_attachment_bytes(
     """Validate, size-check, persist a blob, and record its metadata row.
 
     This is the single write path shared by the dashboard endpoint, the
-    agent toolset (``kanban_attach`` / ``kanban_attach_url``), and the CLI
+    agent toolset (``attach_kanban`` / ``attach_kanban_url``), and the CLI
     (``hermes kanban attach``) so name-sanitisation, the size cap, and the
     collision-resolution all behave identically everywhere.
 
@@ -3354,12 +3354,12 @@ def _synthesize_ended_run(
 
 def _has_sticky_block(conn: sqlite3.Connection, task_id: str) -> bool:
     """Return True when ``task_id`` is sticky-blocked by an explicit
-    worker/operator ``kanban_block`` call (#28712).
+    worker/operator ``block_kanban`` call (#28712).
 
     A ``blocked`` status can come from two very different sources:
 
     * **Worker- or operator-initiated** — a worker called
-      ``kanban_block(reason="review-required: ...")`` (or somebody ran
+      ``block_kanban(reason="review-required: ...")`` (or somebody ran
       ``hermes kanban block <id>``).  This is a deliberate handoff that
       should stay blocked until an operator unblocks it.  The block tool
       emits a ``"blocked"`` event row in ``task_events``.
@@ -3403,8 +3403,8 @@ def recompute_ready(
     parent completes), *except* in two cases:
 
     1. The most recent block event was a worker-initiated
-       ``kanban_block`` — those stay blocked until an explicit
-       ``kanban_unblock`` (#28712).
+       ``block_kanban`` — those stay blocked until an explicit
+       ``unblock_kanban`` (#28712).
 
     2. The task's ``consecutive_failures`` has reached the effective
        failure limit.  This prevents infinite retry loops when a task
@@ -3721,7 +3721,7 @@ def release_stale_claims(
     reclaimed. Reclaiming a live worker mid-flight produces the spawn-
     then-immediately-reclaim loop seen on slow models that spend longer
     than ``DEFAULT_CLAIM_TTL_SECONDS`` inside a single tool-free LLM
-    call (#23025): no tool calls means no ``kanban_heartbeat``, even
+    call (#23025): no tool calls means no ``heartbeat_kanban``, even
     though the subprocess is healthy.
 
     Backstop (#29747 gap 3): if the worker's PID is still alive but its
@@ -3966,12 +3966,12 @@ def _verify_created_cards(
     of the following holds:
 
     * ``created_by`` matches the completing task's ``assignee`` profile
-      (the common case: worker A spawns a card via ``kanban_create``,
+      (the common case: worker A spawns a card via ``create_kanban``,
       which stamps ``created_by=A``).
     * ``created_by`` matches the completing task's id (edge case where
       a worker passed its own task id as the ``created_by`` value).
     * The card is linked as a ``task_links.child`` of the completing
-      task — i.e. the worker explicitly called ``kanban_create`` with
+      task — i.e. the worker explicitly called ``create_kanban`` with
       ``parents=[<current_task>]``. This accepts cards created through
       the dashboard/CLI by a different principal but then attached to
       the completing task by the worker.
@@ -4030,7 +4030,7 @@ def _verify_created_cards(
     return verified, phantom
 
 
-# Task-id pattern used both by ``kanban_create`` (``t_<12 hex>``) and
+# Task-id pattern used both by ``create_kanban`` (``t_<12 hex>``) and
 # ``_new_task_id`` below. Kept permissive on length for forward compat:
 # accept 8+ hex chars after the ``t_`` prefix.
 _TASK_ID_PROSE_RE = re.compile(r"\bt_[a-f0-9]{8,}\b")
@@ -4243,7 +4243,7 @@ def complete_task(
         # Carry artifact paths in the event payload so the gateway
         # notifier can upload them as native attachments alongside the
         # completion message. Workers pass these via
-        # ``kanban_complete(artifacts=[...])`` which stashes the list in
+        # ``complete_kanban(artifacts=[...])`` which stashes the list in
         # ``metadata["artifacts"]`` — we promote it onto the event so
         # consumers don't have to fetch the run row to find it.
         if isinstance(metadata, dict):
@@ -4475,14 +4475,14 @@ def _insert_completion_attachment(
     conn.execute(
         "INSERT INTO task_attachments "
         "(task_id, filename, stored_path, content_type, size, uploaded_by, created_at) "
-        "VALUES (?, ?, ?, NULL, ?, 'kanban_complete', ?)",
+        "VALUES (?, ?, ?, NULL, ?, 'complete_kanban', ?)",
         (task_id, filename, stored_path, size, created_at),
     )
     _append_event(
         conn,
         task_id,
         "attached",
-        {"filename": filename, "size": size, "by": "kanban_complete"},
+        {"filename": filename, "size": size, "by": "complete_kanban"},
     )
 
 
@@ -5982,7 +5982,7 @@ DEFAULT_LOG_ROTATE_BYTES = 2 * 1024 * 1024   # 2 MiB
 DEFAULT_LOG_BACKUP_COUNT = 1
 
 # Keep a little wall-clock budget for the worker to observe a terminal timeout
-# and call kanban_block/kanban_complete before max_runtime_seconds kills it.
+# and call block_kanban/complete_kanban before max_runtime_seconds kills it.
 KANBAN_TERMINAL_TIMEOUT_GRACE_SECONDS = 30
 
 # ---------------------------------------------------------------------------
@@ -6124,7 +6124,7 @@ def _classify_worker_exit(pid: int) -> "tuple[str, Optional[int]]":
 
     * ``"clean_exit"`` — ``WIFEXITED`` with ``WEXITSTATUS == 0``. When the
       task is still ``running`` in the DB, this is a protocol violation
-      (worker exited without calling ``kanban_complete`` / ``kanban_block``)
+      (worker exited without calling ``complete_kanban`` / ``block_kanban``)
       and should be auto-blocked immediately — retrying will just loop.
     * ``"rate_limited"`` — ``WIFEXITED`` with status
       ``KANBAN_RATE_LIMIT_EXIT_CODE``. The worker bailed because the
@@ -6764,7 +6764,7 @@ def detect_crashed_workers(conn: sqlite3.Connection) -> list[str]:
     When the reap registry shows the worker exited cleanly (rc=0) but
     the task was still ``running`` in the DB, treat it as a protocol
     violation (worker answered conversationally without calling
-    ``kanban_complete`` / ``kanban_block``) and trip the circuit breaker
+    ``complete_kanban`` / ``block_kanban``) and trip the circuit breaker
     on the first occurrence — retrying a worker whose CLI keeps
     returning 0 without a terminal transition just loops forever.
 
@@ -6815,7 +6815,7 @@ def detect_crashed_workers(conn: sqlite3.Connection) -> list[str]:
             if kind == "clean_exit":
                 # Worker subprocess returned 0 but its task is still
                 # ``running`` in the DB — it exited without calling
-                # ``kanban_complete`` / ``kanban_block``. Overwhelmingly the
+                # ``complete_kanban`` / ``block_kanban``. Overwhelmingly the
                 # work itself succeeded and only the paperwork was skipped, so
                 # a retry usually completes; the corrective sentence below is
                 # surfaced to the retry worker via the prior-attempt error in
@@ -6823,9 +6823,9 @@ def detect_crashed_workers(conn: sqlite3.Connection) -> list[str]:
                 protocol_violation = True
                 error_text = (
                     "worker exited cleanly (rc=0) without calling "
-                    "kanban_complete or kanban_block — protocol violation. "
+                    "complete_kanban or block_kanban — protocol violation. "
                     "If the prior run already did the work, verify it and "
-                    "report the result via kanban_complete; a run that ends "
+                    "report the result via complete_kanban; a run that ends "
                     "without a terminal kanban call counts as failed no "
                     "matter what it did."
                 )
@@ -6932,7 +6932,7 @@ def detect_crashed_workers(conn: sqlite3.Connection) -> list[str]:
     # Protocol-violation crashes (clean exit, no terminal tool call) get a
     # BOUNDED retry, not an immediate trip: empirically ~96% of these tasks
     # complete on a later run (a goal-mode finalize nudge, or the model simply
-    # emitting kanban_complete/kanban_block next time), so blocking on the first
+    # emitting complete_kanban/block_kanban next time), so blocking on the first
     # occurrence just churned them through the respawn cycle. The retry budget
     # is a violation-only streak (``_protocol_violation_streak``): earlier
     # timeouts / nonzero exits neither consume nor extend it, and a
@@ -7579,7 +7579,7 @@ def _dispatch_once_locked(
     # per-tick budget of N would grow concurrency by N every tick on a busy
     # board, since "running" tasks aren't reclaimed by completion alone —
     # they sit in status='running' until the worker calls
-    # kanban_complete/kanban_block (or the dispatcher TTL-reclaims them).
+    # complete_kanban/block_kanban (or the dispatcher TTL-reclaims them).
     running_count = 0
     if max_spawn is not None:
         running_count = int(
@@ -8269,7 +8269,7 @@ def _default_spawn(
     # board slug still forces it to the right directory.
     resolved_board = _normalize_board_slug(board) or get_current_board()
     env["HERMES_KANBAN_BOARD"] = resolved_board
-    # HERMES_PROFILE is the author the kanban_comment tool defaults to.
+    # HERMES_PROFILE is the author the comment_kanban tool defaults to.
     # `hermes -p <assignee>` activates the profile, but the env var is
     # what the tool reads — set it explicitly here so comments are
     # attributed correctly regardless of how the child loads config.

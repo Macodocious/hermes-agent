@@ -136,7 +136,7 @@ export function coerceThinkingText(value: unknown): string {
 }
 
 export function isImageGenerationTool(name?: string): boolean {
-  return name === 'image_generate'
+  return name === 'generate_image'
 }
 
 export function contextPath(path: string, cwd: string): string {

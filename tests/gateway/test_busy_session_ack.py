@@ -548,7 +548,7 @@ class TestBusySessionAck:
         agent.get_activity_summary.return_value = {
             "api_call_count": 10,
             "max_iterations": 60,
-            "current_tool": "web_search",
+            "current_tool": "search_web",
             "last_activity_ts": time.time(),
             "last_activity_desc": "tool",
             "seconds_since_activity": 0.5,

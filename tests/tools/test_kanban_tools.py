@@ -33,7 +33,7 @@ def test_kanban_tools_hidden_without_env_var(monkeypatch, tmp_path):
     invalidate_check_fn_cache()
     schema = registry.get_definitions(set(resolve_toolset("hermes-cli")), quiet=True)
     names = {s["function"].get("name") for s in schema if "function" in s}
-    kanban = {n for n in names if n and n.startswith("kanban_")}
+    kanban = {n for n in names if n and "kanban" in n}
     assert kanban == set(), (
         f"kanban tools leaked into normal chat schema: {kanban}"
     )
@@ -53,11 +53,11 @@ def test_kanban_tools_visible_with_env_var(monkeypatch, tmp_path):
     invalidate_check_fn_cache()
     schema = registry.get_definitions(set(resolve_toolset("hermes-cli")), quiet=True)
     names = {s["function"].get("name") for s in schema if "function" in s}
-    kanban = {n for n in names if n and n.startswith("kanban_")}
+    kanban = {n for n in names if n and "kanban" in n}
     expected = {
-        "kanban_show", "kanban_complete", "kanban_block", "kanban_heartbeat",
-        "kanban_comment", "kanban_create", "kanban_link",
-        "kanban_attach", "kanban_attach_url", "kanban_attachments",
+        "show_kanban", "complete_kanban", "block_kanban", "heartbeat_kanban",
+        "comment_kanban", "create_kanban", "link_kanban",
+        "attach_kanban", "attach_kanban_url", "kanban_attachments",
     }
     assert kanban == expected, f"expected {expected}, got {kanban}"
 
@@ -82,10 +82,10 @@ def test_kanban_worker_env_overrides_profile_toolset_filter(monkeypatch, tmp_pat
         quiet_mode=True,
     )
     names = {s["function"].get("name") for s in schema if "function" in s}
-    assert "kanban_show" in names
-    assert "kanban_complete" in names
-    assert "kanban_block" in names
-    assert "kanban_list" not in names
+    assert "show_kanban" in names
+    assert "complete_kanban" in names
+    assert "block_kanban" in names
+    assert "list_kanban" not in names
 
 
 def test_worker_with_kanban_toolset_still_hides_board_routing(monkeypatch, tmp_path):
@@ -93,7 +93,7 @@ def test_worker_with_kanban_toolset_still_hides_board_routing(monkeypatch, tmp_p
 
     Even if a worker process happens to also have ``toolsets: [kanban]``
     in its config, the HERMES_KANBAN_TASK env var means it's a focused
-    worker and must not see kanban_list / kanban_unblock.
+    worker and must not see list_kanban / unblock_kanban.
     """
     monkeypatch.setenv("HERMES_KANBAN_TASK", "t_fake")
     home = tmp_path / ".hermes"
@@ -108,13 +108,13 @@ def test_worker_with_kanban_toolset_still_hides_board_routing(monkeypatch, tmp_p
     invalidate_check_fn_cache()
     schema = registry.get_definitions(set(resolve_toolset("hermes-cli")), quiet=True)
     names = {s["function"].get("name") for s in schema if "function" in s}
-    kanban = {n for n in names if n and n.startswith("kanban_")}
+    kanban = {n for n in names if n and "kanban" in n}
     assert {
-        "kanban_list",
-        "kanban_unblock",
+        "list_kanban",
+        "unblock_kanban",
     }.isdisjoint(kanban), (
         f"Board-routing tools leaked into worker schema: "
-        f"{kanban & {'kanban_list', 'kanban_unblock'}}"
+        f"{kanban & {'list_kanban', 'unblock_kanban'}}"
     )
 
 
@@ -133,13 +133,13 @@ def test_kanban_tools_visible_with_toolset_config(monkeypatch, tmp_path):
     invalidate_check_fn_cache()
     schema = registry.get_definitions(set(resolve_toolset("hermes-cli")), quiet=True)
     names = {s["function"].get("name") for s in schema if "function" in s}
-    kanban = {n for n in names if n and n.startswith("kanban_")}
+    kanban = {n for n in names if n and "kanban" in n}
     expected = {
-        "kanban_list",
-        "kanban_show", "kanban_complete", "kanban_block", "kanban_heartbeat",
-        "kanban_comment", "kanban_create", "kanban_link",
-        "kanban_unblock",
-        "kanban_attach", "kanban_attach_url", "kanban_attachments",
+        "list_kanban",
+        "show_kanban", "complete_kanban", "block_kanban", "heartbeat_kanban",
+        "comment_kanban", "create_kanban", "link_kanban",
+        "unblock_kanban",
+        "attach_kanban", "attach_kanban_url", "kanban_attachments",
     }
     assert kanban == expected, f"expected {expected}, got {kanban}"
 
@@ -199,7 +199,7 @@ def test_show_explicit_task_id(worker_env):
 
 
 def test_list_filters_tasks(monkeypatch, worker_env):
-    """kanban_list gives orchestrators filtered board discovery."""
+    """list_kanban gives orchestrators filtered board discovery."""
     monkeypatch.delenv("HERMES_KANBAN_TASK", raising=False)
     from hermes_cli import kanban_db as kb
     conn = kb.connect()
@@ -505,7 +505,7 @@ def test_complete_missing_scratch_artifact_stays_in_flight(worker_env):
 
     assert "could not preserve" in error
     assert "still in-flight" in error
-    assert "retry kanban_complete" in error
+    assert "retry complete_kanban" in error
     with kb.connect() as conn:
         assert kb.get_task(conn, worker_env).status == "running"
     assert workspace.exists()
@@ -546,7 +546,7 @@ def test_complete_phantom_card_message_advertises_retry(worker_env):
     # future change rewords the message, these checks will catch the
     # regression. See #22923 for the failure mode.
     assert "still in-flight" in err
-    assert "Retry kanban_complete" in err
+    assert "Retry complete_kanban" in err
     assert "created_cards=[]" in err
 
     # Critically: the task is genuinely still in-flight — the gate
@@ -559,7 +559,7 @@ def test_complete_phantom_card_message_advertises_retry(worker_env):
 
 
 def test_complete_retry_with_empty_created_cards_succeeds(worker_env):
-    """After a phantom rejection, retrying kanban_complete with
+    """After a phantom rejection, retrying complete_kanban with
     created_cards=[] (the documented escape hatch) must complete the
     task. Regression for #22923."""
     from hermes_cli import kanban_db as kb
@@ -587,7 +587,7 @@ def test_complete_retry_with_empty_created_cards_succeeds(worker_env):
 
 
 def test_complete_retry_with_corrected_created_cards_succeeds(worker_env):
-    """After a phantom rejection, retrying kanban_complete with a
+    """After a phantom rejection, retrying complete_kanban with a
     corrected created_cards list (phantom ids removed) must complete the
     task. Regression for #22923."""
     from hermes_cli import kanban_db as kb
@@ -619,7 +619,7 @@ def test_complete_retry_with_corrected_created_cards_succeeds(worker_env):
 
 def test_complete_goal_mode_rejected_by_judge(monkeypatch, tmp_path):
     """Goal-mode tasks must pass the auxiliary judge before completion.
-    Regression for #38367: workers bypassing the judge via early kanban_complete."""
+    Regression for #38367: workers bypassing the judge via early complete_kanban."""
     from pathlib import Path as _Path
     from hermes_cli import kanban_db as kb
     from tools import kanban_tools as kt
@@ -744,7 +744,7 @@ def test_block_rejects_empty_reason(worker_env):
 
 def _make_goal_mode_worker_env(monkeypatch, tmp_path):
     """Set up an isolated HERMES_HOME with one claimed goal_mode task,
-    matching the pattern used by the kanban_complete judge gate tests."""
+    matching the pattern used by the complete_kanban judge gate tests."""
     from pathlib import Path as _Path
     from hermes_cli import kanban_db as kb
 
@@ -771,9 +771,9 @@ def _make_goal_mode_worker_env(monkeypatch, tmp_path):
 
 
 def test_block_goal_mode_rejects_missing_kind(monkeypatch, tmp_path):
-    """A goal_mode worker calling kanban_block with no kind must not be able
+    """A goal_mode worker calling block_kanban with no kind must not be able
     to use it as an unguarded escape from the goal loop (Issue #38696,
-    sibling of the kanban_complete judge gate / Issue #38367)."""
+    sibling of the complete_kanban judge gate / Issue #38367)."""
     from tools import kanban_tools as kt
     from hermes_cli import kanban_db as kb
 
@@ -872,7 +872,7 @@ def test_heartbeat_without_note(worker_env):
 
 
 def test_heartbeat_extends_claim_expires(worker_env):
-    """The kanban_heartbeat tool MUST extend claim_expires, not just
+    """The heartbeat_kanban tool MUST extend claim_expires, not just
     update last_heartbeat_at — otherwise long-running workers loop the
     heartbeat tool diligently and still get reclaimed by
     release_stale_claims at DEFAULT_CLAIM_TTL_SECONDS.
@@ -1087,7 +1087,7 @@ def test_create_no_worker_task_stays_scratch(monkeypatch, worker_env):
 
 def test_create_stamps_session_id_from_env(monkeypatch, worker_env):
     """When the agent loop runs under ACP, the server propagates the
-    originating chat session id via HERMES_SESSION_ID. ``kanban_create``
+    originating chat session id via HERMES_SESSION_ID. ``create_kanban``
     reads it and stamps the new task so clients can render a per-session
     board (issue: ACP session linkage on kanban tasks)."""
     monkeypatch.setenv("HERMES_SESSION_ID", "acp-sess-abc")
@@ -1459,7 +1459,7 @@ def test_kanban_guidance_not_in_normal_prompt(monkeypatch, tmp_path):
     )
     prompt = a._build_system_prompt()
     assert "You are a Kanban worker" not in prompt
-    assert "kanban_show()" not in prompt
+    assert "show_kanban()" not in prompt
 
 
 def test_kanban_guidance_in_worker_prompt(monkeypatch, tmp_path):
@@ -1489,10 +1489,10 @@ def test_kanban_guidance_in_worker_prompt(monkeypatch, tmp_path):
     # Header phrase (identity-free — SOUL.md owns identity, layer 3 is protocol)
     assert "Kanban task execution protocol" in prompt
     # Lifecycle signals
-    assert "kanban_show()" in prompt
-    assert "kanban_complete" in prompt
-    assert "kanban_block" in prompt
-    assert "kanban_create" in prompt
+    assert "show_kanban()" in prompt
+    assert "complete_kanban" in prompt
+    assert "block_kanban" in prompt
+    assert "create_kanban" in prompt
     # Anti-shell guidance
     assert "Do not shell out" in prompt or "tools — they work" in prompt
 
@@ -1526,11 +1526,11 @@ def test_kanban_guidance_prompt_size_bounded(monkeypatch, tmp_path):
 # ---------------------------------------------------------------------------
 #
 # A worker process has HERMES_KANBAN_TASK set to its own task id. The
-# destructive tools (kanban_complete, kanban_block, kanban_heartbeat,
-# kanban_unblock) must refuse to operate
+# destructive tools (complete_kanban, block_kanban, heartbeat_kanban,
+# unblock_kanban) must refuse to operate
 # on any OTHER task id, even if the caller supplies an explicit `task_id`
-# argument. Workers legitimately call kanban_show / kanban_list /
-# kanban_comment / kanban_create / kanban_link on other tasks, so those
+# argument. Workers legitimately call show_kanban / list_kanban /
+# comment_kanban / create_kanban / link_kanban on other tasks, so those
 # are unrestricted.
 #
 # Orchestrator profiles (no HERMES_KANBAN_TASK in env) are intentionally
@@ -1608,7 +1608,7 @@ def test_worker_can_comment_on_foreign_task(worker_env):
     """Cross-task commenting must remain unrestricted (#19713 policy).
 
     The author-forgery hardening removed args['author'] but deliberately
-    did NOT add an ownership gate to kanban_comment — comments are the
+    did NOT add an ownership gate to comment_kanban — comments are the
     documented handoff channel between tasks. This test pins that policy
     so a future change accidentally adding ``_enforce_worker_task_ownership``
     to ``_handle_comment`` would fail CI immediately.
@@ -1641,12 +1641,12 @@ def test_worker_can_comment_on_foreign_task(worker_env):
 
 
 def test_worker_unblock_rejects_foreign_task_id(worker_env):
-    """A worker cannot unblock any task — kanban_unblock is orchestrator-only.
+    """A worker cannot unblock any task — unblock_kanban is orchestrator-only.
 
     The check fires before the per-task ownership check, so the error
     surface is the orchestrator-only refusal rather than the
     cross-task-ownership refusal. Either is fine — the property we're
-    pinning is "worker cannot mutate foreign task via kanban_unblock".
+    pinning is "worker cannot mutate foreign task via unblock_kanban".
     """
     from hermes_cli import kanban_db as kb
     conn = kb.connect()
@@ -1814,7 +1814,7 @@ def multi_board_env(monkeypatch, tmp_path):
 
 
 def test_board_param_routes_create_to_alt_board(multi_board_env):
-    """kanban_create with ``board="alt"`` must write into the alt board's DB,
+    """create_kanban with ``board="alt"`` must write into the alt board's DB,
     not the default one."""
     from hermes_cli import kanban_db as kb
     from tools import kanban_tools as kt
@@ -1837,7 +1837,7 @@ def test_board_param_routes_create_to_alt_board(multi_board_env):
 
 
 def test_board_param_routes_list_to_alt_board(multi_board_env):
-    """kanban_list filters by the board parameter, not env-active."""
+    """list_kanban filters by the board parameter, not env-active."""
     from tools import kanban_tools as kt
 
     # Default — sees seed-default, not seed-alt.
@@ -1854,7 +1854,7 @@ def test_board_param_routes_list_to_alt_board(multi_board_env):
 
 
 def test_board_param_routes_show_to_alt_board(multi_board_env):
-    """kanban_show reads from the board parameter, not env-active.
+    """show_kanban reads from the board parameter, not env-active.
 
     Tasks across boards may share ids (the id space is per-DB) but the
     seed task ids in this fixture are distinct, so a cross-board show
@@ -1894,7 +1894,7 @@ def test_board_param_routes_assign_via_create_to_alt(multi_board_env):
 
 
 def test_board_param_routes_comment_to_alt_board(multi_board_env):
-    """kanban_comment routes the insert to the alt board's DB."""
+    """comment_kanban routes the insert to the alt board's DB."""
     from hermes_cli import kanban_db as kb
     from tools import kanban_tools as kt
 
@@ -1917,7 +1917,7 @@ def test_board_param_routes_comment_to_alt_board(multi_board_env):
 
 
 def test_board_param_routes_complete_to_alt_board(multi_board_env):
-    """kanban_complete on the alt board closes the alt task, leaving
+    """complete_kanban on the alt board closes the alt task, leaving
     the default seed untouched."""
     from hermes_cli import kanban_db as kb
     from tools import kanban_tools as kt
@@ -1944,7 +1944,7 @@ def test_board_param_routes_complete_to_alt_board(multi_board_env):
 
 
 def test_board_param_routes_block_to_alt_board(multi_board_env):
-    """kanban_block targets the alt board's DB."""
+    """block_kanban targets the alt board's DB."""
     from hermes_cli import kanban_db as kb
     from tools import kanban_tools as kt
 
@@ -1965,7 +1965,7 @@ def test_board_param_routes_block_to_alt_board(multi_board_env):
 
 
 def test_board_param_routes_unblock_to_alt_board(multi_board_env):
-    """kanban_unblock targets the alt board's DB."""
+    """unblock_kanban targets the alt board's DB."""
     from hermes_cli import kanban_db as kb
     from tools import kanban_tools as kt
 
@@ -1984,7 +1984,7 @@ def test_board_param_routes_unblock_to_alt_board(multi_board_env):
 
 
 def test_board_param_routes_heartbeat_to_alt_board(monkeypatch, tmp_path):
-    """kanban_heartbeat targets the alt board's DB. Worker-scoped, so we
+    """heartbeat_kanban targets the alt board's DB. Worker-scoped, so we
     use the worker-env style fixture inline (pinning HERMES_KANBAN_TASK
     to a task that exists in the alt board)."""
     home = tmp_path / ".hermes"
@@ -2016,7 +2016,7 @@ def test_board_param_routes_heartbeat_to_alt_board(monkeypatch, tmp_path):
 
 
 def test_board_param_routes_link_to_alt_board(multi_board_env):
-    """kanban_link operates on the alt board's DB."""
+    """link_kanban operates on the alt board's DB."""
     from hermes_cli import kanban_db as kb
     from tools import kanban_tools as kt
 
@@ -2100,9 +2100,9 @@ def test_board_param_in_all_schemas():
 
 
 # ---------------------------------------------------------------------------
-# kanban_create auto-subscribe behaviour
+# create_kanban auto-subscribe behaviour
 #
-# When a worker calls kanban_create from inside a session that has a
+# When a worker calls create_kanban from inside a session that has a
 # persistent delivery channel, the originating session should be
 # subscribed to the new task's completion/block events automatically.
 # - Gateway sessions: HERMES_SESSION_PLATFORM + HERMES_SESSION_CHAT_ID set.
@@ -2142,7 +2142,7 @@ def _sub_index(subs):
 
 def test_create_subscribes_gateway_session(monkeypatch, worker_env):
     """A gateway session (platform + chat_id set) gets auto-subscribed
-    to its own kanban_create result, and the response surfaces the
+    to its own create_kanban result, and the response surfaces the
     ``subscribed`` flag so the orchestrator can react."""
     from tools import kanban_tools as kt
     monkeypatch.setenv("HERMES_SESSION_PLATFORM", "telegram")
@@ -2267,7 +2267,7 @@ def test_create_partial_session_context_no_subscribe(monkeypatch, worker_env):
 def test_maybe_auto_subscribe_swallows_add_notify_sub_failure(monkeypatch, worker_env):
     """If add_notify_sub itself raises (e.g. DB locked, schema drift),
     _maybe_auto_subscribe must NOT bubble that up and fail the parent
-    kanban_create. The function returns False and the parent create
+    create_kanban. The function returns False and the parent create
     still succeeds with subscribed=False."""
     from tools import kanban_tools as kt
     monkeypatch.setenv("HERMES_SESSION_PLATFORM", "telegram")
@@ -2290,7 +2290,7 @@ def test_maybe_auto_subscribe_swallows_add_notify_sub_failure(monkeypatch, worke
 
 
 # ---------------------------------------------------------------------------
-# Attachments — kanban_attach / kanban_attach_url / kanban_attachments
+# Attachments — attach_kanban / attach_kanban_url / kanban_attachments
 # ---------------------------------------------------------------------------
 
 
@@ -2311,7 +2311,7 @@ def allow_private_urls(monkeypatch):
 
 
 def test_attach_roundtrips_bytes_to_row_and_disk(worker_env):
-    """kanban_attach decodes base64, writes the blob, and records the row."""
+    """attach_kanban decodes base64, writes the blob, and records the row."""
     import base64
     from pathlib import Path
 
@@ -2438,7 +2438,7 @@ def test_attachments_unknown_task_errors(worker_env):
 
 
 def test_attach_url_fetches_local_fixture(worker_env, allow_private_urls):
-    """kanban_attach_url downloads from an http(s) URL and stores the bytes.
+    """attach_kanban_url downloads from an http(s) URL and stores the bytes.
 
     The fixture server lives on loopback, which the SSRF guard blocks by
     default — opted in via the allow_private_urls fixture exactly like a
@@ -2537,7 +2537,7 @@ def test_attach_url_rejects_non_http_scheme(worker_env):
 
 
 # ---------------------------------------------------------------------------
-# kanban_attach_url — SSRF guard (tools/url_safety.is_safe_url per hop)
+# attach_kanban_url — SSRF guard (tools/url_safety.is_safe_url per hop)
 # ---------------------------------------------------------------------------
 
 
@@ -2557,7 +2557,7 @@ def default_url_guard(monkeypatch):
 
 
 def _assert_attach_url_blocked(worker_env, url):
-    """Call kanban_attach_url with ``url`` and assert the SSRF guard fired
+    """Call attach_kanban_url with ``url`` and assert the SSRF guard fired
     (clean tool error, no attachment row, no network fetch needed)."""
     from hermes_cli import kanban_db as kb
     from tools import kanban_tools as kt

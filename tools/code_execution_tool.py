@@ -60,8 +60,8 @@ SANDBOX_AVAILABLE = True
 # The 7 tools allowed inside the sandbox. The intersection of this list
 # and the session's enabled tools determines which stubs are generated.
 SANDBOX_ALLOWED_TOOLS = frozenset([
-    "web_search",
-    "web_extract",
+    "search_web",
+    "extract_web",
     "read_file",
     "write_file",
     "search_files",
@@ -278,14 +278,14 @@ def check_sandbox_requirements() -> bool:
 # Per-tool stub templates: (function_name, signature, docstring, args_dict_expr)
 # The args_dict_expr builds the JSON payload sent over the RPC socket.
 _TOOL_STUBS = {
-    "web_search": (
-        "web_search",
+    "search_web": (
+        "search_web",
         "query: str, limit: int = 5",
         '"""Search the web. Returns dict with data.web list of {url, title, description}."""',
         '{"query": query, "limit": limit}',
     ),
-    "web_extract": (
-        "web_extract",
+    "extract_web": (
+        "extract_web",
         "urls: list, char_limit: int = None",
         '"""Extract content from URLs (no LLM summarization). Returns dict with results list of {url, title, content, error}. Pages over char_limit (default 15000) are head+tail truncated with the full text stored on disk; the content footer gives the path. content is markdown."""',
         '{"urls": urls, "char_limit": char_limit}',
@@ -369,7 +369,7 @@ _COMMON_HELPERS = '''\
 def json_parse(text: str):
     """Parse JSON tolerant of control characters (strict=False).
     Use this instead of json.loads() when parsing output from terminal()
-    or web_extract() that may contain raw tabs/newlines in strings."""
+    or extract_web() that may contain raw tabs/newlines in strings."""
     return json.loads(text, strict=False)
 
 
@@ -1847,11 +1847,11 @@ def _resolve_child_cwd(mode: str, staging_dir: str, task_id: str = "") -> str:
 # Per-tool documentation lines for the execute_code description.
 # Ordered to match the canonical display order.
 _TOOL_DOC_LINES = [
-    ("web_search",
-     "  web_search(query: str, limit: int = 5) -> dict\n"
+    ("search_web",
+     "  search_web(query: str, limit: int = 5) -> dict\n"
      "    Returns {\"data\": {\"web\": [{\"url\", \"title\", \"description\"}, ...]}}"),
-    ("web_extract",
-     "  web_extract(urls: list[str], char_limit: int = None) -> dict\n"
+    ("extract_web",
+     "  extract_web(urls: list[str], char_limit: int = None) -> dict\n"
      "    Returns {\"results\": [{\"url\", \"title\", \"content\", \"error\"}, ...]} where content is markdown.\n"
      "    No LLM summarization. Pages over char_limit (default 15000) are head+tail truncated; full text stored on disk (path in the content footer)."),
     ("read_file",
@@ -1877,7 +1877,7 @@ def build_execute_code_schema(enabled_sandbox_tools: set = None,
     """Build the execute_code schema with description listing only enabled tools.
 
     When tools are disabled via ``hermes tools`` (e.g. web is turned off),
-    the schema description should NOT mention web_search / web_extract —
+    the schema description should NOT mention search_web / extract_web —
     otherwise the model thinks they are available and keeps trying to use them.
 
     ``mode`` controls the working-directory sentence in the description:
@@ -1897,7 +1897,7 @@ def build_execute_code_schema(enabled_sandbox_tools: set = None,
     )
 
     # Build example import list from enabled tools
-    import_examples = [n for n in ("web_search", "terminal") if n in enabled_sandbox_tools]
+    import_examples = [n for n in ("search_web", "terminal") if n in enabled_sandbox_tools]
     if not import_examples:
         import_examples = sorted(enabled_sandbox_tools)[:2]
     if import_examples:

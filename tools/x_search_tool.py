@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""X Search tool backed by xAI's built-in ``x_search`` Responses API tool.
+"""X Search tool backed by xAI's built-in ``search_x`` Responses API tool.
 
 Authentication
 --------------
@@ -71,7 +71,7 @@ def _load_x_search_config() -> Dict[str, Any]:
     try:
         from hermes_cli.config import load_config
 
-        return load_config().get("x_search", {}) or {}
+        return load_config().get("search_x", {}) or {}
     except Exception:
         return {}
 
@@ -91,7 +91,7 @@ def _get_x_search_reasoning_effort() -> Optional[str]:
     if effort not in X_SEARCH_REASONING_EFFORTS:
         allowed = ", ".join(X_SEARCH_REASONING_EFFORTS)
         raise ValueError(
-            f"x_search.reasoning_effort must be one of: {allowed} "
+            f"search_x.reasoning_effort must be one of: {allowed} "
             f"(got {raw_value!r})"
         )
     return effort
@@ -298,7 +298,7 @@ def x_search_tool(
     enable_video_understanding: bool = False,
 ) -> str:
     if not query or not query.strip():
-        return tool_error("query is required for x_search")
+        return tool_error("query is required for search_x")
 
     try:
         api_key, base_url, source = _resolve_xai_bearer()
@@ -371,7 +371,7 @@ def x_search_tool(
                 if status_code is None or status_code < 500 or attempt >= max_retries:
                     raise
                 logger.warning(
-                    "x_search upstream failure on attempt %s/%s: %s",
+                    "search_x upstream failure on attempt %s/%s: %s",
                     attempt + 1,
                     max_retries + 1,
                     _http_error_message(e),
@@ -381,7 +381,7 @@ def x_search_tool(
                 if attempt >= max_retries:
                     raise
                 logger.warning(
-                    "x_search transient failure on attempt %s/%s: %s",
+                    "search_x transient failure on attempt %s/%s: %s",
                     attempt + 1,
                     max_retries + 1,
                     e,
@@ -389,7 +389,7 @@ def x_search_tool(
                 time.sleep(min(5.0, 1.5 * (attempt + 1)))
 
         if response is None:
-            raise RuntimeError("x_search request did not return a response")
+            raise RuntimeError("search_x request did not return a response")
 
         data = response.json()
 
@@ -427,7 +427,7 @@ def x_search_tool(
                 "success": True,
                 "provider": "xai",
                 "credential_source": source,
-                "tool": "x_search",
+                "tool": "search_x",
                 "model": payload["model"],
                 "query": query.strip(),
                 "answer": answer,
@@ -439,36 +439,36 @@ def x_search_tool(
             ensure_ascii=False,
         )
     except requests.HTTPError as e:
-        logger.error("x_search failed: %s", e, exc_info=True)
+        logger.error("search_x failed: %s", e, exc_info=True)
         return json.dumps(
             {
                 "success": False,
                 "provider": "xai",
-                "tool": "x_search",
+                "tool": "search_x",
                 "error": _http_error_message(e),
                 "error_type": type(e).__name__,
             },
             ensure_ascii=False,
         )
     except requests.ReadTimeout as e:
-        logger.error("x_search timed out: %s", e, exc_info=True)
+        logger.error("search_x timed out: %s", e, exc_info=True)
         return json.dumps(
             {
                 "success": False,
                 "provider": "xai",
-                "tool": "x_search",
-                "error": f"xAI x_search timed out after {_get_x_search_timeout_seconds()} seconds",
+                "tool": "search_x",
+                "error": f"xAI search_x timed out after {_get_x_search_timeout_seconds()} seconds",
                 "error_type": type(e).__name__,
             },
             ensure_ascii=False,
         )
     except Exception as e:
-        logger.error("x_search failed: %s", e, exc_info=True)
+        logger.error("search_x failed: %s", e, exc_info=True)
         return json.dumps(
             {
                 "success": False,
                 "provider": "xai",
-                "tool": "x_search",
+                "tool": "search_x",
                 "error": str(e),
                 "error_type": type(e).__name__,
             },
@@ -477,7 +477,7 @@ def x_search_tool(
 
 
 X_SEARCH_SCHEMA = {
-    "name": "x_search",
+    "name": "search_x",
     "description": (
         "Search X (Twitter) posts, profiles, and threads using xAI's built-in "
         "X Search tool. Use this for current discussion, reactions, or claims "
@@ -538,8 +538,8 @@ def _handle_x_search(args, **kw):
 
 
 registry.register(
-    name="x_search",
-    toolset="x_search",
+    name="search_x",
+    toolset="search_x",
     schema=X_SEARCH_SCHEMA,
     handler=_handle_x_search,
     check_fn=check_x_search_requirements,

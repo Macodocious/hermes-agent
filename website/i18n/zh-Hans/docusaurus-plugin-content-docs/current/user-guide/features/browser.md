@@ -327,7 +327,7 @@ google-chrome \
 **为什么需要 `--user-data-dir`？** 若不指定，在普通实例已运行时启动 Chromium 系浏览器通常只会在现有进程上打开新窗口 — 而该进程启动时未带 `--remote-debugging-port`，因此端口 9222 永远不会开启。专用的 user-data-dir 会强制启动新的浏览器进程，使调试端口正常监听。`--no-first-run --no-default-browser-check` 跳过新 profile 的首次启动向导。
 :::
 
-通过 CDP 连接后，所有浏览器工具（`browser_navigate`、`browser_click` 等）将在您的实时浏览器实例上运行，而非启动云端会话。
+通过 CDP 连接后，所有浏览器工具（`navigate_browser`、`click_browser` 等）将在您的实时浏览器实例上运行，而非启动云端会话。
 
 ### WSL2 + Windows Chrome：优先使用 MCP 而非 `/browser connect`
 
@@ -390,7 +390,7 @@ npm install
 
 ## 可用工具
 
-### `browser_navigate`
+### `navigate_browser`
 
 导航到指定 URL。必须在其他任何浏览器工具之前调用。初始化 Browserbase 会话。
 
@@ -399,19 +399,19 @@ Navigate to https://github.com/NousResearch
 ```
 
 :::tip
-对于简单的信息检索，优先使用 `web_search` 或 `web_extract` — 它们更快且成本更低。仅在需要**与页面交互**（点击按钮、填写表单、处理动态内容）时使用浏览器工具。
+对于简单的信息检索，优先使用 `search_web` 或 `extract_web` — 它们更快且成本更低。仅在需要**与页面交互**（点击按钮、填写表单、处理动态内容）时使用浏览器工具。
 :::
 
-### `browser_snapshot`
+### `snapshot_browser`
 
-获取当前页面无障碍树的文本快照。返回带有引用 ID（如 `@e1`、`@e2`）的交互元素，供 `browser_click` 和 `browser_type` 使用。
+获取当前页面无障碍树的文本快照。返回带有引用 ID（如 `@e1`、`@e2`）的交互元素，供 `click_browser` 和 `type_browser` 使用。
 
 - **`full=false`**（默认）：仅显示交互元素的紧凑视图
 - **`full=true`**：完整页面内容
 
-超过 15,000 字符的快照将被截断或由 LLM 自动摘要（与 `web_extract` 使用相同的单页预算）。发生截断时，完整快照会保存到 `~/.hermes/cache/web/`，工具输出中包含文件路径和可直接使用的 `read_file` 调用，代理无需重新截图即可翻阅完整的可访问性树（包括被截断部分的元素 ref）。
+超过 15,000 字符的快照将被截断或由 LLM 自动摘要（与 `extract_web` 使用相同的单页预算）。发生截断时，完整快照会保存到 `~/.hermes/cache/web/`，工具输出中包含文件路径和可直接使用的 `read_file` 调用，代理无需重新截图即可翻阅完整的可访问性树（包括被截断部分的元素 ref）。
 
-### `browser_click`
+### `click_browser`
 
 点击快照中由引用 ID 标识的元素。
 
@@ -419,7 +419,7 @@ Navigate to https://github.com/NousResearch
 Click @e5 to press the "Sign In" button
 ```
 
-### `browser_type`
+### `type_browser`
 
 向输入框输入文本。先清空字段，再输入新文本。
 
@@ -427,7 +427,7 @@ Click @e5 to press the "Sign In" button
 Type "hermes agent" into the search field @e3
 ```
 
-### `browser_scroll`
+### `scroll_browser`
 
 向上或向下滚动页面以显示更多内容。
 
@@ -435,7 +435,7 @@ Type "hermes agent" into the search field @e3
 Scroll down to see more results
 ```
 
-### `browser_press`
+### `press_browser`
 
 按下键盘按键。适用于提交表单或导航。
 
@@ -445,11 +445,11 @@ Press Enter to submit the form
 
 支持的按键：`Enter`、`Tab`、`Escape`、`ArrowDown`、`ArrowUp` 等。
 
-### `browser_back`
+### `back_browser`
 
 在浏览器历史记录中返回上一页。
 
-### `browser_get_images`
+### `get_browser_images`
 
 列出当前页面上所有图片及其 URL 和 alt 文本。适用于查找需要分析的图片。
 
@@ -482,7 +482,7 @@ browser_console(expression="document.querySelector('h1').textContent")
 browser_console(expression="JSON.stringify(performance.timing)")
 ```
 
-当当前会话存在活跃的 CDP 监督器时（通常适用于任何对 CDP 兼容后端运行过 `browser_navigate` 的会话），执行通过监督器的持久 WebSocket 进行 — 无子进程启动开销。否则回退到标准 agent-browser CLI 路径。两种方式行为完全相同，仅延迟有差异。
+当当前会话存在活跃的 CDP 监督器时（通常适用于任何对 CDP 兼容后端运行过 `navigate_browser` 的会话），执行通过监督器的持久 WebSocket 进行 — 无子进程启动开销。否则回退到标准 agent-browser CLI 路径。两种方式行为完全相同，仅延迟有差异。
 
 默认情况下执行不受限制 — 代理可以使用 `fetch`、读取存储、查询表单值并执行任何 DOM 提取。针对私有/内部地址的请求在非本地后端上仍会被拦截（SSRF 防护与此设置无关）。如果你在已登录的浏览器配置文件中浏览不可信页面，希望对敏感 JS 原语（Cookie、存储、剪贴板、网络调用、表单值）启用严格的黑名单，可在 `config.yaml` 中设置 `browser.restrict_evaluate: true`。注意该黑名单按原语*名称*匹配，因此也会拦截仅包含 `fetch` 或 `cookie` 等词的合法表达式。
 
@@ -492,7 +492,7 @@ browser_console(expression="JSON.stringify(performance.timing)")
 
 **仅在会话启动时 CDP 端点可访问的情况下可用** — 即 `/browser connect` 已连接到运行中的 Chrome、Brave、Chromium 或 Edge 浏览器，或 `config.yaml` 中设置了 `browser.cdp_url`。默认本地 agent-browser 模式、Camofox 和云端提供商（Browserbase、Browser Use、Firecrawl）目前不向此工具暴露 CDP — 云端提供商有每会话 CDP URL，但实时会话路由是后续功能。
 
-**CDP 方法参考：** https://chromedevtools.github.io/devtools-protocol/ — Agent 可通过 `web_extract` 访问特定方法页面以查阅参数和返回结构。
+**CDP 方法参考：** https://chromedevtools.github.io/devtools-protocol/ — Agent 可通过 `extract_web` 访问特定方法页面以查阅参数和返回结构。
 
 常见用法：
 
@@ -516,13 +516,13 @@ browser_cdp(method="Network.getAllCookies")
 
 浏览器级方法（`Target.*`、`Browser.*`、`Storage.*`）省略 `target_id`。页面级方法（`Page.*`、`Runtime.*`、`DOM.*`、`Emulation.*`）需要来自 `Target.getTargets` 的 `target_id`。每次无状态调用相互独立 — 调用间不保留会话状态。
 
-**跨域 iframe：** 传入 `frame_id`（来自 `browser_snapshot.frame_tree.children[]` 中 `is_oopif=true` 的条目）可通过监督器的实时会话路由该 iframe 的 CDP 调用。这是在 Browserbase 上对跨域 iframe 执行 `Runtime.evaluate` 的方式，避免无状态 CDP 连接遭遇签名 URL 过期问题。示例：
+**跨域 iframe：** 传入 `frame_id`（来自 `snapshot_browser.frame_tree.children[]` 中 `is_oopif=true` 的条目）可通过监督器的实时会话路由该 iframe 的 CDP 调用。这是在 Browserbase 上对跨域 iframe 执行 `Runtime.evaluate` 的方式，避免无状态 CDP 连接遭遇签名 URL 过期问题。示例：
 
 ```
 browser_cdp(
   method="Runtime.evaluate",
   params={"expression": "document.title", "returnByValue": True},
-  frame_id="<frame_id from browser_snapshot>",
+  frame_id="<frame_id from snapshot_browser>",
 )
 ```
 
@@ -530,10 +530,10 @@ browser_cdp(
 
 ### `browser_dialog`
 
-响应原生 JS 对话框（`alert` / `confirm` / `prompt` / `beforeunload`）。在此工具出现之前，对话框会静默阻塞页面的 JavaScript 线程，后续 `browser_*` 调用会挂起或抛出异常；现在 Agent 可在 `browser_snapshot` 输出中看到待处理对话框并显式响应。
+响应原生 JS 对话框（`alert` / `confirm` / `prompt` / `beforeunload`）。在此工具出现之前，对话框会静默阻塞页面的 JavaScript 线程，后续 `browser_*` 调用会挂起或抛出异常；现在 Agent 可在 `snapshot_browser` 输出中看到待处理对话框并显式响应。
 
 **工作流程：**
-1. 调用 `browser_snapshot`。若对话框正在阻塞页面，将显示为 `pending_dialogs: [{"id": "d-1", "type": "alert", "message": "..."}]`。
+1. 调用 `snapshot_browser`。若对话框正在阻塞页面，将显示为 `pending_dialogs: [{"id": "d-1", "type": "alert", "message": "..."}]`。
 2. 调用 `browser_dialog(action="accept")` 或 `browser_dialog(action="dismiss")`。对于 `prompt()` 对话框，传入 `prompt_text="..."` 提供响应内容。
 3. 重新快照 — `pending_dialogs` 为空；页面 JS 线程已恢复。
 
@@ -557,7 +557,7 @@ browser_cdp(
 | `auto_dismiss` | 捕获，立即关闭。Agent 仍可在 `browser_state` 历史中看到对话框，但无需操作。 |
 | `auto_accept` | 捕获，立即接受。适用于导航带有频繁 `beforeunload` 提示的页面。 |
 
-`browser_snapshot.frame_tree` 中的**帧树**上限为 30 帧、OOPIF 深度 2，以控制广告密集页面的负载大小。达到限制时会显示 `truncated: true` 标志；需要完整帧树的 Agent 可使用 `browser_cdp` 配合 `Page.getFrameTree`。
+`snapshot_browser.frame_tree` 中的**帧树**上限为 30 帧、OOPIF 深度 2，以控制广告密集页面的负载大小。达到限制时会显示 `truncated: true` 标志；需要完整帧树的 Agent 可使用 `browser_cdp` 配合 `Page.getFrameTree`。
 
 ## 实际示例
 
@@ -567,12 +567,12 @@ browser_cdp(
 User: Sign up for an account on example.com with my email john@example.com
 
 Agent workflow:
-1. browser_navigate("https://example.com/signup")
-2. browser_snapshot()  → sees form fields with refs
-3. browser_type(ref="@e3", text="john@example.com")
-4. browser_type(ref="@e5", text="SecurePass123")
-5. browser_click(ref="@e8")  → clicks "Create Account"
-6. browser_snapshot()  → confirms success
+1. navigate_browser("https://example.com/signup")
+2. snapshot_browser()  → sees form fields with refs
+3. type_browser(ref="@e3", text="john@example.com")
+4. type_browser(ref="@e5", text="SecurePass123")
+5. click_browser(ref="@e8")  → clicks "Create Account"
+6. snapshot_browser()  → confirms success
 ```
 
 ### 研究动态内容
@@ -581,8 +581,8 @@ Agent workflow:
 User: What are the top trending repos on GitHub right now?
 
 Agent workflow:
-1. browser_navigate("https://github.com/trending")
-2. browser_snapshot(full=true)  → reads trending repo list
+1. navigate_browser("https://github.com/trending")
+2. snapshot_browser(full=true)  → reads trending repo list
 3. Returns formatted results
 ```
 
@@ -595,7 +595,7 @@ browser:
   record_sessions: true  # default: false
 ```
 
-启用后，录制在首次 `browser_navigate` 时自动开始，会话关闭时保存到 `~/.hermes/browser_recordings/`。本地模式和云端模式（Browserbase）均支持。超过 72 小时的录制文件自动清理。
+启用后，录制在首次 `navigate_browser` 时自动开始，会话关闭时保存到 `~/.hermes/browser_recordings/`。本地模式和云端模式（Browserbase）均支持。超过 72 小时的录制文件自动清理。
 
 ## 隐身功能
 
@@ -623,7 +623,7 @@ Browserbase 提供自动隐身能力：
 ## 限制
 
 - **基于文本的交互** — 依赖无障碍树，而非像素坐标
-- **快照大小** — 大型页面可能在 15,000 字符处被截断或由 LLM 摘要（与 `web_extract` 一致）；完整快照会保存到 `~/.hermes/cache/web/`，输出中给出路径供 `read_file` 翻阅
+- **快照大小** — 大型页面可能在 15,000 字符处被截断或由 LLM 摘要（与 `extract_web` 一致）；完整快照会保存到 `~/.hermes/cache/web/`，输出中给出路径供 `read_file` 翻阅
 - **会话超时** — 云端会话根据提供商计划设置过期
 - **费用** — 云端会话消耗提供商额度；对话结束或非活跃后会话自动清理。使用 `/browser connect` 可免费本地浏览。
 - **不支持文件下载** — 无法从浏览器下载文件

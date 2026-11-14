@@ -2,7 +2,7 @@
 
 Before this, ``prompt.submit`` on a running session returned ``session busy``,
 forcing clients into a deadline-bounded busy-retry. When turn teardown outlived
-the deadline — e.g. a slow, non-interruptible tool (``web_search``) still
+the deadline — e.g. a slow, non-interruptible tool (``search_web``) still
 running when the user hit stop — the resubmitted message was silently dropped
 ("it just doesn't listen"). The gateway now applies the ``busy_input_mode``
 policy: interrupt the live turn (default) and queue the message to run as the

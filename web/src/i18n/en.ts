@@ -845,8 +845,8 @@ export const en: Translations = {
       "New tasks inherit this as their workspace default; each task can still override it in the create dialog.",
     saving: "Saving…",
     commentHint:
-      "Comments reach the worker on its next run or kanban_show() — no need to block the task first.",
+      "Comments reach the worker on its next run or show_kanban() — no need to block the task first.",
     commentHintTitle:
-      "Comments are the channel for talking to a task's worker. They land on the thread immediately — no need to block the task first. A running worker picks the thread up on its next kanban_show() or respawn; blocking is only for when you want the worker to STOP and wait for your input.",
+      "Comments are the channel for talking to a task's worker. They land on the thread immediately — no need to block the task first. A running worker picks the thread up on its next show_kanban() or respawn; blocking is only for when you want the worker to STOP and wait for your input.",
   },
 };

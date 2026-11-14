@@ -124,7 +124,7 @@ class TestCodingSelection:
         for t in ("read_file", "write_file", "patch", "search_files", "terminal", "todo"):
             assert t in tools
         # …and the noise is gone.
-        for t in ("send_message", "text_to_speech", "image_generate", "computer_use"):
+        for t in ("send_message", "text_to_speech", "generate_image", "use_computer"):
             assert t not in tools
 
 

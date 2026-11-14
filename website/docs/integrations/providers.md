@@ -810,7 +810,7 @@ hermes model
 This saves the endpoint to `config.yaml` so it persists across sessions.
 
 :::caution `--jinja` is required for tool calling
-Without `--jinja`, llama-server ignores the `tools` parameter entirely. The model will try to call tools by writing JSON in its response text, but Hermes won't recognize it as a tool call — you'll see raw JSON like `{"name": "web_search", ...}` printed as a message instead of an actual search.
+Without `--jinja`, llama-server ignores the `tools` parameter entirely. The model will try to call tools by writing JSON in its response text, but Hermes won't recognize it as a tool call — you'll see raw JSON like `{"name": "search_web", ...}` printed as a message instead of an actual search.
 
 Native tool calling support (best performance): Llama 3.x, Qwen 2.5 (including Coder), Hermes 2/3, Mistral, DeepSeek, Functionary. All other models use a generic handler that works but may be less efficient. See the [llama.cpp function calling docs](https://github.com/ggml-org/llama.cpp/blob/master/docs/function-calling.md) for the full list.
 
@@ -997,7 +997,7 @@ If you're running Hermes inside WSL2 and your model server on the Windows host, 
 
 #### Tool calls appear as text instead of executing
 
-The model outputs something like `{"name": "web_search", "arguments": {...}}` as a message instead of actually calling the tool.
+The model outputs something like `{"name": "search_web", "arguments": {...}}` as a message instead of actually calling the tool.
 
 **Cause:** Your server doesn't have tool calling enabled, or the model doesn't support it through the server's tool calling implementation.
 
@@ -1243,14 +1243,14 @@ extra_body:
 
 The `hermes model` → Custom Endpoint wizard now prompts for `api_mode` explicitly and persists your answer to `config.yaml`. URL-based auto-detection (e.g. `/anthropic` paths → `anthropic_messages`) still happens as a fallback when the field is left blank.
 
-**Native vision for custom-provider models.** If your custom endpoint serves a vision-capable model that isn't in models.dev, set `model.supports_vision: true` so Hermes routes attached images natively (as `image_url` parts) instead of pre-processing them through `vision_analyze`. Single knob — no need to also set `agent.image_input_mode: native`.
+**Native vision for custom-provider models.** If your custom endpoint serves a vision-capable model that isn't in models.dev, set `model.supports_vision: true` so Hermes routes attached images natively (as `image_url` parts) instead of pre-processing them through `analyze_vision`. Single knob — no need to also set `agent.image_input_mode: native`.
 
 ```yaml
 model:
   provider: custom
   base_url: http://localhost:8080/v1
   default: qwen3.6-35b-a3b
-  supports_vision: true   # send images natively; otherwise vision_analyze pre-describes them
+  supports_vision: true   # send images natively; otherwise analyze_vision pre-describes them
 ```
 
 The same key is honored on per-named-provider models (`custom_providers[*].models[*].supports_vision`) and accepts standard YAML booleans (`true/false/yes/no/on/off/1/0`).

@@ -790,7 +790,7 @@ export const en: Translations = {
       notInCatalog: "isn't in this provider's model list — calls may fall back to a backup.",
       tasks: {
         vision: { label: 'Vision', hint: 'Image analysis' },
-        web_extract: { label: 'Web extract', hint: 'Page summarization' },
+        extract_web: { label: 'Web extract', hint: 'Page summarization' },
         compression: { label: 'Compression', hint: 'Context compaction' },
         skills_hub: { label: 'Skills hub', hint: 'Skill search' },
         approval: { label: 'Approval', hint: 'Smart auto-approve' },
@@ -2577,10 +2577,10 @@ export const en: Translations = {
         runningTool: action => `Running ${action.toLowerCase()}`
       },
       titles: {
-        browser_click: { done: 'Clicked page element', pending: 'Clicking page element', pendingAction: 'Clicking' },
+        click_browser: { done: 'Clicked page element', pending: 'Clicking page element', pendingAction: 'Clicking' },
         browser_fill: { done: 'Filled form field', pending: 'Filling form field', pendingAction: 'Filling' },
-        browser_navigate: { done: 'Opened page', pending: 'Opening page', pendingAction: 'Opening' },
-        browser_snapshot: {
+        navigate_browser: { done: 'Opened page', pending: 'Opening page', pendingAction: 'Opening' },
+        snapshot_browser: {
           done: 'Captured page snapshot',
           pending: 'Capturing page snapshot',
           pendingAction: 'Capturing'
@@ -2590,12 +2590,12 @@ export const en: Translations = {
           pending: 'Capturing screenshot',
           pendingAction: 'Capturing'
         },
-        browser_type: { done: 'Typed on page', pending: 'Typing on page', pendingAction: 'Typing' },
+        type_browser: { done: 'Typed on page', pending: 'Typing on page', pendingAction: 'Typing' },
         clarify: { done: 'Asked a question', pending: 'Asking a question', pendingAction: 'Asking' },
         cronjob: { done: 'Cron job', pending: 'Scheduling cron job', pendingAction: 'Scheduling' },
         edit_file: { done: 'Edited file', pending: 'Editing file', pendingAction: 'Editing' },
         execute_code: { done: 'Ran code', pending: 'Scripting', pendingAction: 'Scripting' },
-        image_generate: { done: 'Generated image', pending: 'Generating image', pendingAction: 'Generating' },
+        generate_image: { done: 'Generated image', pending: 'Generating image', pendingAction: 'Generating' },
         list_files: { done: 'Listed files', pending: 'Listing files', pendingAction: 'Listing' },
         patch: { done: 'Patched file', pending: 'Patching file', pendingAction: 'Patching' },
         read_file: { done: 'Read file', pending: 'Reading file', pendingAction: 'Reading' },
@@ -2607,9 +2607,9 @@ export const en: Translations = {
         },
         terminal: { done: 'Ran command', pending: 'Running command', pendingAction: 'Running' },
         todo: { done: 'Updated todos', pending: 'Updating todos', pendingAction: 'Updating' },
-        vision_analyze: { done: 'Analyzed image', pending: 'Analyzing image', pendingAction: 'Analyzing' },
-        web_extract: { done: 'Read webpage', pending: 'Reading webpage', pendingAction: 'Reading' },
-        web_search: { done: 'Searched web', pending: 'Searching web', pendingAction: 'Searching' },
+        analyze_vision: { done: 'Analyzed image', pending: 'Analyzing image', pendingAction: 'Analyzing' },
+        extract_web: { done: 'Read webpage', pending: 'Reading webpage', pendingAction: 'Reading' },
+        search_web: { done: 'Searched web', pending: 'Searching web', pendingAction: 'Searching' },
         write_file: { done: 'Edited file', pending: 'Editing file', pendingAction: 'Editing' }
       }
     }

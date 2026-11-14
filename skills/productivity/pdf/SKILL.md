@@ -167,7 +167,7 @@ Read [forms.md](forms.md) first — it distinguishes fillable (AcroForm) PDFs fr
 
 1. Open the output with `PdfReader` and assert the expected page count.
 2. Re-extract text from the output (`pdftotext` or pdfplumber) and confirm the content you added is present.
-3. For anything visual (watermarks, filled forms, created reports): `pdftoppm -jpeg -r 100 output.pdf page` and inspect the images with `vision_analyze`.
+3. For anything visual (watermarks, filled forms, created reports): `pdftoppm -jpeg -r 100 output.pdf page` and inspect the images with `analyze_vision`.
 
 ## Related skills
 

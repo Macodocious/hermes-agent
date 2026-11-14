@@ -33,7 +33,7 @@ const ChainToolFallback: FC<ToolCallMessagePartProps> = props => {
     return null
   }
 
-  if (props.toolName === 'image_generate') {
+  if (props.toolName === 'generate_image') {
     return <ImageGenerateTool {...props} />
   }
 

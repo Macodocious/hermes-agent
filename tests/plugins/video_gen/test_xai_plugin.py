@@ -90,7 +90,7 @@ def test_xai_generate_requires_xai_key(monkeypatch):
 def test_xai_available_with_oauth_only(monkeypatch):
     """The plugin must honour xAI Grok OAuth credentials, not just
     XAI_API_KEY. Otherwise the agent's tool-availability check filters
-    ``video_generate`` out of the toolbelt and the agent silently falls
+    ``generate_video`` out of the toolbelt and the agent silently falls
     back to whatever skill advertises video generation (e.g. comfyui).
     """
     import plugins.video_gen.xai as xai_plugin

@@ -464,7 +464,7 @@ class FirecrawlWebSearchProvider(WebSearchProvider):
             blocked = check_website_access(url)
             if blocked:
                 logger.info(
-                    "Blocked web_extract for %s by rule %s",
+                    "Blocked extract_web for %s by rule %s",
                     blocked["host"],
                     blocked["rule"],
                 )
@@ -503,7 +503,7 @@ class FirecrawlWebSearchProvider(WebSearchProvider):
                             "content": "",
                             "error": (
                                 "Scrape timed out after 60s — page may be too large "
-                                "or unresponsive. Try browser_navigate instead."
+                                "or unresponsive. Try navigate_browser instead."
                             ),
                         }
                     )
@@ -529,7 +529,7 @@ class FirecrawlWebSearchProvider(WebSearchProvider):
                 # Re-check SSRF safety after any redirect reported by Firecrawl.
                 if not is_safe_url(final_url):
                     logger.info(
-                        "Blocked redirected web_extract for unsafe final URL: %s",
+                        "Blocked redirected extract_web for unsafe final URL: %s",
                         final_url,
                     )
                     results.append(
@@ -550,7 +550,7 @@ class FirecrawlWebSearchProvider(WebSearchProvider):
                 final_blocked = check_website_access(final_url)
                 if final_blocked:
                     logger.info(
-                        "Blocked redirected web_extract for %s by rule %s",
+                        "Blocked redirected extract_web for %s by rule %s",
                         final_blocked["host"],
                         final_blocked["rule"],
                     )

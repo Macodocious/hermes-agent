@@ -160,21 +160,21 @@ class TestModuleSurface:
         codex runtime keep access to them."""
         from agent.transports.hermes_tools_mcp_server import EXPOSED_TOOLS
         for required in (
-            "web_search",
-            "web_extract",
-            "browser_navigate",
-            "vision_analyze",
-            "image_generate",
-            "skill_view",
+            "search_web",
+            "extract_web",
+            "navigate_browser",
+            "analyze_vision",
+            "generate_image",
+            "view_skill",
         ):
             assert required in EXPOSED_TOOLS, f"missing {required!r}"
 
     def test_agent_loop_tools_not_exposed(self):
-        """delegate_task / memory / session_search / todo require the
+        """delegate_task / memory / search_session / todo require the
         running AIAgent context to dispatch, so a stateless MCP callback
         can't drive them. They must NOT be in EXPOSED_TOOLS."""
         from agent.transports.hermes_tools_mcp_server import EXPOSED_TOOLS
-        for agent_loop_tool in ("delegate_task", "memory", "session_search", "todo"):
+        for agent_loop_tool in ("delegate_task", "memory", "search_session", "todo"):
             assert agent_loop_tool not in EXPOSED_TOOLS, (
                 f"{agent_loop_tool!r} requires the agent loop context "
                 "and can't be reached through a stateless MCP callback"
@@ -190,10 +190,10 @@ class TestModuleSurface:
         # Worker handoff tools — every dispatched worker uses at least
         # one of {complete, block, comment} to close out its task.
         for worker_tool in (
-            "kanban_complete",
-            "kanban_block",
-            "kanban_comment",
-            "kanban_heartbeat",
+            "complete_kanban",
+            "block_kanban",
+            "comment_kanban",
+            "heartbeat_kanban",
         ):
             assert worker_tool in EXPOSED_TOOLS, (
                 f"{worker_tool!r} missing from codex callback — kanban "
@@ -206,11 +206,11 @@ class TestModuleSurface:
         codex_app_server can do its job."""
         from agent.transports.hermes_tools_mcp_server import EXPOSED_TOOLS
         for orch_tool in (
-            "kanban_create",
-            "kanban_show",
-            "kanban_list",
-            "kanban_unblock",
-            "kanban_link",
+            "create_kanban",
+            "show_kanban",
+            "list_kanban",
+            "unblock_kanban",
+            "link_kanban",
         ):
             assert orch_tool in EXPOSED_TOOLS, (
                 f"{orch_tool!r} missing from codex callback"

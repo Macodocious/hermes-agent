@@ -7,8 +7,8 @@ Skills are organized as directories containing a SKILL.md file (the main instruc
 and optional supporting files like references, templates, and examples.
 
 Inspired by Anthropic's Claude Skills system with progressive disclosure architecture:
-- Metadata (name ≤64 chars, description ≤1024 chars) - shown in skills_list
-- Full Instructions - loaded via skill_view when needed
+- Metadata (name ≤64 chars, description ≤1024 chars) - shown in list_skills
+- Full Instructions - loaded via view_skill when needed
 - Linked Files (references, templates) - loaded on demand
 
 Directory Structure:
@@ -50,20 +50,20 @@ SKILL.md Format (YAML Frontmatter, agentskills.io compatible):
     Full instructions and content here...
 
 Available tools:
-- skills_list: List skills with metadata (progressive disclosure tier 1)
-- skill_view: Load full skill content (progressive disclosure tier 2-3)
+- list_skills: List skills with metadata (progressive disclosure tier 1)
+- view_skill: Load full skill content (progressive disclosure tier 2-3)
 
 Usage:
-    from tools.skills_tool import skills_list, skill_view, check_skills_requirements
+    from tools.skills_tool import list_skills, view_skill, check_skills_requirements
 
     # List all skills (returns metadata only - token efficient)
-    result = skills_list()
+    result = list_skills()
 
     # View a skill's main content (loads full instructions)
-    content = skill_view("axolotl")
+    content = view_skill("axolotl")
 
     # View a reference file within a skill (loads linked file)
-    content = skill_view("axolotl", "references/dataset-formats.md")
+    content = view_skill("axolotl", "references/dataset-formats.md")
 """
 
 import json
@@ -97,7 +97,7 @@ logger = logging.getLogger(__name__)
 #   - a short TTL bounds staleness from in-place SKILL.md edits, which
 #     bump only the file's mtime, invisible to any directory signature.
 # skip_disabled True/False are cached separately.
-_SKILLS_CACHE: dict = {}          # {cache_key: (signature, timestamp, skills_list)}
+_SKILLS_CACHE: dict = {}          # {cache_key: (signature, timestamp, list_skills)}
 _SKILLS_CACHE_TTL_SECONDS = 30.0
 _SKILLS_CACHE_KEY_DISABLED = "with_disabled"
 _SKILLS_CACHE_KEY_FILTERED = "filtered"
@@ -782,11 +782,11 @@ def _sort_skills(skills: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return sorted(skills, key=lambda s: (s.get("category") or "", s["name"]))
 
 
-def skills_list(category: str = None, task_id: str = None) -> str:
+def list_skills(category: str = None, task_id: str = None) -> str:
     """
     List all available skills (progressive disclosure tier 1 - minimal metadata).
 
-    Returns only name + description to minimize token usage. Use skill_view() to
+    Returns only name + description to minimize token usage. Use view_skill() to
     load full content, tags, related files, etc.
 
     Args:
@@ -842,7 +842,7 @@ def skills_list(category: str = None, task_id: str = None) -> str:
                 "skills": all_skills,
                 "categories": categories,
                 "count": len(all_skills),
-                "hint": "Use skill_view(name) to see full content, tags, and linked files",
+                "hint": "Use view_skill(name) to see full content, tags, and linked files",
             },
             ensure_ascii=False,
         )
@@ -958,7 +958,7 @@ def _serve_plugin_skill(
     )
 
 
-def skill_view(
+def view_skill(
     name: str,
     file_path: str = None,
     task_id: str = None,
@@ -1154,8 +1154,8 @@ def skill_view(
 
             # Strategy 2: recursive by directory name (catches nested skills
             # like "foundations/runtime/explore-codebase" called by bare name),
-            # plus frontmatter `name:` lookup. `skills_list()` exposes the
-            # frontmatter name, so `skill_view(name)` must accept it too even
+            # plus frontmatter `name:` lookup. `list_skills()` exposes the
+            # frontmatter name, so `view_skill(name)` must accept it too even
             # when the on-disk directory is a shorter category/alias.
             for found_skill_md in iter_skill_index_files(search_dir, "SKILL.md"):
                 if found_skill_md.parent.name == name:
@@ -1171,7 +1171,7 @@ def skill_view(
 
             # Strategy 3: legacy flat <name>.md files anywhere under the dir.
             # Exclude skill support docs: references/templates/assets/scripts
-            # are loaded through skill_view(skill, file_path=...) and must not
+            # are loaded through view_skill(skill, file_path=...) and must not
             # shadow or collide with real skills that share the same basename.
             for found_md in search_dir.rglob(f"{name}.md"):
                 if found_md.name != "SKILL.md" and not _is_skill_support_path(
@@ -1213,7 +1213,7 @@ def skill_view(
                     "success": False,
                     "error": f"Skill '{name}' not found.",
                     "available_skills": available,
-                    "hint": "Use skills_list to see all available skills",
+                    "hint": "Use list_skills to see all available skills",
                 },
                 ensure_ascii=False,
             )
@@ -1571,7 +1571,7 @@ def skill_view(
             "path": rel_path,
             "skill_dir": str(skill_dir) if skill_dir else None,
             "linked_files": linked_files if linked_files else None,
-            "usage_hint": "To view linked files, call skill_view(name, file_path) where file_path is e.g. 'references/api.md' or 'assets/config.yaml'"
+            "usage_hint": "To view linked files, call view_skill(name, file_path) where file_path is e.g. 'references/api.md' or 'assets/config.yaml'"
             if linked_files
             else None,
             "required_environment_variables": required_env_vars,
@@ -1641,7 +1641,7 @@ if __name__ == "__main__":
 
     # Test listing skills
     print("\n📋 Listing all skills:")
-    result = json.loads(skills_list())
+    result = json.loads(list_skills())
     if result["success"]:
         print(
             f"Found {result['count']} skills in {len(result.get('categories', []))} categories"
@@ -1656,7 +1656,7 @@ if __name__ == "__main__":
 
     # Test viewing a skill
     print("\n📖 Viewing skill 'axolotl':")
-    result = json.loads(skill_view("axolotl"))
+    result = json.loads(view_skill("axolotl"))
     if result["success"]:
         print(f"Name: {result['name']}")
         print(f"Description: {result.get('description', 'N/A')[:100]}...")
@@ -1668,7 +1668,7 @@ if __name__ == "__main__":
 
     # Test viewing a reference file
     print("\n📄 Viewing reference file 'axolotl/references/dataset-formats.md':")
-    result = json.loads(skill_view("axolotl", "references/dataset-formats.md"))
+    result = json.loads(view_skill("axolotl", "references/dataset-formats.md"))
     if result["success"]:
         print(f"File: {result['file']}")
         print(f"Content length: {len(result['content'])} chars")
@@ -1682,8 +1682,8 @@ if __name__ == "__main__":
 # ---------------------------------------------------------------------------
 
 SKILLS_LIST_SCHEMA = {
-    "name": "skills_list",
-    "description": "List available skills (name + description). Use skill_view(name) to load full content.",
+    "name": "list_skills",
+    "description": "List available skills (name + description). Use view_skill(name) to load full content.",
     "parameters": {
         "type": "object",
         "properties": {
@@ -1697,14 +1697,14 @@ SKILLS_LIST_SCHEMA = {
 }
 
 SKILL_VIEW_SCHEMA = {
-    "name": "skill_view",
+    "name": "view_skill",
     "description": "Skills allow for loading information about specific tasks and workflows, as well as scripts and templates. Load a skill's full content or access its linked files (references, templates, scripts). First call returns SKILL.md content plus a 'linked_files' dict showing available references/templates/scripts. To access those, call again with file_path parameter.",
     "parameters": {
         "type": "object",
         "properties": {
             "name": {
                 "type": "string",
-                "description": "The skill name (use skills_list to see available skills). For plugin-provided skills, use the qualified form 'plugin:skill' (e.g. 'superpowers:writing-plans').",
+                "description": "The skill name (use list_skills to see available skills). For plugin-provided skills, use the qualified form 'plugin:skill' (e.g. 'superpowers:writing-plans').",
             },
             "file_path": {
                 "type": "string",
@@ -1716,20 +1716,20 @@ SKILL_VIEW_SCHEMA = {
 }
 
 registry.register(
-    name="skills_list",
+    name="list_skills",
     toolset="skills",
     schema=SKILLS_LIST_SCHEMA,
-    handler=lambda args, **kw: skills_list(
+    handler=lambda args, **kw: list_skills(
         category=args.get("category"), task_id=kw.get("task_id")
     ),
     check_fn=check_skills_requirements,
     emoji="📚",
 )
 def _skill_view_with_bump(args, **kw):
-    """Invoke skill_view, then bump view_count on success. Best-effort: a
+    """Invoke view_skill, then bump view_count on success. Best-effort: a
     telemetry failure never breaks the tool call."""
     name = args.get("name", "")
-    result = skill_view(
+    result = view_skill(
         name, file_path=args.get("file_path"), task_id=kw.get("task_id")
     )
     try:
@@ -1741,7 +1741,7 @@ def _skill_view_with_bump(args, **kw):
             if resolved:
                 from tools.skill_usage import bump_use, bump_view
                 bump_view(str(resolved))
-                # A skill_view tool call is the agent actively loading the skill
+                # A view_skill tool call is the agent actively loading the skill
                 # to act on it — that counts as use, not just a browse/view.
                 # Curator's stale timer keys off last_used_at (see agent/curator.py).
                 bump_use(str(resolved))
@@ -1751,7 +1751,7 @@ def _skill_view_with_bump(args, **kw):
 
 
 registry.register(
-    name="skill_view",
+    name="view_skill",
     toolset="skills",
     schema=SKILL_VIEW_SCHEMA,
     handler=_skill_view_with_bump,

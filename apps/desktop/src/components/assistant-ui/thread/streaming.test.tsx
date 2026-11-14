@@ -225,7 +225,7 @@ function assistantImageMessage(running = false): ThreadMessage {
       {
         type: 'tool-call',
         toolCallId: 'image-1',
-        toolName: 'image_generate',
+        toolName: 'generate_image',
         args: { prompt: 'draw a cat' },
         argsText: JSON.stringify({ prompt: 'draw a cat' }),
         ...(running ? {} : { result: { image: 'https://cdn.example/cat.png', success: true } })

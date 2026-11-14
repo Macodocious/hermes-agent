@@ -9,7 +9,7 @@ class TestExpandParentToolsets(unittest.TestCase):
     """Verify _expand_parent_toolsets recognises individual toolsets within composites."""
 
     def test_composite_hermes_cli_expands_web(self):
-        """hermes-cli includes web_search/web_extract → 'web' should be in expansion."""
+        """hermes-cli includes search_web/extract_web → 'web' should be in expansion."""
         expanded = _expand_parent_toolsets({"hermes-cli"})
         self.assertIn("web", expanded)
         self.assertIn("terminal", expanded)

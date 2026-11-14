@@ -1191,7 +1191,7 @@ def read_file_tool(path: str, offset: int = 1, limit: int = 500, task_id: str = 
             return json.dumps({
                 "error": (
                     f"Cannot read binary file '{path}' ({_ext}). "
-                    "Use vision_analyze for images, or terminal to inspect binary files."
+                    "Use analyze_vision for images, or terminal to inspect binary files."
                 ),
             })
 
@@ -1946,7 +1946,7 @@ def _check_file_reqs():
 
 READ_FILE_SCHEMA = {
     "name": "read_file",
-    "description": "Read a text file with line numbers and pagination. Use this instead of cat/head/tail in terminal. Output format: 'LINE_NUM|CONTENT'. Suggests similar filenames if not found. Use offset and limit for large files. Reads exceeding ~100K characters are truncated on a line boundary and return a next_offset; continue with offset to read the rest. Jupyter notebooks (.ipynb), Word documents (.docx), and Excel workbooks (.xlsx) are auto-extracted to readable text. NOTE: Cannot read images or other binary files — use vision_analyze for images.",
+    "description": "Read a text file with line numbers and pagination. Use this instead of cat/head/tail in terminal. Output format: 'LINE_NUM|CONTENT'. Suggests similar filenames if not found. Use offset and limit for large files. Reads exceeding ~100K characters are truncated on a line boundary and return a next_offset; continue with offset to read the rest. Jupyter notebooks (.ipynb), Word documents (.docx), and Excel workbooks (.xlsx) are auto-extracted to readable text. NOTE: Cannot read images or other binary files — use analyze_vision for images.",
     "parameters": {
         "type": "object",
         "properties": {

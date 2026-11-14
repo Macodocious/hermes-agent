@@ -35,7 +35,7 @@ def _make_tool_defs():
         {
             "type": "function",
             "function": {
-                "name": "web_search",
+                "name": "search_web",
                 "description": "search",
                 "parameters": {"type": "object", "properties": {}},
             },

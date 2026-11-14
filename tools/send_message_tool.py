@@ -1839,7 +1839,7 @@ def _check_send_message():
     ``HERMES_HOME`` which has no ``gateway.pid``, so the gateway-running check
     would fail even though the parent gateway is alive. Honoring the env var
     lets workers call ``send_message`` to deliver rich content directly to the
-    originating chat (paired with ``kanban_complete`` for the short notifier
+    originating chat (paired with ``complete_kanban`` for the short notifier
     summary), which is the canonical pattern for any worker that needs to
     reply with more than the ~200-char first-line truncation the kanban
     notifier applies.

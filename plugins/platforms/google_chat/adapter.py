@@ -2266,7 +2266,7 @@ class GoogleChatAdapter(BasePlatformAdapter):
         ``GatewayStreamConsumer`` and ``send_progress_messages`` both gate
         on this method being overridden (see gateway/run.py:10199 and
         gateway/stream_consumer.py). Without it, Google Chat shows no
-        tool activity (no "🔍 web_search…", no progressive token edits).
+        tool activity (no "🔍 search_web…", no progressive token edits).
 
         ``message_id`` is the Google Chat resource name
         ``spaces/X/messages/Y``. ``finalize`` is unused here — Google

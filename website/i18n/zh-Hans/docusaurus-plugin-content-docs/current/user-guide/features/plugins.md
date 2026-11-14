@@ -102,7 +102,7 @@ def register(ctx):
 | 添加 CLI 命令 | `ctx.register_cli_command(name, help, setup_fn, handler_fn)` — 添加 `hermes <plugin> <subcommand>` |
 | 注入消息 | `ctx.inject_message(content, role="user")` — 参见 [注入消息](#injecting-messages) |
 | 附带数据文件 | `Path(__file__).parent / "data" / "file.yaml"` |
-| 打包 skill | `ctx.register_skill(name, path)` — 命名空间为 `plugin:skill`，通过 `skill_view("plugin:skill")` 加载 |
+| 打包 skill | `ctx.register_skill(name, path)` — 命名空间为 `plugin:skill`，通过 `view_skill("plugin:skill")` 加载 |
 | 按环境变量控制 | 在 plugin.yaml 中设置 `requires_env: [API_KEY]` — 在 `hermes plugins install` 时提示输入 |
 | 通过 pip 分发 | `[project.entry-points."hermes_agent.plugins"]` |
 | 注册 gateway 平台（Discord、Telegram、IRC 等） | `ctx.register_platform(name, label, adapter_factory, check_fn, ...)` — 参见 [Adding Platform Adapters](/developer-guide/adding-platform-adapters) |

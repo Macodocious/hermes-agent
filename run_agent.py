@@ -244,7 +244,7 @@ _EPHEMERAL_SCAFFOLDING_FLAGS = (
     # scaffolding — the candidate is not delivered history, so neither may
     # be persisted.
     "_pre_delivery_synthetic",
-    # kanban worker stop-guard: narrated exit without kanban_complete/block
+    # kanban worker stop-guard: narrated exit without complete_kanban/block
     "_kanban_stop_synthetic",
 )
 
@@ -588,12 +588,12 @@ class AIAgent:
         Most frontends pass ``session_db`` into ``AIAgent`` explicitly, but recall
         is important enough that a missing constructor argument should degrade by
         opening the default state DB instead of making the advertised
-        ``session_search`` tool unusable.
+        ``search_session`` tool unusable.
         """
         # Persistence-isolated forks (background review) must not lazily open the
         # canonical state DB: doing so would re-arm _flush_messages_to_session_db
         # to write the fork's harness turn into the user's real session. Recall
-        # degrades to None for them (they don't use session_search anyway).
+        # degrades to None for them (they don't use search_session anyway).
         if getattr(self, "_persist_disabled", False):
             return None
         if self._session_db is not None:
@@ -5383,7 +5383,7 @@ class AIAgent:
         note = f"[The {role_label} attached an image. Here's what it contains:\n{description}]"
         if vision_source and not str(image_url or "").startswith("data:"):
             note += (
-                f"\n[If you need a closer look, use vision_analyze with image_url: {vision_source}]"
+                f"\n[If you need a closer look, use analyze_vision with image_url: {vision_source}]"
             )
 
         self._anthropic_image_fallback_cache[cache_key] = note
@@ -5509,7 +5509,7 @@ class AIAgent:
             return api_messages
 
         # Non-vision Anthropic model (rare today, but keep the fallback for
-        # compat): replace each image part with a vision_analyze text note.
+        # compat): replace each image part with a analyze_vision text note.
         transformed = copy.deepcopy(api_messages)
         for msg in transformed:
             if not isinstance(msg, dict):
@@ -5526,7 +5526,7 @@ class AIAgent:
         Runs on the chat.completions / codex_responses paths. Vision-capable
         models pass through unchanged (provider and any downstream translator
         handle the image parts natively). Non-vision models get each image
-        replaced by a cached vision_analyze text description so the turn
+        replaced by a cached analyze_vision text description so the turn
         doesn't fail with "model does not support image input".
         """
         if not any(
@@ -5595,10 +5595,10 @@ class AIAgent:
             return content
 
         summary = _multimodal_text_summary(result)
-        if tool_name == "computer_use":
+        if tool_name == "use_computer":
             return json.dumps({
                 "error": (
-                    "computer_use returned screenshot/image content, but the active "
+                    "use_computer returned screenshot/image content, but the active "
                     "model/provider does not support image input. Switch to a "
                     "vision-capable model for desktop computer use, or use browser "
                     "tools for browser tasks."
@@ -6409,7 +6409,7 @@ class AIAgent:
         )
         # Publish the conversation id for ambient Nous Portal tagging. Every
         # LLM call made inside this turn — main loop, compression, vision,
-        # web_extract, session_search, MoA slots, background-review forks
+        # extract_web, search_session, MoA slots, background-review forks
         # (which copy this Context into their thread) — inherits the
         # ``conversation=<root>`` tag with zero per-call-site plumbing.
         token = set_conversation_context(self._conversation_root_id())

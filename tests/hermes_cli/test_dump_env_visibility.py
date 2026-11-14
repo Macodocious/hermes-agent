@@ -5,7 +5,7 @@ managed backends (launchd / systemd / the desktop-spawned ``serve`` process)
 load credentials from ``~/.hermes/.env``, not the login shell. A key exported
 in the shell but absent from ``.env`` is invisible to the backend, yet the dump
 used to print a bare "set", sending support down a phantom "the key is
-configured" path (the real cause behind gated tools like ``web_search`` going
+configured" path (the real cause behind gated tools like ``search_web`` going
 missing on Desktop). The dump now flags that mismatch.
 """
 

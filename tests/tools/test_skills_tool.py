@@ -15,8 +15,8 @@ from tools.skills_tool import (
     _get_category_from_path,
     _find_all_skills,
     skill_matches_platform,
-    skills_list,
-    skill_view,
+    list_skills,
+    view_skill,
     MAX_DESCRIPTION_LENGTH,
 )
 
@@ -320,7 +320,7 @@ class TestFindAllSkills:
 
 
 # ---------------------------------------------------------------------------
-# skills_list
+# list_skills
 # ---------------------------------------------------------------------------
 
 
@@ -328,7 +328,7 @@ class TestSkillsList:
     def test_empty_creates_directory(self, tmp_path):
         skills_dir = tmp_path / "skills"
         with patch("tools.skills_tool.SKILLS_DIR", skills_dir):
-            raw = skills_list()
+            raw = list_skills()
         result = json.loads(raw)
         assert result["success"] is True
         assert result["skills"] == []
@@ -338,7 +338,7 @@ class TestSkillsList:
         with patch("tools.skills_tool.SKILLS_DIR", tmp_path):
             _make_skill(tmp_path, "alpha")
             _make_skill(tmp_path, "beta")
-            raw = skills_list()
+            raw = list_skills()
         result = json.loads(raw)
         assert result["count"] == 2
 
@@ -346,7 +346,7 @@ class TestSkillsList:
         with patch("tools.skills_tool.SKILLS_DIR", tmp_path):
             _make_skill(tmp_path, "skill-a", category="devops")
             _make_skill(tmp_path, "skill-b", category="mlops")
-            raw = skills_list(category="devops")
+            raw = list_skills(category="devops")
         result = json.loads(raw)
         assert result["count"] == 1
         assert result["skills"][0]["name"] == "skill-a"
@@ -360,7 +360,7 @@ class TestSkillsList:
         _make_skill(external_category.parent, "knowledge-brain", category="linked")
 
         with patch("tools.skills_tool.SKILLS_DIR", skills_root):
-            raw = skills_list(category="linked")
+            raw = list_skills(category="linked")
 
         result = json.loads(raw)
         assert result["success"] is True
@@ -370,7 +370,7 @@ class TestSkillsList:
 
 
 # ---------------------------------------------------------------------------
-# skill_view
+# view_skill
 # ---------------------------------------------------------------------------
 
 
@@ -378,7 +378,7 @@ class TestSkillView:
     def test_view_existing_skill(self, tmp_path):
         with patch("tools.skills_tool.SKILLS_DIR", tmp_path):
             _make_skill(tmp_path, "my-skill")
-            raw = skill_view("my-skill")
+            raw = view_skill("my-skill")
         result = json.loads(raw)
         assert result["success"] is True
         assert result["name"] == "my-skill"
@@ -386,8 +386,8 @@ class TestSkillView:
 
     def test_view_skill_by_frontmatter_name_when_dir_differs(self, tmp_path):
         # The on-disk directory ("alias-dir") differs from the skill's
-        # frontmatter name ("real-skill-name"). skills_list() exposes the
-        # frontmatter name, so skill_view(name) must resolve it too.
+        # frontmatter name ("real-skill-name"). list_skills() exposes the
+        # frontmatter name, so view_skill(name) must resolve it too.
         skill_dir = tmp_path / "alias-dir"
         skill_dir.mkdir(parents=True, exist_ok=True)
         (skill_dir / "SKILL.md").write_text(
@@ -399,7 +399,7 @@ class TestSkillView:
             "Step 1: Do the thing.\n"
         )
         with patch("tools.skills_tool.SKILLS_DIR", tmp_path):
-            raw = skill_view("real-skill-name")
+            raw = view_skill("real-skill-name")
         result = json.loads(raw)
         assert result["success"] is True
         assert "Step 1" in result["content"]
@@ -417,7 +417,7 @@ class TestSkillView:
                 "templated",
                 body="Run ${HERMES_SKILL_DIR}/scripts/do.sh in ${HERMES_SESSION_ID}",
             )
-            raw = skill_view("templated", task_id="session-123")
+            raw = view_skill("templated", task_id="session-123")
 
         result = json.loads(raw)
         assert result["success"] is True
@@ -441,7 +441,7 @@ class TestSkillView:
                 "dynamic",
                 body="Current date: !`printf 2026-04-24`",
             )
-            raw = skill_view("dynamic")
+            raw = view_skill("dynamic")
 
         result = json.loads(raw)
         assert result["success"] is True
@@ -461,7 +461,7 @@ class TestSkillView:
                 "static",
                 body="Current date: !`printf SHOULD_NOT_RUN`",
             )
-            raw = skill_view("static")
+            raw = view_skill("static")
 
         result = json.loads(raw)
         assert result["success"] is True
@@ -471,7 +471,7 @@ class TestSkillView:
     def test_view_nonexistent_skill(self, tmp_path):
         with patch("tools.skills_tool.SKILLS_DIR", tmp_path):
             _make_skill(tmp_path, "other-skill")
-            raw = skill_view("nonexistent")
+            raw = view_skill("nonexistent")
         result = json.loads(raw)
         assert result["success"] is False
         assert "not found" in result["error"].lower()
@@ -483,7 +483,7 @@ class TestSkillView:
             refs_dir = skill_dir / "references"
             refs_dir.mkdir()
             (refs_dir / "api.md").write_text("# API Docs\nEndpoint info.")
-            raw = skill_view("my-skill", file_path="references/api.md")
+            raw = view_skill("my-skill", file_path="references/api.md")
         result = json.loads(raw)
         assert result["success"] is True
         assert "Endpoint info" in result["content"]
@@ -491,7 +491,7 @@ class TestSkillView:
     def test_view_nonexistent_file(self, tmp_path):
         with patch("tools.skills_tool.SKILLS_DIR", tmp_path):
             _make_skill(tmp_path, "my-skill")
-            raw = skill_view("my-skill", file_path="references/nope.md")
+            raw = view_skill("my-skill", file_path="references/nope.md")
         result = json.loads(raw)
         assert result["success"] is False
 
@@ -501,7 +501,7 @@ class TestSkillView:
             refs_dir = skill_dir / "references"
             refs_dir.mkdir()
             (refs_dir / "guide.md").write_text("guide content")
-            raw = skill_view("my-skill")
+            raw = view_skill("my-skill")
         result = json.loads(raw)
         assert result["linked_files"] is not None
         assert "references" in result["linked_files"]
@@ -513,19 +513,19 @@ class TestSkillView:
                 "tagged",
                 frontmatter_extra="metadata:\n  hermes:\n    tags: [fine-tuning, llm]\n",
             )
-            raw = skill_view("tagged")
+            raw = view_skill("tagged")
         result = json.loads(raw)
         assert "fine-tuning" in result["tags"]
         assert "llm" in result["tags"]
 
     def test_view_nonexistent_skills_dir(self, tmp_path):
         with patch("tools.skills_tool.SKILLS_DIR", tmp_path / "nope"):
-            raw = skill_view("anything")
+            raw = view_skill("anything")
         result = json.loads(raw)
         assert result["success"] is False
 
     def test_view_disabled_skill_blocked(self, tmp_path):
-        """Disabled skills should not be viewable via skill_view."""
+        """Disabled skills should not be viewable via view_skill."""
         with (
             patch("tools.skills_tool.SKILLS_DIR", tmp_path),
             patch(
@@ -534,7 +534,7 @@ class TestSkillView:
             ),
         ):
             _make_skill(tmp_path, "hidden-skill")
-            raw = skill_view("hidden-skill")
+            raw = view_skill("hidden-skill")
         result = json.loads(raw)
         assert result["success"] is False
         assert "disabled" in result["error"].lower()
@@ -549,7 +549,7 @@ class TestSkillView:
             ),
         ):
             _make_skill(tmp_path, "active-skill")
-            raw = skill_view("active-skill")
+            raw = view_skill("active-skill")
         result = json.loads(raw)
         assert result["success"] is True
 
@@ -562,7 +562,7 @@ class TestSkillView:
         _make_skill(external_category.parent, "knowledge-brain", category="linked")
 
         with patch("tools.skills_tool.SKILLS_DIR", skills_root):
-            raw = skill_view("knowledge-brain")
+            raw = view_skill("knowledge-brain")
 
         result = json.loads(raw)
         assert result["success"] is True
@@ -574,8 +574,8 @@ class TestSkillView:
             _make_skill(tmp_path, "alpha", category="a-cat")
             _make_skill(tmp_path, "beta", category="a-cat")
 
-            list_result = json.loads(skills_list())
-            view_result = json.loads(skill_view("missing-skill"))
+            list_result = json.loads(list_skills())
+            view_result = json.loads(view_skill("missing-skill"))
 
         assert view_result["success"] is False
         assert view_result["available_skills"] == [
@@ -623,7 +623,7 @@ class TestSkillViewSecureSetupOnLoad:
                     "    required_for: full functionality\n"
                 ),
             )
-            raw = skill_view("gif-search")
+            raw = view_skill("gif-search")
 
         result = json.loads(raw)
         assert result["success"] is True
@@ -670,7 +670,7 @@ class TestSkillViewSecureSetupOnLoad:
                     "    prompt: Tenor API key\n"
                 ),
             )
-            raw = skill_view("gif-search")
+            raw = view_skill("gif-search")
 
         result = json.loads(raw)
         assert result["success"] is True
@@ -894,7 +894,7 @@ class TestSkillViewPrerequisites:
                 "gated-skill",
                 frontmatter_extra="prerequisites:\n  env_vars: [MISSING_KEY_XYZ]\n",
             )
-            raw = skill_view("gated-skill")
+            raw = view_skill("gated-skill")
         result = json.loads(raw)
         assert result["success"] is True
         assert result["setup_needed"] is True
@@ -914,7 +914,7 @@ class TestSkillViewPrerequisites:
                 "ready-skill",
                 frontmatter_extra="prerequisites:\n  env_vars: [PRESENT_KEY]\n",
             )
-            raw = skill_view("ready-skill")
+            raw = view_skill("ready-skill")
         result = json.loads(raw)
         assert result["success"] is True
         assert result["setup_needed"] is False
@@ -935,7 +935,7 @@ class TestSkillViewPrerequisites:
 
             save_env_value("PERSISTED_REMOTE_KEY", "persisted-value")
             monkeypatch.delenv("PERSISTED_REMOTE_KEY", raising=False)
-            raw = skill_view("remote-ready")
+            raw = view_skill("remote-ready")
 
         result = json.loads(raw)
         assert result["success"] is True
@@ -946,7 +946,7 @@ class TestSkillViewPrerequisites:
     def test_no_setup_metadata_when_no_required_envs(self, tmp_path):
         with patch("tools.skills_tool.SKILLS_DIR", tmp_path):
             _make_skill(tmp_path, "plain-skill")
-            raw = skill_view("plain-skill")
+            raw = view_skill("plain-skill")
         result = json.loads(raw)
         assert result["success"] is True
         assert result["setup_needed"] is False
@@ -963,7 +963,7 @@ class TestSkillViewPrerequisites:
                 "backend-ready",
                 frontmatter_extra="prerequisites:\n  env_vars: [BACKEND_ONLY_KEY]\n",
             )
-            raw = skill_view("backend-ready")
+            raw = view_skill("backend-ready")
         result = json.loads(raw)
         assert result["success"] is True
         assert result["setup_needed"] is True
@@ -979,7 +979,7 @@ class TestSkillViewPrerequisites:
                 "shell-ready",
                 frontmatter_extra="prerequisites:\n  env_vars: [SHELL_ONLY_KEY]\n",
             )
-            raw = skill_view("shell-ready")
+            raw = view_skill("shell-ready")
 
         result = json.loads(raw)
         assert result["success"] is True
@@ -1025,7 +1025,7 @@ class TestSkillViewPrerequisites:
                     "    prompt: Tenor API key\n"
                 ),
             )
-            raw = skill_view("gif-search")
+            raw = view_skill("gif-search")
 
         result = json.loads(raw)
         assert result["success"] is True
@@ -1049,7 +1049,7 @@ class TestSkillViewPrerequisites:
                 return original_read_text(path_obj, *args, **kwargs)
 
             monkeypatch.setattr(Path, "read_text", fake_read_text)
-            raw = skill_view("broken-skill")
+            raw = view_skill("broken-skill")
 
         result = json.loads(raw)
         assert result["success"] is False
@@ -1078,7 +1078,7 @@ Do the legacy thing.
         )
 
         with patch("tools.skills_tool.SKILLS_DIR", tmp_path):
-            raw = skill_view("legacy-skill")
+            raw = view_skill("legacy-skill")
 
         result = json.loads(raw)
         assert result["success"] is True
@@ -1126,7 +1126,7 @@ Do the legacy thing.
             from hermes_cli.config import save_env_value
 
             save_env_value("TENOR_API_KEY", "")
-            raw = skill_view("gif-search")
+            raw = view_skill("gif-search")
 
         result = json.loads(raw)
         assert result["success"] is True
@@ -1136,12 +1136,12 @@ Do the legacy thing.
 
 
 class TestSkillViewCollisionDetection:
-    """Regression tests for skill_view name collision handling.
+    """Regression tests for view_skill name collision handling.
 
     When a skill name resolves to multiple paths across the local skills
-    dir and external_dirs, skill_view must refuse to guess. Silent
+    dir and external_dirs, view_skill must refuse to guess. Silent
     shadowing — where ``/skills`` shows the local version but
-    ``skill_view`` loads the external one — is the bug class this guards
+    ``view_skill`` loads the external one — is the bug class this guards
     against. Reproduces with `skills.external_dirs` registered in
     config.yaml and a same-name skill nested under a category locally.
 
@@ -1180,7 +1180,7 @@ class TestSkillViewCollisionDetection:
 
         p1, p2 = self._patch_dirs(local_dir, [external_dir])
         with p1, p2:
-            raw = skill_view("explore-codebase")
+            raw = view_skill("explore-codebase")
 
         result = json.loads(raw)
         assert result["success"] is False
@@ -1205,7 +1205,7 @@ class TestSkillViewCollisionDetection:
 
         p1, p2 = self._patch_dirs(local_dir, [external_dir])
         with p1, p2:
-            raw = skill_view("shared-name")
+            raw = view_skill("shared-name")
 
         result = json.loads(raw)
         assert result["success"] is False
@@ -1230,7 +1230,7 @@ class TestSkillViewCollisionDetection:
 
         p1, p2 = self._patch_dirs(local_dir, [external_dir])
         with p1, p2:
-            raw = skill_view("foundations/runtime/explore-codebase")
+            raw = view_skill("foundations/runtime/explore-codebase")
 
         result = json.loads(raw)
         assert result["success"] is True
@@ -1242,7 +1242,7 @@ class TestSkillViewCollisionDetection:
         A real-world regression had creative/sketch/SKILL.md become
         unloadable because another skill carried
         references/styles/sketch.md. Support files are loaded via
-        skill_view(skill, file_path=...), not as bare skill names.
+        view_skill(skill, file_path=...), not as bare skill names.
         """
         local_dir = tmp_path / "local"
         external_dir = tmp_path / "external"
@@ -1264,7 +1264,7 @@ class TestSkillViewCollisionDetection:
 
         p1, p2 = self._patch_dirs(local_dir, [external_dir])
         with p1, p2:
-            raw = skill_view("sketch")
+            raw = view_skill("sketch")
 
         result = json.loads(raw)
         assert result["success"] is True
@@ -1276,7 +1276,7 @@ class TestSkillViewCollisionDetection:
 
         Umbrella consolidations may preserve an old skill as
         references/old-skill-package/SKILL.md. That package must not appear in
-        skills_list/system prompts and must not resolve as skill_view("old-skill").
+        list_skills/system prompts and must not resolve as view_skill("old-skill").
         The package can still be opened explicitly through the umbrella's
         file_path progressive-disclosure channel.
         """
@@ -1301,9 +1301,9 @@ class TestSkillViewCollisionDetection:
         p1, p2 = self._patch_dirs(local_dir, [external_dir])
         with p1, p2:
             names = {skill["name"] for skill in _find_all_skills()}
-            old_raw = skill_view("old-skill")
-            direct_package_raw = skill_view("creative/umbrella/references/old-skill-package")
-            package_raw = skill_view(
+            old_raw = view_skill("old-skill")
+            direct_package_raw = view_skill("creative/umbrella/references/old-skill-package")
+            package_raw = view_skill(
                 "umbrella", file_path="references/old-skill-package/SKILL.md"
             )
 
@@ -1331,7 +1331,7 @@ class TestSkillViewCollisionDetection:
 
         p1, p2 = self._patch_dirs(local_dir, [external_dir])
         with p1, p2:
-            raw = skill_view("external-only")
+            raw = view_skill("external-only")
 
         result = json.loads(raw)
         assert result["success"] is True
@@ -1352,7 +1352,7 @@ class TestSkillViewCollisionDetection:
 
         p1, p2 = self._patch_dirs(local_dir, [ext_a, ext_b])
         with p1, p2:
-            raw = skill_view("pr")
+            raw = view_skill("pr")
 
         result = json.loads(raw)
         assert result["success"] is False
@@ -1376,7 +1376,7 @@ class TestSkillViewCollisionDetection:
 
         p1, p2 = self._patch_dirs(local_dir, [external_dir])
         with p1, p2:
-            raw = skill_view("my-skill")
+            raw = view_skill("my-skill")
 
         result = json.loads(raw)
         assert result["success"] is True

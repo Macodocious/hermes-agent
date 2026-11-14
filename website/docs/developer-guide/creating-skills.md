@@ -12,7 +12,7 @@ Skills are the preferred way to add new capabilities to Hermes Agent. They're ea
 
 Make it a **Skill** when:
 - The capability can be expressed as instructions + shell commands + existing tools
-- It wraps an external CLI or API that the agent can call via `terminal` or `web_extract`
+- It wraps an external CLI or API that the agent can call via `terminal` or `extract_web`
 - It doesn't need custom Python integration or API key management baked into the agent
 - Examples: arXiv search, git workflows, Docker management, PDF processing, email via CLI tools
 
@@ -58,9 +58,9 @@ metadata:
     tags: [Category, Subcategory, Keywords]
     related_skills: [other-skill-name]
     requires_toolsets: [web]            # Optional — only show when these toolsets are active
-    requires_tools: [web_search]        # Optional — only show when these tools are available
+    requires_tools: [search_web]        # Optional — only show when these tools are available
     fallback_for_toolsets: [browser]    # Optional — hide when these toolsets are active
-    fallback_for_tools: [browser_navigate]  # Optional — hide when these tools exist
+    fallback_for_tools: [navigate_browser]  # Optional — hide when these tools exist
     config:                              # Optional — config.yaml settings the skill needs
       - key: my.setting
         description: "What this setting controls"
@@ -108,7 +108,7 @@ platforms: [macos, linux]     # macOS and Linux
 platforms: [windows]          # Windows only
 ```
 
-When set, the skill is automatically hidden from the system prompt, `skills_list()`, and slash commands on incompatible platforms. If omitted or empty, the skill loads on all platforms (backward compatible).
+When set, the skill is automatically hidden from the system prompt, `list_skills()`, and slash commands on incompatible platforms. If omitted or empty, the skill loads on all platforms (backward compatible).
 
 ### Conditional Skill Activation
 
@@ -118,9 +118,9 @@ Skills can declare dependencies on specific tools or toolsets. This controls whe
 metadata:
   hermes:
     requires_toolsets: [web]           # Hide if the web toolset is NOT active
-    requires_tools: [web_search]       # Hide if web_search tool is NOT available
+    requires_tools: [search_web]       # Hide if search_web tool is NOT available
     fallback_for_toolsets: [browser]   # Hide if the browser toolset IS active
-    fallback_for_tools: [browser_navigate]  # Hide if browser_navigate IS available
+    fallback_for_tools: [navigate_browser]  # Hide if navigate_browser IS available
 ```
 
 | Field | Behavior |
@@ -130,13 +130,13 @@ metadata:
 | `fallback_for_toolsets` | Skill is **hidden** when ANY listed toolset **is** available |
 | `fallback_for_tools` | Skill is **hidden** when ANY listed tool **is** available |
 
-**Use case for `fallback_for_*`:** Create a skill that serves as a workaround when a primary tool isn't available. For example, a `duckduckgo-search` skill with `fallback_for_tools: [web_search]` only shows when the web search tool (which requires an API key) is not configured.
+**Use case for `fallback_for_*`:** Create a skill that serves as a workaround when a primary tool isn't available. For example, a `duckduckgo-search` skill with `fallback_for_tools: [search_web]` only shows when the web search tool (which requires an API key) is not configured.
 
 **Use case for `requires_*`:** Create a skill that only makes sense when certain tools are present. For example, a web scraping workflow skill with `requires_toolsets: [web]` won't clutter the prompt when web tools are disabled.
 
 ### Environment Variable Requirements
 
-Skills can declare environment variables they need. When a skill is loaded via `skill_view`, its required vars are automatically registered for passthrough into sandboxed execution environments (terminal, execute_code).
+Skills can declare environment variables they need. When a skill is loaded via `view_skill`, its required vars are automatically registered for passthrough into sandboxed execution environments (terminal, execute_code).
 
 ```yaml
 required_environment_variables:
@@ -267,7 +267,7 @@ See the `skills/productivity/google-workspace/SKILL.md` for a complete example u
 
 ### No External Dependencies
 
-Prefer stdlib Python, curl, and existing Hermes tools (`web_extract`, `terminal`, `read_file`). If a dependency is needed, document installation steps in the skill.
+Prefer stdlib Python, curl, and existing Hermes tools (`extract_web`, `terminal`, `read_file`). If a dependency is needed, document installation steps in the skill.
 
 ### Progressive Disclosure
 
@@ -298,7 +298,7 @@ To analyse the input, run:
     node ${HERMES_SKILL_DIR}/scripts/analyse.js <input>
 ```
 
-The agent sees the substituted absolute path and invokes the `terminal` tool with a ready-to-run command — no path math, no extra `skill_view` round-trip. Disable substitution globally with `skills.template_vars: false` in `config.yaml`.
+The agent sees the substituted absolute path and invokes the `terminal` tool with a ready-to-run command — no path math, no extra `view_skill` round-trip. Disable substitution globally with `skills.template_vars: false` in `config.yaml`.
 
 #### Inline shell snippets (opt-in)
 

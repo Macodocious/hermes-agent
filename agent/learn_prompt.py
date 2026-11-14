@@ -8,10 +8,10 @@ through in this conversation, or pasted notes. This module builds ONE prompt
 that instructs the live agent to:
 
   1. Gather the sources the user named, using the tools it already has
-     (``read_file`` / ``search_files`` for dirs, ``web_extract`` for URLs, the
+     (``read_file`` / ``search_files`` for dirs, ``extract_web`` for URLs, the
      current conversation for "what I just did", the user's text for pasted
      material).
-  2. Author a single ``SKILL.md`` via ``skill_manage`` that follows the Hermes
+  2. Author a single ``SKILL.md`` via ``manage_skill`` that follows the Hermes
      skill-authoring standards (description <=60 chars, the modern section
      order, Hermes-tool framing, no invented commands).
 
@@ -73,12 +73,12 @@ Body section order (omit a section only if it genuinely has no content):
 Hermes-tool framing (this is what makes it a skill, not shell docs):
 - Frame running scripts as "invoke through the `terminal` tool".
 - Reference Hermes tools by name in backticks: `terminal`, `read_file`,
-  `write_file`, `search_files`, `patch`, `web_extract`, `web_search`,
-  `vision_analyze`, `browser_navigate`, `delegate_task`, `image_generate`,
-  `text_to_speech`, `cronjob`, `memory`, `skill_view`, `execute_code`.
+  `write_file`, `search_files`, `patch`, `extract_web`, `search_web`,
+  `analyze_vision`, `navigate_browser`, `delegate_task`, `generate_image`,
+  `text_to_speech`, `cronjob`, `memory`, `view_skill`, `execute_code`.
 - Do NOT name shell utilities the agent already has wrapped: say `read_file`
   not cat/head/tail, `search_files` not grep/rg/find/ls, `patch` not sed/awk,
-  `web_extract` not curl-to-scrape, `write_file` not echo>file or heredocs.
+  `extract_web` not curl-to-scrape, `write_file` not echo>file or heredocs.
 - Third-party CLIs (ffmpeg, gh, an SDK) are fine inside a script file, but the
   prose still frames them as "invoke through the `terminal` tool". If the
   skill needs an MCP server, name it and document its setup in Prerequisites.
@@ -91,7 +91,7 @@ Quality bar:
   complex one. Don't re-paste the source docs.
 - Don't write a router/index/hub skill that only points at other skills.
 - Larger scripts/parsers belong in a `scripts/` file (add via
-  `skill_manage` write_file), referenced from SKILL.md by relative path — not
+  `manage_skill` write_file), referenced from SKILL.md by relative path — not
   inlined for the agent to re-type every run. References go in `references/`,
   templates in `templates/`."""
 
@@ -106,7 +106,7 @@ def build_learn_prompt(user_request: str) -> str:
     Returns:
         A complete instruction the agent runs as a normal turn. The agent
         gathers the described sources with its existing tools and authors the
-        skill via ``skill_manage``.
+        skill via ``manage_skill``.
     """
     req = (user_request or "").strip()
     if not req:
@@ -133,17 +133,17 @@ def build_learn_prompt(user_request: str) -> str:
         "Do this:\n"
         "1. Gather every source the user named, using the tools you already "
         "have — `read_file`/`search_files` for local files or directories, "
-        "`web_extract` for URLs, the current conversation history if they "
+        "`extract_web` for URLs, the current conversation history if they "
         "referred to something you just did, and the text they pasted as-is. "
         "If the request is ambiguous about scope, make a reasonable choice "
         "and note it; do not stall.\n"
         "1b. Apply every requirement, focus, and constraint in the request to "
         "the skill you author — these govern what the SKILL.md covers and "
         "emphasizes, not just which sources you read.\n"
-        "2. Author ONE SKILL.md and save it with the `skill_manage` tool "
+        "2. Author ONE SKILL.md and save it with the `manage_skill` tool "
         "(action=\"create\"). Pick a sensible category. If the procedure needs "
         "a non-trivial script, add it under the skill's `scripts/` with "
-        "`skill_manage` write_file and reference it by relative path.\n\n"
+        "`manage_skill` write_file and reference it by relative path.\n\n"
         f"{_AUTHORING_STANDARDS}\n\n"
         "When done, tell the user the skill name, its category, and a "
         "one-line summary of what it captured."

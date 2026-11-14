@@ -30,7 +30,7 @@ The following is the complete skill definition that Hermes loads when this skill
 
 # API Testing & Debugging
 
-Drive REST and GraphQL diagnosis through Hermes tools — `terminal` for `curl`, `execute_code` for Python `requests`, `web_extract` for vendor docs. Isolate the failing layer before guessing at the fix.
+Drive REST and GraphQL diagnosis through Hermes tools — `terminal` for `curl`, `execute_code` for Python `requests`, `extract_web` for vendor docs. Isolate the failing layer before guessing at the fix.
 
 ## When to Use
 
@@ -473,12 +473,12 @@ print(f"users={len(all_users)}")
 ''')
 ```
 
-### web_extract — for vendor API docs
+### extract_web — for vendor API docs
 
 Pull the spec for the endpoint you're debugging instead of guessing:
 
 ```python
-web_extract(urls=["https://docs.example.com/api/v1/users"])
+extract_web(urls=["https://docs.example.com/api/v1/users"])
 ```
 
 ### delegate_task — for full CRUD test sweeps

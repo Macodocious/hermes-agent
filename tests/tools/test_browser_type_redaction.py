@@ -1,4 +1,4 @@
-"""Regression tests for browser_type display redaction.
+"""Regression tests for type_browser display redaction.
 
 Typed text is passed through the same secret-pattern redactor used for logs:
 recognizable credentials (API keys, tokens) are masked in display-facing
@@ -9,7 +9,7 @@ to the browser backend regardless.
 import json
 from unittest.mock import patch
 
-from tools.browser_tool import browser_type
+from tools.browser_tool import type_browser
 
 
 def test_browser_type_redacts_api_key_in_output(monkeypatch):
@@ -22,7 +22,7 @@ def test_browser_type_redacts_api_key_in_output(monkeypatch):
         "tools.browser_tool._run_browser_command",
         return_value={"success": True},
     ) as mock_run:
-        result = json.loads(browser_type("@apikey", secret, task_id="redaction-test"))
+        result = json.loads(type_browser("@apikey", secret, task_id="redaction-test"))
 
     assert result["success"] is True
     assert secret not in json.dumps(result)
@@ -42,7 +42,7 @@ def test_browser_type_keeps_normal_text_in_output(monkeypatch):
         "tools.browser_tool._run_browser_command",
         return_value={"success": True},
     ) as mock_run:
-        result = json.loads(browser_type("@search", text, task_id="redaction-test"))
+        result = json.loads(type_browser("@search", text, task_id="redaction-test"))
 
     assert result["success"] is True
     assert result["typed"] == text
@@ -64,7 +64,7 @@ def test_browser_type_failure_redacts_api_key_in_error(monkeypatch):
             "fallback_warning": f"chrome fallback also saw {secret}",
         },
     ) as mock_run:
-        raw_result = browser_type("@apikey", secret, task_id="redaction-test")
+        raw_result = type_browser("@apikey", secret, task_id="redaction-test")
         result = json.loads(raw_result)
 
     assert result["success"] is False

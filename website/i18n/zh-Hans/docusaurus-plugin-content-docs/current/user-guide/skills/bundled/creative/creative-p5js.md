@@ -509,7 +509,7 @@ function setup() {
 5. **无头导出** — `node scripts/export-frames.js sketch.html --frames 300` 用于自动化帧捕获（草图必须使用 `noLoop()` + `_p5Ready`）
 6. **MP4 渲染** — `bash scripts/render.sh sketch.html output.mp4 --duration 30`
 7. **迭代优化** — 编辑 HTML 文件，用户刷新浏览器查看变化
-8. **按需加载参考资料** — 在实现过程中使用 `skill_view(name="p5js", file_path="references/...")` 加载特定参考文件
+8. **按需加载参考资料** — 在实现过程中使用 `view_skill(name="p5js", file_path="references/...")` 加载特定参考文件
 
 ## 性能目标
 

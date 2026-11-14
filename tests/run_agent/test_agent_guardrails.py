@@ -164,12 +164,12 @@ class TestCapDelegateTaskCalls:
     def test_non_delegate_calls_preserved(self):
         tcs = (
             [make_tc("delegate_task") for _ in range(MAX_CONCURRENT_CHILDREN + 1)]
-            + [make_tc("terminal"), make_tc("web_search")]
+            + [make_tc("terminal"), make_tc("search_web")]
         )
         out = AIAgent._cap_delegate_task_calls(tcs)
         names = [tc.function.name for tc in out]
         assert "terminal" in names
-        assert "web_search" in names
+        assert "search_web" in names
 
     def test_at_limit_passes_through(self):
         tcs = [make_tc("delegate_task") for _ in range(MAX_CONCURRENT_CHILDREN)]
@@ -182,7 +182,7 @@ class TestCapDelegateTaskCalls:
         assert out is tcs
 
     def test_no_delegate_calls_unchanged(self):
-        tcs = [make_tc("terminal"), make_tc("web_search")]
+        tcs = [make_tc("terminal"), make_tc("search_web")]
         out = AIAgent._cap_delegate_task_calls(tcs)
         assert out is tcs
 
@@ -199,7 +199,7 @@ class TestCapDelegateTaskCalls:
         delegates = [make_tc("delegate_task", f'{{"task":"{i}"}}')
                      for i in range(MAX_CONCURRENT_CHILDREN + 1)]
         t1 = make_tc("terminal", '{"cmd":"ls"}')
-        w1 = make_tc("web_search", '{"q":"x"}')
+        w1 = make_tc("search_web", '{"q":"x"}')
         tcs = [delegates[0], t1, delegates[1], w1] + delegates[2:]
         out = AIAgent._cap_delegate_task_calls(tcs)
         expected = [delegates[0], t1, delegates[1], w1] + delegates[2:MAX_CONCURRENT_CHILDREN]
@@ -216,16 +216,16 @@ class TestDeduplicateToolCalls:
 
     def test_duplicate_pair_deduplicated(self):
         tcs = [
-            make_tc("web_search", '{"query":"foo"}'),
-            make_tc("web_search", '{"query":"foo"}'),
+            make_tc("search_web", '{"query":"foo"}'),
+            make_tc("search_web", '{"query":"foo"}'),
         ]
         out = AIAgent._deduplicate_tool_calls(tcs)
         assert len(out) == 1
 
     def test_multiple_duplicates(self):
         tcs = [
-            make_tc("web_search", '{"q":"a"}'),
-            make_tc("web_search", '{"q":"a"}'),
+            make_tc("search_web", '{"q":"a"}'),
+            make_tc("search_web", '{"q":"a"}'),
             make_tc("terminal", '{"cmd":"ls"}'),
             make_tc("terminal", '{"cmd":"ls"}'),
             make_tc("terminal", '{"cmd":"pwd"}'),
@@ -251,7 +251,7 @@ class TestDeduplicateToolCalls:
 
     def test_clean_list_unchanged(self):
         tcs = [
-            make_tc("web_search", '{"q":"x"}'),
+            make_tc("search_web", '{"q":"x"}'),
             make_tc("terminal", '{"cmd":"ls"}'),
         ]
         out = AIAgent._deduplicate_tool_calls(tcs)
@@ -269,8 +269,8 @@ class TestDeduplicateToolCalls:
 
     def test_original_list_not_mutated(self):
         tcs = [
-            make_tc("web_search", '{"q":"dup"}'),
-            make_tc("web_search", '{"q":"dup"}'),
+            make_tc("search_web", '{"q":"dup"}'),
+            make_tc("search_web", '{"q":"dup"}'),
         ]
         original_len = len(tcs)
         AIAgent._deduplicate_tool_calls(tcs)

@@ -122,7 +122,7 @@ def _install_fake_agent(monkeypatch, fake_agent):
     # Register tool emojis used by the bubble renderer.
     import tools.cronjob_tools  # noqa: F401 - register cronjob emoji
     import tools.memory_tool  # noqa: F401 - register memory emoji
-    import tools.skill_manager_tool  # noqa: F401 - register skill_manage emoji
+    import tools.skill_manager_tool  # noqa: F401 - register manage_skill emoji
 
 
 async def _run_bubble(monkeypatch, tmp_path, fake_agent_cls):
@@ -184,13 +184,13 @@ async def test_skill_manage_delete_bubble_deletes_skill(monkeypatch, tmp_path):
     class Agent(SingleToolAgent):
         def __init__(self, **kwargs):
             super().__init__(
-                "skill_manage", "delete",
+                "manage_skill", "delete",
                 {"action": "delete", "name": "my-skill"},
                 **kwargs,
             )
 
     rendered = await _run_bubble(monkeypatch, tmp_path, Agent)
-    assert "📝 Deleting skill my-skill" in rendered, f"missing skill_manage bubble in {rendered}"
+    assert "📝 Deleting skill my-skill" in rendered, f"missing manage_skill bubble in {rendered}"
     assert "Updating skill" not in rendered
 
 

@@ -361,7 +361,7 @@ class TestNormalizeSkillLookupName:
         skills_dir = tmp_path / "skills"
         skill_dir = skills_dir / "category" / "my-skill"
         skill_dir.mkdir(parents=True)
-        # Patch the root skill_view() itself enforces — normalization reads
+        # Patch the root view_skill() itself enforces — normalization reads
         # tools.skills_tool.SKILLS_DIR at call time so the two stay in sync.
         monkeypatch.setattr("tools.skills_tool.SKILLS_DIR", skills_dir)
         assert normalize_skill_lookup_name(str(skill_dir)) == "category/my-skill"

@@ -129,7 +129,7 @@ function readFileDisplayTarget(args: Record<string, unknown>, result: Record<str
 }
 
 const TOOL_META: Record<ToolTitleKey, ToolMetaSpec> = {
-  browser_click: {
+  click_browser: {
     icon: 'globe',
     tone: 'browser'
   },
@@ -137,11 +137,11 @@ const TOOL_META: Record<ToolTitleKey, ToolMetaSpec> = {
     icon: 'globe',
     tone: 'browser'
   },
-  browser_navigate: {
+  navigate_browser: {
     icon: 'globe',
     tone: 'browser'
   },
-  browser_snapshot: {
+  snapshot_browser: {
     icon: 'globe',
     tone: 'browser'
   },
@@ -149,7 +149,7 @@ const TOOL_META: Record<ToolTitleKey, ToolMetaSpec> = {
     icon: 'file-media',
     tone: 'browser'
   },
-  browser_type: {
+  type_browser: {
     icon: 'globe',
     tone: 'browser'
   },
@@ -166,7 +166,7 @@ const TOOL_META: Record<ToolTitleKey, ToolMetaSpec> = {
     icon: 'terminal',
     tone: 'terminal'
   },
-  image_generate: {
+  generate_image: {
     icon: 'file-media',
     tone: 'image'
   },
@@ -189,12 +189,12 @@ const TOOL_META: Record<ToolTitleKey, ToolMetaSpec> = {
     tone: 'terminal'
   },
   todo: { icon: 'tools', tone: 'agent' },
-  vision_analyze: {
+  analyze_vision: {
     icon: 'eye',
     tone: 'image'
   },
-  web_extract: { icon: 'globe', tone: 'web' },
-  web_search: { icon: 'search', tone: 'web' },
+  extract_web: { icon: 'globe', tone: 'web' },
+  search_web: { icon: 'search', tone: 'web' },
   write_file: { icon: 'edit', tone: 'file' }
 }
 
@@ -327,12 +327,12 @@ const COUNT_NOUN_BY_ARRAY: Record<(typeof COUNT_ARRAY_KEYS)[number], string> = {
 }
 
 const DEFAULT_COUNT_NOUN_BY_TOOL: Record<string, string> = {
-  browser_snapshot: 'item',
+  snapshot_browser: 'item',
   list_files: 'file',
   search_files: 'result',
   session_search_recall: 'result',
   todo: 'todo',
-  web_search: 'result'
+  search_web: 'result'
 }
 
 function countFromUnknown(value: unknown): null | number {
@@ -400,7 +400,7 @@ function countMetric(count: number, noun: string): CountMetric {
 }
 
 function normalizeMetricForTool(toolName: string, metric: CountMetric): CountMetric {
-  if (toolName === 'web_search') {
+  if (toolName === 'search_web') {
     return countMetric(metric.count, 'result')
   }
 
@@ -493,7 +493,7 @@ function toolResultCount(
 
   const fallbackNounByTool = fallbackCountNoun(part.toolName)
 
-  if (part.toolName === 'web_search') {
+  if (part.toolName === 'search_web') {
     const hits = collectResultItems(part.result)
 
     if (hits.length) {
@@ -705,7 +705,7 @@ function toolPreviewTarget(toolName: string, args: Record<string, unknown>, resu
     return direct
   }
 
-  if (toolName === 'browser_navigate' || toolName === 'web_extract' || toolName === 'web_search') {
+  if (toolName === 'navigate_browser' || toolName === 'extract_web' || toolName === 'search_web') {
     const explicit = firstStringField(args, ['url', 'search_term', 'query']) || firstStringField(result, ['url'])
 
     return looksLikeUrl(explicit) ? explicit : findFirstUrl(args, result)
@@ -728,7 +728,7 @@ function toolImageUrl(args: Record<string, unknown>, result: Record<string, unkn
   }
 
   // Only inline-render images the renderer can actually fetch: data URLs or
-  // remote http(s). A bare filesystem path (e.g. vision_analyze's input image)
+  // remote http(s). A bare filesystem path (e.g. analyze_vision's input image)
   // resolves against the dev-server origin and 404s — fall back to the tool's
   // codicon instead of a broken <img>.
   const isDataImage = candidate.toLowerCase().startsWith('data:image/')
@@ -910,7 +910,7 @@ function toolSubtitle(
 ): string {
   const toolName = part.toolName
 
-  if (toolName === 'browser_navigate') {
+  if (toolName === 'navigate_browser') {
     const url =
       firstStringField(argsRecord, ['url', 'target']) ||
       firstStringField(resultRecord, ['url']) ||
@@ -919,13 +919,13 @@ function toolSubtitle(
     return url ? hostnameOf(url) : 'Navigated in browser'
   }
 
-  if (toolName === 'browser_snapshot') {
+  if (toolName === 'snapshot_browser') {
     const snapshot = firstStringField(resultRecord, ['snapshot'])
 
     return snapshot ? summarizeBrowserSnapshot(snapshot) : 'Captured a browser accessibility snapshot'
   }
 
-  if (toolName === 'browser_click') {
+  if (toolName === 'click_browser') {
     const clicked = firstStringField(resultRecord, ['clicked']) || firstStringField(argsRecord, ['ref', 'target'])
 
     if (!clicked) {
@@ -935,7 +935,7 @@ function toolSubtitle(
     return clicked.startsWith('@') ? `Clicked page element (internal ref ${clicked})` : `Clicked ${clicked}`
   }
 
-  if (toolName === 'browser_fill' || toolName === 'browser_type') {
+  if (toolName === 'browser_fill' || toolName === 'type_browser') {
     const field = firstStringField(argsRecord, ['label', 'field', 'ref', 'target'])
     const value = firstStringField(argsRecord, ['value', 'text'])
 
@@ -945,7 +945,7 @@ function toolSubtitle(
     )
   }
 
-  if (toolName === 'web_search') {
+  if (toolName === 'search_web') {
     const query = firstStringField(argsRecord, ['search_term', 'query']) || contextValue(argsRecord)
 
     return query ? `Query: ${query}` : 'Queried web sources'
@@ -994,7 +994,7 @@ function toolSubtitle(
     return inlineDiffFromResult(resultRecord) ? 'Changed file' : ''
   }
 
-  if (toolName === 'web_extract') {
+  if (toolName === 'extract_web') {
     const url =
       firstStringField(argsRecord, ['url']) ||
       firstStringField(resultRecord, ['url']) ||
@@ -1016,11 +1016,11 @@ function toolSubtitle(
 }
 
 function toolDetailLabel(toolName: string): string {
-  if (toolName === 'web_search') {
+  if (toolName === 'search_web') {
     return 'Details'
   }
 
-  if (toolName === 'browser_snapshot') {
+  if (toolName === 'snapshot_browser') {
     return 'Snapshot summary'
   }
 
@@ -1032,7 +1032,7 @@ function toolDetailText(
   argsRecord: Record<string, unknown>,
   resultRecord: Record<string, unknown>
 ): string {
-  if (part.toolName === 'browser_snapshot') {
+  if (part.toolName === 'snapshot_browser') {
     const snapshot = firstStringField(resultRecord, ['snapshot'])
 
     return snapshot ? summarizeBrowserSnapshot(snapshot) : fallbackDetailText(argsRecord, resultRecord)
@@ -1054,7 +1054,7 @@ function toolDetailText(
     }
   }
 
-  if (part.toolName === 'web_extract') {
+  if (part.toolName === 'extract_web') {
     const direct = firstStringField(resultRecord, ['content', 'text', 'markdown', 'body', 'summary', 'message'])
 
     if (direct) {
@@ -1103,7 +1103,7 @@ function toolDetailText(
     return fallbackDetailText(argsRecord, resultRecord)
   }
 
-  if (part.toolName === 'web_search') {
+  if (part.toolName === 'search_web') {
     const detail = fallbackDetailText(argsRecord, resultRecord)
     const seconds = numberValue(resultRecord.duration_s)
     const duration = seconds === null ? '' : formatDurationSeconds(seconds)
@@ -1154,7 +1154,7 @@ export function toolCopyPayload(part: ToolPart, view: ToolView): { label: string
     }
   }
 
-  if (part.toolName === 'web_extract') {
+  if (part.toolName === 'extract_web') {
     if (hasSubstantialOutput) {
       return { label: copy.content, text: detail }
     }
@@ -1166,7 +1166,7 @@ export function toolCopyPayload(part: ToolPart, view: ToolView): { label: string
     }
   }
 
-  if (part.toolName === 'browser_navigate') {
+  if (part.toolName === 'navigate_browser') {
     const url = firstStringField(args, ['url', 'target']) || findFirstUrl(args, result)
 
     if (url) {
@@ -1174,7 +1174,7 @@ export function toolCopyPayload(part: ToolPart, view: ToolView): { label: string
     }
   }
 
-  if (part.toolName === 'web_search') {
+  if (part.toolName === 'search_web') {
     if (view.searchHits?.length) {
       const text = view.searchHits.map(hit => [hit.title, hit.url, hit.snippet].filter(Boolean).join('\n')).join('\n\n')
 
@@ -1256,7 +1256,7 @@ function dynamicTitle(
   const titledAction = (action: string, title: string): ToolTitleParts =>
     titlePartsFromAction(title, part.result === undefined ? action : undefined)
 
-  if (part.toolName === 'web_extract') {
+  if (part.toolName === 'extract_web') {
     const url = findFirstUrl(args, result)
     const action = verb(translateNow('assistant.tool.actions.reading'), translateNow('assistant.tool.actions.read'))
 
@@ -1265,7 +1265,7 @@ function dynamicTitle(
       : fallback
   }
 
-  if (part.toolName === 'browser_navigate') {
+  if (part.toolName === 'navigate_browser') {
     const url = findFirstUrl(args, result)
 
     if (!url) {
@@ -1289,7 +1289,7 @@ function dynamicTitle(
     return titledAction(action, translateNow('assistant.tool.titleTemplates.actionTarget', action, hostnameOf(url)))
   }
 
-  if (part.toolName === 'web_search') {
+  if (part.toolName === 'search_web') {
     const query = firstStringField(args, ['search_term', 'query']) || contextValue(args)
 
     const action = verb(
@@ -1383,7 +1383,7 @@ export function buildToolView(part: ToolPart, inlineDiff: string): ToolView {
     : detailBody
 
   const searchHits =
-    part.toolName === 'web_search' && status !== 'error' ? extractSearchResults(part.result) : undefined
+    part.toolName === 'search_web' && status !== 'error' ? extractSearchResults(part.result) : undefined
 
   const resultCount = status === 'error' ? null : toolResultCount(part, argsRecord, resultRecord)
 

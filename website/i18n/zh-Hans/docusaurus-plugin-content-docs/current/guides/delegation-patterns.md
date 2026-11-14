@@ -158,17 +158,17 @@ delegate_task(tasks=[
 ```python
 # 第一步：机械性收集（此处 execute_code 更合适——无需推理）
 execute_code("""
-from hermes_tools import web_search, web_extract
+from hermes_tools import search_web, extract_web
 
 results = []
 for query in ["AI funding Q1 2026", "AI startup acquisitions 2026", "AI IPOs 2026"]:
-    r = web_search(query, limit=5)
+    r = search_web(query, limit=5)
     for item in r["data"]["web"]:
         results.append({"title": item["title"], "url": item["url"], "desc": item["description"]})
 
 # Extract full content from top 5 most relevant
 urls = [r["url"] for r in results[:5]]
-content = web_extract(urls)
+content = extract_web(urls)
 
 # Save for the analysis step
 import json

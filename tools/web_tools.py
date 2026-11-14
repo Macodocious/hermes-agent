@@ -271,7 +271,7 @@ def _get_backend() -> str:
 
 
 def _get_search_backend() -> str:
-    """Determine which backend to use for web_search specifically.
+    """Determine which backend to use for search_web specifically.
 
     Selection priority:
     1. ``web.search_backend`` (per-capability override)
@@ -285,7 +285,7 @@ def _get_search_backend() -> str:
 
 
 def _get_extract_backend() -> str:
-    """Determine which backend to use for web_extract specifically.
+    """Determine which backend to use for extract_web specifically.
 
     Selection priority:
     1. ``web.extract_backend`` (per-capability override)
@@ -343,7 +343,7 @@ def _is_backend_available(backend: str) -> bool:
         # Cheap probe — env var OR auth.json has OAuth tokens. Must not
         # call resolve_xai_http_credentials() here because the OAuth path
         # can trigger a network token refresh, and _is_backend_available
-        # runs on every web_search dispatch + every `hermes tools` repaint.
+        # runs on every search_web dispatch + every `hermes tools` repaint.
         try:
             from tools.xai_http import has_xai_credentials
             return has_xai_credentials()
@@ -454,7 +454,7 @@ def convert_base64_images_to_links(text: str) -> str:
     thousands of characters), so we never send the raw bytes to the model. But
     we preserve the fact that an image was there, and its alt text, as an
     inspectable placeholder. Real (http/https) markdown image links are left
-    untouched so the agent can ``web_extract`` / ``vision_analyze`` them.
+    untouched so the agent can ``extract_web`` / ``analyze_vision`` them.
 
     Transformations:
       ``![alt](data:image/png;base64,AAAA...)``  -> ``[IMAGE: alt](base64 image omitted)``
@@ -509,7 +509,7 @@ def _store_full_text(url: str, content: str) -> Optional[str]:
         path.write_text(content, encoding="utf-8")
         return str(path)
     except Exception as exc:  # noqa: BLE001
-        logger.debug("Failed to store full web_extract text for %s: %s", url, exc)
+        logger.debug("Failed to store full extract_web text for %s: %s", url, exc)
         return None
 
 
@@ -567,8 +567,8 @@ def _truncate_with_footer(
         )
     else:
         footer_lines.append(
-            "Full text could not be stored; re-run web_extract on a more "
-            "specific URL or use browser_navigate for the complete page."
+            "Full text could not be stored; re-run extract_web on a more "
+            "specific URL or use navigate_browser for the complete page."
         )
     footer_lines.append("─" * 29)
 
@@ -1050,7 +1050,7 @@ async def web_extract_tool(
 def check_web_api_key() -> bool:
     """Check whether the configured web backend is available.
 
-    Used as the ``check_fn`` gate for the ``web_search`` and ``web_extract``
+    Used as the ``check_fn`` gate for the ``search_web`` and ``extract_web``
     tool registry entries — so a plugin-registered provider that reports
     ``is_available()`` must light the tools up even when no built-in backend
     has credentials (issues #28651, #31873). Resolution funnels through
@@ -1168,7 +1168,7 @@ if __name__ == "__main__":
 from tools.registry import registry, tool_error
 
 WEB_SEARCH_SCHEMA = {
-    "name": "web_search",
+    "name": "search_web",
     "description": "Search the web for information. Returns up to 5 results by default with titles, URLs, and descriptions. The query is passed through to the configured backend, so operators such as site:domain, filetype:pdf, intitle:word, -term, and \"exact phrase\" may work when the backend supports them.",
     "parameters": {
         "type": "object",
@@ -1190,7 +1190,7 @@ WEB_SEARCH_SCHEMA = {
 }
 
 WEB_EXTRACT_SCHEMA = {
-    "name": "web_extract",
+    "name": "extract_web",
     "description": "Extract content from web page URLs. Returns clean page content in markdown/text (no LLM summarization — fast). Also works with PDF URLs (arxiv papers, documents) — pass the PDF link directly. Pages within the char budget (default 15000) return whole; larger pages return a head+tail window with a footer telling you the full text's saved file path and the read_file call to page through the omitted middle. Inline images appear as [IMAGE: alt] placeholders; real image URLs are kept as links. If a URL fails or times out, use the browser tool instead.",
     "parameters": {
         "type": "object",
@@ -1212,7 +1212,7 @@ WEB_EXTRACT_SCHEMA = {
 }
 
 registry.register(
-    name="web_search",
+    name="search_web",
     toolset="web",
     schema=WEB_SEARCH_SCHEMA,
     handler=lambda args, **kw: web_search_tool(args.get("query", ""), limit=args.get("limit", 5)),
@@ -1222,7 +1222,7 @@ registry.register(
     max_result_size_chars=100_000,
 )
 registry.register(
-    name="web_extract",
+    name="extract_web",
     toolset="web",
     schema=WEB_EXTRACT_SCHEMA,
     handler=lambda args, **kw: web_extract_tool(

@@ -4,7 +4,7 @@
 The outer ``_run_review_in_thread`` used to crash with
 ``'list' object has no attribute 'get'`` every time a tool response
 returned a list (or any non-dict) where the summarizer expected a
-dict — most commonly the ``_change`` field in skill_manage responses
+dict — most commonly the ``_change`` field in manage_skill responses
 or one of the entries in a memory operations list. The crash took
 down the entire background review, discarding every other successful
 action that the fork had completed.
@@ -66,7 +66,7 @@ def _load_module():
 def _make_skill_tool_message(change, operations=None):
     """Build the messages list that triggered the original crash."""
     return [
-        # Assistant: calls skill_manage
+        # Assistant: calls manage_skill
         {
             "role": "assistant",
             "tool_calls": [
@@ -74,7 +74,7 @@ def _make_skill_tool_message(change, operations=None):
                     "id": "call_1",
                     "type": "function",
                     "function": {
-                        "name": "skill_manage",
+                        "name": "manage_skill",
                         "arguments": json.dumps(
                             {
                                 "action": "patch",

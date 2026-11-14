@@ -409,7 +409,7 @@ def _skill_patch_review():
                 {
                     "id": "call_skill1",
                     "function": {
-                        "name": "skill_manage",
+                        "name": "manage_skill",
                         "arguments": _json.dumps(
                             {"action": "patch", "name": "demo", "old_string": "a", "new_string": "b"}
                         ),

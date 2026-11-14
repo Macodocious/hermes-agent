@@ -1,10 +1,10 @@
 """Home Assistant tool for controlling smart home devices via REST API.
 
 Registers four LLM-callable tools:
-- ``ha_list_entities`` -- list/filter entities by domain or area
-- ``ha_get_state`` -- get detailed state of a single entity
-- ``ha_list_services`` -- list available services (actions) per domain
-- ``ha_call_service`` -- call a HA service (turn_on, turn_off, set_temperature, etc.)
+- ``list_ha_entities`` -- list/filter entities by domain or area
+- ``get_ha_state`` -- get detailed state of a single entity
+- ``list_ha_services`` -- list available services (actions) per domain
+- ``call_ha_service`` -- call a HA service (turn_on, turn_off, set_temperature, etc.)
 
 Authentication uses a Long-Lived Access Token via ``HASS_TOKEN`` env var.
 The HA instance URL is read from ``HASS_URL`` (default: http://homeassistant.local:8123).
@@ -222,19 +222,19 @@ def _run_async(coro):
 
 
 def _handle_list_entities(args: dict, **kw) -> str:
-    """Handler for ha_list_entities tool."""
+    """Handler for list_ha_entities tool."""
     domain = args.get("domain")
     area = args.get("area")
     try:
         result = _run_async(_async_list_entities(domain=domain, area=area))
         return json.dumps({"result": result})
     except Exception as e:
-        logger.error("ha_list_entities error: %s", e)
+        logger.error("list_ha_entities error: %s", e)
         return tool_error(f"Failed to list entities: {e}")
 
 
 def _handle_get_state(args: dict, **kw) -> str:
-    """Handler for ha_get_state tool."""
+    """Handler for get_ha_state tool."""
     entity_id = args.get("entity_id", "")
     if not entity_id:
         return tool_error("Missing required parameter: entity_id")
@@ -244,12 +244,12 @@ def _handle_get_state(args: dict, **kw) -> str:
         result = _run_async(_async_get_state(entity_id))
         return json.dumps({"result": result})
     except Exception as e:
-        logger.error("ha_get_state error: %s", e)
+        logger.error("get_ha_state error: %s", e)
         return tool_error(f"Failed to get state for {entity_id}: {e}")
 
 
 def _handle_call_service(args: dict, **kw) -> str:
-    """Handler for ha_call_service tool."""
+    """Handler for call_ha_service tool."""
     domain = args.get("domain", "")
     service = args.get("service", "")
     if not domain or not service:
@@ -284,7 +284,7 @@ def _handle_call_service(args: dict, **kw) -> str:
         result = _run_async(_async_call_service(domain, service, entity_id, data))
         return json.dumps({"result": result})
     except Exception as e:
-        logger.error("ha_call_service error: %s", e)
+        logger.error("call_ha_service error: %s", e)
         return tool_error(f"Failed to call {domain}.{service}: {e}")
 
 
@@ -327,13 +327,13 @@ async def _async_list_services(domain: Optional[str] = None) -> Dict[str, Any]:
 
 
 def _handle_list_services(args: dict, **kw) -> str:
-    """Handler for ha_list_services tool."""
+    """Handler for list_ha_services tool."""
     domain = args.get("domain")
     try:
         result = _run_async(_async_list_services(domain=domain))
         return json.dumps({"result": result})
     except Exception as e:
-        logger.error("ha_list_services error: %s", e)
+        logger.error("list_ha_services error: %s", e)
         return tool_error(f"Failed to list services: {e}")
 
 
@@ -351,7 +351,7 @@ def _check_ha_available() -> bool:
 # ---------------------------------------------------------------------------
 
 HA_LIST_ENTITIES_SCHEMA = {
-    "name": "ha_list_entities",
+    "name": "list_ha_entities",
     "description": (
         "List Home Assistant entities. Optionally filter by domain "
         "(light, switch, climate, sensor, binary_sensor, cover, fan, etc.) "
@@ -381,7 +381,7 @@ HA_LIST_ENTITIES_SCHEMA = {
 }
 
 HA_GET_STATE_SCHEMA = {
-    "name": "ha_get_state",
+    "name": "get_ha_state",
     "description": (
         "Get the detailed state of a single Home Assistant entity, including all "
         "attributes (brightness, color, temperature setpoint, sensor readings, etc.)."
@@ -402,12 +402,12 @@ HA_GET_STATE_SCHEMA = {
 }
 
 HA_LIST_SERVICES_SCHEMA = {
-    "name": "ha_list_services",
+    "name": "list_ha_services",
     "description": (
         "List available Home Assistant services (actions) for device control. "
         "Shows what actions can be performed on each device type and what "
         "parameters they accept. Use this to discover how to control devices "
-        "found via ha_list_entities."
+        "found via list_ha_entities."
     ),
     "parameters": {
         "type": "object",
@@ -425,9 +425,9 @@ HA_LIST_SERVICES_SCHEMA = {
 }
 
 HA_CALL_SERVICE_SCHEMA = {
-    "name": "ha_call_service",
+    "name": "call_ha_service",
     "description": (
-        "Call a Home Assistant service to control a device. Use ha_list_services "
+        "Call a Home Assistant service to control a device. Use list_ha_services "
         "to discover available services and their parameters for each domain."
     ),
     "parameters": {
@@ -477,7 +477,7 @@ HA_CALL_SERVICE_SCHEMA = {
 from tools.registry import registry, tool_error
 
 registry.register(
-    name="ha_list_entities",
+    name="list_ha_entities",
     toolset="homeassistant",
     schema=HA_LIST_ENTITIES_SCHEMA,
     handler=_handle_list_entities,
@@ -486,7 +486,7 @@ registry.register(
 )
 
 registry.register(
-    name="ha_get_state",
+    name="get_ha_state",
     toolset="homeassistant",
     schema=HA_GET_STATE_SCHEMA,
     handler=_handle_get_state,
@@ -495,7 +495,7 @@ registry.register(
 )
 
 registry.register(
-    name="ha_list_services",
+    name="list_ha_services",
     toolset="homeassistant",
     schema=HA_LIST_SERVICES_SCHEMA,
     handler=_handle_list_services,
@@ -504,7 +504,7 @@ registry.register(
 )
 
 registry.register(
-    name="ha_call_service",
+    name="call_ha_service",
     toolset="homeassistant",
     schema=HA_CALL_SERVICE_SCHEMA,
     handler=_handle_call_service,

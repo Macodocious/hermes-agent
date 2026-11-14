@@ -19,6 +19,6 @@ describe('shouldBoundToolGroup', () => {
 describe('UNBOUNDABLE_TOOLS', () => {
   it('exempts clarify forms and generated images from the window', () => {
     expect(UNBOUNDABLE_TOOLS.has('clarify')).toBe(true)
-    expect(UNBOUNDABLE_TOOLS.has('image_generate')).toBe(true)
+    expect(UNBOUNDABLE_TOOLS.has('generate_image')).toBe(true)
   })
 })

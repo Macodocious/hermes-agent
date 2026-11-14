@@ -12,13 +12,13 @@ MCP server (per `~/.codex/config.toml [mcp_servers.hermes-tools]`) and
 the user gets full Hermes capability inside a Codex turn.
 
 Scope (what we expose):
-  - web_search, web_extract              — Firecrawl, no codex equivalent
-  - browser_navigate / _click / _type /  — Camofox/Browserbase automation
+  - search_web, extract_web              — Firecrawl, no codex equivalent
+  - navigate_browser / _click / _type /  — Camofox/Browserbase automation
     _snapshot / _scroll / _back / _press /
     _get_images / _console / _vision
-  - vision_analyze                       — image inspection by vision model
-  - image_generate                       — image generation
-  - skill_view, skills_list              — Hermes' skill library
+  - analyze_vision                       — image inspection by vision model
+  - generate_image                       — image generation
+  - view_skill, list_skills              — Hermes' skill library
   - text_to_speech                       — TTS
   - kanban_* (complete/block/comment/    — kanban worker + orchestrator
     heartbeat/show/list/create/            handoff (stateless: read env var,
@@ -30,7 +30,7 @@ What we DO NOT expose:
   - search_files / process               — codex's shell
   - clarify                              — codex's own UX
   - delegate_task / memory /             — `_AGENT_LOOP_TOOLS` in Hermes
-    session_search / todo                  (model_tools.py). They require
+    search_session / todo                  (model_tools.py). They require
                                            the running AIAgent context to
                                            dispatch (mid-loop state), so a
                                            stateless MCP callback can't
@@ -104,28 +104,28 @@ def _signature_from_schema(schema: dict | None) -> tuple[inspect.Signature, dict
 #   - terminal / shell / read_file / write_file / patch / search_files /
 #     process — codex's built-ins cover these and approval routes through
 #     codex's own UI.
-#   - delegate_task / memory / session_search / todo — these are
+#   - delegate_task / memory / search_session / todo — these are
 #     `_AGENT_LOOP_TOOLS` in Hermes (model_tools.py:493). They require
 #     the running AIAgent context to dispatch (mid-loop state), so a
 #     stateless MCP callback can't drive them. Hermes' default runtime
 #     keeps these working; the codex_app_server runtime cannot.
 EXPOSED_TOOLS: tuple[str, ...] = (
-    "web_search",
-    "web_extract",
-    "browser_navigate",
-    "browser_click",
-    "browser_type",
-    "browser_press",
-    "browser_snapshot",
-    "browser_scroll",
-    "browser_back",
-    "browser_get_images",
+    "search_web",
+    "extract_web",
+    "navigate_browser",
+    "click_browser",
+    "type_browser",
+    "press_browser",
+    "snapshot_browser",
+    "scroll_browser",
+    "back_browser",
+    "get_browser_images",
     "browser_console",
     "browser_vision",
-    "vision_analyze",
-    "image_generate",
-    "skill_view",
-    "skills_list",
+    "analyze_vision",
+    "generate_image",
+    "view_skill",
+    "list_skills",
     "text_to_speech",
     # Kanban worker handoff tools — gated on HERMES_KANBAN_TASK env var
     # (set by the kanban dispatcher when spawning a worker). Without these
@@ -133,19 +133,19 @@ EXPOSED_TOOLS: tuple[str, ...] = (
     # could do the work but couldn't report completion back to the kernel,
     # making it hang until timeout. Stateless dispatch — they just read
     # the env var and write to ~/.hermes/kanban.db.
-    "kanban_complete",
-    "kanban_block",
-    "kanban_comment",
-    "kanban_heartbeat",
-    "kanban_show",
-    "kanban_list",
-    # NOTE: kanban_create / kanban_unblock / kanban_link are orchestrator-
+    "complete_kanban",
+    "block_kanban",
+    "comment_kanban",
+    "heartbeat_kanban",
+    "show_kanban",
+    "list_kanban",
+    # NOTE: create_kanban / unblock_kanban / link_kanban are orchestrator-
     # only — the kanban tool gates them on HERMES_KANBAN_TASK being unset.
     # They're exposed here for orchestrator agents running on the codex
     # runtime that need to dispatch new tasks.
-    "kanban_create",
-    "kanban_unblock",
-    "kanban_link",
+    "create_kanban",
+    "unblock_kanban",
+    "link_kanban",
 )
 
 

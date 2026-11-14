@@ -152,7 +152,7 @@ When you resume a session, Hermes displays a compact recap of the previous conve
 The recap:
 - Shows **user messages** (gold `●`) and **assistant responses** (green `◆`)
 - **Truncates** long messages (300 chars for user, 200 chars / 3 lines for assistant)
-- **Collapses tool calls** to a count with tool names (e.g., `[3 tool calls: terminal, web_search]`)
+- **Collapses tool calls** to a count with tool names (e.g., `[3 tool calls: terminal, search_web]`)
 - **Hides** system messages, tool results, and internal reasoning
 - **Caps** at the last 10 exchanges with a "... N earlier messages ..." indicator
 - Uses **dim styling** to distinguish from the active conversation
@@ -525,7 +525,7 @@ For deeper analytics — token usage, cost estimates, tool breakdown, and activi
 
 ## Session Search Tool
 
-The agent has a built-in `session_search` tool that performs full-text search across all past conversations using SQLite's FTS5 engine — and lets the agent scroll through any session it finds. No LLM calls, no summarization, no truncation. Every shape returns actual messages from the DB.
+The agent has a built-in `search_session` tool that performs full-text search across all past conversations using SQLite's FTS5 engine — and lets the agent scroll through any session it finds. No LLM calls, no summarization, no truncation. Every shape returns actual messages from the DB.
 
 ### Three calling shapes
 
@@ -534,7 +534,7 @@ The tool infers what you want from which arguments you set. There's no `mode` pa
 **1. Discovery — pass `query`:**
 
 ```python
-session_search(query="auth refactor", limit=3)
+search_session(query="auth refactor", limit=3)
 ```
 
 Runs FTS5, dedupes hits by session lineage, returns the top N sessions. Each result carries:
@@ -551,7 +551,7 @@ Bookends + window together reconstruct goal → match → resolution without pay
 **2. Scroll — pass `session_id` + `around_message_id`:**
 
 ```python
-session_search(session_id="20260510_174648_805cc2", around_message_id=590803, window=10)
+search_session(session_id="20260510_174648_805cc2", around_message_id=590803, window=10)
 ```
 
 Returns a window of ±`window` messages centered on the anchor. No FTS5, no bookends — just the slice. Use after a discovery call when you need more context than the ±5 default window.
@@ -566,7 +566,7 @@ Typical wall time: 1–2ms per scroll call.
 **3. Browse — no args:**
 
 ```python
-session_search()
+search_session()
 ```
 
 Returns recent sessions chronologically (titles, previews, timestamps). Useful when the user asks "what was I working on" without naming a topic.
@@ -589,7 +589,7 @@ The keyword mode supports standard FTS5 query syntax:
 
 The agent is prompted to use session search automatically:
 
-> *"When the user references something from a past conversation or you suspect relevant prior context exists, use session_search to recall it before asking them to repeat themselves."*
+> *"When the user references something from a past conversation or you suspect relevant prior context exists, use search_session to recall it before asking them to repeat themselves."*
 
 Typical triggers: "we did this before", "remember when", "last time", "as I mentioned", or any reference to a project/person/concept that isn't in the current window.
 
@@ -692,7 +692,7 @@ Key tables in `state.db`:
 - After a prune that actually removed rows, `state.db` is `VACUUM`ed to reclaim disk space (SQLite does not shrink the file on plain DELETE)
 - Pruning runs at most once per `sessions.min_interval_hours` (default 24); the last-run timestamp is tracked inside `state.db` itself so it's shared across every Hermes process in the same `HERMES_HOME`
 
-Default is **off** — session history is valuable for `session_search` recall, and silently deleting it could surprise users. Enable in `~/.hermes/config.yaml`:
+Default is **off** — session history is valuable for `search_session` recall, and silently deleting it could surprise users. Enable in `~/.hermes/config.yaml`:
 
 ```yaml
 sessions:
@@ -719,5 +719,5 @@ hermes sessions prune --older-than 30 --yes
 ```
 
 :::tip
-The database grows slowly (typical: 10-15 MB for hundreds of sessions) and session history powers `session_search` recall across past conversations, so auto-prune ships disabled. Enable it if you're running a heavy gateway/cron workload where `state.db` is meaningfully affecting performance (observed failure mode: 384 MB state.db with ~1000 sessions slowing down FTS5 inserts and `/resume` listing). Use `hermes sessions prune` for one-off cleanup without turning on the automatic sweep.
+The database grows slowly (typical: 10-15 MB for hundreds of sessions) and session history powers `search_session` recall across past conversations, so auto-prune ships disabled. Enable it if you're running a heavy gateway/cron workload where `state.db` is meaningfully affecting performance (observed failure mode: 384 MB state.db with ~1000 sessions slowing down FTS5 inserts and `/resume` listing). Use `hermes sessions prune` for one-off cleanup without turning on the automatic sweep.
 :::

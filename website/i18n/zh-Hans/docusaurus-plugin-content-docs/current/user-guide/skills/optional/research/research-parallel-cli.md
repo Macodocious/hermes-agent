@@ -37,7 +37,7 @@ description: "可选的供应商技能，用于 Parallel CLI — 面向 agent �
 
 重要说明：
 - Parallel 是付费服务，提供免费套餐，并非完全免费的本地工具。
-- 它与 Hermes 原生的 `web_search` / `web_extract` 存在功能重叠，因此不要在普通查询中优先使用它。
+- 它与 Hermes 原生的 `search_web` / `extract_web` 存在功能重叠，因此不要在普通查询中优先使用它。
 - 当用户明确提及 Parallel，或需要 Parallel 特有的数据丰富、FindAll 或监控工作流时，优先使用此技能。
 
 `parallel-cli` 专为 agent 设计：
@@ -55,7 +55,7 @@ description: "可选的供应商技能，用于 Parallel CLI — 面向 agent �
 - 需要可启动并稍后轮询的异步深度研究任务
 - 需要结构化数据丰富、FindAll 实体发现或监控
 
-在未明确要求 Parallel 的情况下进行快速单次查询时，优先使用 Hermes 原生的 `web_search` / `web_extract`。
+在未明确要求 Parallel 的情况下进行快速单次查询时，优先使用 Hermes 原生的 `search_web` / `extract_web`。
 
 ## 安装
 

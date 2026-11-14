@@ -488,15 +488,15 @@ class TestRegistration:
         from tools.registry import registry
 
         names = registry.get_all_tool_names()
-        assert "ha_list_entities" in names
-        assert "ha_get_state" in names
-        assert "ha_call_service" in names
+        assert "list_ha_entities" in names
+        assert "get_ha_state" in names
+        assert "call_ha_service" in names
 
     def test_tools_in_homeassistant_toolset(self):
         from tools.registry import registry
 
         toolset_map = registry.get_tool_to_toolset_map()
-        for tool in ("ha_list_entities", "ha_get_state", "ha_call_service"):
+        for tool in ("list_ha_entities", "get_ha_state", "call_ha_service"):
             assert toolset_map[tool] == "homeassistant"
 
     def test_check_fn_gates_availability(self, monkeypatch):
@@ -505,7 +505,7 @@ class TestRegistration:
 
         monkeypatch.delenv("HASS_TOKEN", raising=False)
         invalidate_check_fn_cache()
-        defs = registry.get_definitions({"ha_list_entities", "ha_get_state", "ha_call_service"})
+        defs = registry.get_definitions({"list_ha_entities", "get_ha_state", "call_ha_service"})
         assert len(defs) == 0
 
     def test_check_fn_includes_when_token_set(self, monkeypatch):
@@ -514,5 +514,5 @@ class TestRegistration:
 
         monkeypatch.setenv("HASS_TOKEN", "test-token")
         invalidate_check_fn_cache()
-        defs = registry.get_definitions({"ha_list_entities", "ha_get_state", "ha_call_service"})
+        defs = registry.get_definitions({"list_ha_entities", "get_ha_state", "call_ha_service"})
         assert len(defs) == 3

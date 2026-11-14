@@ -492,7 +492,7 @@ class OpenAICodexImageGenProvider(ImageGenProvider):
     def capabilities(self) -> Dict[str, Any]:
         # The Codex Responses image_generation tool accepts source/reference
         # images as `input_image` message content parts. Keep this capability
-        # honest so the dynamic `image_generate` schema encourages identity-
+        # honest so the dynamic `generate_image` schema encourages identity-
         # preserving edits instead of unrelated text-to-image redraws.
         return {"modalities": ["text", "image"], "max_reference_images": _MAX_REFERENCE_IMAGES}
 

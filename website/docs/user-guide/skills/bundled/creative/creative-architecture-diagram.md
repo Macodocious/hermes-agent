@@ -159,7 +159,7 @@ The generated HTML file follows a four-part layout:
 Load the full HTML template for the exact structure, CSS, and SVG component examples:
 
 ```
-skill_view(name="architecture-diagram", file_path="templates/template.html")
+view_skill(name="architecture-diagram", file_path="templates/template.html")
 ```
 
 The template contains working examples of every component type (frontend, backend, database, cloud, security), arrow styles (standard, dashed, curved), security groups, region boundaries, and the legend — use it as your structural reference when generating diagrams.

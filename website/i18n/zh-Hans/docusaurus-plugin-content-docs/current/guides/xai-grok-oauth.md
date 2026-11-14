@@ -143,11 +143,11 @@ hermes tools
 如果 OAuth token 已存储，选择器会确认并跳过凭据提示。如果既没有 OAuth 也没有设置 `XAI_API_KEY`，选择器会提供三选一菜单：OAuth 登录、粘贴 API 密钥或跳过。
 
 :::note 视频生成默认关闭
-`video_gen` 工具集默认禁用。在 `hermes tools` → `🎬 Video Generation`（按空格键）中启用后，agent 才能调用 `video_generate`。否则 agent 可能回退到内置的 ComfyUI 技能，该技能同样标记为视频生成。
+`video_gen` 工具集默认禁用。在 `hermes tools` → `🎬 Video Generation`（按空格键）中启用后，agent 才能调用 `generate_video`。否则 agent 可能回退到内置的 ComfyUI 技能，该技能同样标记为视频生成。
 :::
 
 :::note 配置 xAI 凭据后 X 搜索自动启用
-只要配置了 xAI 凭据（SuperGrok / X Premium+ OAuth token 或 `XAI_API_KEY`），`x_search` 工具集就会自动启用。如不需要，请通过 `hermes tools` → `🐦 X (Twitter) Search`（按空格键）显式禁用。该工具通过 xAI 内置的 `x_search` Responses API 路由——支持 **SuperGrok / X Premium+ OAuth 登录**或付费 `XAI_API_KEY`，两者同时配置时优先使用 OAuth（消耗订阅配额而非 API 费用）。未配置任何 xAI 凭据时，无论工具集是否启用，工具 schema 都对模型隐藏。
+只要配置了 xAI 凭据（SuperGrok / X Premium+ OAuth token 或 `XAI_API_KEY`），`search_x` 工具集就会自动启用。如不需要，请通过 `hermes tools` → `🐦 X (Twitter) Search`（按空格键）显式禁用。该工具通过 xAI 内置的 `search_x` Responses API 路由——支持 **SuperGrok / X Premium+ OAuth 登录**或付费 `XAI_API_KEY`，两者同时配置时优先使用 OAuth（消耗订阅配额而非 API 费用）。未配置任何 xAI 凭据时，无论工具集是否启用，工具 schema 都对模型隐藏。
 :::
 
 ### 模型

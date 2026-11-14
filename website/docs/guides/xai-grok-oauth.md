@@ -143,11 +143,11 @@ hermes tools
 If OAuth tokens are already stored, the picker confirms it and skips the credential prompt. If neither OAuth nor `XAI_API_KEY` is set, the picker offers a 3-choice menu: OAuth login, paste API key, or skip.
 
 :::note Video generation is off by default
-The `video_gen` toolset is disabled by default. Enable it in `hermes tools` → `🎬 Video Generation` (press space) before the agent can call `video_generate`. Otherwise the agent may fall back to the bundled ComfyUI skill, which is also tagged for video generation.
+The `video_gen` toolset is disabled by default. Enable it in `hermes tools` → `🎬 Video Generation` (press space) before the agent can call `generate_video`. Otherwise the agent may fall back to the bundled ComfyUI skill, which is also tagged for video generation.
 :::
 
 :::note X search auto-enables when xAI credentials are present
-The `x_search` toolset auto-enables whenever xAI credentials (a SuperGrok / X Premium+ OAuth token or `XAI_API_KEY`) are configured. Disable explicitly via `hermes tools` → `🐦 X (Twitter) Search` (press space) if you don't want this. The tool routes through xAI's built-in `x_search` Responses API — it works with **either** your SuperGrok / X Premium+ OAuth login or a paid `XAI_API_KEY`, and prefers OAuth when both are configured (uses your subscription quota instead of API spend). The tool schema is hidden from the model when no xAI credentials are configured, regardless of whether the toolset is enabled.
+The `search_x` toolset auto-enables whenever xAI credentials (a SuperGrok / X Premium+ OAuth token or `XAI_API_KEY`) are configured. Disable explicitly via `hermes tools` → `🐦 X (Twitter) Search` (press space) if you don't want this. The tool routes through xAI's built-in `search_x` Responses API — it works with **either** your SuperGrok / X Premium+ OAuth login or a paid `XAI_API_KEY`, and prefers OAuth when both are configured (uses your subscription quota instead of API spend). The tool schema is hidden from the model when no xAI credentials are configured, regardless of whether the toolset is enabled.
 :::
 
 ### Models

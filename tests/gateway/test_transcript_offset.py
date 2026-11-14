@@ -231,7 +231,7 @@ class TestTranscriptHistoryOffset:
             {"role": "session_meta", "tools": [], "timestamp": "t0"},
             {"role": "user", "content": "Search for cats", "timestamp": "t1"},
             {"role": "assistant", "content": None, "timestamp": "t1",
-             "tool_calls": [{"id": "tc1", "function": {"name": "web_search"}}]},
+             "tool_calls": [{"id": "tc1", "function": {"name": "search_web"}}]},
             {"role": "tool", "tool_call_id": "tc1",
              "content": "Results about cats", "timestamp": "t1"},
             {"role": "assistant", "content": "Here are results.",
@@ -246,7 +246,7 @@ class TestTranscriptHistoryOffset:
         agent_messages = [
             {"role": "user", "content": "Search for cats"},
             {"role": "assistant", "content": None,
-             "tool_calls": [{"id": "tc1", "function": {"name": "web_search"}}]},
+             "tool_calls": [{"id": "tc1", "function": {"name": "search_web"}}]},
             {"role": "tool", "tool_call_id": "tc1", "content": "Results about cats"},
             {"role": "assistant", "content": "Here are results."},
             {"role": "user", "content": "Now search for dogs"},

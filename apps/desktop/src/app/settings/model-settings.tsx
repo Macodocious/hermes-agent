@@ -114,7 +114,7 @@ interface AuxTaskMeta {
 
 const AUX_TASKS: readonly AuxTaskMeta[] = [
   { key: 'vision' },
-  { key: 'web_extract' },
+  { key: 'extract_web' },
   { key: 'compression' },
   { key: 'skills_hub' },
   { key: 'approval' },

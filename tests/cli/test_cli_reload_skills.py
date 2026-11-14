@@ -57,7 +57,7 @@ class TestReloadSkillsCLI:
         note = getattr(cli, "_pending_skills_reload_note", None)
         assert note is not None
         assert note.startswith("[USER INITIATED SKILLS RELOAD:")
-        assert note.endswith("Use skills_list to see the updated catalog.]")
+        assert note.endswith("Use list_skills to see the updated catalog.]")
         assert "Added Skills:" in note
         assert "    - alpha: Run alpha to do xyz" in note
         assert "    - beta: Run beta to do abc" in note

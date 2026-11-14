@@ -33,7 +33,7 @@ def _make_tool_defs(*names: str) -> list:
 def _make_agent(fallback_model=None, provider="custom", base_url="https://my-llm.example.com/v1"):
     """Create a minimal AIAgent with optional fallback config."""
     with (
-        patch("run_agent.get_tool_definitions", return_value=_make_tool_defs("web_search")),
+        patch("run_agent.get_tool_definitions", return_value=_make_tool_defs("search_web")),
         patch("run_agent.check_toolset_requirements", return_value={}),
         patch("run_agent.OpenAI"),
     ):
@@ -86,7 +86,7 @@ class TestPrimaryRuntimeSnapshot:
     def test_snapshot_includes_anthropic_state_when_applicable(self):
         """Anthropic-mode agents should snapshot Anthropic-specific state."""
         with (
-            patch("run_agent.get_tool_definitions", return_value=_make_tool_defs("web_search")),
+            patch("run_agent.get_tool_definitions", return_value=_make_tool_defs("search_web")),
             patch("run_agent.check_toolset_requirements", return_value={}),
             patch("run_agent.OpenAI"),
             patch("agent.anthropic_adapter.build_anthropic_client", return_value=MagicMock()),

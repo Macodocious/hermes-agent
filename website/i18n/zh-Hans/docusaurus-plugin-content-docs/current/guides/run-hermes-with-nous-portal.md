@@ -91,7 +91,7 @@ hermes chat
 Hey, search the web for "Hermes Agent release notes" and summarize the top 3 hits.
 ```
 
-你应该看到 Hermes 调用 `web_search`（通过 gateway 由 Firecrawl 提供支持）并返回摘要。如果搜索正常执行且响应内容合理，说明配置完成——Portal 已端到端连通。
+你应该看到 Hermes 调用 `search_web`（通过 gateway 由 Firecrawl 提供支持）并返回摘要。如果搜索正常执行且响应内容合理，说明配置完成——Portal 已端到端连通。
 
 ## 5. 选择你实际需要的模型
 

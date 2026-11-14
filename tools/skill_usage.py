@@ -1,8 +1,8 @@
 """Skill usage telemetry + provenance tracking for the Curator feature.
 
 Tracks per-skill usage metadata in a sidecar JSON file (~/.hermes/skills/.usage.json)
-keyed by skill name. Counters are bumped by the existing skill tools (skill_view,
-skill_manage); the curator orchestrator reads the derived activity timestamp to
+keyed by skill name. Counters are bumped by the existing skill tools (view_skill,
+manage_skill); the curator orchestrator reads the derived activity timestamp to
 decide lifecycle transitions.
 
 Design notes:
@@ -12,7 +12,7 @@ Design notes:
   - All counter bumps are best-effort: failures log at DEBUG and return silently.
     A broken sidecar never breaks the underlying tool call.
   - Provenance filter: curator-managed skills are explicitly marked when
-    created through skill_manage. Bundled / hub-installed skills stay
+    created through manage_skill. Bundled / hub-installed skills stay
     off-limits, and manually authored skills are not inferred from location.
 
 Lifecycle states:
@@ -331,7 +331,7 @@ def list_agent_created_skill_names() -> List[str]:
     """Enumerate skills the curator may manage.
 
     Always includes agent-authored skills (those marked in ``.usage.json`` via
-    ``skill_manage(action="create")``). When ``curator.prune_builtins`` is
+    ``manage_skill(action="create")``). When ``curator.prune_builtins`` is
     enabled, bundled built-in skills are ALSO included even though they have no
     agent-created usage record — their inactivity clock is anchored on first
     sight (see ``apply_automatic_transitions``). Hub-installed skills are never
@@ -609,7 +609,7 @@ def _mutate(skill_name: str, mutator, *, require_curation_eligible: bool = False
 # ---------------------------------------------------------------------------
 
 def bump_view(skill_name: str) -> None:
-    """Bump view_count and last_viewed_at. Called from skill_view().
+    """Bump view_count and last_viewed_at. Called from view_skill().
 
     Tracks every skill regardless of provenance — built-ins and hub skills
     included. Usage telemetry is observability, not a curation signal.
@@ -633,7 +633,7 @@ def bump_use(skill_name: str) -> None:
 
 
 def bump_patch(skill_name: str) -> None:
-    """Bump patch_count and last_patched_at. Called from skill_manage (patch/edit).
+    """Bump patch_count and last_patched_at. Called from manage_skill (patch/edit).
 
     Tracks every skill regardless of provenance.
     """
@@ -644,7 +644,7 @@ def bump_patch(skill_name: str) -> None:
 
 
 def mark_agent_created(skill_name: str) -> None:
-    """Opt a skill created by skill_manage into curator management.
+    """Opt a skill created by manage_skill into curator management.
 
     Viewing or invoking a manually authored skill may still create telemetry,
     but only this explicit marker makes it eligible for automatic curation.

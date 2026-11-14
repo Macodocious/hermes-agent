@@ -127,27 +127,27 @@ class TestProfileScopedSkills:
 class TestProfileScopedToolsets:
     def test_toolset_toggle_scopes_to_profile(self, client, isolated_profiles):
         resp = client.put(
-            "/api/tools/toolsets/x_search",
+            "/api/tools/toolsets/search_x",
             json={"enabled": True, "profile": "worker_alpha"},
         )
         assert resp.status_code == 200
 
         worker_cfg = _load_cfg(isolated_profiles["worker_alpha"])
-        assert "x_search" in worker_cfg.get("platform_toolsets", {}).get("cli", [])
+        assert "search_x" in worker_cfg.get("platform_toolsets", {}).get("cli", [])
         default_cfg = _load_cfg(isolated_profiles["default"])
-        assert "x_search" not in default_cfg.get("platform_toolsets", {}).get("cli", [])
+        assert "search_x" not in default_cfg.get("platform_toolsets", {}).get("cli", [])
 
         listing = client.get(
             "/api/tools/toolsets", params={"profile": "worker_alpha"}
         ).json()
-        assert {t["name"]: t for t in listing}["x_search"]["enabled"] is True
+        assert {t["name"]: t for t in listing}["search_x"]["enabled"] is True
         # Unscoped listing reflects the dashboard's own (untouched) config.
         listing = client.get("/api/tools/toolsets").json()
-        assert {t["name"]: t for t in listing}["x_search"]["enabled"] is False
+        assert {t["name"]: t for t in listing}["search_x"]["enabled"] is False
 
     def test_toolset_toggle_unknown_profile_404(self, client, isolated_profiles):
         resp = client.put(
-            "/api/tools/toolsets/x_search",
+            "/api/tools/toolsets/search_x",
             json={"enabled": True, "profile": "ghost"},
         )
         assert resp.status_code == 404

@@ -531,7 +531,7 @@ def load_cli_config() -> Dict[str, Any]:
                 "base_url": "",
                 "api_key": "",
             },
-            "web_extract": {
+            "extract_web": {
                 "provider": "auto",
                 "model": "",
                 "base_url": "",
@@ -720,7 +720,7 @@ def load_cli_config() -> Dict[str, Any]:
             os.environ[env_var] = str(browser_config[config_key])
     
     # Apply auxiliary model/direct-endpoint overrides to environment variables.
-    # Vision and web_extract each have their own provider/model/base_url/api_key tuple.
+    # Vision and extract_web each have their own provider/model/base_url/api_key tuple.
     # Compression config is read directly from config.yaml by run_agent.py and
     # auxiliary_client.py — no env var bridging needed.
     # Only set env vars for non-empty / non-default values so auto-detection
@@ -734,7 +734,7 @@ def load_cli_config() -> Dict[str, Any]:
             "base_url": "AUXILIARY_VISION_BASE_URL",
             "api_key": "AUXILIARY_VISION_API_KEY",
         },
-        "web_extract": {
+        "extract_web": {
             "provider": "AUXILIARY_WEB_EXTRACT_PROVIDER",
             "model": "AUXILIARY_WEB_EXTRACT_MODEL",
             "base_url": "AUXILIARY_WEB_EXTRACT_BASE_URL",
@@ -6522,7 +6522,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         same approach the messaging gateway uses.
 
         The local file path is included so the agent can re-examine the
-        image later with ``vision_analyze`` if needed.
+        image later with ``analyze_vision`` if needed.
         """
         import asyncio as _asyncio
         from tools.vision_tools import vision_analyze_tool
@@ -6549,7 +6549,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                     description = result.get("analysis", "")
                     enriched_parts.append(
                         f"[The user attached an image. Here's what it contains:\n{description}]\n"
-                        f"[If you need a closer look, use vision_analyze with "
+                        f"[If you need a closer look, use analyze_vision with "
                         f"image_url: {img_path}]"
                     )
                     if announce:
@@ -6557,7 +6557,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                 else:
                     enriched_parts.append(
                         f"[The user attached an image but it couldn't be analyzed. "
-                        f"You can try examining it with vision_analyze using "
+                        f"You can try examining it with analyze_vision using "
                         f"image_url: {img_path}]"
                     )
                     if announce:
@@ -6565,7 +6565,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             except Exception as e:
                 enriched_parts.append(
                     f"[The user attached an image but analysis failed ({e}). "
-                    f"You can try examining it with vision_analyze using "
+                    f"You can try examining it with analyze_vision using "
                     f"image_url: {img_path}]"
                 )
                 if announce:
@@ -10648,8 +10648,8 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         next user turn.
 
         Skills don't need to live in the system prompt for the model to use
-        them (they're invoked via ``/skill-name``, ``skills_list``, or
-        ``skill_view`` at runtime), so this does NOT clear the prompt cache.
+        them (they're invoked via ``/skill-name``, ``list_skills``, or
+        ``view_skill`` at runtime), so this does NOT clear the prompt cache.
         It rescans the slash-command map, prints the diff for the user, and
         — if any skills were added or removed — queues a one-shot note that
         gets prepended to the next user message. This preserves message
@@ -10715,7 +10715,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                 for item in removed:
                     sections.append(_fmt_line(item))
             sections.append("")
-            sections.append("Use skills_list to see the updated catalog.]")
+            sections.append("Use list_skills to see the updated catalog.]")
             self._pending_skills_reload_note = "\n".join(sections)
 
         except Exception as e:
@@ -11576,9 +11576,9 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         return choices
 
     def _computer_use_approval_callback(self, action: str, args: dict, summary: str) -> str:
-        """Adapt the generic approval UI for the computer_use tool.
+        """Adapt the generic approval UI for the use_computer tool.
 
-        The computer_use handler expects verdicts of the form
+        The use_computer handler expects verdicts of the form
         `approve_once` | `approve_session` | `always_approve` | `deny`.
         The CLI's built-in approval UI returns `once` | `session` | `always`
         | `deny`. Translate between the two.
@@ -11586,8 +11586,8 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         # Build a command-ish string so the existing UI renders something
         # meaningful. `summary` is already a one-line human description.
         verdict = self._approval_callback(
-            command=f"computer_use: {summary}",
-            description=f"Allow computer_use to perform `{action}`?",
+            command=f"use_computer: {summary}",
+            description=f"Allow use_computer to perform `{action}`?",
         )
         return {
             "once": "approve_once",
@@ -11942,7 +11942,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         # Route image attachments based on the active model's vision capability.
         # "native" → pass pixels as OpenAI-style content parts (adapters
         #            translate for Anthropic/Gemini/Bedrock).
-        # "text"   → pre-analyze each image with vision_analyze and prepend the
+        # "text"   → pre-analyze each image with analyze_vision and prepend the
         #            description as text — works with non-vision models.
         # See agent/image_routing.py for the decision table.
         if images:
@@ -12674,7 +12674,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         terminal close/SIGHUP/SIGTERM can unwind the prompt_toolkit app while
         the agent thread still holds the current turn only in memory.  Flush the
         agent's live ``_session_messages`` before ``end_session()`` so resume,
-        session_search, and state.db do not lose the interrupted turn.
+        search_session, and state.db do not lose the interrupted turn.
         """
         agent = getattr(self, "agent", None)
         if not agent or not hasattr(agent, "_persist_session"):
@@ -16039,7 +16039,7 @@ def main(
                         # custom-provider models declared via
                         # `model.supports_vision: true`), attach images natively
                         # as image_url content parts. Otherwise fall back to the
-                        # text-pipeline (vision_analyze pre-description).
+                        # text-pipeline (analyze_vision pre-description).
                         _img_mode = "text"
                         _build_parts = None
                         try:

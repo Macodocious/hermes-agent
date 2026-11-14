@@ -329,7 +329,7 @@ class TestCheckWebApiKey:
 
 
 # ---------------------------------------------------------------------------
-# searxng-only: web_extract returns a clear error
+# searxng-only: extract_web returns a clear error
 # ---------------------------------------------------------------------------
 
 

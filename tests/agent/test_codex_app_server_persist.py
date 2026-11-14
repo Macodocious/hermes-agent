@@ -5,7 +5,7 @@ The codex app-server runtime (``run_codex_app_server_turn``) is an early-return
 path that bypasses ``conversation_loop`` and therefore never runs the loop's
 per-step ``_persist_session()`` flushes. Before the fix, the projected
 assistant/tool messages were persisted *nowhere* (state.db got only
-session_meta rows), leaving ``session_search`` (FTS) and conversation-distill
+session_meta rows), leaving ``search_session`` (FTS) and conversation-distill
 blind to real gateway conversations.
 
 The fix has the codex runtime flush its own projected messages via
@@ -124,7 +124,7 @@ def test_codex_turn_persists_each_message_exactly_once():
         # Exactly one user turn, exactly one assistant turn — no duplicates.
         assert contents.count("USER_TURN") == 1, contents
         assert contents.count("CODEX_ASSISTANT") == 1, contents
-        # session_search can now see the codex conversation.
+        # search_session can now see the codex conversation.
         hits = {r["session_id"] for r in db.search_messages("CODEX_ASSISTANT")}
         assert sid in hits
     finally:

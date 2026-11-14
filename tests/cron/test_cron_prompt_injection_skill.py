@@ -26,7 +26,7 @@ def cron_env(tmp_path, monkeypatch):
 
     `tools.skills_tool` snapshots `SKILLS_DIR` at module-import time, so
     setting `HERMES_HOME` alone doesn't reach it. We also patch the
-    module-level constant so `skill_view()` finds the skills we plant.
+    module-level constant so `view_skill()` finds the skills we plant.
 
     Note: `test_cron_no_agent.py` (and potentially others) do
     ``importlib.reload(cron.scheduler)`` in their fixtures. A plain
@@ -43,7 +43,7 @@ def cron_env(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(hermes_home))
     monkeypatch.setenv("HERMES_BUNDLES_DIR", str(hermes_home / "skill-bundles"))
 
-    # Patch the module-level SKILLS_DIR snapshots that `skill_view()`
+    # Patch the module-level SKILLS_DIR snapshots that `view_skill()`
     # uses. Without this, the tool resolves against the real
     # `~/.hermes/skills/` and our planted skills are invisible.
     import tools.skills_tool as _skills_tool

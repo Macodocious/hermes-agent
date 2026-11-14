@@ -47,7 +47,7 @@ class TestToolKindMap:
         assert get_tool_kind("write_file") == "edit"
 
     def test_tool_kind_web_search(self):
-        assert get_tool_kind("web_search") == "fetch"
+        assert get_tool_kind("search_web") == "fetch"
 
     def test_tool_kind_execute_code(self):
         assert get_tool_kind("execute_code") == "execute"
@@ -56,10 +56,10 @@ class TestToolKindMap:
         assert get_tool_kind("todo") == "other"
 
     def test_tool_kind_skill_view(self):
-        assert get_tool_kind("skill_view") == "read"
+        assert get_tool_kind("view_skill") == "read"
 
     def test_tool_kind_browser_navigate(self):
-        assert get_tool_kind("browser_navigate") == "fetch"
+        assert get_tool_kind("navigate_browser") == "fetch"
 
     def test_unknown_tool_returns_other_kind(self):
         assert get_tool_kind("nonexistent_tool_xyz") == "other"
@@ -113,11 +113,11 @@ class TestBuildToolTitle:
         assert "TODO" in title
 
     def test_web_search_title(self):
-        title = build_tool_title("web_search", {"query": "python asyncio"})
+        title = build_tool_title("search_web", {"query": "python asyncio"})
         assert "python asyncio" in title
 
     def test_web_extract_title_unwraps_search_result_object(self):
-        title = build_tool_title("web_extract", {
+        title = build_tool_title("extract_web", {
             "urls": [
                 {"url": "https://example.com/a", "title": "A"},
                 {"href": "https://example.org/b"},
@@ -126,14 +126,14 @@ class TestBuildToolTitle:
         assert title == "extract: https://example.com/a (+1)"
 
     def test_web_extract_title_handles_malformed_object(self):
-        assert build_tool_title("web_extract", {"urls": [{"title": "missing"}]}) == "extract: ?"
+        assert build_tool_title("extract_web", {"urls": [{"title": "missing"}]}) == "extract: ?"
 
     def test_skill_view_title_includes_skill_name(self):
-        title = build_tool_title("skill_view", {"name": "github-pitfalls"})
+        title = build_tool_title("view_skill", {"name": "github-pitfalls"})
         assert title == "skill view (github-pitfalls)"
 
     def test_skill_view_title_includes_linked_file(self):
-        title = build_tool_title("skill_view", {"name": "github-pitfalls", "file_path": "references/api.md"})
+        title = build_tool_title("view_skill", {"name": "github-pitfalls", "file_path": "references/api.md"})
         assert title == "skill view (github-pitfalls/references/api.md)"
 
     def test_execute_code_title_includes_first_code_line(self):
@@ -142,7 +142,7 @@ class TestBuildToolTitle:
 
     def test_skill_manage_title_includes_action_and_target(self):
         title = build_tool_title(
-            "skill_manage",
+            "manage_skill",
             {"action": "patch", "name": "hermes-agent-operations", "file_path": "references/acp.md"},
         )
         assert title == "skill patch: hermes-agent-operations/references/acp.md"
@@ -248,9 +248,9 @@ class TestBuildToolStart:
         assert isinstance(result, ToolCallStart)
 
     def test_build_tool_start_for_web_extract_is_compact(self):
-        """web_extract start should stay compact; title identifies URLs."""
+        """extract_web start should stay compact; title identifies URLs."""
         args = {"urls": ["https://example.com/docs"]}
-        result = build_tool_start("tc-web-start", "web_extract", args)
+        result = build_tool_start("tc-web-start", "extract_web", args)
         assert isinstance(result, ToolCallStart)
         assert result.title == "extract: https://example.com/docs"
         assert result.kind == "fetch"
@@ -258,9 +258,9 @@ class TestBuildToolStart:
         assert result.raw_input is None
 
     def test_build_tool_start_for_browser_navigate(self):
-        """browser_navigate should emit a polished start event."""
+        """navigate_browser should emit a polished start event."""
         args = {"url": "https://x.com"}
-        result = build_tool_start("tc-browser-start", "browser_navigate", args)
+        result = build_tool_start("tc-browser-start", "navigate_browser", args)
         assert isinstance(result, ToolCallStart)
         assert result.title == "navigate: https://x.com"
         assert result.kind == "fetch"
@@ -284,7 +284,7 @@ class TestBuildToolStart:
         assert result.raw_input is None
 
     def test_build_tool_start_for_skill_view_is_human_readable(self):
-        result = build_tool_start("tc-skill", "skill_view", {"name": "github-pitfalls"})
+        result = build_tool_start("tc-skill", "view_skill", {"name": "github-pitfalls"})
         assert result.title == "skill view (github-pitfalls)"
         assert "github-pitfalls" in result.content[0].content.text
         assert result.raw_input is None
@@ -300,7 +300,7 @@ class TestBuildToolStart:
     def test_build_tool_start_for_skill_manage_patch_shows_diff(self):
         result = build_tool_start(
             "tc-skill-manage",
-            "skill_manage",
+            "manage_skill",
             {
                 "action": "patch",
                 "name": "hermes-agent-operations",
@@ -357,7 +357,7 @@ class TestBuildToolComplete:
     def test_build_tool_complete_for_skill_view_summarizes_content_without_raw_json(self):
         result = build_tool_complete(
             "tc-skill",
-            "skill_view",
+            "view_skill",
             '{"success":true,"name":"github-pitfalls","description":"GitHub gotchas","content":"# GitHub Pitfalls\\nUse gh carefully.","path":"github/github-pitfalls/SKILL.md"}',
         )
         text = result.content[0].content.text
@@ -398,7 +398,7 @@ class TestBuildToolComplete:
         assert result.raw_output is None
 
     def test_build_tool_complete_marks_success_false_as_failed(self):
-        result = build_tool_complete("tc-fail", "skill_manage", '{"success": false, "error": "boom"}')
+        result = build_tool_complete("tc-fail", "manage_skill", '{"success": false, "error": "boom"}')
         assert result.status == "failed"
 
     def test_build_tool_complete_marks_ok_false_as_failed(self):
@@ -453,7 +453,7 @@ class TestBuildToolComplete:
     def test_build_tool_complete_for_skill_manage_summarizes_without_raw_json(self):
         result = build_tool_complete(
             "tc-skill-manage",
-            "skill_manage",
+            "manage_skill",
             '{"success":true,"message":"Patched references/hermes-acp-zed-rendering.md in skill \'hermes-agent-operations\' (1 replacement)."}',
             function_args={
                 "action": "patch",
@@ -524,7 +524,7 @@ class TestBuildToolComplete:
     def test_build_tool_complete_for_session_search_recent(self):
         result = build_tool_complete(
             "tc-session",
-            "session_search",
+            "search_session",
             '{"success":true,"mode":"recent","results":[{"session_id":"s1","title":"ACP work","last_active":"2026-05-02","message_count":12,"preview":"Polished tool rendering."}],"count":1}',
         )
         text = result.content[0].content.text
@@ -549,7 +549,7 @@ class TestBuildToolComplete:
     def test_build_tool_complete_for_web_extract_success_stays_compact(self):
         result = build_tool_complete(
             "tc-web-extract",
-            "web_extract",
+            "extract_web",
             '{"results":[{"url":"https://example.com","title":"Example","content":"# Intro\\nThis is extracted content."}]}',
         )
         assert result.content is None
@@ -558,7 +558,7 @@ class TestBuildToolComplete:
     def test_build_tool_complete_for_web_extract_error_shows_error(self):
         result = build_tool_complete(
             "tc-web-extract-error",
-            "web_extract",
+            "extract_web",
             '{"results":[{"url":"https://example.com","title":"Example","error":"timeout"}]}',
         )
         text = result.content[0].content.text

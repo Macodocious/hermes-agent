@@ -111,7 +111,7 @@ def matrix_env(tmp_path, monkeypatch):
     return tmp_path, fal_calls, xai_calls
 
 
-def _invoke_tool(home, cfg: dict, args: dict, tool_name: str = "video_generate") -> dict:
+def _invoke_tool(home, cfg: dict, args: dict, tool_name: str = "generate_video") -> dict:
     """Write config, invoke the registered tool handler, return parsed JSON."""
     (home / "config.yaml").write_text(yaml.safe_dump(cfg))
     import hermes_cli.config as cfg_mod
@@ -316,7 +316,7 @@ def test_xai_video_edit_via_tool_surface(matrix_env):
             "prompt": "make the sky stormy",
             "video_url": "https://example.com/source.mp4",
         },
-        tool_name="xai_video_edit",
+        tool_name="edit_xai_video",
     )
     assert result["success"] is True
     assert result["modality"] == "edit"
@@ -341,7 +341,7 @@ def test_xai_video_extend_via_tool_surface(matrix_env):
             "video_url": "https://example.com/source.mp4",
             "duration": 15,
         },
-        tool_name="xai_video_extend",
+        tool_name="extend_xai_video",
     )
     assert result["success"] is True
     assert result["modality"] == "extend"
@@ -363,7 +363,7 @@ def test_xai_video_edit_rejects_bare_file_id_via_tool_surface(matrix_env):
             "prompt": "make the sky stormy",
             "video_url": "file-123",
         },
-        tool_name="xai_video_edit",
+        tool_name="edit_xai_video",
     )
     assert result.get("success") is not True
     assert "error" in result
@@ -381,7 +381,7 @@ def test_xai_video_extend_rejects_bare_file_id_via_tool_surface(matrix_env):
             "prompt": "continue into a sunrise",
             "video_url": "file_25ac1c31-d6d8-48b2-8504-a97d282310c4",
         },
-        tool_name="xai_video_extend",
+        tool_name="extend_xai_video",
     )
     assert result.get("success") is not True
     assert "error" in result

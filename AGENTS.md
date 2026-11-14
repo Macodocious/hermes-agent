@@ -202,8 +202,8 @@ Each rung adds more permanent surface than the one above. Choose the highest
    zero permanent core-schema footprint, and it's reusable by any MCP host.
 6. **New core tool** — only when the capability is fundamental, broadly useful
    to nearly every user, and unreachable via terminal + file (or an MCP server).
-   Examples of correct core tools: terminal, read_file, web_search,
-   browser_navigate.
+   Examples of correct core tools: terminal, read_file, search_web,
+   navigate_browser.
 
 When 3+ open PRs try to integrate the same *category* of thing (memory
 backends, providers, notifiers), don't merge them one at a time — design an
@@ -597,7 +597,7 @@ Reference: #2810 (bounds pass), #9801 (SHA pinning + audit CI).
 `plugins`, `honcho`.
 
 `auxiliary` holds per-task overrides for side-LLM work (curator, vision,
-embedding, title generation, session_search, etc.) — each task can pin
+embedding, title generation, search_session, etc.) — each task can pin
 its own provider/model/base_url/max_tokens/reasoning_effort. See
 `agent/auxiliary_client.py::_resolve_auto` for resolution order.
 
@@ -902,9 +902,9 @@ violate them.
 2. **Tools referenced in SKILL.md prose must be native Hermes tools or
    MCP servers the skill explicitly expects.** When the skill needs a
    capability, point at the proper tool by name in backticks
-   (`` `terminal` ``, `` `web_extract` ``, `` `read_file` ``,
-   `` `patch` ``, `` `search_files` ``, `` `vision_analyze` ``,
-   `` `browser_navigate` ``, `` `delegate_task` ``, etc.). Do NOT
+   (`` `terminal` ``, `` `extract_web` ``, `` `read_file` ``,
+   `` `patch` ``, `` `search_files` ``, `` `analyze_vision` ``,
+   `` `navigate_browser` ``, `` `delegate_task` ``, etc.). Do NOT
    name shell utilities the agent already has wrapped — `grep` →
    `search_files`, `cat`/`head`/`tail` → `read_file`, `sed`/`awk` →
    `patch`, `find`/`ls` → `search_files target='files'`. If the skill
@@ -971,7 +971,7 @@ platforms inherit from.
 Current toolset keys: `browser`, `clarify`, `code_execution`, `cronjob`,
 `debugging`, `delegation`, `discord`, `discord_admin`, `feishu_doc`,
 `feishu_drive`, `file`, `homeassistant`, `image_gen`, `kanban`, `memory`,
-`messaging`, `moa`, `rl`, `safe`, `search`, `session_search`, `skills`,
+`messaging`, `moa`, `rl`, `safe`, `search`, `search_session`, `skills`,
 `spotify`, `terminal`, `todo`, `tts`, `video`, `vision`, `web`, `yuanbao`.
 
 Enable/disable per platform via `hermes tools` (the curses UI) or the
@@ -1036,7 +1036,7 @@ Invariants:
 - Never deletes; max destructive action is archive.
 - Pinned skills are exempt from every auto-transition and from the
   LLM review pass.
-- `skill_manage(action="delete")` refuses pinned skills; patch/edit/
+- `manage_skill(action="delete")` refuses pinned skills; patch/edit/
   write_file/remove_file go through so the agent can keep improving
   pinned skills.
 
@@ -1099,11 +1099,11 @@ kanban task.
   `stats`, `runs`, `log`, `assignees`, `heartbeat`, `notify-*`,
   `dispatch`, `daemon`, `gc`.
 - **Worker/orchestrator toolset:** `tools/kanban_tools.py` exposes
-  `kanban_show`, `kanban_complete`, `kanban_block`, `kanban_heartbeat`,
-  `kanban_comment`, `kanban_create`, `kanban_link`, `kanban_attach`,
-  `kanban_attach_url`, `kanban_attachments`; profiles that explicitly
+  `show_kanban`, `complete_kanban`, `block_kanban`, `heartbeat_kanban`,
+  `comment_kanban`, `create_kanban`, `link_kanban`, `attach_kanban`,
+  `attach_kanban_url`, `kanban_attachments`; profiles that explicitly
   enable the `kanban` toolset outside a dispatcher-spawned task also get
-  `kanban_list` and `kanban_unblock` for board routing.
+  `list_kanban` and `unblock_kanban` for board routing.
 - **Dispatcher:** long-lived loop that (default every 60s) reclaims
   stale claims, promotes ready tasks, atomically claims, and spawns
   assigned profiles. Runs **inside the gateway** by default via
@@ -1234,7 +1234,7 @@ Leaks as literal `?[K` text under `prompt_toolkit`'s `patch_stdout`. Use space-p
 `_run_single_child()` in `delegate_tool.py` saves and restores this global around subagent execution. If you add new code that reads this global, be aware it may be temporarily stale during child agent runs.
 
 ### DO NOT hardcode cross-tool references in schema descriptions
-Tool schema descriptions must not mention tools from other toolsets by name (e.g., `browser_navigate` saying "prefer web_search"). Those tools may be unavailable (missing API keys, disabled toolset), causing the model to hallucinate calls to non-existent tools. If a cross-reference is needed, add it dynamically in `get_tool_definitions()` in `model_tools.py` — see the `browser_navigate` / `execute_code` post-processing blocks for the pattern.
+Tool schema descriptions must not mention tools from other toolsets by name (e.g., `navigate_browser` saying "prefer search_web"). Those tools may be unavailable (missing API keys, disabled toolset), causing the model to hallucinate calls to non-existent tools. If a cross-reference is needed, add it dynamically in `get_tool_definitions()` in `model_tools.py` — see the `navigate_browser` / `execute_code` post-processing blocks for the pattern.
 
 ### The gateway has TWO message guards — both must bypass approval/control commands
 When an agent is running, messages pass through two sequential guards:

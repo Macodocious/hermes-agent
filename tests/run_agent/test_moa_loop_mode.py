@@ -1183,7 +1183,7 @@ def test_reference_messages_image_only_user_turn_gets_placeholder():
 def test_reference_messages_flattens_structured_assistant_and_tool_content():
     """Assistant and tool turns with content-part lists are flattened too.
 
-    Multimodal tool results (e.g. computer_use screenshots) and adapter-shaped
+    Multimodal tool results (e.g. use_computer screenshots) and adapter-shaped
     assistant turns arrive as lists; their text must reach the references and
     their image parts must not leak.
     """

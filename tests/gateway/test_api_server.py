@@ -1094,7 +1094,7 @@ class TestToolsetsEndpoint:
             "toolsets.resolve_toolset",
             side_effect=lambda name: {
                 "default": ["terminal", "read_file"],
-                "web": ["web_search"],
+                "web": ["search_web"],
             }[name],
         ):
             app = _create_app(adapter)
@@ -1108,7 +1108,7 @@ class TestToolsetsEndpoint:
                 assert by_name["default"]["enabled"] is True
                 assert by_name["default"]["tools"] == ["read_file", "terminal"]
                 assert by_name["web"]["enabled"] is False
-                assert by_name["web"]["tools"] == ["web_search"]
+                assert by_name["web"]["tools"] == ["search_web"]
                 assert by_name["default"]["configured"] is True
 
     @pytest.mark.asyncio
@@ -1473,7 +1473,7 @@ class TestChatCompletionsEndpoint:
                 ts_cb = kwargs.get("tool_start_callback")
                 if ts_cb:
                     ts_cb("call_internal_1", "_thinking", {"text": "some internal state"})
-                    ts_cb("call_search_1", "web_search", {"query": "Python docs"})
+                    ts_cb("call_search_1", "search_web", {"query": "Python docs"})
                 if cb:
                     await asyncio.sleep(0.05)
                     cb("Found it.")
@@ -1498,7 +1498,7 @@ class TestChatCompletionsEndpoint:
                 assert "call_internal_1" not in body
                 # Real tool progress should appear as custom SSE event
                 assert "event: hermes.tool.progress" in body
-                assert '"tool": "web_search"' in body
+                assert '"tool": "search_web"' in body
                 # Label is derived from the args dict by build_tool_preview;
                 # asserting on the structural fact (label exists, call id
                 # is correlated) rather than a literal preview string keeps
@@ -1604,7 +1604,7 @@ class TestChatCompletionsEndpoint:
                     tc_cb("call_internal_1", "_thinking", {}, "")
                 # Completion without start — orphan, must be dropped.
                 if tc_cb:
-                    tc_cb("call_orphan_1", "web_search", {}, "ok")
+                    tc_cb("call_orphan_1", "search_web", {}, "ok")
                 if cb:
                     await asyncio.sleep(0.05)
                     cb("ok.")

@@ -1,7 +1,7 @@
 """Regression tests for the _run_async() event-loop lifecycle.
 
 These tests verify the fix for GitHub issue #2104:
-  "Event loop is closed" after vision_analyze used as first call in session.
+  "Event loop is closed" after analyze_vision used as first call in session.
 
 Root cause: asyncio.run() creates and *closes* a fresh event loop on every
 call.  Cached httpx/AsyncOpenAI clients that were bound to the now-dead loop
@@ -337,7 +337,7 @@ class TestRunAsyncWithRunningLoop:
 
 
 # ---------------------------------------------------------------------------
-# Integration: full vision_analyze dispatch chain
+# Integration: full analyze_vision dispatch chain
 # ---------------------------------------------------------------------------
 
 def _mock_vision_response():
@@ -348,12 +348,12 @@ def _mock_vision_response():
 
 
 class TestVisionDispatchLoopSafety:
-    """Simulate the full registry.dispatch('vision_analyze') chain and
+    """Simulate the full registry.dispatch('analyze_vision') chain and
     verify the event loop stays alive afterwards — the exact scenario
     from issue #2104."""
 
     def test_vision_dispatch_keeps_loop_alive(self, tmp_path):
-        """After dispatching vision_analyze via the registry, the event
+        """After dispatching analyze_vision via the registry, the event
         loop must remain open so cached async clients don't crash on GC."""
         from model_tools import _get_tool_loop
         from tools.registry import registry
@@ -382,7 +382,7 @@ class TestVisionDispatchLoopSafety:
             ),
         ):
             result_json = registry.dispatch(
-                "vision_analyze",
+                "analyze_vision",
                 {"image_url": "https://example.com/cat.png", "question": "What is this?"},
             )
 
@@ -392,12 +392,12 @@ class TestVisionDispatchLoopSafety:
 
         loop = _get_tool_loop()
         assert not loop.is_closed(), (
-            "Event loop closed after vision_analyze dispatch — cached async "
+            "Event loop closed after analyze_vision dispatch — cached async "
             "clients will crash with 'Event loop is closed' (issue #2104)"
         )
 
     def test_two_consecutive_vision_dispatches(self, tmp_path):
-        """Two back-to-back vision_analyze dispatches must both succeed
+        """Two back-to-back analyze_vision dispatches must both succeed
         and share the same loop (simulates 'first call fails, second
         works' from the issue report)."""
         from model_tools import _get_tool_loop
@@ -428,10 +428,10 @@ class TestVisionDispatchLoopSafety:
         ):
             args = {"image_url": "https://example.com/cat.png", "question": "Describe"}
 
-            r1 = json.loads(registry.dispatch("vision_analyze", args))
+            r1 = json.loads(registry.dispatch("analyze_vision", args))
             loop_after_first = _get_tool_loop()
 
-            r2 = json.loads(registry.dispatch("vision_analyze", args))
+            r2 = json.loads(registry.dispatch("analyze_vision", args))
             loop_after_second = _get_tool_loop()
 
         assert r1.get("success") is True

@@ -22,13 +22,13 @@ def test_tool_call_signature_hashes_canonical_nested_unicode_args_without_exposi
     }
 
     assert canonical_tool_args(args_a) == canonical_tool_args(args_b)
-    sig_a = ToolCallSignature.from_call("web_search", args_a)
-    sig_b = ToolCallSignature.from_call("web_search", args_b)
+    sig_a = ToolCallSignature.from_call("search_web", args_a)
+    sig_b = ToolCallSignature.from_call("search_web", args_b)
 
     assert sig_a == sig_b
     assert len(sig_a.args_hash) == 64
     metadata = sig_a.to_metadata()
-    assert metadata == {"tool_name": "web_search", "args_hash": sig_a.args_hash}
+    assert metadata == {"tool_name": "search_web", "args_hash": sig_a.args_hash}
     assert "secret-token-value" not in json.dumps(metadata)
     assert "☤" not in json.dumps(metadata)
 
@@ -80,15 +80,15 @@ def test_default_repeated_identical_failed_call_warns_without_blocking():
 
     decisions = []
     for _ in range(5):
-        assert controller.before_call("web_search", args).action == "allow"
+        assert controller.before_call("search_web", args).action == "allow"
         decisions.append(
-            controller.after_call("web_search", args, '{"error":"boom"}', failed=True)
+            controller.after_call("search_web", args, '{"error":"boom"}', failed=True)
         )
 
     assert decisions[0].action == "allow"
     assert [d.action for d in decisions[1:]] == ["warn", "warn", "warn", "warn"]
     assert {d.code for d in decisions[1:]} == {"repeated_exact_failure_warning"}
-    assert controller.before_call("web_search", args).action == "allow"
+    assert controller.before_call("search_web", args).action == "allow"
     assert controller.halt_decision is None
 
 
@@ -103,16 +103,16 @@ def test_hard_stop_enabled_blocks_repeated_exact_failure_before_next_execution()
     )
     args = {"query": "same"}
 
-    assert controller.before_call("web_search", args).action == "allow"
-    first = controller.after_call("web_search", args, '{"error":"boom"}', failed=True)
+    assert controller.before_call("search_web", args).action == "allow"
+    first = controller.after_call("search_web", args, '{"error":"boom"}', failed=True)
     assert first.action == "allow"
 
-    assert controller.before_call("web_search", args).action == "allow"
-    second = controller.after_call("web_search", args, '{"error":"boom"}', failed=True)
+    assert controller.before_call("search_web", args).action == "allow"
+    second = controller.after_call("search_web", args, '{"error":"boom"}', failed=True)
     assert second.action == "warn"
     assert second.code == "repeated_exact_failure_warning"
 
-    blocked = controller.before_call("web_search", args)
+    blocked = controller.before_call("search_web", args)
     assert blocked.action == "block"
     assert blocked.code == "repeated_exact_failure_block"
     assert blocked.count == 2
@@ -124,12 +124,12 @@ def test_success_resets_exact_signature_failure_streak():
     )
     args = {"query": "same"}
 
-    controller.after_call("web_search", args, '{"error":"boom"}', failed=True)
-    controller.after_call("web_search", args, '{"ok":true}', failed=False)
+    controller.after_call("search_web", args, '{"error":"boom"}', failed=True)
+    controller.after_call("search_web", args, '{"ok":true}', failed=False)
 
-    assert controller.before_call("web_search", args).action == "allow"
-    controller.after_call("web_search", args, '{"error":"boom"}', failed=True)
-    assert controller.before_call("web_search", args).action == "allow"
+    assert controller.before_call("search_web", args).action == "allow"
+    controller.after_call("search_web", args, '{"error":"boom"}', failed=True)
+    assert controller.before_call("search_web", args).action == "allow"
 
 
 def test_file_mutation_lint_error_result_is_not_a_tool_failure():
@@ -244,17 +244,17 @@ def test_reset_for_turn_clears_bounded_guardrail_state():
     controller = ToolCallGuardrailController(
         ToolCallGuardrailConfig(hard_stop_enabled=True, exact_failure_block_after=2, no_progress_block_after=2)
     )
-    controller.after_call("web_search", {"query": "same"}, '{"error":"boom"}', failed=True)
-    controller.after_call("web_search", {"query": "same"}, '{"error":"boom"}', failed=True)
+    controller.after_call("search_web", {"query": "same"}, '{"error":"boom"}', failed=True)
+    controller.after_call("search_web", {"query": "same"}, '{"error":"boom"}', failed=True)
     controller.after_call("read_file", {"path": "/tmp/x"}, "same", failed=False)
     controller.after_call("read_file", {"path": "/tmp/x"}, "same", failed=False)
 
-    assert controller.before_call("web_search", {"query": "same"}).action == "block"
+    assert controller.before_call("search_web", {"query": "same"}).action == "block"
     assert controller.before_call("read_file", {"path": "/tmp/x"}).action == "block"
 
     controller.reset_for_turn()
 
-    assert controller.before_call("web_search", {"query": "same"}).action == "allow"
+    assert controller.before_call("search_web", {"query": "same"}).action == "allow"
     assert controller.before_call("read_file", {"path": "/tmp/x"}).action == "allow"
 
 
@@ -269,14 +269,14 @@ def test_after_call_survives_lone_surrogates_in_result_and_args():
     )
     dirty = "price \ud835 update"
 
-    decision = controller.after_call("web_search", {"query": dirty}, dirty, failed=False)
+    decision = controller.after_call("search_web", {"query": dirty}, dirty, failed=False)
     assert decision.action in {"allow", "warn"}
 
     # hashing stays deterministic: the same dirty failure twice still trips
     # the exact-failure guard, proving the hash is stable across calls
-    controller.after_call("web_search", {"query": dirty}, '{"error":"\ud835 boom"}', failed=True)
-    controller.after_call("web_search", {"query": dirty}, '{"error":"\ud835 boom"}', failed=True)
-    assert controller.before_call("web_search", {"query": dirty}).action == "block"
+    controller.after_call("search_web", {"query": dirty}, '{"error":"\ud835 boom"}', failed=True)
+    controller.after_call("search_web", {"query": dirty}, '{"error":"\ud835 boom"}', failed=True)
+    assert controller.before_call("search_web", {"query": dirty}).action == "block"
 
 
 def _coarse_controller(**overrides) -> ToolCallGuardrailController:

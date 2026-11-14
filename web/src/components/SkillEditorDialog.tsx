@@ -20,7 +20,7 @@ import {
 /*  posts a brand-new skill (name + optional category + SKILL.md);     */
 /*  edit mode loads the existing SKILL.md raw text and rewrites it.    */
 /*  Validation (frontmatter, name, size) happens server-side via the   */
-/*  same path the agent's skill_manage tool uses, so errors come back  */
+/*  same path the agent's manage_skill tool uses, so errors come back  */
 /*  as actionable messages rendered inline.                            */
 /* ------------------------------------------------------------------ */
 

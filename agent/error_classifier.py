@@ -234,7 +234,7 @@ _IMAGE_TOO_LARGE_PATTERNS = [
 # Providers that follow the OpenAI spec strictly require tool message
 # ``content`` to be a string.  Some (Anthropic native, Codex Responses,
 # Gemini native, first-party OpenAI) extend this to accept a content-parts
-# list (text + image_url) so screenshots from computer_use survive.  Others
+# list (text + image_url) so screenshots from use_computer survive.  Others
 # (Xiaomi MiMo, some Alibaba endpoints, a long tail of OpenAI-compatible
 # providers) reject the list with a 400 — the patterns below are the most
 # common error shapes we see.  Recovery: strip image parts from tool

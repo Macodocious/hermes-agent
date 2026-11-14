@@ -244,12 +244,12 @@ def apply(
             if "hermes-tools" in mig_report.migrated:
                 msg_lines.append(
                     "Hermes tool callback registered: codex can now use "
-                    "web_search, web_extract, browser_*, vision_analyze, "
-                    "image_generate, skill_view, skills_list, text_to_speech, "
+                    "search_web, extract_web, browser_*, analyze_vision, "
+                    "generate_image, view_skill, list_skills, text_to_speech, "
                     "kanban_* (worker + orchestrator) via MCP."
                 )
                 msg_lines.append(
-                    "  (delegate_task, memory, session_search, todo run "
+                    "  (delegate_task, memory, search_session, todo run "
                     "only on the default Hermes runtime — they need the "
                     "agent loop context.)"
                 )

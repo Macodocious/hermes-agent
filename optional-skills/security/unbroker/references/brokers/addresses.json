@@ -10,7 +10,7 @@
   "search": {
     "method": "url_pattern",
     "url": "https://www.addresses.com/",
-    "fetch": "web_extract",
+    "fetch": "extract_web",
     "match_signal": "result",
     "by": [
       "name"

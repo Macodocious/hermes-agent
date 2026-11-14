@@ -307,8 +307,8 @@ display:
 
 ```text
 💻 `ls -la`...
-🔍 web_search...
-📄 web_extract...
+🔍 search_web...
+📄 extract_web...
 🐍 execute_code...
 ```
 
@@ -437,7 +437,7 @@ launchd plist 是静态的——如果你在配置网关后安装了新工具（
 | Signal | `hermes-signal` | 完整工具，包括终端 |
 | SMS | `hermes-sms` | 完整工具，包括终端 |
 | Email | `hermes-email` | 完整工具，包括终端 |
-| Home Assistant | `hermes-homeassistant` | 完整工具 + HA 设备控制（ha_list_entities、ha_get_state、ha_call_service、ha_list_services） |
+| Home Assistant | `hermes-homeassistant` | 完整工具 + HA 设备控制（list_ha_entities、get_ha_state、call_ha_service、list_ha_services） |
 | Mattermost | `hermes-mattermost` | 完整工具，包括终端 |
 | Matrix | `hermes-matrix` | 完整工具，包括终端 |
 | DingTalk | `hermes-dingtalk` | 完整工具，包括终端 |

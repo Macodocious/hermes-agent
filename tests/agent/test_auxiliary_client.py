@@ -1548,7 +1548,7 @@ class TestAuxiliaryPoolAwareness:
             patch("agent.auxiliary_client._resolve_nous_runtime_api", return_value=("fresh-agent-key", "https://inference-api.nousresearch.com/v1")),
         ):
             result = await async_call_llm(
-                task="session_search",
+                task="search_session",
                 messages=[{"role": "user", "content": "hi"}],
             )
 
@@ -1590,7 +1590,7 @@ class TestAuxiliaryPoolAwareness:
             ),
         ):
             result = await async_call_llm(
-                task="session_search",
+                task="search_session",
                 messages=[{"role": "user", "content": "hi"}],
             )
 
@@ -2096,7 +2096,7 @@ class TestCallLlmPaymentFallback:
              patch("agent.auxiliary_client._try_payment_fallback",
                     return_value=(fallback_client, "fallback-model", "openrouter")):
             result = call_llm(
-                task="session_search",
+                task="search_session",
                 messages=[{"role": "user", "content": "hello"}],
             )
         # Fallback client should have been used
@@ -3078,7 +3078,7 @@ class TestKimiTemperatureOmitted:
             return_value=("auto", "kimi-for-coding", None, None, None),
         ):
             result = call_llm(
-                task="session_search",
+                task="search_session",
                 messages=[{"role": "user", "content": "hello"}],
                 temperature=0.1,
             )
@@ -3103,7 +3103,7 @@ class TestKimiTemperatureOmitted:
             return_value=("auto", "kimi-for-coding", None, None, None),
         ):
             result = await async_call_llm(
-                task="session_search",
+                task="search_session",
                 messages=[{"role": "user", "content": "hello"}],
                 temperature=0.1,
             )
@@ -3191,7 +3191,7 @@ class TestAuxiliaryTaskExtraBody:
 
         config = {
             "auxiliary": {
-                "session_search": {
+                "search_session": {
                     "extra_body": {
                         "enable_thinking": False,
                         "reasoning": {"effort": "none"},
@@ -3205,7 +3205,7 @@ class TestAuxiliaryTaskExtraBody:
             return_value=(client, "glm-4.5-air"),
         ):
             result = call_llm(
-                task="session_search",
+                task="search_session",
                 messages=[{"role": "user", "content": "hello"}],
                 extra_body={"metadata": {"source": "test"}},
             )
@@ -3225,7 +3225,7 @@ class TestAuxiliaryTaskExtraBody:
 
         config = {
             "auxiliary": {
-                "session_search": {
+                "search_session": {
                     "extra_body": {"enable_thinking": False}
                 }
             }
@@ -3236,7 +3236,7 @@ class TestAuxiliaryTaskExtraBody:
             return_value=(client, "glm-4.5-air"),
         ):
             result = await async_call_llm(
-                task="session_search",
+                task="search_session",
                 messages=[{"role": "user", "content": "hello"}],
                 extra_body={"enable_thinking": True},
             )
@@ -3253,7 +3253,7 @@ class TestAuxiliaryTaskExtraBody:
 
         config = {
             "auxiliary": {
-                "session_search": {"reasoning_effort": "low"}
+                "search_session": {"reasoning_effort": "low"}
             }
         }
 
@@ -3262,7 +3262,7 @@ class TestAuxiliaryTaskExtraBody:
             return_value=(client, "glm-4.5-air"),
         ):
             call_llm(
-                task="session_search",
+                task="search_session",
                 messages=[{"role": "user", "content": "hello"}],
             )
 
@@ -3274,13 +3274,13 @@ class TestAuxiliaryTaskExtraBody:
         client.base_url = "https://api.example.com/v1"
         client.chat.completions.create.return_value = MagicMock()
 
-        config = {"auxiliary": {"session_search": {"reasoning_effort": "none"}}}
+        config = {"auxiliary": {"search_session": {"reasoning_effort": "none"}}}
 
         with patch("hermes_cli.config.load_config", return_value=config), patch(
             "agent.auxiliary_client._get_cached_client",
             return_value=(client, "glm-4.5-air"),
         ):
-            call_llm(task="session_search", messages=[{"role": "user", "content": "hi"}])
+            call_llm(task="search_session", messages=[{"role": "user", "content": "hi"}])
 
         kwargs = client.chat.completions.create.call_args.kwargs
         assert kwargs["extra_body"]["reasoning"] == {"enabled": False}
@@ -3293,7 +3293,7 @@ class TestAuxiliaryTaskExtraBody:
 
         config = {
             "auxiliary": {
-                "session_search": {
+                "search_session": {
                     "reasoning_effort": "xhigh",
                     "extra_body": {"reasoning": {"effort": "none"}},
                 }
@@ -3304,7 +3304,7 @@ class TestAuxiliaryTaskExtraBody:
             "agent.auxiliary_client._get_cached_client",
             return_value=(client, "glm-4.5-air"),
         ):
-            call_llm(task="session_search", messages=[{"role": "user", "content": "hi"}])
+            call_llm(task="search_session", messages=[{"role": "user", "content": "hi"}])
 
         kwargs = client.chat.completions.create.call_args.kwargs
         assert kwargs["extra_body"]["reasoning"] == {"effort": "none"}
@@ -3314,13 +3314,13 @@ class TestAuxiliaryTaskExtraBody:
         client.base_url = "https://api.example.com/v1"
         client.chat.completions.create.return_value = MagicMock()
 
-        config = {"auxiliary": {"session_search": {"reasoning_effort": "warp9"}}}
+        config = {"auxiliary": {"search_session": {"reasoning_effort": "warp9"}}}
 
         with patch("hermes_cli.config.load_config", return_value=config), patch(
             "agent.auxiliary_client._get_cached_client",
             return_value=(client, "glm-4.5-air"),
         ), caplog.at_level(logging.WARNING, logger="agent.auxiliary_client"):
-            call_llm(task="session_search", messages=[{"role": "user", "content": "hi"}])
+            call_llm(task="search_session", messages=[{"role": "user", "content": "hi"}])
 
         kwargs = client.chat.completions.create.call_args.kwargs
         assert "reasoning" not in (kwargs.get("extra_body") or {})
@@ -3330,9 +3330,9 @@ class TestAuxiliaryTaskExtraBody:
         """The DEFAULT_CONFIG ships reasoning_effort: '' — must add nothing."""
         from agent.auxiliary_client import _get_task_extra_body
 
-        config = {"auxiliary": {"session_search": {"reasoning_effort": ""}}}
+        config = {"auxiliary": {"search_session": {"reasoning_effort": ""}}}
         with patch("hermes_cli.config.load_config", return_value=config):
-            assert _get_task_extra_body("session_search") == {}
+            assert _get_task_extra_body("search_session") == {}
 
     @pytest.mark.parametrize("moa_task", ["moa_reference", "moa_aggregator"])
     def test_moa_tasks_reject_task_level_reasoning_effort(self, moa_task, caplog):
@@ -4942,7 +4942,7 @@ class TestAuxiliaryClientPoisonedCacheEviction:
         underlying OpenAI client across two distinct cache entries. A single
         timeout that closes the leaf must evict BOTH — otherwise the async
         entry survives, keeps reusing the dead transport, and every async
-        aux call (compression, vision, session_search) fails fast with
+        aux call (compression, vision, search_session) fails fast with
         'Connection error' until gateway restart even while the sync route
         recovers.
 
@@ -5829,10 +5829,10 @@ class TestCompressionFallbackContextFilter:
         # Non-compression tasks have no minimum (None)
         assert _task_minimum_context_length("vision") is None
         assert _task_minimum_context_length("title_generation") is None
-        assert _task_minimum_context_length("web_extract") is None
+        assert _task_minimum_context_length("extract_web") is None
         assert _task_minimum_context_length("skills_hub") is None
         assert _task_minimum_context_length("mcp") is None
-        assert _task_minimum_context_length("session_search") is None
+        assert _task_minimum_context_length("search_session") is None
         # Empty / unknown tasks have no minimum
         assert _task_minimum_context_length("") is None
         assert _task_minimum_context_length(None) is None

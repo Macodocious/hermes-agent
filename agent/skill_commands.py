@@ -142,13 +142,13 @@ def _load_skill_payload(skill_identifier: str, task_id: str | None = None) -> tu
         return None
 
     try:
-        from tools.skills_tool import SKILLS_DIR, skill_view
+        from tools.skills_tool import SKILLS_DIR, view_skill
         from agent.skill_utils import normalize_skill_lookup_name
 
         normalized = normalize_skill_lookup_name(raw_identifier)
 
         loaded_skill = json.loads(
-            skill_view(normalized, task_id=task_id, preprocess=False)
+            view_skill(normalized, task_id=task_id, preprocess=False)
         )
     except Exception:
         return None
@@ -159,10 +159,10 @@ def _load_skill_payload(skill_identifier: str, task_id: str | None = None) -> tu
     skill_name = str(loaded_skill.get("name") or normalized)
     skill_path = str(loaded_skill.get("path") or "")
     skill_dir = None
-    # Prefer the absolute skill_dir returned by skill_view() — this is
+    # Prefer the absolute skill_dir returned by view_skill() — this is
     # correct for both local and external skills.  Fall back to the old
     # SKILLS_DIR-relative reconstruction only when skill_dir is absent
-    # (e.g. legacy skill_view responses).
+    # (e.g. legacy view_skill responses).
     abs_skill_dir = loaded_skill.get("skill_dir")
     if abs_skill_dir:
         skill_dir = Path(abs_skill_dir)
@@ -240,7 +240,7 @@ def _build_skill_message(
     parts = [activation_note, "", content.strip()]
 
     # ── Inject the absolute skill directory so the agent can reference
-    #    bundled scripts without an extra skill_view() round-trip. ──
+    #    bundled scripts without an extra view_skill() round-trip. ──
     if skill_dir:
         parts.append("")
         parts.append(f"[Skill directory: {skill_dir}]")
@@ -301,7 +301,7 @@ def _build_skill_message(
         for sf in supporting:
             parts.append(f"- {sf}  ->  {skill_dir / sf}")
         parts.append(
-            f'\nLoad any of these with skill_view(name="{skill_view_target}", '
+            f'\nLoad any of these with view_skill(name="{skill_view_target}", '
             f'file_path="<path>"), or run scripts directly by absolute path '
             f"(e.g. `node {skill_dir}/scripts/foo.js`)."
         )
@@ -436,7 +436,7 @@ def reload_skills() -> Dict[str, Any]:
     skills added or removed on disk.
 
     This does NOT invalidate the skills system-prompt cache. Skills are
-    called by name via ``/skill-name``, ``skills_list``, or ``skill_view``
+    called by name via ``/skill-name``, ``list_skills``, or ``view_skill``
     — they don't need to be in the system prompt for the model to use them.
     Keeping the prompt cache intact preserves prefix caching across the
     reload, so a user invoking ``/reload-skills`` pays no cache-reset cost.

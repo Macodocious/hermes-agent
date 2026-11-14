@@ -776,8 +776,8 @@ export interface ToolProvider {
   capabilities?: WebCapability[]
 }
 
-/** A web toolset capability — the runtime dispatches web_search and
- *  web_extract to independently configurable backends. */
+/** A web toolset capability — the runtime dispatches search_web and
+ *  extract_web to independently configurable backends. */
 export type WebCapability = 'search' | 'extract'
 
 export interface ToolsetConfig {
@@ -786,10 +786,10 @@ export interface ToolsetConfig {
   providers: ToolProvider[]
   /** Name of the currently active provider, or null if none is configured. */
   active_provider: string | null
-  /** Web toolset only: backend the web_search tool resolves to right now
+  /** Web toolset only: backend the search_web tool resolves to right now
    *  (web.search_backend → web.backend → credential auto-detect). */
   active_search_backend?: string | null
-  /** Web toolset only: backend the web_extract tool resolves to right now. */
+  /** Web toolset only: backend the extract_web tool resolves to right now. */
   active_extract_backend?: string | null
 }
 

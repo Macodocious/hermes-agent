@@ -117,7 +117,7 @@ def test_status_shows_most_and_least_used_sections(curator_status_env):
     # Mark all three as agent-created so they enter the curator's catalog.
     # Under the provenance-marker semantics, skills must be explicitly opted
     # into curator management (normally via the background-review fork when
-    # it creates a skill through skill_manage).
+    # it creates a skill through manage_skill).
     for n in ("top-dog", "middling", "never-used"):
         env["skill_usage"].mark_agent_created(n)
 

@@ -119,7 +119,7 @@ def stage_write(subsystem: str, payload: Dict[str, Any],
         subsystem: ``memory`` or ``skills``.
         payload: the exact kwargs needed to replay the write when approved
             (e.g. ``{"action": "add", "target": "user", "content": "..."}``
-            for memory, or the full ``skill_manage`` kwargs for skills).
+            for memory, or the full ``manage_skill`` kwargs for skills).
         summary: a one-line human-readable description shown in pending lists.
             For skills this is the LLM/heuristic gist; for memory it can be the
             entry text itself.

@@ -184,20 +184,20 @@ Public SearXNG instances are available at:
 
 ## Workflow: Search then Extract
 
-SearXNG returns titles, URLs, and snippets — not full page content. To get full page content, search first and then extract the most relevant URL with `web_extract`, browser tools, or `curl`.
+SearXNG returns titles, URLs, and snippets — not full page content. To get full page content, search first and then extract the most relevant URL with `extract_web`, browser tools, or `curl`.
 
 ```bash
 # Search for relevant pages
 curl -s "${SEARXNG_URL}/search?q=fastapi+deployment&format=json&limit=3"
 # Output: list of results with titles and URLs
 
-# Then extract the best URL with web_extract
+# Then extract the best URL with extract_web
 ```
 
 ## Limitations
 
 - **Instance availability**: If the SearXNG instance is down or unreachable, search fails. Always check `SEARXNG_URL` is set and the instance is reachable.
-- **No content extraction**: SearXNG returns snippets, not full page content. Use `web_extract`, browser tools, or `curl` for full articles.
+- **No content extraction**: SearXNG returns snippets, not full page content. Use `extract_web`, browser tools, or `curl` for full articles.
 - **Rate limiting**: Some public instances limit requests. Self-hosting avoids this.
 - **Engine coverage**: Available engines depend on the SearXNG instance configuration. Some engines may be disabled.
 - **Results freshness**: Meta-search aggregates external engines — result freshness depends on those engines.

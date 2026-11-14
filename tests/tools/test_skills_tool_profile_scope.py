@@ -28,7 +28,7 @@ def _reload_skills_tool(import_home: Path, monkeypatch):
 
 
 def test_skill_view_uses_live_profile_home_after_module_import(tmp_path, monkeypatch):
-    """skill_view should not stay pinned to HERMES_HOME from import time."""
+    """view_skill should not stay pinned to HERMES_HOME from import time."""
     default_home = tmp_path / "default-home"
     profile_home = tmp_path / "profiles" / "orchestrator"
     _write_skill(default_home, "autonomous-ai-agents", "default-only", "default home")
@@ -45,7 +45,7 @@ def test_skill_view_uses_live_profile_home_after_module_import(tmp_path, monkeyp
     monkeypatch.setenv("HERMES_HOME", str(profile_home))
 
     result = json.loads(
-        skills_tool.skill_view("kanban-orchestrator-operations", preprocess=False)
+        skills_tool.view_skill("kanban-orchestrator-operations", preprocess=False)
     )
 
     assert result["success"] is True
@@ -55,7 +55,7 @@ def test_skill_view_uses_live_profile_home_after_module_import(tmp_path, monkeyp
 
 
 def test_skills_list_uses_live_profile_home_after_module_import(tmp_path, monkeypatch):
-    """skills_list should list the active profile skills, not the import-time root."""
+    """list_skills should list the active profile skills, not the import-time root."""
     default_home = tmp_path / "default-home"
     profile_home = tmp_path / "profiles" / "orchestrator"
     _write_skill(default_home, "autonomous-ai-agents", "default-only", "default home")
@@ -69,7 +69,7 @@ def test_skills_list_uses_live_profile_home_after_module_import(tmp_path, monkey
     skills_tool = _reload_skills_tool(default_home, monkeypatch)
     monkeypatch.setenv("HERMES_HOME", str(profile_home))
 
-    result = json.loads(skills_tool.skills_list())
+    result = json.loads(skills_tool.list_skills())
     names = {skill["name"] for skill in result["skills"]}
 
     assert result["success"] is True
@@ -99,7 +99,7 @@ def test_explicit_skills_dir_monkeypatch_still_wins(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(profile_home))
     monkeypatch.setattr(skills_tool, "SKILLS_DIR", patched_root / "skills")
 
-    result = json.loads(skills_tool.skill_view("patched-skill", preprocess=False))
+    result = json.loads(skills_tool.view_skill("patched-skill", preprocess=False))
 
     assert result["success"] is True
     assert Path(result["skill_dir"]) == patched_skill_dir

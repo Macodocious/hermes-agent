@@ -40,15 +40,15 @@ Yuanbao（元宝）群组：@提及用户、查询信息/成员。
 
 | 工具 | 使用时机 |
 |------|------------|
-| `yb_query_group_info` | 查询群组名称、群主、成员数量 |
-| `yb_query_group_members` | 查找用户、列出机器人、列出所有成员，或获取用于 @提及的昵称 |
-| `yb_send_dm` | 向用户发送私信（DM / 私信），支持附带媒体文件 |
+| `query_yb_group_info` | 查询群组名称、群主、成员数量 |
+| `query_yb_group_members` | 查找用户、列出机器人、列出所有成员，或获取用于 @提及的昵称 |
+| `send_yb_dm` | 向用户发送私信（DM / 私信），支持附带媒体文件 |
 
 ## @提及工作流
 
 当你需要 @提及 / 艾特某人时：
 
-1. 调用 `yb_query_group_members`，参数 `action="find"`、`name="<目标名称>"`、`mention=true`
+1. 调用 `query_yb_group_members`，参数 `action="find"`、`name="<目标名称>"`、`mention=true`
 2. 从响应中获取精确昵称
 3. 在回复文本中包含 `@nickname`——gateway 负责其余处理
 
@@ -67,7 +67,7 @@ Yuanbao（元宝）群组：@提及用户、查询信息/成员。
 **就这样。** 无需额外解释。保持简短自然。
 
 **规则：**
-- 先调用 `yb_query_group_members` 获取精确昵称——不要猜测
+- 先调用 `query_yb_group_members` 获取精确昵称——不要猜测
 - @提及格式：`@nickname`，@ 符号前加一个空格
 - 你的回复文本即为消息——它**会**被发送，@提及**会**生效
 - 保持简洁。不要向用户解释 @提及的工作原理。
@@ -76,20 +76,20 @@ Yuanbao（元宝）群组：@提及用户、查询信息/成员。
 
 当有人要求向用户发送私信 / 私信 / DM 时：
 
-1. 调用 `yb_send_dm`，传入 `group_code`、`name`（目标用户名称）和 `message`
+1. 调用 `send_yb_dm`，传入 `group_code`、`name`（目标用户名称）和 `message`
 2. 工具会自动查找用户并发送私信
 3. 将结果反馈给用户
 
 示例：用户说"给 @用户aea3 私信发一个 hello"
 
 ```json
-yb_send_dm({ "group_code": "535168412", "name": "用户aea3", "message": "hello" })
+send_yb_dm({ "group_code": "535168412", "name": "用户aea3", "message": "hello" })
 ```
 
 带媒体文件的示例：用户说"给 @用户aea3 私信发一张图片"
 
 ```json
-yb_send_dm({
+send_yb_dm({
   "group_code": "535168412",
   "name": "用户aea3",
   "message": "Here is the image",
@@ -101,13 +101,13 @@ yb_send_dm({
 - 从当前 chat_id 中提取 `group_code`（例如 `group:535168412` → `535168412`）
 - 如果已知 user_id，可直接通过 `user_id` 参数传入以跳过查找
 - 如果多个用户匹配该名称，工具会返回候选列表——请让用户进一步确认
-- 不要使用 `send_message` 工具发送 Yuanbao 私信——请使用 `yb_send_dm`
+- 不要使用 `send_message` 工具发送 Yuanbao 私信——请使用 `send_yb_dm`
 - 支持媒体：图片（.jpg/.png/.gif/.webp/.bmp）以图片消息形式发送，其他文件以文档形式发送
 
 ## 查询群组信息
 
 ```json
-yb_query_group_info({ "group_code": "328306697" })
+query_yb_group_info({ "group_code": "328306697" })
 ```
 
 ## 查询成员

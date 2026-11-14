@@ -1,6 +1,6 @@
 """xAI Web Search — plugin form.
 
-Routes ``web_search`` tool calls through xAI's agentic Web Search tool
+Routes ``search_web`` tool calls through xAI's agentic Web Search tool
 (server-side ``web_search`` on the Responses API). Grok runs the actual
 searching and page-browsing server-side; we ask it to return the top
 results as structured JSON so we can hand back the same
@@ -102,7 +102,7 @@ class XAIWebSearchProvider(WebSearchProvider):
     schema instruction (rare for grok-4.3 but cheap insurance).
 
     No extract capability — pair with Firecrawl / Tavily / Exa for
-    ``web_extract`` if you need page content.
+    ``extract_web`` if you need page content.
 
     Trust model
     -----------
@@ -113,7 +113,7 @@ class XAIWebSearchProvider(WebSearchProvider):
     A maliciously crafted query (e.g. injected via untrusted upstream
     input the agent picked up) can in principle steer Grok into emitting
     attacker-chosen URLs. Callers that pipe untrusted text directly into
-    ``web_search`` should treat returned URLs the same way they would
+    ``search_web`` should treat returned URLs the same way they would
     treat any model-generated link — validate before fetching.
     """
 

@@ -318,7 +318,7 @@ def test_browser_navigate_returns_policy_block(monkeypatch):
         lambda *args, **kwargs: pytest.fail("browser command should not run for blocked URL"),
     )
 
-    result = json.loads(browser_tool.browser_navigate("https://blocked.test"))
+    result = json.loads(browser_tool.navigate_browser("https://blocked.test"))
 
     assert result["success"] is False
     assert result["blocked_by_policy"]["rule"] == "blocked.test"

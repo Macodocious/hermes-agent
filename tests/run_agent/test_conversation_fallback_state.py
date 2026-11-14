@@ -51,7 +51,7 @@ def test_substantive_tool_only_turn_invalidates_older_housekeeping_fallback():
 
     Test sequence:
     1. Content + todo (housekeeping) → sets fallback, marks as all-housekeeping
-    2. Empty content + web_search (substantive) → should CLEAR old fallback
+    2. Empty content + search_web (substantive) → should CLEAR old fallback
     3. Empty content, no tool calls → should enter post-tool nudge, not use old fallback
     4. Content "Recovered after nudge." → should be returned as final response
 
@@ -61,12 +61,12 @@ def test_substantive_tool_only_turn_invalidates_older_housekeeping_fallback():
     - API calls would stop at 3, never reaching the nudge response
 
     After the fix:
-    - Step 2 classifies tools and clears the fallback because web_search is substantive
+    - Step 2 classifies tools and clears the fallback because search_web is substantive
     - Step 3 enters the post-tool nudge path (no stale housekeeping fallback available)
     - Step 4 returns the nudge response as the final answer
     """
     with (
-        patch("run_agent.get_tool_definitions", return_value=_tool_defs("todo", "web_search")),
+        patch("run_agent.get_tool_definitions", return_value=_tool_defs("todo", "search_web")),
         patch("run_agent.check_toolset_requirements", return_value={}),
         patch("run_agent.OpenAI"),
     ):
@@ -83,7 +83,7 @@ def test_substantive_tool_only_turn_invalidates_older_housekeeping_fallback():
     agent.tool_delay = 0
     agent.compression_enabled = False
     agent.save_trajectories = False
-    agent.valid_tool_names = {"todo", "web_search"}
+    agent.valid_tool_names = {"todo", "search_web"}
     agent.client = MagicMock()
     agent.client.chat.completions.create.side_effect = [
         # Turn 1: Content + housekeeping tool
@@ -96,7 +96,7 @@ def test_substantive_tool_only_turn_invalidates_older_housekeeping_fallback():
         _response(
             content="",
             finish_reason="tool_calls",
-            tool_calls=[_tool_call("web_search", "search1")],
+            tool_calls=[_tool_call("search_web", "search1")],
         ),
         # Turn 3: Empty response (should enter nudge path, not use stale fallback)
         _response(content="", finish_reason="stop"),

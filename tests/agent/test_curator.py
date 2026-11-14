@@ -609,7 +609,7 @@ def test_dry_run_injects_report_only_banner(curator_env, monkeypatch):
     """The dry-run prompt must carry a banner instructing the LLM not to
     call any mutating tool. This is defense in depth — the caller also
     skips automatic transitions — but the LLM prompt is the only guard
-    against the model calling skill_manage directly."""
+    against the model calling manage_skill directly."""
     c = curator_env["curator"]
     u = curator_env["usage"]
     skills_dir = curator_env["home"] / "skills"
@@ -874,16 +874,16 @@ def test_curator_review_prompt_has_invariants():
 
 
 def test_curator_review_prompt_points_at_existing_tools_only():
-    """The review prompt must rely on existing tools (skill_manage + terminal)
+    """The review prompt must rely on existing tools (manage_skill + terminal)
     and must NOT reference bespoke curator tools that are not registered
     model tools."""
     from agent.curator import CURATOR_REVIEW_PROMPT
-    assert "skill_manage" in CURATOR_REVIEW_PROMPT
-    assert "skills_list" in CURATOR_REVIEW_PROMPT
-    assert "skill_view" in CURATOR_REVIEW_PROMPT
+    assert "manage_skill" in CURATOR_REVIEW_PROMPT
+    assert "list_skills" in CURATOR_REVIEW_PROMPT
+    assert "view_skill" in CURATOR_REVIEW_PROMPT
     assert "terminal" in CURATOR_REVIEW_PROMPT.lower()
     # These would be nice but aren't actually registered as tools — the
-    # curator uses skill_manage + terminal mv instead.
+    # curator uses manage_skill + terminal mv instead.
     assert "archive_skill" not in CURATOR_REVIEW_PROMPT
     assert "pin_skill" not in CURATOR_REVIEW_PROMPT
 
@@ -950,7 +950,7 @@ def test_curator_review_prompt_offers_support_file_actions():
     the three consolidation methods, alongside merge-into-existing and
     create-new-umbrella."""
     from agent.curator import CURATOR_REVIEW_PROMPT
-    # skill_manage action=write_file is how references/ are added to an
+    # manage_skill action=write_file is how references/ are added to an
     # existing skill — this is the create-adjacent action the curator needs
     # to demote narrow siblings without touching their SKILL.md.
     assert "write_file" in CURATOR_REVIEW_PROMPT
@@ -1250,7 +1250,7 @@ def test_review_fork_runs_under_background_review_origin(curator_env, monkeypatc
     ``_background_review_write_guard`` fire during a curation pass. Without
     ``_memory_write_origin = "background_review"`` on the fork, the agent
     inherits the default ``assistant_tool`` origin, ``is_background_review()``
-    stays False, and the external/bundled/hub-installed skill_manage guards
+    stays False, and the external/bundled/hub-installed manage_skill guards
     never trigger — leaving the LLM agent free to mutate skills.external_dirs
     skills (GH-47688). turn_context.py binds this attribute onto the
     write-origin ContextVar at turn start, so asserting it is set is the
@@ -1289,7 +1289,7 @@ def test_review_fork_runs_under_background_review_origin(curator_env, monkeypatc
     assert meta.get("error") is None, meta.get("error")
     assert captured.get("write_origin") == "background_review", (
         "curator review fork did not set _memory_write_origin to "
-        "'background_review' — the skill_manage background-review write "
+        "'background_review' — the manage_skill background-review write "
         "guard would not fire (GH-47688 regression)"
     )
 

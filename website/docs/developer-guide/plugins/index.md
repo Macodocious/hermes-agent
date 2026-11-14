@@ -392,7 +392,7 @@ with open(_DATA_FILE) as f:
 
 ### Bundle skills
 
-Plugins can ship skill files that the agent loads via `skill_view("plugin:skill")`. Register them in your `__init__.py`:
+Plugins can ship skill files that the agent loads via `view_skill("plugin:skill")`. Register them in your `__init__.py`:
 
 ```
 ~/.hermes/plugins/my-plugin/
@@ -419,12 +419,12 @@ def register(ctx):
 The agent can now load your skills with their namespaced name:
 
 ```python
-skill_view("my-plugin:my-workflow")   # → plugin's version
-skill_view("my-workflow")              # → built-in version (unchanged)
+view_skill("my-plugin:my-workflow")   # → plugin's version
+view_skill("my-workflow")              # → built-in version (unchanged)
 ```
 
 **Key properties:**
-- Plugin skills are **read-only** — they don't enter `~/.hermes/skills/` and can't be edited via `skill_manage`.
+- Plugin skills are **read-only** — they don't enter `~/.hermes/skills/` and can't be edited via `manage_skill`.
 - Plugin skills are **not** listed in the system prompt's `<available_skills>` index — they're opt-in explicit loads.
 - Bare skill names are unaffected — the namespace prevents collisions with built-in skills.
 - When the agent loads a plugin skill, a bundle context banner is prepended listing sibling skills from the same plugin.
@@ -562,12 +562,12 @@ ctx.register_tool(
 
 To replace a built-in tool with your own implementation (e.g. swap the
 default browser tool for a headed-Chrome CDP backend, or replace
-`web_search` with a custom corporate index), pass `override=True`:
+`search_web` with a custom corporate index), pass `override=True`:
 
 ```python
 def register(ctx):
     ctx.register_tool(
-        name="browser_navigate",             # same name as the built-in
+        name="navigate_browser",             # same name as the built-in
         toolset="plugin_my_browser",         # your own toolset namespace
         schema={...},
         handler=my_custom_navigate,
@@ -869,7 +869,7 @@ Together these let a kanban lifecycle hook observe a transition and act on the b
 def register(ctx):
     def on_blocked(*, task_id, reason=None, **kw):
         # Runs in the worker process; ctx._cli_ref is None here.
-        ctx.dispatch_tool("kanban_comment", {
+        ctx.dispatch_tool("comment_kanban", {
             "task_id": task_id,
             "comment": f"[{ctx.profile_name}] auto-noted block: {reason}",
         })

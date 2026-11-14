@@ -82,13 +82,13 @@ python "$SKILL_DIR/scripts/generate_meme.py" --search "disaster"
    ```
 6. Return the image with `MEDIA:/tmp/meme.png`
 
-### Mode 2: Custom AI Image (when image_generate is available)
+### Mode 2: Custom AI Image (when generate_image is available)
 
 Use this when no classic template fits, or when the user wants something original.
 
 1. Write the captions first.
-2. Use `image_generate` to create a scene that matches the meme concept. Do NOT include any text in the image prompt — text will be added by the script. Describe only the visual scene.
-3. Find the generated image path from the image_generate result URL. Download it to a local path if needed.
+2. Use `generate_image` to create a scene that matches the meme concept. Do NOT include any text in the image prompt — text will be added by the script. Describe only the visual scene.
+3. Find the generated image path from the generate_image result URL. Download it to a local path if needed.
 4. Run the script with `--image` to overlay text, choosing a mode:
    - **Overlay** (text directly on image, white with black outline):
      ```bash
@@ -99,9 +99,9 @@ Use this when no classic template fits, or when the user wants something origina
      python "$SKILL_DIR/scripts/generate_meme.py" --image /path/to/scene.png --bars /tmp/meme.png "top text" "bottom text"
      ```
    Use `--bars` when the image is busy/detailed and text would be hard to read on top of it.
-5. **Verify with vision** (if `vision_analyze` is available): Check the result looks good:
+5. **Verify with vision** (if `analyze_vision` is available): Check the result looks good:
    ```
-   vision_analyze(image_url="/tmp/meme.png", question="Is the text legible and well-positioned? Does the meme work visually?")
+   analyze_vision(image_url="/tmp/meme.png", question="Is the text legible and well-positioned? Does the meme work visually?")
    ```
    If the vision model flags issues (text hard to read, bad placement, etc.), try the other mode (switch between overlay and bars) or regenerate the scene.
 6. Return the image with `MEDIA:/tmp/meme.png`

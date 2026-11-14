@@ -413,7 +413,7 @@ def test_repair_merges_parallel_tool_calls_split_across_assistants():
         {"role": "user", "content": "run both"},
         {"role": "assistant", "content": "",
          "tool_calls": [{"id": "call_A", "type": "function",
-                         "function": {"name": "session_search", "arguments": "{}"}}]},
+                         "function": {"name": "search_session", "arguments": "{}"}}]},
         {"role": "assistant", "content": "",
          "tool_calls": [{"id": "call_B", "type": "function",
                          "function": {"name": "search_files", "arguments": "{}"}}]},
@@ -445,7 +445,7 @@ def test_repair_merges_content_then_toolcalls_split():
         {"role": "assistant", "content": "Let me search for that."},
         {"role": "assistant", "content": "",
          "tool_calls": [{"id": "call_1", "type": "function",
-                         "function": {"name": "session_search", "arguments": "{}"}}]},
+                         "function": {"name": "search_session", "arguments": "{}"}}]},
         {"role": "tool", "tool_call_id": "call_1", "content": "found"},
     ]
 
@@ -582,7 +582,7 @@ def test_repair_noop_on_valid_parallel_format():
         {"role": "assistant", "content": "",
          "tool_calls": [
              {"id": "call_A", "type": "function",
-              "function": {"name": "session_search", "arguments": "{}"}},
+              "function": {"name": "search_session", "arguments": "{}"}},
              {"id": "call_B", "type": "function",
               "function": {"name": "search_files", "arguments": "{}"}},
          ]},

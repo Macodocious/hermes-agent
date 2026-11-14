@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 
 # DeepInfra accepts standard OpenAI ``size`` strings. Mirrors the
 # OpenAI plugin's mapping so aspect_ratio semantics stay consistent
-# across the agent's image_generate tool surface.
+# across the agent's generate_image tool surface.
 _SIZES = {
     "landscape": "1536x1024",
     "square": "1024x1024",

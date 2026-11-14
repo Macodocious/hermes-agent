@@ -281,7 +281,7 @@ LIMIT 200
 
 **操作**：
 - 对每个提交 SHA：尝试通过直接 GitHub URL（`github.com/OWNER/REPO/commit/SHA.patch`）恢复
-- 对每个域名/IP：检查被动 DNS、WHOIS 记录（通过 `web_extract` 访问公开 WHOIS 服务）
+- 对每个域名/IP：检查被动 DNS、WHOIS 记录（通过 `extract_web` 访问公开 WHOIS 服务）
 - 对每个包名：检查 npm/PyPI 中是否有匹配的恶意包报告
 - 对每个 actor 用户名：检查 GitHub 个人资料、贡献历史、账户注册时间
 - 使用 3 种方法恢复强制推送的提交（见 [recovery-techniques.md](https://github.com/NousResearch/hermes-agent/blob/main/optional-skills/security/oss-forensics/references/recovery-techniques.md)）

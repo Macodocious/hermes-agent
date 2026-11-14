@@ -241,7 +241,7 @@ class TestTransformToolResultHook:
 
     def test_untargeted_tool_skipped(self):
         mod = _load_plugin_init()
-        # The plugin only scans write_file/patch/skill_manage. terminal output
+        # The plugin only scans write_file/patch/manage_skill. terminal output
         # should pass through untouched.
         args = {"command": "echo pickle.load"}
         assert (

@@ -17,7 +17,7 @@ These exercise the REAL production dispatch surfaces:
     * concurrent -> ``agent._invoke_tool`` (tool_executor ~539)
 
 Mocking the genuine dispatch surface keeps the tests deterministic (no real
-``web_search`` / network) AND mutation-survivable: the ordering assertions
+``search_web`` / network) AND mutation-survivable: the ordering assertions
 read snapshots captured at flush time, so removing any production flush call
 makes the corresponding assertion fail.
 """
@@ -52,7 +52,7 @@ def _make_agent():
     with (
         patch(
             "run_agent.get_tool_definitions",
-            return_value=_make_tool_defs("web_search"),
+            return_value=_make_tool_defs("search_web"),
         ),
         patch("run_agent.check_toolset_requirements", return_value={}),
         patch("run_agent.OpenAI"),
@@ -75,7 +75,7 @@ def _make_agent():
     return agent
 
 
-def _mock_tool_call(name="web_search", arguments="{}", call_id="call_1"):
+def _mock_tool_call(name="search_web", arguments="{}", call_id="call_1"):
     return SimpleNamespace(
         id=call_id,
         type="function",
@@ -123,7 +123,7 @@ def test_run_conversation_flushes_assistant_tool_call_before_execution():
             copy.deepcopy(flush_snapshots[-1]) if flush_snapshots else None
         )
         # Simulate the tool producing a result (as the real path would).
-        messages.append(make_tool_result_message("web_search", "search result", "c1"))
+        messages.append(make_tool_result_message("search_web", "search result", "c1"))
 
     with (
         patch.object(agent, "_persist_session"),
@@ -150,8 +150,8 @@ def test_run_conversation_flushes_assistant_tool_call_before_execution():
 def test_execute_tool_calls_sequential_flushes_each_tool_result_before_next_dispatch():
     agent = _make_agent()
     tool_calls = [
-        _mock_tool_call(name="web_search", call_id="c1"),
-        _mock_tool_call(name="web_search", call_id="c2"),
+        _mock_tool_call(name="search_web", call_id="c1"),
+        _mock_tool_call(name="search_web", call_id="c2"),
     ]
     messages: list = []
     assistant_message = SimpleNamespace(content="", tool_calls=tool_calls)
@@ -206,8 +206,8 @@ def test_execute_tool_calls_sequential_flushes_each_tool_result_before_next_disp
 def test_execute_tool_calls_concurrent_flushes_each_tool_result_in_order():
     agent = _make_agent()
     tool_calls = [
-        _mock_tool_call(name="web_search", call_id="c1"),
-        _mock_tool_call(name="web_search", call_id="c2"),
+        _mock_tool_call(name="search_web", call_id="c1"),
+        _mock_tool_call(name="search_web", call_id="c2"),
     ]
     messages: list = []
     assistant_message = SimpleNamespace(content="", tool_calls=tool_calls)

@@ -54,7 +54,7 @@ def _mock_handle_function_call(function_name, function_args, task_id=None, user_
     if function_name == "terminal":
         cmd = function_args.get("command", "")
         return json.dumps({"output": f"mock output for: {cmd}", "exit_code": 0})
-    if function_name == "web_search":
+    if function_name == "search_web":
         return json.dumps({"results": [{"url": "https://example.com", "title": "Example", "description": "A test result"}]})
     if function_name == "read_file":
         return json.dumps({"content": "line 1\nline 2\nline 3\n", "total_lines": 3})
@@ -64,7 +64,7 @@ def _mock_handle_function_call(function_name, function_args, task_id=None, user_
         return json.dumps({"matches": [{"file": "test.py", "line": 1, "text": "match"}]})
     if function_name == "patch":
         return json.dumps({"status": "ok", "replacements": 1})
-    if function_name == "web_extract":
+    if function_name == "extract_web":
         return json.dumps("# Extracted content\nSome text from the page.")
     return json.dumps({"error": f"Unknown tool in mock: {function_name}"})
 
@@ -87,9 +87,9 @@ class TestHermesToolsGeneration(unittest.TestCase):
             self.assertIn(f"def {tool}(", src)
 
     def test_generates_subset(self):
-        src = generate_hermes_tools_module(["terminal", "web_search"])
+        src = generate_hermes_tools_module(["terminal", "search_web"])
         self.assertIn("def terminal(", src)
-        self.assertIn("def web_search(", src)
+        self.assertIn("def search_web(", src)
         self.assertNotIn("def read_file(", src)
 
     def test_empty_list_generates_nothing(self):
@@ -98,9 +98,9 @@ class TestHermesToolsGeneration(unittest.TestCase):
         self.assertIn("def _call(", src)  # infrastructure still present
 
     def test_non_allowed_tools_ignored(self):
-        src = generate_hermes_tools_module(["vision_analyze", "terminal"])
+        src = generate_hermes_tools_module(["analyze_vision", "terminal"])
         self.assertIn("def terminal(", src)
-        self.assertNotIn("def vision_analyze(", src)
+        self.assertNotIn("def analyze_vision(", src)
 
     def test_rpc_infrastructure_present(self):
         src = generate_hermes_tools_module(["terminal"])
@@ -362,8 +362,8 @@ from hermes_tools import terminal
 result = terminal("echo hi")
 print(result)
 """
-        # Only enable web_search -- terminal should be excluded
-        result = self._run(code, enabled_tools=["web_search"])
+        # Only enable search_web -- terminal should be excluded
+        result = self._run(code, enabled_tools=["search_web"])
         # terminal won't be in hermes_tools.py, so import fails
         self.assertEqual(result["status"], "error")
 
@@ -414,10 +414,10 @@ raise RuntimeError("deliberate crash")
         self.assertIn("\u23f0", result.get("output", ""))
 
     def test_web_search_tool(self):
-        """Script calls web_search and processes results."""
+        """Script calls search_web and processes results."""
         code = """
-from hermes_tools import web_search
-results = web_search("test query")
+from hermes_tools import search_web
+results = search_web("test query")
 print(f"Found {len(results.get('results', []))} results")
 """
         result = self._run(code)
@@ -524,7 +524,7 @@ class TestStubSchemaDrift(unittest.TestCase):
         # Import the registry and trigger tool registration
         from tools.registry import registry
         import tools.file_tools  # noqa: F401 - registers read_file, write_file, patch, search_files
-        import tools.web_tools  # noqa: F401 - registers web_search, web_extract
+        import tools.web_tools  # noqa: F401 - registers search_web, extract_web
 
         for tool_name, (func_name, sig, doc, args_expr) in _TOOL_STUBS.items():
             entry = registry._tools.get(tool_name)
@@ -622,25 +622,25 @@ class TestBuildExecuteCodeSchema(unittest.TestCase):
         desc = schema["description"]
         self.assertIn("terminal(", desc)
         self.assertIn("read_file(", desc)
-        self.assertNotIn("web_search(", desc)
-        self.assertNotIn("web_extract(", desc)
+        self.assertNotIn("search_web(", desc)
+        self.assertNotIn("extract_web(", desc)
         self.assertNotIn("write_file(", desc)
 
     def test_single_tool(self):
         schema = build_execute_code_schema({"terminal"})
         desc = schema["description"]
         self.assertIn("terminal(", desc)
-        self.assertNotIn("web_search(", desc)
+        self.assertNotIn("search_web(", desc)
 
     def test_import_examples_prefer_web_search_and_terminal(self):
-        enabled = {"web_search", "terminal", "read_file"}
+        enabled = {"search_web", "terminal", "read_file"}
         schema = build_execute_code_schema(enabled)
         code_desc = schema["parameters"]["properties"]["code"]["description"]
-        self.assertIn("web_search", code_desc)
+        self.assertIn("search_web", code_desc)
         self.assertIn("terminal", code_desc)
 
     def test_import_examples_fallback_when_no_preferred(self):
-        """When neither web_search nor terminal are enabled, falls back to
+        """When neither search_web nor terminal are enabled, falls back to
         sorted first two tools."""
         enabled = {"read_file", "write_file", "patch"}
         schema = build_execute_code_schema(enabled)
@@ -667,7 +667,7 @@ class TestBuildExecuteCodeSchema(unittest.TestCase):
             sandbox_enabled = SANDBOX_ALLOWED_TOOLS & tools_to_include
             dynamic_schema = build_execute_code_schema(sandbox_enabled)
 
-        SANDBOX_ALLOWED_TOOLS = {web_search, web_extract, read_file, write_file,
+        SANDBOX_ALLOWED_TOOLS = {search_web, extract_web, read_file, write_file,
                                   search_files, patch, terminal}
         tools_to_include  = {"execute_code"}
         intersection      = empty set
@@ -687,10 +687,10 @@ class TestBuildExecuteCodeSchema(unittest.TestCase):
     def test_real_scenario_only_vision_enabled(self):
         """Another real path: user runs `hermes tools code_execution,vision`.
 
-        tools_to_include = {"execute_code", "vision_analyze"}
+        tools_to_include = {"execute_code", "analyze_vision"}
         SANDBOX_ALLOWED_TOOLS has neither, so intersection is empty.
         """
-        tools_to_include = {"execute_code", "vision_analyze"}
+        tools_to_include = {"execute_code", "analyze_vision"}
         sandbox_enabled = SANDBOX_ALLOWED_TOOLS & tools_to_include
 
         self.assertEqual(sandbox_enabled, set())
@@ -850,7 +850,7 @@ class TestExecuteCodeEdgeCases(unittest.TestCase):
     def test_none_enabled_tools_uses_all(self):
         """When enabled_tools is None, all sandbox tools should be available."""
         code = (
-            "from hermes_tools import terminal, web_search, read_file\n"
+            "from hermes_tools import terminal, search_web, read_file\n"
             "print('all imports ok')\n"
         )
         with patch("model_tools.handle_function_call",
@@ -864,7 +864,7 @@ class TestExecuteCodeEdgeCases(unittest.TestCase):
     def test_empty_enabled_tools_uses_all(self):
         """When enabled_tools is [] (empty), all sandbox tools should be available."""
         code = (
-            "from hermes_tools import terminal, web_search\n"
+            "from hermes_tools import terminal, search_web\n"
             "print('imports ok')\n"
         )
         with patch("model_tools.handle_function_call",
@@ -886,7 +886,7 @@ class TestExecuteCodeEdgeCases(unittest.TestCase):
                     return_value=json.dumps({"ok": True})):
             result = json.loads(execute_code(
                 code, task_id="test-nonoverlap",
-                enabled_tools=["vision_analyze", "browser_snapshot"],
+                enabled_tools=["analyze_vision", "snapshot_browser"],
             ))
         self.assertEqual(result["status"], "success")
         self.assertIn("fallback ok", result["output"])

@@ -26,7 +26,7 @@ Hermes supports multiple AI inference providers out of the box. Use `hermes mode
 
 ## Web Search Backends
 
-The `web_search` and `web_extract` tools support eight backend providers, configured via `config.yaml` or `hermes tools`:
+The `search_web` and `extract_web` tools support eight backend providers, configured via `config.yaml` or `hermes tools`:
 
 | Backend | Env Var | Search | Extract | Crawl |
 |---------|---------|--------|---------|-------|
@@ -97,7 +97,7 @@ See the [Messaging Gateway overview](/user-guide/messaging) for the platform com
 
 ## Home Automation
 
-- **[Home Assistant](/user-guide/messaging/homeassistant)** — Control smart home devices via four dedicated tools (`ha_list_entities`, `ha_get_state`, `ha_list_services`, `ha_call_service`). The Home Assistant toolset activates automatically when `HASS_TOKEN` is configured.
+- **[Home Assistant](/user-guide/messaging/homeassistant)** — Control smart home devices via four dedicated tools (`list_ha_entities`, `get_ha_state`, `list_ha_services`, `call_ha_service`). The Home Assistant toolset activates automatically when `HASS_TOKEN` is configured.
 
 ## Plugins
 

@@ -1,4 +1,4 @@
-"""Test that skill_view registers required env vars in the passthrough registry."""
+"""Test that view_skill registers required env vars in the passthrough registry."""
 
 import json
 from unittest.mock import patch
@@ -55,9 +55,9 @@ class TestSkillViewRegistersPassthrough:
 
         # Patch the secret capture callback to not prompt
         with patch("tools.skills_tool._secret_capture_callback", None):
-            from tools.skills_tool import skill_view
+            from tools.skills_tool import view_skill
 
-            result = json.loads(skill_view(name="test-skill"))
+            result = json.loads(view_skill(name="test-skill"))
 
         assert result["success"] is True
         assert is_env_passthrough("TENOR_API_KEY")
@@ -82,9 +82,9 @@ class TestSkillViewRegistersPassthrough:
         monkeypatch.delenv("TENOR_API_KEY", raising=False)
 
         with patch("tools.skills_tool._secret_capture_callback", None):
-            from tools.skills_tool import skill_view
+            from tools.skills_tool import view_skill
 
-            result = json.loads(skill_view(name="test-skill"))
+            result = json.loads(view_skill(name="test-skill"))
 
         assert result["success"] is True
         assert result["setup_needed"] is False
@@ -109,9 +109,9 @@ class TestSkillViewRegistersPassthrough:
         monkeypatch.delenv("NONEXISTENT_SKILL_KEY_XYZ", raising=False)
 
         with patch("tools.skills_tool._secret_capture_callback", None):
-            from tools.skills_tool import skill_view
+            from tools.skills_tool import view_skill
 
-            result = json.loads(skill_view(name="test-skill"))
+            result = json.loads(view_skill(name="test-skill"))
 
         assert result["success"] is True
         assert not is_env_passthrough("NONEXISTENT_SKILL_KEY_XYZ")
@@ -124,9 +124,9 @@ class TestSkillViewRegistersPassthrough:
         )
 
         with patch("tools.skills_tool._secret_capture_callback", None):
-            from tools.skills_tool import skill_view
+            from tools.skills_tool import view_skill
 
-            result = json.loads(skill_view(name="simple-skill"))
+            result = json.loads(view_skill(name="simple-skill"))
 
         assert result["success"] is True
         from tools.env_passthrough import get_all_passthrough

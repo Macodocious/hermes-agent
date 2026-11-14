@@ -33,7 +33,7 @@ description: "通过 DuckDuckGo 免费搜索网络 — 文本、新闻、图片�
 
 使用 DuckDuckGo 进行免费网络搜索。**无需 API 密钥。**
 
-当 `web_search` 不可用或不适用时（例如未设置 `FIRECRAWL_API_KEY`），优先使用此 skill。也可在明确需要 DuckDuckGo 结果时作为独立搜索路径使用。
+当 `search_web` 不可用或不适用时（例如未设置 `FIRECRAWL_API_KEY`），优先使用此 skill。也可在明确需要 DuckDuckGo 结果时作为独立搜索路径使用。
 
 ## 检测流程
 
@@ -202,7 +202,7 @@ with DDGS() as ddgs:
 
 ## 工作流：先搜索后提取
 
-DuckDuckGo 返回标题、URL 和摘要，而非完整页面内容。如需获取完整页面内容，先搜索，再用 `web_extract`、browser 工具或 curl 提取最相关的 URL。
+DuckDuckGo 返回标题、URL 和摘要，而非完整页面内容。如需获取完整页面内容，先搜索，再用 `extract_web`、browser 工具或 curl 提取最相关的 URL。
 
 CLI 示例：
 
@@ -221,12 +221,12 @@ with DDGS() as ddgs:
         print(r["title"], "->", r["href"])
 ```
 
-然后使用 `web_extract` 或其他内容获取工具提取最佳 URL 的内容。
+然后使用 `extract_web` 或其他内容获取工具提取最佳 URL 的内容。
 
 ## 限制
 
 - **频率限制**：大量快速请求后，DuckDuckGo 可能进行限流。如有需要，在多次搜索之间添加短暂延迟。
-- **无内容提取**：`ddgs` 返回摘要，而非完整页面内容。如需完整文章/页面，请使用 `web_extract`、browser 工具或 curl。
+- **无内容提取**：`ddgs` 返回摘要，而非完整页面内容。如需完整文章/页面，请使用 `extract_web`、browser 工具或 curl。
 - **结果质量**：总体良好，但可配置性不如 Firecrawl 的搜索。
 - **可用性**：DuckDuckGo 可能屏蔽来自部分云 IP 的请求。若搜索返回空结果，请尝试不同关键词或等待几秒后重试。
 - **字段可变性**：不同结果或 `ddgs` 版本间返回字段可能有所不同。对可选字段使用 `.get()` 以避免 `KeyError`。

@@ -8,7 +8,7 @@ from tools.skill_manager_tool import (
     _create_skill,
     _patch_skill,
     _write_file,
-    skill_manage,
+    manage_skill,
 )
 
 
@@ -160,7 +160,7 @@ word word word
     def test_skill_manage_patch_uses_fuzzy(self):
         """The dispatcher should route to the fuzzy-matching patch."""
         _create_skill("test-skill", SKILL_CONTENT)
-        raw = skill_manage(
+        raw = manage_skill(
             action="patch",
             name="test-skill",
             old_string="  Step 1: Do the thing.",  # extra leading space

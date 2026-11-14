@@ -393,7 +393,7 @@ hermes kanban [--board <slug>] <action> [options]
 |------|---------|
 | `--board <slug>` | 操作特定看板。默认为当前看板（通过 `hermes kanban boards switch`、`HERMES_KANBAN_BOARD` 环境变量或 `default` 设置）。 |
 
-**这是人工/脚本操作界面。** 调度器生成的 agent worker 通过专用的 `kanban_*` [toolset](/user-guide/features/kanban#how-workers-interact-with-the-board)（`kanban_show`、`kanban_complete`、`kanban_block`、`kanban_create`、`kanban_link`、`kanban_comment`、`kanban_heartbeat`；编排器 profile 还可使用 `kanban_list` 和 `kanban_unblock`）驱动看板，而非调用 `hermes kanban`。Worker 的环境中固定了 `HERMES_KANBAN_BOARD`，因此物理上无法看到其他看板。
+**这是人工/脚本操作界面。** 调度器生成的 agent worker 通过专用的 `kanban_*` [toolset](/user-guide/features/kanban#how-workers-interact-with-the-board)（`show_kanban`、`complete_kanban`、`block_kanban`、`create_kanban`、`link_kanban`、`comment_kanban`、`heartbeat_kanban`；编排器 profile 还可使用 `list_kanban` 和 `unblock_kanban`）驱动看板，而非调用 `hermes kanban`。Worker 的环境中固定了 `HERMES_KANBAN_BOARD`，因此物理上无法看到其他看板。
 
 | 操作 | 用途 |
 |--------|---------|
@@ -411,7 +411,7 @@ hermes kanban [--board <slug>] <action> [options]
 | `link <parent> <child>` | 添加依赖关系。检测循环依赖。两个任务必须在同一看板上。 |
 | `unlink <parent> <child>` | 删除依赖关系。 |
 | `claim <id>` | 原子性地认领就绪任务。打印已解析的工作区路径。 |
-| `comment <id> "<text>"` | 追加评论。下一个认领该任务的 worker 会在其 `kanban_show()` 响应中读取到它。 |
+| `comment <id> "<text>"` | 追加评论。下一个认领该任务的 worker 会在其 `show_kanban()` 响应中读取到它。 |
 | `complete <id>` | 将任务标记为完成。标志：`--result`、`--summary`、`--metadata`。 |
 | `block <id> "<reason>"` | 将任务标记为等待人工输入。同时将原因追加为评论。 |
 | `schedule <id> "<reason>"` | 将时间延迟/后续工作停放到 `scheduled` 状态，使其不显示为人工阻塞项。 |
@@ -1055,7 +1055,7 @@ hermes computer-use <subcommand>
 | `install --upgrade` | 即使 cua-driver 已在 PATH 中也重新运行安装程序。上游脚本始终拉取最新版本，因此这会执行原地升级。 |
 | `status` | 打印 `cua-driver` 是否在 `$PATH` 中以及已安装的版本。 |
 
-`hermes computer-use install` 是安装 `computer_use` toolset 使用的 [cua-driver](https://github.com/trycua/cua) 二进制文件的稳定入口。它运行与首次启用 Computer Use 时 `hermes tools` 调用的相同上游安装程序，因此如果 toolset 切换未触发安装（例如在已配置用户的设置中），可以安全地用于重新运行安装。
+`hermes computer-use install` 是安装 `use_computer` toolset 使用的 [cua-driver](https://github.com/trycua/cua) 二进制文件的稳定入口。它运行与首次启用 Computer Use 时 `hermes tools` 调用的相同上游安装程序，因此如果 toolset 切换未触发安装（例如在已配置用户的设置中），可以安全地用于重新运行安装。
 
 `hermes update` 在更新结束时，如果 cua-driver 在 PATH 中，会自动重新运行上游安装程序，因此大多数用户不需要手动调用 `--upgrade`。当上游发布了你现在就想要的修复，而不想等待下次 Hermes 更新时，使用此选项。
 

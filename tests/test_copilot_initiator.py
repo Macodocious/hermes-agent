@@ -35,7 +35,7 @@ class _FakeOpenAI:
 
 def _make_agent(monkeypatch, base_url, api_mode="chat_completions"):
     """Create an AIAgent pointing at the given base_url."""
-    monkeypatch.setattr("run_agent.get_tool_definitions", lambda **kw: _tool_defs("web_search"))
+    monkeypatch.setattr("run_agent.get_tool_definitions", lambda **kw: _tool_defs("search_web"))
     monkeypatch.setattr("run_agent.check_toolset_requirements", lambda: {})
     monkeypatch.setattr("run_agent.OpenAI", _FakeOpenAI)
     return AIAgent(

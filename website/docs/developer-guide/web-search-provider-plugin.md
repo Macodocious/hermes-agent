@@ -6,7 +6,7 @@ description: "How to build a web-search/extract/crawl backend plugin for Hermes 
 
 # Building a Web Search Provider Plugin
 
-Web-search provider plugins register a backend that services `web_search`, `web_extract`, and (optionally) deep-crawl tool calls. Built-in providers — Firecrawl, SearXNG, Tavily, Exa, Parallel, Brave Search (free tier), xAI, and DDGS — all ship as plugins under `plugins/web/<name>/`. You can add a new one, or override a bundled one, by dropping a directory next to them.
+Web-search provider plugins register a backend that services `search_web`, `extract_web`, and (optionally) deep-crawl tool calls. Built-in providers — Firecrawl, SearXNG, Tavily, Exa, Parallel, Brave Search (free tier), xAI, and DDGS — all ship as plugins under `plugins/web/<name>/`. You can add a new one, or override a bundled one, by dropping a directory next to them.
 
 :::tip
 Web search is one of several **backend plugins** Hermes supports. The others (with their own ABCs) are [Image Generation Provider Plugins](/developer-guide/image-gen-provider-plugin), [Video Generation Provider Plugins](/developer-guide/video-gen-provider-plugin), [Memory Provider Plugins](/developer-guide/memory-provider-plugin), [Context Engine Plugins](/developer-guide/context-engine-plugin), and [Model Provider Plugins](/developer-guide/model-provider-plugin). General tool/hook/CLI plugins live in [Build a Hermes Plugin](/developer-guide/plugins).
@@ -24,9 +24,9 @@ Each plugin's `register(ctx)` function calls `ctx.register_web_search_provider(.
 
 | Capability | Config key | Falls back to |
 |---|---|---|
-| `web_search` | `web.search_backend` | `web.backend` |
-| `web_extract` | `web.extract_backend` | `web.backend` |
-| Deep crawl modes inside `web_extract` | `web.extract_backend` | `web.backend` |
+| `search_web` | `web.search_backend` | `web.backend` |
+| `extract_web` | `web.extract_backend` | `web.backend` |
+| Deep crawl modes inside `extract_web` | `web.extract_backend` | `web.backend` |
 
 When neither key is set, Hermes auto-detects the backend from whichever API key/URL is present in the environment. `hermes tools` walks users through selection.
 
@@ -152,8 +152,8 @@ Full contract in `agent/web_search_provider.py`. Methods you may override:
 | `name` | ✅ | — | Stable id used in `web.*_backend` config |
 | `display_name` | — | `name` | Label shown in `hermes tools` |
 | `is_available()` | ✅ | — | Cheap availability gate — env vars, optional deps |
-| `supports_search()` | — | `True` | Capability flag for `web_search` routing |
-| `supports_extract()` | — | `False` | Capability flag for `web_extract` routing |
+| `supports_search()` | — | `True` | Capability flag for `search_web` routing |
+| `supports_extract()` | — | `False` | Capability flag for `extract_web` routing |
 | `search(query, limit)` | conditional | raises | Required when `supports_search()` returns `True` |
 | `extract(urls, **kwargs)` | conditional | raises | Required when `supports_extract()` returns `True` |
 
@@ -221,9 +221,9 @@ If your provider only supports one capability, leave the other flags at their de
 
 ## How Hermes wires it into the tools
 
-The `web_search` and `web_extract` tools live in `tools/web_tools.py`. At call time they:
+The `search_web` and `extract_web` tools live in `tools/web_tools.py`. At call time they:
 
-1. Read the relevant config key (`web.search_backend` for `web_search`, `web.extract_backend` for `web_extract`)
+1. Read the relevant config key (`web.search_backend` for `search_web`, `web.extract_backend` for `extract_web`)
 2. Ask the registry for the provider with that `name`
 3. Check `is_available()` and the matching `supports_*()` flag
 4. Dispatch to `search()` / `extract()` (deep crawl runs as a mode inside `extract()`), awaiting if the method is a coroutine
@@ -241,7 +241,7 @@ If your provider wraps a third-party SDK (like DDGS does with the `ddgs` package
 - **`plugins/web/ddgs/`** — no-key provider that lazy-installs its SDK. Useful pattern for backends that wrap a Python package.
 - **`plugins/web/firecrawl/`** — full multi-capability provider (search + extract + crawl) with multiple format modes.
 - **`plugins/web/searxng/`** — self-hosted, URL-configured backend with no auth.
-- **`plugins/web/xai/`** — LLM-backed search via Grok's server-side `web_search` tool. Shows how to reuse an existing OAuth/env-var credential surface (`tools/xai_http.py`) without adding new env vars, and how to write a cheap `is_available()` that honors the no-network contract.
+- **`plugins/web/xai/`** — LLM-backed search via Grok's server-side `search_web` tool. Shows how to reuse an existing OAuth/env-var credential surface (`tools/xai_http.py`) without adding new env vars, and how to write a cheap `is_available()` that honors the no-network contract.
 
 ## Distribute via pip
 

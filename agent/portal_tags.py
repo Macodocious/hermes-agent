@@ -1,7 +1,7 @@
 """Centralized Nous Portal request tags.
 
 Every Hermes request that hits the Nous Portal — main agent loop, auxiliary
-client (compression / titles / vision / web_extract / session_search / etc.),
+client (compression / titles / vision / extract_web / search_session / etc.),
 and any future code path — must carry the same product-attribution tags so
 Nous can attribute usage to Hermes Agent and bucket it by client release.
 
@@ -37,7 +37,7 @@ from typing import List, Optional
 # ── Ambient conversation context ─────────────────────────────────────────────
 #
 # The main agent loop knows its ``session_id``; the dozens of auxiliary call
-# sites (compression, title generation, vision, web_extract, session_search,
+# sites (compression, title generation, vision, extract_web, search_session,
 # MoA reference/aggregator slots, curator, kanban helpers, ...) do not — they
 # funnel through ``agent.auxiliary_client.call_llm`` which has no session
 # handle. Rather than threading a ``session_id`` parameter through every one

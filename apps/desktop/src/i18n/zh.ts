@@ -992,7 +992,7 @@ export const zh: Translations = {
       notInCatalog: '不在该提供方的模型列表中 — 调用可能回退到备用模型。',
       tasks: {
         vision: { label: '视觉', hint: '图片分析' },
-        web_extract: { label: '网页提取', hint: '页面总结' },
+        extract_web: { label: '网页提取', hint: '页面总结' },
         compression: { label: '压缩', hint: '上下文压缩' },
         skills_hub: { label: '技能中心', hint: '技能搜索' },
         approval: { label: '审批', hint: '智能自动批准' },
@@ -2749,17 +2749,17 @@ export const zh: Translations = {
         runningTool: action => `正在运行 ${action}`
       },
       titles: {
-        browser_click: { done: '已点击页面元素', pending: '正在点击页面元素', pendingAction: '正在点击' },
+        click_browser: { done: '已点击页面元素', pending: '正在点击页面元素', pendingAction: '正在点击' },
         browser_fill: { done: '已填写表单字段', pending: '正在填写表单字段', pendingAction: '正在填写' },
-        browser_navigate: { done: '已打开页面', pending: '正在打开页面', pendingAction: '正在打开' },
-        browser_snapshot: { done: '已捕获页面快照', pending: '正在捕获页面快照', pendingAction: '正在捕获' },
+        navigate_browser: { done: '已打开页面', pending: '正在打开页面', pendingAction: '正在打开' },
+        snapshot_browser: { done: '已捕获页面快照', pending: '正在捕获页面快照', pendingAction: '正在捕获' },
         browser_take_screenshot: { done: '已捕获截图', pending: '正在捕获截图', pendingAction: '正在捕获' },
-        browser_type: { done: '已在页面输入', pending: '正在页面输入', pendingAction: '正在输入' },
+        type_browser: { done: '已在页面输入', pending: '正在页面输入', pendingAction: '正在输入' },
         clarify: { done: '已提问', pending: '正在提问', pendingAction: '正在提问' },
         cronjob: { done: 'Cron 任务', pending: '正在安排 Cron 任务', pendingAction: '正在安排' },
         edit_file: { done: '已编辑文件', pending: '正在编辑文件', pendingAction: '正在编辑' },
         execute_code: { done: '已运行代码', pending: '正在编写脚本', pendingAction: '正在编写脚本' },
-        image_generate: { done: '已生成图片', pending: '正在生成图片', pendingAction: '正在生成' },
+        generate_image: { done: '已生成图片', pending: '正在生成图片', pendingAction: '正在生成' },
         list_files: { done: '已列出文件', pending: '正在列出文件', pendingAction: '正在列出' },
         patch: { done: '已修补文件', pending: '正在修补文件', pendingAction: '正在修补' },
         read_file: { done: '已读取文件', pending: '正在读取文件', pendingAction: '正在读取' },
@@ -2767,9 +2767,9 @@ export const zh: Translations = {
         session_search_recall: { done: '已搜索会话历史', pending: '正在搜索会话历史', pendingAction: '正在搜索' },
         terminal: { done: '已运行命令', pending: '正在运行命令', pendingAction: '正在运行' },
         todo: { done: '已更新待办', pending: '正在更新待办', pendingAction: '正在更新' },
-        vision_analyze: { done: '已分析图片', pending: '正在分析图片', pendingAction: '正在分析' },
-        web_extract: { done: '已读取网页', pending: '正在读取网页', pendingAction: '正在读取' },
-        web_search: { done: '已搜索网页', pending: '正在搜索网页', pendingAction: '正在搜索' },
+        analyze_vision: { done: '已分析图片', pending: '正在分析图片', pendingAction: '正在分析' },
+        extract_web: { done: '已读取网页', pending: '正在读取网页', pendingAction: '正在读取' },
+        search_web: { done: '已搜索网页', pending: '正在搜索网页', pendingAction: '正在搜索' },
         write_file: { done: '已编辑文件', pending: '正在编辑文件', pendingAction: '正在编辑' }
       }
     }

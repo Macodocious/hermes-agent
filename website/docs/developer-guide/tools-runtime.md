@@ -113,7 +113,7 @@ The main entry point is `model_tools.get_tool_definitions(enabled_toolsets, disa
 
 4. **Registry filtering** — the resolved tool name set is passed to `registry.get_definitions()`, which applies `check_fn` filtering and returns OpenAI-format schemas.
 
-5. **Dynamic schema patching** — after filtering, `execute_code` and `browser_navigate` schemas are dynamically adjusted to only reference tools that actually passed filtering (prevents model hallucination of unavailable tools).
+5. **Dynamic schema patching** — after filtering, `execute_code` and `navigate_browser` schemas are dynamically adjusted to only reference tools that actually passed filtering (prevents model hallucination of unavailable tools).
 
 ### Legacy toolset names
 
@@ -134,7 +134,7 @@ run_agent.py agent loop
     ↓
 model_tools.handle_function_call(name, args, task_id, user_task)
     ↓
-[Agent-loop tools?] → handled directly by agent loop (todo, memory, session_search, delegate_task)
+[Agent-loop tools?] → handled directly by agent loop (todo, memory, search_session, delegate_task)
     ↓
 [Plugin pre-hook] → invoke_hook("pre_tool_call", ...)
     ↓
@@ -166,7 +166,7 @@ Four tools are intercepted before registry dispatch because they need agent-leve
 
 - `todo` — planning/task tracking
 - `memory` — persistent memory writes
-- `session_search` — cross-session recall
+- `search_session` — cross-session recall
 - `delegate_task` — spawns subagent sessions
 
 These tools' schemas are still registered in the registry (for `get_tool_definitions`), but their handlers return a stub error if dispatch somehow reaches them directly.

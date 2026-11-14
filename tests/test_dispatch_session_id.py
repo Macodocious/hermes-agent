@@ -24,7 +24,7 @@ class TestSessionIdForwarding:
         with patch("model_tools.registry", _make_registry(captured)):
             from model_tools import handle_function_call
             handle_function_call(
-                "web_search",
+                "search_web",
                 {"query": "test"},
                 task_id="t1",
                 session_id="sess-abc",
@@ -52,7 +52,7 @@ class TestSessionIdForwarding:
         with patch("model_tools.registry", _make_registry(captured)):
             from model_tools import handle_function_call
             handle_function_call(
-                "web_search",
+                "search_web",
                 {"query": "test"},
                 task_id="t1",
                 skip_pre_tool_call_hook=True,
@@ -66,7 +66,7 @@ class TestSessionIdForwarding:
         with patch("model_tools.registry", _make_registry(captured)):
             from model_tools import handle_function_call
             handle_function_call(
-                "web_search",
+                "search_web",
                 {"query": "test"},
                 task_id="task-999",
                 session_id="sess-1",

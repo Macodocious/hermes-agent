@@ -95,12 +95,12 @@ def test_normalize_codex_response_maps_incomplete_content_filter_to_refusal():
 
 
 # ---------------------------------------------------------------------------
-# Server-side built-in tool calls (xAI native web_search, code interpreter,
+# Server-side built-in tool calls (xAI native search_web, code interpreter,
 # etc.) come back as discrete ``*_call`` output items that xAI's
 # /v1/responses surface routinely leaves at ``status="in_progress"`` even
 # when the overall ``response.status == "completed"``.  These must NOT mark
 # the turn incomplete — otherwise grok-composer-2.5-fast research queries
-# (which invoke server-side web_search) get misclassified as
+# (which invoke server-side search_web) get misclassified as
 # ``finish_reason="incomplete"`` and burn 3 fruitless continuation retries
 # before failing with "Codex response remained incomplete after 3
 # continuation attempts".  Observed live against grok-composer-2.5-fast on
@@ -309,10 +309,10 @@ def test_preflight_codex_api_kwargs_drops_oversized_message_id_end_to_end():
 
 # ---------------------------------------------------------------------------
 # _preflight_codex_api_kwargs — built-in (provider-executed) tools must pass
-# through validation.  Regression guard for the xAI native web_search
+# through validation.  Regression guard for the xAI native search_web
 # injection: the preflight validator previously rejected any tool whose
 # ``type != "function"`` with "unsupported type", which would 400 every xAI
-# turn once the native web_search tool is declared.
+# turn once the native search_web tool is declared.
 # ---------------------------------------------------------------------------
 
 

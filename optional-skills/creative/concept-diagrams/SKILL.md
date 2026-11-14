@@ -47,7 +47,7 @@ Optional: if the user wants a browsable gallery of multiple diagrams, see "Local
 
 Load the HTML template:
 ```
-skill_view(name="concept-diagrams", file_path="templates/template.html")
+view_skill(name="concept-diagrams", file_path="templates/template.html")
 ```
 
 The template embeds the full CSS design system (`c-*` color classes, text classes, light/dark variables, arrow marker styles). The SVG you generate relies on these classes being present on the hosting page.
@@ -259,7 +259,7 @@ Write a single `.html` file the user can open directly. No server, no dependenci
 
 ```python
 # 1. Load the template
-template = skill_view("concept-diagrams", "templates/template.html")
+template = view_skill("concept-diagrams", "templates/template.html")
 
 # 2. Fill in title, subtitle, and paste your SVG
 html = template.replace(
@@ -336,7 +336,7 @@ The `examples/` directory ships 15 complete, tested diagrams. Browse them for wo
 
 Load any example with:
 ```
-skill_view(name="concept-diagrams", file_path="examples/<filename>")
+view_skill(name="concept-diagrams", file_path="examples/<filename>")
 ```
 
 ---

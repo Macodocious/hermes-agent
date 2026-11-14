@@ -470,7 +470,7 @@ Two mechanisms allow specific variables through the sandbox filters:
 
 **1. Skill-scoped passthrough (automatic)**
 
-When a skill is loaded (via `skill_view` or the `/skill` command) and declares `required_environment_variables`, any of those vars that are actually set in the environment are automatically registered as passthrough. Missing vars (still in setup-needed state) are **not** registered.
+When a skill is loaded (via `view_skill` or the `/skill` command) and declares `required_environment_variables`, any of those vars that are actually set in the environment are automatically registered as passthrough. Missing vars (still in setup-needed state) are **not** registered.
 
 ```yaml
 # In a skill's SKILL.md frontmatter
@@ -594,7 +594,7 @@ security:
       - "/etc/hermes/blocked-sites.txt"
 ```
 
-When a blocked URL is requested, the tool returns an error explaining the domain is blocked by policy. The blocklist is enforced across `web_search`, `web_extract`, `browser_navigate`, and all URL-capable tools.
+When a blocked URL is requested, the tool returns an error explaining the domain is blocked by policy. The blocklist is enforced across `search_web`, `extract_web`, `navigate_browser`, and all URL-capable tools.
 
 See [Website Blocklist](/user-guide/configuration#website-blocklist) in the configuration guide for full details.
 

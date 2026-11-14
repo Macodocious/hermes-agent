@@ -33,26 +33,26 @@ TOOL_KIND_MAP: Dict[str, ToolKind] = {
     "execute_code": "execute",
     # Session/meta tools
     "todo": "other",
-    "skill_view": "read",
-    "skills_list": "read",
-    "skill_manage": "edit",
+    "view_skill": "read",
+    "list_skills": "read",
+    "manage_skill": "edit",
     # Web / fetch
-    "web_search": "fetch",
-    "web_extract": "fetch",
+    "search_web": "fetch",
+    "extract_web": "fetch",
     # Browser
-    "browser_navigate": "fetch",
-    "browser_click": "execute",
-    "browser_type": "execute",
-    "browser_snapshot": "read",
+    "navigate_browser": "fetch",
+    "click_browser": "execute",
+    "type_browser": "execute",
+    "snapshot_browser": "read",
     "browser_vision": "read",
-    "browser_scroll": "execute",
-    "browser_press": "execute",
-    "browser_back": "execute",
-    "browser_get_images": "read",
+    "scroll_browser": "execute",
+    "press_browser": "execute",
+    "back_browser": "execute",
+    "get_browser_images": "read",
     # Agent internals
     "delegate_task": "execute",
-    "vision_analyze": "read",
-    "image_generate": "execute",
+    "analyze_vision": "read",
+    "generate_image": "execute",
     "text_to_speech": "execute",
     # Thinking / meta
     "_thinking": "think",
@@ -61,23 +61,23 @@ TOOL_KIND_MAP: Dict[str, ToolKind] = {
 
 _POLISHED_TOOLS = {
     # Core operator loop
-    "todo", "memory", "session_search", "delegate_task",
+    "todo", "memory", "search_session", "delegate_task",
     # Files / execution
     "read_file", "write_file", "patch", "search_files", "terminal", "process", "execute_code",
     # Skills / web / browser / media
-    "skill_view", "skills_list", "skill_manage", "web_search", "web_extract",
-    "browser_navigate", "browser_click", "browser_type", "browser_press", "browser_scroll",
-    "browser_back", "browser_snapshot", "browser_console", "browser_get_images", "browser_vision",
-    "vision_analyze", "image_generate", "text_to_speech",
+    "view_skill", "list_skills", "manage_skill", "search_web", "extract_web",
+    "navigate_browser", "click_browser", "type_browser", "press_browser", "scroll_browser",
+    "back_browser", "snapshot_browser", "browser_console", "get_browser_images", "browser_vision",
+    "analyze_vision", "generate_image", "text_to_speech",
     # Schedulers / platform integrations
     "cronjob", "send_message", "clarify", "discord", "discord_admin",
-    "ha_list_entities", "ha_get_state", "ha_list_services", "ha_call_service",
-    "feishu_doc_read", "feishu_drive_list_comments", "feishu_drive_list_comment_replies",
-    "feishu_drive_reply_comment", "feishu_drive_add_comment",
-    "kanban_create", "kanban_show", "kanban_comment", "kanban_complete",
-    "kanban_block", "kanban_link", "kanban_heartbeat",
-    "yb_query_group_info", "yb_query_group_members", "yb_search_sticker",
-    "yb_send_dm", "yb_send_sticker",
+    "list_ha_entities", "get_ha_state", "list_ha_services", "call_ha_service",
+    "read_feishu_doc", "list_feishu_drive_comments", "list_feishu_drive_comment_replies",
+    "reply_feishu_drive_comment", "add_feishu_drive_comment",
+    "create_kanban", "show_kanban", "comment_kanban", "complete_kanban",
+    "block_kanban", "link_kanban", "heartbeat_kanban",
+    "query_yb_group_info", "query_yb_group_members", "search_yb_sticker",
+    "send_yb_dm", "send_yb_sticker",
 }
 
 
@@ -108,9 +108,9 @@ def build_tool_title(tool_name: str, args: Dict[str, Any]) -> str:
         return f"patch ({mode}): {path}"
     if tool_name == "search_files":
         return f"search: {args.get('pattern', '?')}"
-    if tool_name == "web_search":
+    if tool_name == "search_web":
         return f"web search: {args.get('query', '?')}"
-    if tool_name == "web_extract":
+    if tool_name == "extract_web":
         urls = args.get("urls", [])
         if urls:
             first = urls[0]
@@ -132,7 +132,7 @@ def build_tool_title(tool_name: str, args: Dict[str, Any]) -> str:
         if goal and len(goal) > 60:
             goal = goal[:57] + "..."
         return f"delegate: {goal}" if goal else "delegate task"
-    if tool_name == "session_search":
+    if tool_name == "search_session":
         query = str(args.get("query") or "").strip()
         return f"session search: {query}" if query else "recent sessions"
     if tool_name == "memory":
@@ -152,15 +152,15 @@ def build_tool_title(tool_name: str, args: Dict[str, Any]) -> str:
         if isinstance(items, list):
             return f"todo ({len(items)} item{'s' if len(items) != 1 else ''})"
         return "todo"
-    if tool_name == "skill_view":
+    if tool_name == "view_skill":
         name = str(args.get("name") or "?").strip() or "?"
         file_path = str(args.get("file_path") or "").strip()
         suffix = f"/{file_path}" if file_path else ""
         return f"skill view ({name}{suffix})"
-    if tool_name == "skills_list":
+    if tool_name == "list_skills":
         category = str(args.get("category") or "").strip()
         return f"skills list ({category})" if category else "skills list"
-    if tool_name == "skill_manage":
+    if tool_name == "manage_skill":
         action = str(args.get("action") or "manage").strip() or "manage"
         name = str(args.get("name") or "?").strip() or "?"
         file_path = str(args.get("file_path") or "").strip()
@@ -168,17 +168,17 @@ def build_tool_title(tool_name: str, args: Dict[str, Any]) -> str:
         if len(target) > 64:
             target = target[:61] + "..."
         return f"skill {action}: {target}"
-    if tool_name == "browser_navigate":
+    if tool_name == "navigate_browser":
         return f"navigate: {args.get('url', '?')}"
-    if tool_name == "browser_snapshot":
+    if tool_name == "snapshot_browser":
         return "browser snapshot"
     if tool_name == "browser_vision":
         return f"browser vision: {str(args.get('question', '?'))[:50]}"
-    if tool_name == "browser_get_images":
+    if tool_name == "get_browser_images":
         return "browser images"
-    if tool_name == "vision_analyze":
+    if tool_name == "analyze_vision":
         return f"analyze image: {str(args.get('question', '?'))[:50]}"
-    if tool_name == "image_generate":
+    if tool_name == "generate_image":
         prompt = str(args.get("prompt") or args.get("description") or "").strip()
         return f"generate image: {prompt[:50]}" if prompt else "generate image"
     if tool_name == "cronjob":
@@ -509,7 +509,7 @@ def _format_web_search_result(result: Optional[str]) -> Optional[str]:
 
 
 def _format_web_extract_result(result: Optional[str]) -> Optional[str]:
-    """Return only web_extract errors for ACP; success stays compact via title."""
+    """Return only extract_web errors for ACP; success stays compact via title."""
     data = _json_loads_maybe(result)
     if not isinstance(data, dict):
         return None
@@ -719,7 +719,7 @@ def _format_browser_result(tool_name: str, result: Optional[str], args: Optional
         return result if isinstance(result, str) and result.strip() else None
     if data.get("success") is False or data.get("error"):
         return f"{tool_name} failed: {data.get('error', 'unknown error')}"
-    if tool_name == "browser_get_images":
+    if tool_name == "get_browser_images":
         images = data.get("images") or data.get("data")
         if isinstance(images, list):
             lines = [f"Images found: {len(images)}"]
@@ -908,18 +908,18 @@ def _build_polished_completion_content(
         "execute_code": lambda: _format_execute_code_result(result),
         "process": lambda: _format_process_result(result, function_args),
         "delegate_task": lambda: _format_delegate_result(result),
-        "session_search": lambda: _format_session_search_result(result),
+        "search_session": lambda: _format_session_search_result(result),
         "memory": lambda: _format_memory_result(result, function_args),
-        "skill_view": lambda: _format_skill_view_result(result),
-        "skill_manage": lambda: _format_skill_manage_result(result, function_args),
-        "web_search": lambda: _format_web_search_result(result),
-        "web_extract": lambda: _format_web_extract_result(result),
-        "browser_navigate": lambda: _format_browser_result(tool_name, result, function_args),
-        "browser_snapshot": lambda: _format_browser_result(tool_name, result, function_args),
+        "view_skill": lambda: _format_skill_view_result(result),
+        "manage_skill": lambda: _format_skill_manage_result(result, function_args),
+        "search_web": lambda: _format_web_search_result(result),
+        "extract_web": lambda: _format_web_extract_result(result),
+        "navigate_browser": lambda: _format_browser_result(tool_name, result, function_args),
+        "snapshot_browser": lambda: _format_browser_result(tool_name, result, function_args),
         "browser_vision": lambda: _format_browser_result(tool_name, result, function_args),
-        "browser_get_images": lambda: _format_browser_result(tool_name, result, function_args),
-        "vision_analyze": lambda: _format_media_or_cron_result(tool_name, result),
-        "image_generate": lambda: _format_media_or_cron_result(tool_name, result),
+        "get_browser_images": lambda: _format_browser_result(tool_name, result, function_args),
+        "analyze_vision": lambda: _format_media_or_cron_result(tool_name, result),
+        "generate_image": lambda: _format_media_or_cron_result(tool_name, result),
         "cronjob": lambda: _format_media_or_cron_result(tool_name, result),
     }.get(tool_name)
     if formatter is None and tool_name in _POLISHED_TOOLS:
@@ -1011,7 +1011,7 @@ def _build_tool_complete_content(
     if len(display_result) > 5000:
         display_result = display_result[:4900] + f"\n... ({len(result)} chars total, truncated)"
 
-    if tool_name == "skill_manage":
+    if tool_name == "manage_skill":
         try:
             from agent.display import extract_edit_diff
 
@@ -1156,7 +1156,7 @@ def _build_tool_start(
             tool_call_id, title, kind=kind, content=content, locations=locations,
         )
 
-    if tool_name == "skill_view":
+    if tool_name == "view_skill":
         name = str(arguments.get("name") or "?").strip() or "?"
         file_path = str(arguments.get("file_path") or "SKILL.md").strip() or "SKILL.md"
         content = [_text(f"Loading skill '{name}' ({file_path})")]
@@ -1164,7 +1164,7 @@ def _build_tool_start(
             tool_call_id, title, kind=kind, content=content, locations=locations,
         )
 
-    if tool_name == "skill_manage":
+    if tool_name == "manage_skill":
         action = str(arguments.get("action") or "manage").strip() or "manage"
         name = str(arguments.get("name") or "?").strip() or "?"
         file_path = str(arguments.get("file_path") or "SKILL.md").strip() or "SKILL.md"
@@ -1193,7 +1193,7 @@ def _build_tool_start(
             target = str(arguments.get("file_path") or file_path or name)
             content = [_text(f"Removing {target} from skill '{name}'")]
         else:
-            content = [_text(f"Running skill_manage action '{action}' on skill '{name}' ({file_path})")]
+            content = [_text(f"Running manage_skill action '{action}' on skill '{name}' ({file_path})")]
 
         return acp.start_tool_call(
             tool_call_id, title, kind=kind, content=content, locations=locations,
@@ -1207,14 +1207,14 @@ def _build_tool_start(
             tool_call_id, title, kind=kind, content=content, locations=locations,
         )
 
-    if tool_name == "web_search":
+    if tool_name == "search_web":
         query = str(arguments.get("query") or "").strip()
         content = [_text(f"Searching the web for: {query}" if query else "Searching the web")]
         return acp.start_tool_call(
             tool_call_id, title, kind=kind, content=content, locations=locations,
         )
 
-    if tool_name == "web_extract":
+    if tool_name == "extract_web":
         # The title identifies the URL(s). Avoid a duplicate content block so
         # Zed renders this like read_file: compact start, concise completion.
         return acp.start_tool_call(
@@ -1252,7 +1252,7 @@ def _build_tool_start(
             tool_call_id, title, kind=kind, content=content, locations=locations,
         )
 
-    if tool_name == "session_search":
+    if tool_name == "search_session":
         query = str(arguments.get("query") or "").strip()
         content = [_text(f"Searching past sessions for: {query}" if query else "Loading recent sessions")]
         return acp.start_tool_call(
@@ -1311,7 +1311,7 @@ def build_tool_complete(
 ) -> ToolCallProgress:
     """Create a ToolCallUpdate (progress) event for a completed tool call."""
     kind = get_tool_kind(tool_name)
-    if tool_name == "web_extract":
+    if tool_name == "extract_web":
         error_text = _format_web_extract_result(result)
         content = [_text(error_text)] if error_text else None
     else:

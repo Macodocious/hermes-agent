@@ -493,7 +493,7 @@ def _strip_image_parts_from_parts(parts: Any) -> Any:
     Returns a new list with image_url / image / input_image parts replaced
     by a text placeholder, or None if the list had no images (callers
     skip the replacement in that case). Used by the compressor to prune
-    old computer_use screenshots.
+    old use_computer screenshots.
     """
     if not isinstance(parts, list):
         return None
@@ -674,7 +674,7 @@ def _image_part_label(part: Dict[str, Any]) -> str:
 
     Keeps a real, referenceable URL when the image lives at an http(s)
     address — the summary can then preserve the handle so the agent (or a
-    later vision_analyze call) can still reach the image after compaction.
+    later analyze_vision call) can still reach the image after compaction.
     Base64 ``data:`` URLs carry no reusable reference and would flood the
     summarizer input, so they collapse to ``[image]``.
     """
@@ -777,22 +777,22 @@ def _summarize_tool_result_unguarded(tool_name: str, tool_args: str, tool_conten
         mode = args.get("mode", "replace")
         return f"[patch] {mode} in {path} ({content_len:,} chars result)"
 
-    if tool_name in {"browser_navigate", "browser_click", "browser_snapshot",
-                     "browser_type", "browser_scroll", "browser_vision"}:
+    if tool_name in {"navigate_browser", "click_browser", "snapshot_browser",
+                     "type_browser", "scroll_browser", "browser_vision"}:
         url = args.get("url", "")
         ref = args.get("ref", "")
         detail = f" {url}" if url else (f" ref={ref}" if ref else "")
         return f"[{tool_name}]{detail} ({content_len:,} chars)"
 
-    if tool_name == "web_search":
+    if tool_name == "search_web":
         query = args.get("query", "?")
-        return f"[web_search] query='{query}' ({content_len:,} chars result)"
+        return f"[search_web] query='{query}' ({content_len:,} chars result)"
 
-    if tool_name == "web_extract":
+    if tool_name == "extract_web":
         urls = args.get("urls", [])
         first = urls[0] if isinstance(urls, list) and urls else "?"
-        # web_search results are dicts ({"url"/"href": ...}) and models often
-        # forward them straight into web_extract. Unwrap to the URL string so
+        # search_web results are dicts ({"url"/"href": ...}) and models often
+        # forward them straight into extract_web. Unwrap to the URL string so
         # the summary stays readable and the ``+=`` below never hits the
         # ``dict + str`` TypeError that would abort pre-compression pruning.
         if isinstance(first, dict):
@@ -802,7 +802,7 @@ def _summarize_tool_result_unguarded(tool_name: str, tool_args: str, tool_conten
         url_desc = first
         if isinstance(urls, list) and len(urls) > 1:
             url_desc += f" (+{len(urls) - 1} more)"
-        return f"[web_extract] {url_desc} ({content_len:,} chars)"
+        return f"[extract_web] {url_desc} ({content_len:,} chars)"
 
     if tool_name == "delegate_task":
         goal = _str_arg(args, "goal")
@@ -817,13 +817,13 @@ def _summarize_tool_result_unguarded(tool_name: str, tool_args: str, tool_conten
             code_preview += "..."
         return f"[execute_code] `{code_preview}` ({line_count} lines output)"
 
-    if tool_name in {"skill_view", "skills_list", "skill_manage"}:
+    if tool_name in {"view_skill", "list_skills", "manage_skill"}:
         name = args.get("name", "?")
         return f"[{tool_name}] name={name} ({content_len:,} chars)"
 
-    if tool_name == "vision_analyze":
+    if tool_name == "analyze_vision":
         question = _str_arg(args, "question")[:50]
-        return f"[vision_analyze] '{question}' ({content_len:,} chars)"
+        return f"[analyze_vision] '{question}' ({content_len:,} chars)"
 
     if tool_name == "memory":
         action = args.get("action", "?")
@@ -1752,7 +1752,7 @@ class ContextCompressor(ContextEngine):
             content = msg.get("content", "")
             # Multimodal content (base64 screenshots etc.): strip the image
             # payload — keep a lightweight text placeholder in its place.
-            # Without this, an old computer_use screenshot (~1MB base64 +
+            # Without this, an old use_computer screenshot (~1MB base64 +
             # ~1500 real tokens) survives every compression pass forever.
             if isinstance(content, list):
                 stripped = _strip_image_parts_from_parts(content)

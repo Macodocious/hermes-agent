@@ -1300,7 +1300,7 @@ class TestConvertMessages:
                 "role": "assistant",
                 "content": "",
                 "tool_calls": [
-                    {"id": "tc_1", "function": {"name": "skill_view", "arguments": "{}"}},
+                    {"id": "tc_1", "function": {"name": "view_skill", "arguments": "{}"}},
                 ],
             },
             {"role": "tool", "tool_call_id": "tc_1", "content": "result"},

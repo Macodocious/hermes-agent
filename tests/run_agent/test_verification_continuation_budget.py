@@ -106,7 +106,7 @@ def test_pre_verify_preserves_composed_report_at_budget_limit(agent, monkeypatch
 
 
 def test_intermediate_ack_uses_summary_instead_of_premature_text(agent, monkeypatch):
-    agent.valid_tool_names = ["web_search"]
+    agent.valid_tool_names = ["search_web"]
     agent._intent_ack_continuation = True
     agent._looks_like_codex_intermediate_ack = MagicMock(return_value=True)
     agent._interruptible_api_call = lambda _kwargs: _response("I'll inspect the files now")
@@ -255,7 +255,7 @@ def test_streamed_interim_then_different_summary_not_marked_previewed(agent, mon
     unrelated mid-turn commentary, not the final response — so the CLI renders
     the summary instead of suppressing it. (#65919 review: response-loss blocker)
     """
-    agent.valid_tool_names = ["web_search"]
+    agent.valid_tool_names = ["search_web"]
     agent._intent_ack_continuation = True
     agent._looks_like_codex_intermediate_ack = MagicMock(return_value=True)
     agent._interruptible_api_call = lambda _kwargs: _response("I'll inspect the files now")

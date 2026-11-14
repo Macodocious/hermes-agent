@@ -286,7 +286,7 @@ save BEFORE entering PIE when those subsystems are involved.
 ### 21. Screenshot judgment is part of the job
 
 Don't declare a lighting/composition milestone done from numbers alone —
-capture the viewport, `vision_analyze` it, and art-direct (silhouette,
+capture the viewport, `analyze_vision` it, and art-direct (silhouette,
 exposure, horizon placement, scale against human height). The user is
 non-technical; you are the one with eyes on both the brief and the frame.
 

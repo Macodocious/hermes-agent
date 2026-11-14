@@ -9,8 +9,8 @@ sidebar_position: 6
 
 Hermes Agent includes two model-callable web tools backed by multiple providers:
 
-- **`web_search`** — search the web and return ranked results
-- **`web_extract`** — fetch and extract readable content from one or more URLs
+- **`search_web`** — search the web and return ranked results
+- **`extract_web`** — fetch and extract readable content from one or more URLs
 
 Both are configured through a single backend selection. Providers are chosen via `hermes tools` or set directly in `config.yaml`.
 
@@ -27,7 +27,7 @@ Both are configured through a single backend selection. Providers are chosen via
 | **Parallel** | `PARALLEL_API_KEY` | ✔ | ✔ | Paid |
 | **xAI (Grok)** | `XAI_API_KEY` or `hermes auth add xai-oauth` | ✔ | — | Paid (SuperGrok or per-token) |
 
-Brave Search, DDGS, and xAI are **search-only** — pair any of them with Firecrawl/Tavily/Exa/Parallel when you also need `web_extract`. DDGS uses the [`ddgs` Python package](https://pypi.org/project/ddgs/) under the hood; if it isn't already installed, run `pip install ddgs` (or let Hermes lazy-install it on first use). xAI runs Grok's server-side `web_search` tool on the Responses API — results are LLM-generated rather than index-backed, so titles, descriptions, and URL choice are all model output (see the [trust-model caveat](#xai-grok) below).
+Brave Search, DDGS, and xAI are **search-only** — pair any of them with Firecrawl/Tavily/Exa/Parallel when you also need `extract_web`. DDGS uses the [`ddgs` Python package](https://pypi.org/project/ddgs/) under the hood; if it isn't already installed, run `pip install ddgs` (or let Hermes lazy-install it on first use). xAI runs Grok's server-side `search_web` tool on the Responses API — results are LLM-generated rather than index-backed, so titles, descriptions, and URL choice are all model output (see the [trust-model caveat](#xai-grok) below).
 
 **Per-capability split:** you can use different providers for search and extract independently — for example SearXNG (free) for search and Firecrawl for extract. See [Per-capability configuration](#per-capability-configuration) below.
 
@@ -37,14 +37,14 @@ If you have a paid [Nous Portal](https://portal.nousresearch.com) subscription, 
 
 ---
 
-## How `web_extract` handles long pages
+## How `extract_web` handles long pages
 
-Backends return raw page markdown, which can be huge (forum threads, docs sites, news articles with embedded comments). To keep your context window usable and your costs down, `web_extract` runs returned content through the **`web_extract` auxiliary model** before handing it to the agent. Behavior is purely size-driven:
+Backends return raw page markdown, which can be huge (forum threads, docs sites, news articles with embedded comments). To keep your context window usable and your costs down, `extract_web` runs returned content through the **`extract_web` auxiliary model** before handing it to the agent. Behavior is purely size-driven:
 
 | Page size (characters) | What happens |
 |------------------------|--------------|
 | Under 5 000 | Returned as-is — no LLM call, full markdown reaches the agent |
-| 5 000 – 500 000 | Single-pass summary via the `web_extract` auxiliary model, capped at ~5 000 chars of output |
+| 5 000 – 500 000 | Single-pass summary via the `extract_web` auxiliary model, capped at ~5 000 chars of output |
 | 500 000 – 2 000 000 | Chunked: split into 100 k-char chunks, summarize each in parallel, then synthesize a final summary (~5 000 chars) |
 | Over 2 000 000 | Refused with a hint to use a more focused source URL |
 
@@ -52,26 +52,26 @@ The summary keeps quotes, code blocks, and key facts in their original formattin
 
 ### Which model does the summarizing?
 
-The `web_extract` auxiliary task. By default (`auxiliary.web_extract.provider: "auto"`), this is your **main chat model** — same provider, same model as `hermes model`. That's fine for most setups, but on expensive reasoning models (Opus, MiniMax M2.7, etc.) every long-page extract adds meaningful cost.
+The `extract_web` auxiliary task. By default (`auxiliary.extract_web.provider: "auto"`), this is your **main chat model** — same provider, same model as `hermes model`. That's fine for most setups, but on expensive reasoning models (Opus, MiniMax M2.7, etc.) every long-page extract adds meaningful cost.
 
 To route extraction summaries to a cheap, fast model regardless of your main:
 
 ```yaml
 # ~/.hermes/config.yaml
 auxiliary:
-  web_extract:
+  extract_web:
     provider: openrouter
     model: google/gemini-3-flash-preview
     timeout: 360       # seconds; raise if you hit summarization timeouts
 ```
 
-Or pick interactively: `hermes model` → **Configure auxiliary models** → `web_extract`.
+Or pick interactively: `hermes model` → **Configure auxiliary models** → `extract_web`.
 
 See [Auxiliary Models](/user-guide/configuration#auxiliary-models) for the full reference and per-task override patterns.
 
 ### When summarization gets in the way
 
-If you specifically need raw, unsummarized page content — for example, you're scraping a structured page where the LLM summary would drop important fields — use `browser_navigate` + `browser_snapshot` instead. The browser tool returns the live accessibility tree without auxiliary-model rewriting (subject to its own 8 000-char snapshot cap on huge pages).
+If you specifically need raw, unsummarized page content — for example, you're scraping a structured page where the LLM summary would drop important fields — use `navigate_browser` + `snapshot_browser` instead. The browser tool returns the live accessibility tree without auxiliary-model rewriting (subject to its own 8 000-char snapshot cap on huge pages).
 
 ---
 
@@ -113,7 +113,7 @@ When `FIRECRAWL_API_URL` is set, the API key is optional (disable server auth wi
 
 SearXNG is a privacy-respecting, open-source metasearch engine that aggregates results from 70+ search engines. **No API key required** — just point Hermes at a running SearXNG instance.
 
-SearXNG is **search-only** — `web_extract` requires a separate extract provider.
+SearXNG is **search-only** — `extract_web` requires a separate extract provider.
 
 #### Option A — Self-host with Docker (recommended)
 
@@ -238,7 +238,7 @@ Public instances have rate limits, variable uptime, and may disable JSON format 
 
 #### Pair SearXNG with an extract provider
 
-SearXNG handles search; you need a separate provider for `web_extract`. Use the per-capability keys:
+SearXNG handles search; you need a separate provider for `extract_web`. Use the per-capability keys:
 
 ```yaml
 # ~/.hermes/config.yaml
@@ -292,7 +292,7 @@ Get access at [parallel.ai](https://parallel.ai).
 
 ### xAI (Grok) {#xai-grok}
 
-Routes `web_search` through Grok's server-side [web_search tool](https://docs.x.ai/developers/tools/web-search) on the Responses API. Grok runs the actual searching and returns the top results as structured JSON.
+Routes `search_web` through Grok's server-side [search_web tool](https://docs.x.ai/developers/tools/web-search) on the Responses API. Grok runs the actual searching and returns the top results as structured JSON.
 
 Works with either credential path — no new env vars, no new setup wizard:
 
@@ -321,7 +321,7 @@ web:
 web:
   backend: "xai"
   xai:
-    model: grok-build-0.1        # reasoning model required by web_search (default)
+    model: grok-build-0.1        # reasoning model required by search_web (default)
     allowed_domains:             # optional, max 5 — mutex with excluded_domains
       - arxiv.org
     excluded_domains:            # optional, max 5
@@ -329,7 +329,7 @@ web:
     timeout: 90                  # seconds (default)
 ```
 
-**Search-only** — pair with Firecrawl / Tavily / Exa / Parallel if you also need `web_extract`. On 401 the provider performs a single forced OAuth-token refresh and retries (covers mid-window revocation and opaque tokens the proactive expiry check can't decode); env-var credentials skip the retry.
+**Search-only** — pair with Firecrawl / Tavily / Exa / Parallel if you also need `extract_web`. On 401 the provider performs a single forced OAuth-token refresh and retries (covers mid-window revocation and opaque tokens the proactive expiry check can't decode); env-var credentials skip the retry.
 
 :::caution Trust model
 Unlike index-backed providers (Brave, Tavily, Exa) which return verbatim search-engine results, xAI is an LLM choosing which URLs to surface and writing the titles and descriptions itself. The *content* of the query influences the output, so a maliciously crafted query (e.g. injected via untrusted upstream input the agent picked up) can in principle steer Grok into emitting attacker-chosen URLs. Treat returned URLs the same way you'd treat any model-generated link — validate before fetching, especially if the query came from untrusted input.
@@ -356,8 +356,8 @@ Use different providers for search vs extract. This lets you combine free search
 ```yaml
 # ~/.hermes/config.yaml
 web:
-  search_backend: "searxng"     # used by web_search
-  extract_backend: "firecrawl"  # used by web_extract
+  search_backend: "searxng"     # used by search_web
+  extract_backend: "firecrawl"  # used by extract_web
 ```
 
 When per-capability keys are empty, both fall through to `web.backend`. When `web.backend` is also empty, the backend is auto-detected from whichever API key/URL is present.
@@ -410,13 +410,13 @@ This prints the active backend and its status:
 
 ## Troubleshooting
 
-### `web_search` returns `{"success": false}`
+### `search_web` returns `{"success": false}`
 
 - Check `SEARXNG_URL` is reachable: `curl -s "http://localhost:8888/search?q=test&format=json"`
 - If you get HTTP 403, JSON format is disabled — add `json` to the `formats` list in `settings.yml` and restart
 - If you get a connection error, the container may not be running: `docker ps | grep searxng`
 
-### `web_extract` says "search-only backend"
+### `extract_web` says "search-only backend"
 
 SearXNG cannot extract URL content. Set `web.extract_backend` to a provider that supports extraction:
 
@@ -437,13 +437,13 @@ Some public instances disable certain search engines or categories. Try:
 
 Switch to a self-hosted instance (see [Option A](#option-a--self-host-with-docker-recommended) above). With Docker, your own instance has no rate limits.
 
-### `web_extract` returns truncated content with a "summarization timed out" note
+### `extract_web` returns truncated content with a "summarization timed out" note
 
 The auxiliary model didn't finish summarizing within the configured timeout. Either:
 
-- Raise `auxiliary.web_extract.timeout` in `config.yaml` (default 360s on fresh installs, 30s if the key is missing)
-- Switch the `web_extract` auxiliary task to a faster model (e.g. `google/gemini-3-flash-preview`) — see [How `web_extract` handles long pages](#how-web_extract-handles-long-pages)
-- For pages where summarization is the wrong tool, use `browser_navigate` instead
+- Raise `auxiliary.extract_web.timeout` in `config.yaml` (default 360s on fresh installs, 30s if the key is missing)
+- Switch the `extract_web` auxiliary task to a faster model (e.g. `google/gemini-3-flash-preview`) — see [How `extract_web` handles long pages](#how-extract_web-handles-long-pages)
+- For pages where summarization is the wrong tool, use `navigate_browser` instead
 
 ---
 

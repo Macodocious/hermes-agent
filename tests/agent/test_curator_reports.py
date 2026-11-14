@@ -107,8 +107,8 @@ def test_run_json_has_expected_shape(curator_env):
         llm_meta=_make_llm_meta(
             final="I consolidated the whole universe.",
             tool_calls=[
-                {"name": "skills_list", "arguments": "{}"},
-                {"name": "skill_manage", "arguments": '{"action":"create"}'},
+                {"name": "list_skills", "arguments": "{}"},
+                {"name": "manage_skill", "arguments": '{"action":"create"}'},
                 {"name": "terminal", "arguments": "mv ..."},
             ],
         ),
@@ -133,8 +133,8 @@ def test_run_json_has_expected_shape(curator_env):
     assert payload["counts"]["archived_this_run"] == 1
     assert payload["counts"]["added_this_run"] == 1
     # Tool call counts are aggregated
-    assert payload["tool_call_counts"]["skills_list"] == 1
-    assert payload["tool_call_counts"]["skill_manage"] == 1
+    assert payload["tool_call_counts"]["list_skills"] == 1
+    assert payload["tool_call_counts"]["manage_skill"] == 1
     assert payload["tool_call_counts"]["terminal"] == 1
     assert payload["counts"]["tool_calls_total"] == 3
 
@@ -160,7 +160,7 @@ def test_report_md_is_human_readable(curator_env):
                 # Evidence that `foo` was absorbed into `foo-umbrella`:
                 # write_file under foo-umbrella referencing foo.
                 {
-                    "name": "skill_manage",
+                    "name": "manage_skill",
                     "arguments": json.dumps({
                         "action": "write_file",
                         "name": "foo-umbrella",
@@ -333,7 +333,7 @@ def test_curator_rewrites_cron_skills_when_skill_consolidated(curator_env_with_c
             final="Consolidated foo into foo-umbrella.",
             tool_calls=[
                 {
-                    "name": "skill_manage",
+                    "name": "manage_skill",
                     "arguments": json.dumps({
                         "action": "write_file",
                         "name": "foo-umbrella",

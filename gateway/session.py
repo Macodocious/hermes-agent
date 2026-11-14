@@ -602,7 +602,7 @@ def build_session_context_prompt(
         lines.append(
             "**Platform notes:** You are running inside Yuanbao. "
             "To send a private (DM) message to a user in the current group, "
-            "use the yb_send_dm tool (look up the recipient by name or pass "
+            "use the send_yb_dm tool (look up the recipient by name or pass "
             "their user_id). Your normal reply is delivered to the group you "
             "are responding in."
         )

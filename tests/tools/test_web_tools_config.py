@@ -431,7 +431,7 @@ class TestParallelClientConfig:
 
 
 class TestWebSearchSchema:
-    """Test suite for web_search tool schema and handler wiring."""
+    """Test suite for search_web tool schema and handler wiring."""
 
     def test_schema_exposes_optional_limit(self):
         import tools.web_tools
@@ -447,7 +447,7 @@ class TestWebSearchSchema:
     def test_registered_handler_passes_limit(self):
         import tools.web_tools
 
-        entry = tools.web_tools.registry.get_entry("web_search")
+        entry = tools.web_tools.registry.get_entry("search_web")
         with patch("tools.web_tools.web_search_tool", return_value='{"success": true}') as mock_search:
             result = entry.handler({"query": "site:example.com docs", "limit": 12})
 
@@ -457,7 +457,7 @@ class TestWebSearchSchema:
     def test_registered_handler_defaults_limit_to_five(self):
         import tools.web_tools
 
-        entry = tools.web_tools.registry.get_entry("web_search")
+        entry = tools.web_tools.registry.get_entry("search_web")
         with patch("tools.web_tools.web_search_tool", return_value='{"success": true}') as mock_search:
             result = entry.handler({"query": "docs"})
 
@@ -696,7 +696,7 @@ def test_web_requires_env_includes_exa_key():
 
 class TestNonBuiltinProviderAvailability:
     """Regression: a plugin-registered WebSearchProvider with no built-in
-    provider credentials must still light up web_search / web_extract tools.
+    provider credentials must still light up search_web / extract_web tools.
 
     The web_tools availability gate delegates non-legacy backend names to the
     web_search_registry's provider ``is_available()``.  This class verifies
@@ -800,17 +800,17 @@ class TestNonBuiltinProviderAvailability:
             assert _get_extract_backend() == "fake-plugin-prov"
 
     def test_tool_registry_entries_not_filtered_out(self):
-        """web_search and web_extract tool entries must remain in the
+        """search_web and extract_web tool entries must remain in the
         registry when only a custom provider is available."""
         with patch("tools.web_tools._ddgs_package_importable", return_value=False), \
              patch("tools.web_tools._peek_nous_access_token", return_value=None):
             import tools.web_tools
-            web_search_entry = tools.web_tools.registry.get_entry("web_search")
-            web_extract_entry = tools.web_tools.registry.get_entry("web_extract")
+            web_search_entry = tools.web_tools.registry.get_entry("search_web")
+            web_extract_entry = tools.web_tools.registry.get_entry("extract_web")
             assert web_search_entry is not None, \
-                "web_search tool was filtered out despite custom provider being available"
+                "search_web tool was filtered out despite custom provider being available"
             assert web_extract_entry is not None, \
-                "web_extract tool was filtered out despite custom provider being available"
+                "extract_web tool was filtered out despite custom provider being available"
 
 
 class TestFirecrawlEnvResolution:

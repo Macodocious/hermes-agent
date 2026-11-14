@@ -2392,7 +2392,7 @@ class TestRunJobSkillBacked:
                      "api_mode": "chat_completions",
                  },
              ), \
-             patch("tools.skills_tool.skill_view", side_effect=_skill_view), \
+             patch("tools.skills_tool.view_skill", side_effect=_skill_view), \
              patch("run_agent.AIAgent") as mock_agent_cls:
             mock_agent = MagicMock()
             mock_agent.run_conversation.side_effect = _run_conversation
@@ -2453,7 +2453,7 @@ class TestRunJobSkillBacked:
                      "api_mode": "chat_completions",
                  },
              ), \
-             patch("tools.skills_tool.skill_view", side_effect=_skill_view), \
+             patch("tools.skills_tool.view_skill", side_effect=_skill_view), \
              patch("run_agent.AIAgent") as mock_agent_cls:
             mock_agent = MagicMock()
             mock_agent.run_conversation.side_effect = _run_conversation
@@ -2492,7 +2492,7 @@ class TestRunJobSkillBacked:
                      "api_mode": "chat_completions",
                  },
              ), \
-             patch("tools.skills_tool.skill_view", return_value=json.dumps({"success": True, "content": "# Blogwatcher\nFollow this skill."})), \
+             patch("tools.skills_tool.view_skill", return_value=json.dumps({"success": True, "content": "# Blogwatcher\nFollow this skill."})), \
              patch("run_agent.AIAgent") as mock_agent_cls:
             mock_agent = MagicMock()
             mock_agent.run_conversation.return_value = {"final_response": "ok"}
@@ -2539,7 +2539,7 @@ class TestRunJobSkillBacked:
                      "api_mode": "chat_completions",
                  },
              ), \
-             patch("tools.skills_tool.skill_view", side_effect=_skill_view) as skill_view_mock, \
+             patch("tools.skills_tool.view_skill", side_effect=_skill_view) as skill_view_mock, \
              patch("run_agent.AIAgent") as mock_agent_cls:
             mock_agent = MagicMock()
             mock_agent.run_conversation.return_value = {"final_response": "ok"}
@@ -2984,14 +2984,14 @@ class TestBuildJobPromptMissingSkill:
 
     def test_missing_skill_does_not_raise(self):
         """Job should run even when a referenced skill is not installed."""
-        with patch("tools.skills_tool.skill_view", side_effect=self._missing_skill_view):
+        with patch("tools.skills_tool.view_skill", side_effect=self._missing_skill_view):
             result = _build_job_prompt({"skills": ["ghost-skill"], "prompt": "do something"})
         # prompt is preserved even though skill was skipped
         assert "do something" in result
 
     def test_missing_skill_injects_user_notice_into_prompt(self):
         """A system notice about the missing skill is injected into the prompt."""
-        with patch("tools.skills_tool.skill_view", side_effect=self._missing_skill_view):
+        with patch("tools.skills_tool.view_skill", side_effect=self._missing_skill_view):
             result = _build_job_prompt({"skills": ["ghost-skill"], "prompt": "do something"})
         assert "ghost-skill" in result
         assert "not found" in result.lower() or "skipped" in result.lower()
@@ -2999,7 +2999,7 @@ class TestBuildJobPromptMissingSkill:
     def test_missing_skill_logs_warning(self, caplog):
         """A warning is logged when a skill cannot be found."""
         with caplog.at_level(logging.WARNING, logger="cron.scheduler"):
-            with patch("tools.skills_tool.skill_view", side_effect=self._missing_skill_view):
+            with patch("tools.skills_tool.view_skill", side_effect=self._missing_skill_view):
                 _build_job_prompt({"name": "My Job", "skills": ["ghost-skill"], "prompt": "do something"})
         assert any("ghost-skill" in record.message for record in caplog.records)
 
@@ -3011,14 +3011,14 @@ class TestBuildJobPromptMissingSkill:
                 return json.dumps({"success": True, "content": "Real skill content."})
             return json.dumps({"success": False, "error": f"Skill '{name}' not found."})
 
-        with patch("tools.skills_tool.skill_view", side_effect=_mixed_skill_view):
+        with patch("tools.skills_tool.view_skill", side_effect=_mixed_skill_view):
             result = _build_job_prompt({"skills": ["ghost-skill", "real-skill"], "prompt": "go"})
         assert "Real skill content." in result
         assert "go" in result
 
 
 class TestBuildJobPromptAbsoluteSkillPath:
-    """Cron jobs may store absolute skill paths; normalize before skill_view."""
+    """Cron jobs may store absolute skill paths; normalize before view_skill."""
 
     def test_absolute_skill_path_normalized_before_skill_view(self, tmp_path):
         skills_dir = tmp_path / "skills"
@@ -3035,7 +3035,7 @@ class TestBuildJobPromptAbsoluteSkillPath:
             return json.dumps({"success": False, "error": f"Skill '{name}' not found."})
 
         with patch("tools.skills_tool.SKILLS_DIR", skills_dir), \
-             patch("tools.skills_tool.skill_view", side_effect=_skill_view):
+             patch("tools.skills_tool.view_skill", side_effect=_skill_view):
             result = _build_job_prompt({"skills": [absolute_path], "prompt": "go"})
 
         assert seen_names == ["alpha-skill"]
@@ -3051,7 +3051,7 @@ class TestBuildJobPromptBumpUse:
         def _skill_view(name: str) -> str:
             return json.dumps({"success": True, "content": f"Content for {name}."})
 
-        with patch("tools.skills_tool.skill_view", side_effect=_skill_view), \
+        with patch("tools.skills_tool.view_skill", side_effect=_skill_view), \
              patch("tools.skill_usage.bump_use") as mock_bump:
             _build_job_prompt({"skills": ["alpha", "beta"], "prompt": "go"})
 
@@ -3066,7 +3066,7 @@ class TestBuildJobPromptBumpUse:
         def _missing_view(name: str) -> str:
             return json.dumps({"success": False, "error": "not found"})
 
-        with patch("tools.skills_tool.skill_view", side_effect=_missing_view), \
+        with patch("tools.skills_tool.view_skill", side_effect=_missing_view), \
              patch("tools.skill_usage.bump_use") as mock_bump:
             _build_job_prompt({"skills": ["ghost"], "prompt": "go"})
 
@@ -3078,7 +3078,7 @@ class TestBuildJobPromptBumpUse:
         def _skill_view(name: str) -> str:
             return json.dumps({"success": True, "content": "Works."})
 
-        with patch("tools.skills_tool.skill_view", side_effect=_skill_view), \
+        with patch("tools.skills_tool.view_skill", side_effect=_skill_view), \
              patch("tools.skill_usage.bump_use", side_effect=RuntimeError("boom")), \
              caplog.at_level(logging.DEBUG, logger="cron.scheduler"):
             result = _build_job_prompt({"skills": ["good-skill"], "prompt": "go"})

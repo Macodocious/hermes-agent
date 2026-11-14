@@ -150,7 +150,7 @@ class TestExternalSkillView:
             patch.dict(os.environ, {"HERMES_HOME": str(hermes_home)}),
             patch("tools.skills_tool.SKILLS_DIR", local_skills),
         ):
-            from tools.skills_tool import skill_view
-            result = json.loads(skill_view("my-external-skill"))
+            from tools.skills_tool import view_skill
+            result = json.loads(view_skill("my-external-skill"))
         assert result["success"] is True
         assert "external things" in result["content"]

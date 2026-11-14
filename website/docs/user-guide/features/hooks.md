@@ -410,7 +410,7 @@ def my_callback(tool_name: str, args: dict, task_id: str, **kwargs):
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `tool_name` | `str` | Name of the tool about to execute (e.g. `"terminal"`, `"web_search"`, `"read_file"`) |
+| `tool_name` | `str` | Name of the tool about to execute (e.g. `"terminal"`, `"search_web"`, `"read_file"`) |
 | `args` | `dict` | The arguments the model passed to the tool |
 | `task_id` | `str` | Session/task identifier. Empty string if not set. |
 
@@ -1222,14 +1222,14 @@ def my_callback(
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `tool_name` | `str` | Tool that produced the result (`read_file`, `web_extract`, `delegate_task`, …). |
+| `tool_name` | `str` | Tool that produced the result (`read_file`, `extract_web`, `delegate_task`, …). |
 | `arguments` | `dict` | Arguments the model called the tool with. |
 | `result` | `str` | The tool's raw result string, post-truncation and post-ANSI-strip. |
 | `task_id` | `str \| None` | Task/session ID when running inside RL/benchmark environments. |
 
 **Return value:** `str` to replace the result (the returned string is what the model sees), `None` to leave it unchanged.
 
-**Use cases:** Redact organization-specific PII from `web_extract` output, wrap long JSON tool responses in a summary header, inject retrieval-augmented hints into `read_file` results, rewrite `delegate_task` subagent reports into a project-specific schema.
+**Use cases:** Redact organization-specific PII from `extract_web` output, wrap long JSON tool responses in a summary header, inject retrieval-augmented hints into `read_file` results, rewrite `delegate_task` subagent reports into a project-specific schema.
 
 ```python
 import re

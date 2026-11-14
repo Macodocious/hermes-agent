@@ -22,7 +22,7 @@ The Tool Gateway is included with every paid [Nous Portal](https://portal.nousre
 | 🔍 | **Web search & extract** | Agent-grade web search and full-page extraction via Firecrawl. No rate limits to worry about — the gateway handles scaling. |
 | 🎨 | **Image generation** | Nine models under one endpoint: **FLUX 2 Klein 9B**, **FLUX 2 Pro**, **Z-Image Turbo**, **Nano Banana Pro** (Gemini 3 Pro Image), **GPT Image 1.5**, **GPT Image 2**, **Ideogram V3**, **Recraft V4 Pro**, **Qwen Image**. Pick per-generation with a flag, or let Hermes default to FLUX 2 Klein. |
 | 🔊 | **Text-to-speech** | OpenAI TTS voices wired into the `text_to_speech` tool. Drop voice notes into Telegram, generate audio for pipelines, narrate anything. |
-| 🌐 | **Cloud browser automation** | Headless Chromium sessions via Browser Use. `browser_navigate`, `browser_click`, `browser_type`, `browser_vision` — all the agent-driving primitives, no Browserbase account required. |
+| 🌐 | **Cloud browser automation** | Headless Chromium sessions via Browser Use. `navigate_browser`, `click_browser`, `type_browser`, `browser_vision` — all the agent-driving primitives, no Browserbase account required. |
 
 All four are pay-as-you-use billed against your Nous subscription. Use any combination — run the gateway for web and images while keeping your own ElevenLabs key for TTS, or route everything through Nous.
 
@@ -102,7 +102,7 @@ Select the tool, pick **Nous Subscription** as the provider (or any direct provi
 
 ## Using individual image models
 
-Image generation defaults to FLUX 2 Klein 9B for speed. Override per-call by passing the model ID to the `image_generate` tool:
+Image generation defaults to FLUX 2 Klein 9B for speed. Override per-call by passing the model ID to the `generate_image` tool:
 
 | Model | ID | Best for |
 |---|---|---|

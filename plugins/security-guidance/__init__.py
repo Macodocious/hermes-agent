@@ -3,7 +3,7 @@
 Wires one behaviour:
 
 * ``transform_tool_result`` hook — scans the *content being written* by
-  ``write_file`` / ``patch`` / ``skill_manage`` (write/patch modes) for known
+  ``write_file`` / ``patch`` / ``manage_skill`` (write/patch modes) for known
   dangerous code patterns (eval(, pickle.load, yaml.load, os.system,
   subprocess(shell=True), dangerouslySetInnerHTML, verify=False, ECB,
   XXE-prone XML parsers, GitHub Actions ``${{ github.event.* }}`` injection,
@@ -53,9 +53,9 @@ logger = logging.getLogger(__name__)
 _TARGET_TOOLS: Dict[str, Tuple[str, Tuple[str, ...]]] = {
     "write_file": ("path", ("content",)),
     "patch": ("path", ("new_string", "patch")),
-    # skill_manage write_file / patch sub-actions land here. file_path holds
+    # manage_skill write_file / patch sub-actions land here. file_path holds
     # the relative path inside the skill dir; we scan it the same way.
-    "skill_manage": ("file_path", ("file_content", "new_string")),
+    "manage_skill": ("file_path", ("file_content", "new_string")),
 }
 
 # Cap on how much content we scan. Above this we skip — pattern matching a

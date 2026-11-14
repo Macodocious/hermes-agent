@@ -42,7 +42,7 @@ def _run_auxiliary_bridge(config_dict, monkeypatch):
                 "base_url": "AUXILIARY_VISION_BASE_URL",
                 "api_key": "AUXILIARY_VISION_API_KEY",
             },
-            "web_extract": {
+            "extract_web": {
                 "provider": "AUXILIARY_WEB_EXTRACT_PROVIDER",
                 "model": "AUXILIARY_WEB_EXTRACT_MODEL",
                 "base_url": "AUXILIARY_WEB_EXTRACT_BASE_URL",
@@ -77,7 +77,7 @@ class TestAuxiliaryConfigBridge:
         config = {
             "auxiliary": {
                 "vision": {"provider": "openrouter", "model": ""},
-                "web_extract": {"provider": "auto", "model": ""},
+                "extract_web": {"provider": "auto", "model": ""},
             }
         }
         _run_auxiliary_bridge(config, monkeypatch)
@@ -99,7 +99,7 @@ class TestAuxiliaryConfigBridge:
     def test_web_extract_bridged(self, monkeypatch):
         config = {
             "auxiliary": {
-                "web_extract": {"provider": "nous", "model": "gemini-2.5-flash"},
+                "extract_web": {"provider": "nous", "model": "gemini-2.5-flash"},
             }
         }
         _run_auxiliary_bridge(config, monkeypatch)
@@ -151,7 +151,7 @@ class TestAuxiliaryConfigBridge:
         config = {
             "auxiliary": {
                 "vision": {"provider": "openrouter", "model": ""},
-                "web_extract": {"provider": "auto", "model": "custom-llm"},
+                "extract_web": {"provider": "auto", "model": "custom-llm"},
             }
         }
         _run_auxiliary_bridge(config, monkeypatch)
@@ -164,7 +164,7 @@ class TestAuxiliaryConfigBridge:
         config = {
             "auxiliary": {
                 "vision": {"provider": "openrouter", "model": "google/gemini-2.5-flash"},
-                "web_extract": {"provider": "nous", "model": "gemini-3-flash"},
+                "extract_web": {"provider": "nous", "model": "gemini-3-flash"},
             }
         }
         _run_auxiliary_bridge(config, monkeypatch)
@@ -219,7 +219,7 @@ class TestGatewayBridgeCodeParity:
         # Built-in bridged keys present
         assert "_aux_bridged_keys" in content
         assert '"vision"' in content
-        assert '"web_extract"' in content
+        assert '"extract_web"' in content
         assert '"approval"' in content
         # Plugin-aux-task discovery hooked into bridging
         assert "get_plugin_auxiliary_tasks" in content
@@ -290,7 +290,7 @@ class TestDefaultConfigShape:
 
     def test_web_extract_task_structure(self):
         from hermes_cli.config import DEFAULT_CONFIG
-        web = DEFAULT_CONFIG["auxiliary"]["web_extract"]
+        web = DEFAULT_CONFIG["auxiliary"]["extract_web"]
         assert "provider" in web
         assert "model" in web
         assert web["provider"] == "auto"

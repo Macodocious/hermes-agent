@@ -1,7 +1,7 @@
-"""Tests that browser_snapshot blocks content from eval-navigated private pages.
+"""Tests that snapshot_browser blocks content from eval-navigated private pages.
 
 When browser_console() changes location.href to a private/internal address,
-browser_snapshot() must detect this and return an error instead of exposing
+snapshot_browser() must detect this and return an error instead of exposing
 the private page content.
 
 This is the fix for the SSRF bypass described in issue #44731.
@@ -31,12 +31,12 @@ def _make_eval_result(result):
 
 
 # ---------------------------------------------------------------------------
-# browser_snapshot: private-network guard after eval navigation
+# snapshot_browser: private-network guard after eval navigation
 # ---------------------------------------------------------------------------
 
 
 class TestBrowserSnapshotPrivateNetworkGuard:
-    """browser_snapshot must block content from private pages navigated via eval."""
+    """snapshot_browser must block content from private pages navigated via eval."""
 
     PRIVATE_URL = "http://127.0.0.1:8080/secret"
     PUBLIC_URL = "https://example.com/page"
@@ -265,8 +265,8 @@ class TestBrowserSnapshotPrivateNetworkGuard:
 
 # Helper to avoid name collision with the actual function
 def browser_browser_snapshot(**kwargs):
-    from tools.browser_tool import browser_snapshot
-    return browser_snapshot(**kwargs)
+    from tools.browser_tool import snapshot_browser
+    return snapshot_browser(**kwargs)
 
 
 def browser_browser_vision(**kwargs):

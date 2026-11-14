@@ -1,4 +1,4 @@
-"""Tests for video_analyze tool in tools/vision_tools.py."""
+"""Tests for analyze_video tool in tools/vision_tools.py."""
 
 import asyncio
 import json
@@ -106,7 +106,7 @@ class TestVideoAnalyzeSchema:
     """Schema structure is correct."""
 
     def test_schema_name(self):
-        assert VIDEO_ANALYZE_SCHEMA["name"] == "video_analyze"
+        assert VIDEO_ANALYZE_SCHEMA["name"] == "analyze_video"
 
     def test_schema_has_required_fields(self):
         params = VIDEO_ANALYZE_SCHEMA["parameters"]
@@ -336,19 +336,19 @@ class TestVideoToolsetRegistration:
 
     def test_registered_in_video_toolset(self):
         from tools.registry import registry
-        entry = registry.get_entry("video_analyze")
+        entry = registry.get_entry("analyze_video")
         assert entry is not None
         assert entry.toolset == "video"
         assert entry.is_async is True
         assert entry.emoji == "🎬"
 
     def test_not_in_core_tools(self):
-        """video_analyze should NOT be in _HERMES_CORE_TOOLS (default disabled)."""
+        """analyze_video should NOT be in _HERMES_CORE_TOOLS (default disabled)."""
         from toolsets import _HERMES_CORE_TOOLS
-        assert "video_analyze" not in _HERMES_CORE_TOOLS
+        assert "analyze_video" not in _HERMES_CORE_TOOLS
 
     def test_in_video_toolset_definition(self):
-        """Toolset 'video' should contain video_analyze."""
+        """Toolset 'video' should contain analyze_video."""
         from toolsets import TOOLSETS
         assert "video" in TOOLSETS
-        assert "video_analyze" in TOOLSETS["video"]["tools"]
+        assert "analyze_video" in TOOLSETS["video"]["tools"]

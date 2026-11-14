@@ -5,7 +5,7 @@ User-facing surface: pick a **model family** (e.g. "Pixverse v6",
 The plugin auto-routes to the family's text-to-video endpoint when
 called without ``image_url``, and to its image-to-video endpoint when
 ``image_url`` is provided. The agent never sees the routing — it just
-calls ``video_generate(prompt=..., image_url=...)``.
+calls ``generate_video(prompt=..., image_url=...)``.
 
 Model families (each with t2v + i2v endpoints):
 

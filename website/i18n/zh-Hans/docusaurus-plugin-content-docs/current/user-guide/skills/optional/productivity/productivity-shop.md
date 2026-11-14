@@ -35,7 +35,7 @@ Shop.app：商品搜索、订单追踪、退货、重新下单。
 
 商品搜索无需认证。任何用户级操作（订单、追踪、退货、重新下单）需要认证（设备授权流程）。Token 仅存储在**当前会话的工作内存中** — 切勿写入磁盘，切勿要求用户粘贴 token。
 
-所有端点返回**纯文本 markdown**（包括错误，格式如 `# Error\n\n{message} ({status})`）。通过 `terminal` 工具使用 `curl`；试穿功能使用 `image_generate` 工具。
+所有端点返回**纯文本 markdown**（包括错误，格式如 `# Error\n\n{message} ({status})`）。通过 `terminal` 工具使用 `curl`；试穿功能使用 `generate_image` 工具。
 
 ---
 
@@ -216,7 +216,7 @@ curl -s 'https://shop.app/agents/returns?product_id=29923377167' \
 
 字段：`Returnable`（`yes` / `no` / `unknown`）、`Return window`（天数）、`Return policy URL`、`Shipping policy URL`。
 
-如需完整政策文本，使用 `web_extract`（或 `curl` + 去除标签）获取退货政策 URL — 内容为 HTML。
+如需完整政策文本，使用 `extract_web`（或 `curl` + 去除标签）获取退货政策 URL — 内容为 HTML。
 
 ---
 
@@ -257,7 +257,7 @@ curl -s 'https://shop.app/agents/returns?product_id=29923377167' \
 
 ## 虚拟试穿与可视化
 
-当 `image_generate` 可用时，主动提供商品可视化服务：
+当 `generate_image` 可用时，主动提供商品可视化服务：
 - 服装 / 鞋履 / 配饰 → 使用用户照片进行虚拟试穿
 - 家具 / 装饰 → 放置在用户的房间照片中
 - 艺术品 / 印刷品 → 在用户的墙面上预览效果
@@ -276,7 +276,7 @@ https://{shop_domain}/policies/shipping-policy
 https://{shop_domain}/policies/refund-policy
 ```
 
-返回 HTML — 使用 `web_extract`（或 `curl` + 去除标签）后再展示。
+返回 HTML — 使用 `extract_web`（或 `curl` + 去除标签）后再展示。
 
 当订单行项目中有 `product_id` 时，优先使用 `GET /agents/returns?product_id=…` 获取退货资格和政策链接。
 

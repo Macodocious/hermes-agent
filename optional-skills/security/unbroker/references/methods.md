@@ -59,9 +59,9 @@ blind-opt-out even if the scan is inconclusive - see the posture section above).
 `search.by` supports) - different vectors surface different listings for the same person; dedupe found
 URLs.
 
-1. `web_extract` on the broker `search.url` (fast HTML -> markdown). Look for `search.match_signal`.
+1. `extract_web` on the broker `search.url` (fast HTML -> markdown). Look for `search.match_signal`.
    Build per-vector URLs from `search.url_patterns` and heed `search.url_format_quirks` (see below).
-1b. **`site:` search-engine probe (cheap, do it early and in parallel).** `web_search` with
+1b. **`site:` search-engine probe (cheap, do it early and in parallel).** `search_web` with
    `site:<broker-domain> "First Last"` (add a city/ZIP or a unique phone/address to cut namesake
    noise) often returns the **exact profile-slug URL** in one shot - which both confirms the listing
    exists AND hands you the opaque `/find/person/<id>` or `/p/<slug>` URL you'd otherwise have to
@@ -70,15 +70,15 @@ URLs.
    (b) a broad `"First Last" <ZIP OR unique-address>` search (no `site:`) surfaces **brokers not yet in
    your DB** (e.g. information.com, peoplefinders.com) - record those as bonus exposures. Note: empty
    `site:` results are INCONCLUSIVE (many broker pages aren't indexed / are `noindex`), not `not_found`.
-2. If the page is JS-rendered or returns nothing useful, `browser_navigate` + `browser_snapshot`
-   (and `browser_type`/`browser_click` to run the site's search box).
+2. If the page is JS-rendered or returns nothing useful, `navigate_browser` + `snapshot_browser`
+   (and `type_browser`/`click_browser` to run the site's search box).
 3. If blocked by stealth/Cloudflare, use the `scrapling` skill via `terminal`. **If the broker record
    has `search.antibot` set (e.g. `datadome`), results are behind a device-check CAPTCHA**: a
    cloud/stealth browser (Browserbase) or `scrapling` may get through; if none is available, do **not**
    burn attempts - `pdd.py record <subject> <broker> blocked` and move on (a re-scan with a stealth
    backend can pick it up later).
 3b. **Operator-browser path (the reliable unblock for anti-bot sites).** Cloudflare/DataDome key on
-   datacenter IPs + headless fingerprints, so `web_extract`, the proxyless agent browser, and even a
+   datacenter IPs + headless fingerprints, so `extract_web`, the proxyless agent browser, and even a
    cloud browser often fail - but the **operator's own everyday browser (residential IP, real
    fingerprint) sails straight through**. For any `blocked` site, hand the operator a paste-ready
    search URL (built from `search.url_patterns`), give them the identity anchors to judge by (current
@@ -99,8 +99,8 @@ If a listing genuinely does not exist: `pdd.py record <subject> <broker> not_fou
 A constructed search URL that 404s almost always means the **URL pattern is wrong**, not that the
 person is absent. Never record `not_found` off a 404. Instead:
   1. Re-check the broker's `search.url_patterns` / `url_format_quirks` and rebuild the URL.
-  2. Fall back to the **on-site search box**: `browser_navigate` to the search page, `browser_type`
-     the raw query, `browser_click` Search, then read the **canonical result URL** the site lands on.
+  2. Fall back to the **on-site search box**: `navigate_browser` to the search page, `type_browser`
+     the raw query, `click_browser` Search, then read the **canonical result URL** the site lands on.
   3. Only after the site's own search returns an empty result set do you record `not_found`.
   4. If a pattern was wrong, fix it in `references/brokers/<id>.json` (`url_patterns` +
      `url_format_quirks`) so the next run is correct - see the rule below.
@@ -156,10 +156,10 @@ re-deriving the listing URL). If a `found` turns out to be a false positive, cor
 
 ## web_form
 
-1. `browser_navigate` to `optout.url`; `browser_snapshot` to read the form.
-2. Fill only the planned `disclosure_fields` with `browser_type`/`browser_click`; for `profile_url`,
+1. `navigate_browser` to `optout.url`; `snapshot_browser` to read the form.
+2. Fill only the planned `disclosure_fields` with `type_browser`/`click_browser`; for `profile_url`,
    paste the confirmed listing URL from evidence.
-3. Submit; `browser_snapshot` to confirm the success state; screenshot to `evidence/`.
+3. Submit; `snapshot_browser` to confirm the success state; screenshot to `evidence/`.
 4. `pdd.py record <subject> <broker> submitted --disclosed <field> --disclosed <field> --channel web_form`.
 5. If the broker requires email verification, follow **Verification loop** below.
 
@@ -210,12 +210,12 @@ Then follow the **Verification loop** if the broker emails a confirmation link.
 
 - **browser mode (autonomous, no password):** open the broker's confirmation email in the operator's
   webmail (`browser_*`), then `pdd.py verify-link <subject> <broker> --text '<email body>'` returns
-  the anti-phishing-scored link. `browser_navigate` it **in the same browser** (several brokers, e.g.
+  the anti-phishing-scored link. `navigate_browser` it **in the same browser** (several brokers, e.g.
   PeopleConnect, bind the session to the browser that opens the link), finish the flow, record
   `awaiting_processing`.
 - **programmatic mode (IMAP):** `pdd.py poll-verification <subject>` polls IMAP for every in-flight
   case, extracts the link (anti-phishing scored: only opt-out-looking links on the broker's own
-  domains), and auto-advances `submitted → verification_pending`. Then `browser_navigate` the link in
+  domains), and auto-advances `submitted → verification_pending`. Then `navigate_browser` the link in
   the agent's own browser, finish the flow, record `awaiting_processing`.
 - **draft_only:** the digest tells the operator to click the link in the subject's inbox; the agent
   records `awaiting_processing` on their word.
@@ -268,7 +268,7 @@ run stalling in Phase 2.
 
 - **Phase 1 (scan, read-only):** a cloud stealth browser (Browserbase) or the `scrapling` skill is
   ideal. On a residential IP with a real fingerprint it passes managed challenges (Cloudflare
-  Turnstile, hCaptcha checkbox) and reads anti-bot people-search pages that `web_extract` and the
+  Turnstile, hCaptcha checkbox) and reads anti-bot people-search pages that `extract_web` and the
   proxyless agent browser cannot. This is what the skill's `browser_backend` setting governs
   (`auto` picks Browserbase when `BROWSERBASE_API_KEY` is present - now also read from
   `$HERMES_HOME/.env`, not just the shell env, so `doctor`/`setup --auto` detect the key Hermes
