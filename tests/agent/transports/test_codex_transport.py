@@ -535,7 +535,7 @@ class TestCodexBuildKwargs:
             is_xai_responses=True,
         )
         tool_types = [t.get("type") for t in kw.get("tools", [])]
-        assert "search_web" in tool_types, kw.get("tools")
+        assert "web_search" in tool_types, kw.get("tools")
         # Non-conflicting client-side tools are preserved.
         names = [t.get("name") for t in kw.get("tools", []) if t.get("type") == "function"]
         assert "read_file" in names
@@ -558,7 +558,7 @@ class TestCodexBuildKwargs:
             is_xai_responses=True,
         )
         tools = kw.get("tools", [])
-        assert not any(t.get("type") == "search_web" for t in tools), tools
+        assert not any(t.get("type") == "web_search" for t in tools), tools
         names = [t.get("name") for t in tools if t.get("type") == "function"]
         assert "read_file" in names
 
@@ -579,10 +579,10 @@ class TestCodexBuildKwargs:
         # Exactly one tool named/typed search_web, and it is the native built-in.
         web_search_entries = [
             t for t in tools
-            if t.get("name") == "search_web" or t.get("type") == "search_web"
+            if t.get("name") == "search_web" or t.get("type") == "web_search"
         ]
         assert len(web_search_entries) == 1
-        assert web_search_entries[0] == {"type": "search_web"}
+        assert web_search_entries[0] == {"type": "web_search"}
         # No client-side function form of search_web survives.
         assert not any(
             t.get("type") == "function" and t.get("name") == "search_web"

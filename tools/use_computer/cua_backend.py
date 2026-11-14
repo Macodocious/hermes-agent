@@ -182,7 +182,7 @@ def _cua_telemetry_disabled() -> bool:
         from hermes_cli.config import load_config
 
         cfg = load_config() or {}
-        cu = cfg.get("use_computer") or {}
+        cu = cfg.get("computer_use") or {}
         # opt-in flag: True => user wants telemetry => do NOT disable.
         return not bool(cu.get("cua_telemetry", False))
     except Exception:

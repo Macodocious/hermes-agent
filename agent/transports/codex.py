@@ -196,7 +196,7 @@ class ResponsesApiTransport(ProviderTransport):
         # client-side function literally named ``search_web``, it routes
         # the intent to that native engine — but because the tool is
         # declared as a plain ``function`` rather than xAI's first-class
-        # ``{"type": "search_web"}`` built-in, the server-side search is
+        # ``{"type": "web_search"}`` built-in, the server-side search is
         # dispatched but never reconciled: the response streams reasoning
         # + ``web_search_call`` progress items, the searches never reach
         # ``status="completed"`` in the assembled output, no final
@@ -243,7 +243,7 @@ class ResponsesApiTransport(ProviderTransport):
                     t for t in response_tools
                     if not (isinstance(t, dict) and t.get("name") == "search_web")
                 ]
-                filtered.append({"type": "search_web"})
+                filtered.append({"type": "web_search"})
                 response_tools = filtered
 
         # ``tools`` MUST be omitted entirely when there are no functions to

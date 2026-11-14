@@ -114,7 +114,7 @@ class TestRegistration:
         from tools.registry import registry
         entry = registry._tools.get("use_computer")
         assert entry is not None
-        assert entry.toolset == "use_computer"
+        assert entry.toolset == "computer_use"
         assert entry.schema["name"] == "use_computer"
 
     def test_check_fn_true_on_linux_when_binary_present(self):

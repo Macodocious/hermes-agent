@@ -1,7 +1,7 @@
 """xAI Web Search — plugin form.
 
 Routes ``search_web`` tool calls through xAI's agentic Web Search tool
-(server-side ``search_web`` on the Responses API). Grok runs the actual
+(server-side ``web_search`` on the Responses API). Grok runs the actual
 searching and page-browsing server-side; we ask it to return the top
 results as structured JSON so we can hand back the same
 ``{title, url, description, position}`` rows every other Hermes web
@@ -19,7 +19,7 @@ Optional knobs (under ``web.xai`` in ``config.yaml``)::
 
     web:
       xai:
-        model: "grok-build-0.1"       # reasoning model required by search_web
+        model: "grok-build-0.1"       # reasoning model required by web_search
         allowed_domains: ["x.ai"]     # max 5 — mutually exclusive with excluded_domains
         excluded_domains: ["bad.com"] # max 5 — mutually exclusive with allowed_domains
         timeout: 90                   # seconds (default 90)
@@ -96,7 +96,7 @@ def _coerce_domain_list(value: Any) -> List[str]:
 class XAIWebSearchProvider(WebSearchProvider):
     """Search-only provider backed by xAI's agentic Web Search tool.
 
-    Sends a structured prompt to Grok with ``tools=[{"type": "search_web"}]``
+    Sends a structured prompt to Grok with ``tools=[{"type": "web_search"}]``
     enabled and asks it to return the top *limit* results as JSON. Falls
     back to the Responses API ``citations`` list if Grok ignores the JSON
     schema instruction (rare for grok-4.3 but cheap insurance).
@@ -203,7 +203,7 @@ class XAIWebSearchProvider(WebSearchProvider):
                 ),
             }
 
-        web_search_tool: Dict[str, Any] = {"type": "search_web"}
+        web_search_tool: Dict[str, Any] = {"type": "web_search"}
         if allowed:
             web_search_tool["filters"] = {"allowed_domains": allowed}
         elif excluded:
@@ -349,7 +349,7 @@ class XAIWebSearchProvider(WebSearchProvider):
         payload parseable.
         """
         return (
-            "Use the search_web tool to find current information for the query below, "
+            "Use the web_search tool to find current information for the query below, "
             "then respond with ONLY a single JSON object — no prose, no markdown "
             "fences, no inline citation links — matching this exact schema:\n\n"
             '{"results": [{"title": "string", "url": "string", '
@@ -552,7 +552,7 @@ class XAIWebSearchProvider(WebSearchProvider):
             "name": "xAI Web Search (Grok)",
             "badge": "paid",
             "tag": (
-                "Agentic web search via Grok's search_web tool — uses xAI "
+                "Agentic web search via Grok's web_search tool — uses xAI "
                 "Grok OAuth or XAI_API_KEY."
             ),
             "env_vars": [],

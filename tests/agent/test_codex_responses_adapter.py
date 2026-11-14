@@ -325,12 +325,12 @@ def test_preflight_passes_native_web_search_tool_through():
         "tools": [
             {"type": "function", "name": "read_file", "description": "Read.",
              "parameters": {"type": "object", "properties": {}}},
-            {"type": "search_web"},
+            {"type": "web_search"},
         ],
     }
     out = _preflight_codex_api_kwargs(kwargs, allow_stream=True)
     tools = out["tools"]
-    assert {"type": "search_web"} in tools
+    assert {"type": "web_search"} in tools
     assert any(t.get("type") == "function" and t.get("name") == "read_file" for t in tools)
 
 

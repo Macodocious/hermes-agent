@@ -110,10 +110,10 @@ TOOLSETS = {
         "includes": []
     },
 
-    "search_x": {
+    "x_search": {
         "description": (
             "Search X (Twitter) posts and threads via xAI's built-in "
-            "search_x Responses tool. Available when xAI credentials are "
+            "x_search Responses tool. Available when xAI credentials are "
             "configured (SuperGrok OAuth or XAI_API_KEY). Off by default; "
             "enable in `hermes tools` → X (Twitter) Search."
         ),
@@ -151,7 +151,7 @@ TOOLSETS = {
         "includes": []
     },
 
-    "use_computer": {
+    "computer_use": {
         "description": (
             "Background desktop control via cua-driver (macOS/Windows/Linux) — "
             "screenshots, mouse, keyboard, scroll, drag. Does NOT steal the "
@@ -238,7 +238,7 @@ TOOLSETS = {
         "includes": []
     },
     
-    "search_session": {
+    "session_search": {
         "description": "Search and recall past conversations with summarization",
         "tools": ["search_session"],
         "includes": []

@@ -71,7 +71,7 @@ def _load_x_search_config() -> Dict[str, Any]:
     try:
         from hermes_cli.config import load_config
 
-        return load_config().get("search_x", {}) or {}
+        return load_config().get("x_search", {}) or {}
     except Exception:
         return {}
 
@@ -91,7 +91,7 @@ def _get_x_search_reasoning_effort() -> Optional[str]:
     if effort not in X_SEARCH_REASONING_EFFORTS:
         allowed = ", ".join(X_SEARCH_REASONING_EFFORTS)
         raise ValueError(
-            f"search_x.reasoning_effort must be one of: {allowed} "
+            f"x_search.reasoning_effort must be one of: {allowed} "
             f"(got {raw_value!r})"
         )
     return effort
@@ -321,7 +321,7 @@ def x_search_tool(
         except ValueError as exc:
             return tool_error(str(exc))
 
-        tool_def: Dict[str, Any] = {"type": "search_x"}
+        tool_def: Dict[str, Any] = {"type": "x_search"}
         if allowed:
             tool_def["allowed_x_handles"] = allowed
         if excluded:
@@ -539,7 +539,7 @@ def _handle_x_search(args, **kw):
 
 registry.register(
     name="search_x",
-    toolset="search_x",
+    toolset="x_search",
     schema=X_SEARCH_SCHEMA,
     handler=_handle_x_search,
     check_fn=check_x_search_requirements,

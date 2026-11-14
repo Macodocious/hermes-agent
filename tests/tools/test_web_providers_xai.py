@@ -336,7 +336,7 @@ class TestXAIProviderRequestShape:
         # so renaming DEFAULT_MODEL (when xAI deprecates grok-4.3) doesn't
         # turn this into a change-detector failure.
         assert body["model"] == xai_provider.DEFAULT_MODEL
-        assert body["tools"] == [{"type": "search_web"}]
+        assert body["tools"] == [{"type": "web_search"}]
         assert body["input"][0]["role"] == "user"
         # No-inline-citations is opt-in via `include` per xAI Responses docs.
         assert "no_inline_citations" in body.get("include", [])
@@ -374,7 +374,7 @@ class TestXAIProviderRequestShape:
 
         tools = captured["json"]["tools"]
         assert tools == [{
-            "type": "search_web",
+            "type": "web_search",
             "filters": {"allowed_domains": ["x.ai", "grokipedia.com"]},
         }]
 
@@ -395,7 +395,7 @@ class TestXAIProviderRequestShape:
 
         tools = captured["json"]["tools"]
         assert tools == [{
-            "type": "search_web",
+            "type": "web_search",
             "filters": {"excluded_domains": ["spam.com"]},
         }]
 
