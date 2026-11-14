@@ -902,7 +902,7 @@ from tools.registry import registry, tool_error
 
 registry.register(
     name="search_session",
-    toolset="session_search",
+    toolset="search_session",
     schema=SESSION_SEARCH_SCHEMA,
     handler=lambda args, **kw: search_session(
         query=args.get("query") or "",

@@ -18,7 +18,7 @@ from tools.registry import registry
 
 registry.register(
     name="use_computer",
-    toolset="computer_use",
+    toolset="use_computer",
     schema=COMPUTER_USE_SCHEMA,
     handler=lambda args, **kw: handle_computer_use(args, **kw),
     check_fn=check_computer_use_requirements,

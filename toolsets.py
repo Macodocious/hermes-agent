@@ -110,7 +110,7 @@ TOOLSETS = {
         "includes": []
     },
 
-    "x_search": {
+    "search_x": {
         "description": (
             "Search X (Twitter) posts and threads via xAI's built-in "
             "x_search Responses tool. Available when xAI credentials are "
@@ -151,7 +151,7 @@ TOOLSETS = {
         "includes": []
     },
 
-    "computer_use": {
+    "use_computer": {
         "description": (
             "Background desktop control via cua-driver (macOS/Windows/Linux) — "
             "screenshots, mouse, keyboard, scroll, drag. Does NOT steal the "
@@ -238,7 +238,7 @@ TOOLSETS = {
         "includes": []
     },
     
-    "session_search": {
+    "search_session": {
         "description": "Search and recall past conversations with summarization",
         "tools": ["search_session"],
         "includes": []

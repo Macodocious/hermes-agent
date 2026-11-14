@@ -116,6 +116,28 @@ def test_no_tool_takes_a_vendor_tool_type_as_its_name():
     assert not collisions, f"tool names collide with vendor tool types: {collisions}"
 
 
+TOOLSET_FAMILY_NAMES = {
+    "image_gen", "video_gen", "context_engine", "code_execution",
+    "feishu_doc", "feishu_drive", "discord_admin",
+}
+
+
+def test_every_toolset_name_leads_with_an_action_word():
+    """A toolset name that stops resolving empties its tools without an error."""
+    import toolsets
+
+    offenders = sorted(
+        name for name in toolsets.TOOLSETS
+        if "_" in name
+        and name not in TOOLSET_FAMILY_NAMES
+        and name.split("_")[0] not in ACTION_WORDS
+    )
+    assert not offenders, (
+        "toolset names whose first segment is not an action word: "
+        f"{offenders}. A stale name here silently empties the toolset."
+    )
+
+
 def test_no_source_file_sends_a_tool_name_as_a_vendor_payload_type():
     names = _registered_names()
     offenders: list[str] = []
