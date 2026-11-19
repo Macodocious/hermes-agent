@@ -47,6 +47,10 @@ class _Snowflake:
         self.id = id
 
 VALID_THREAD_AUTO_ARCHIVE_MINUTES = {60, 1440, 4320, 10080}
+# Discord drops an archived thread out of the channel's active thread list, so
+# the window decides how long a thread stays findable. One week is the longest
+# Discord allows; discord.thread_auto_archive_duration overrides it.
+DEFAULT_THREAD_AUTO_ARCHIVE_MINUTES = 10080
 _DISCORD_COMMAND_SYNC_POLICIES = {"safe", "bulk", "off"}
 _DISCORD_COMMAND_SYNC_STATE_SUBDIR = "gateway"
 _DISCORD_COMMAND_SYNC_STATE_FILENAME = "discord_command_sync_state.json"
@@ -5995,6 +5999,37 @@ class DiscordAdapter(BasePlatformAdapter):
             return {part.strip() for part in s.split(",") if part.strip()}
         return set()
 
+    def _discord_thread_auto_archive(self) -> int:
+        """Return the inactivity window, in minutes, for threads Hermes creates.
+
+        Discord archives a thread after this much inactivity and drops it out
+        of the channel's active thread list, so the window decides how long a
+        thread stays findable.  ``discord.thread_auto_archive_duration`` (or
+        ``DISCORD_THREAD_AUTO_ARCHIVE_DURATION``) overrides the one-week
+        default; an unsupported value keeps the default and logs a warning.
+        """
+        raw = self.config.extra.get("thread_auto_archive_duration")
+        if raw is None:
+            raw = os.getenv("DISCORD_THREAD_AUTO_ARCHIVE_DURATION")
+        text = str(raw).strip() if raw is not None else ""
+        if not text:
+            return DEFAULT_THREAD_AUTO_ARCHIVE_MINUTES
+        try:
+            minutes = int(text)
+        except ValueError:
+            minutes = 0
+        if minutes in VALID_THREAD_AUTO_ARCHIVE_MINUTES:
+            return minutes
+        logger.warning(
+            "[%s] Ignoring unsupported thread_auto_archive_duration %r "
+            "(allowed: %s); using %d minutes.",
+            self.name,
+            text,
+            ", ".join(str(v) for v in sorted(VALID_THREAD_AUTO_ARCHIVE_MINUTES)),
+            DEFAULT_THREAD_AUTO_ARCHIVE_MINUTES,
+        )
+        return DEFAULT_THREAD_AUTO_ARCHIVE_MINUTES
+
     def _discord_history_backfill(self) -> bool:
         """Return whether history backfill is enabled for shared sessions."""
         configured = self.config.extra.get("history_backfill")
@@ -6390,7 +6425,10 @@ class DiscordAdapter(BasePlatformAdapter):
 
         for attempt in range(2):
             try:
-                thread = await message.create_thread(name=thread_name, auto_archive_duration=1440)
+                thread = await message.create_thread(
+                    name=thread_name,
+                    auto_archive_duration=self._discord_thread_auto_archive(),
+                )
                 try:
                     setattr(thread, "_hermes_auto_thread_initial_name", thread_name)
                 except Exception:
@@ -6404,7 +6442,7 @@ class DiscordAdapter(BasePlatformAdapter):
                     )
                     thread = await seed_msg.create_thread(
                         name=thread_name,
-                        auto_archive_duration=1440,
+                        auto_archive_duration=self._discord_thread_auto_archive(),
                         reason=reason,
                     )
                     try:
@@ -6539,7 +6577,7 @@ class DiscordAdapter(BasePlatformAdapter):
             if create is not None:
                 thread = await create(
                     name=thread_name,
-                    auto_archive_duration=1440,
+                    auto_archive_duration=self._discord_thread_auto_archive(),
                     reason=reason,
                 )
                 return str(thread.id)
@@ -6557,7 +6595,7 @@ class DiscordAdapter(BasePlatformAdapter):
             seed_msg = await send(f"\U0001f9f5 Hermes handoff: **{thread_name}**")
             thread = await seed_msg.create_thread(
                 name=thread_name,
-                auto_archive_duration=1440,
+                auto_archive_duration=self._discord_thread_auto_archive(),
                 reason=reason,
             )
             return str(thread.id)
@@ -9768,6 +9806,7 @@ def _apply_yaml_config(yaml_cfg: dict, discord_cfg: dict) -> dict | None:
     ``DISCORD_NO_THREAD_CHANNELS``, ``DISCORD_HISTORY_BACKFILL``,
     ``DISCORD_HISTORY_BACKFILL_LIMIT``, ``DISCORD_ALLOW_MENTION_*``,
     ``DISCORD_REPLY_TO_MODE``, ``DISCORD_THREAD_REQUIRE_MENTION``,
+    ``DISCORD_THREAD_AUTO_ARCHIVE_DURATION``,
     ``DISCORD_BOTS_REQUIRE_INLINE_MENTION``).
     Rather than rewrite ~50 call sites inside the adapter to read from
     ``PlatformConfig.extra`` instead, this hook keeps the existing
@@ -9788,6 +9827,10 @@ def _apply_yaml_config(yaml_cfg: dict, discord_cfg: dict) -> dict | None:
         if isinstance(_auto_join_cats, list):
             _auto_join_cats = ",".join(str(part).strip() for part in _auto_join_cats if str(part).strip())
         os.environ["DISCORD_AUTO_JOIN_CATEGORIES"] = str(_auto_join_cats)
+    if "thread_auto_archive_duration" in discord_cfg and not os.getenv("DISCORD_THREAD_AUTO_ARCHIVE_DURATION"):
+        os.environ["DISCORD_THREAD_AUTO_ARCHIVE_DURATION"] = str(
+            discord_cfg["thread_auto_archive_duration"]
+        ).strip()
     if "bots_require_inline_mention" in discord_cfg and not os.getenv("DISCORD_BOTS_REQUIRE_INLINE_MENTION"):
         os.environ["DISCORD_BOTS_REQUIRE_INLINE_MENTION"] = str(discord_cfg["bots_require_inline_mention"]).lower()
     platforms_cfg = yaml_cfg.get("platforms")

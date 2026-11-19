@@ -336,6 +336,7 @@ discord:
   require_mention: true           # Require @mention in server channels
   thread_require_mention: false   # If true, require @mention in threads too (multi-bot threads)
   auto_join_categories: []  # Category IDs whose threads the bot auto-joins (no @mention needed)
+  thread_auto_archive_duration: 10080  # Minutes before a Hermes-created thread archives (60, 1440, 4320 or 10080)
   free_response_channels: ""      # Comma-separated channel IDs (or YAML list)
   auto_thread: true               # Auto-create threads on @mention
   reactions: true                 # Add emoji reactions during processing
@@ -394,6 +395,19 @@ discord:
 ```
 
 Only public threads are auto-joined; private threads require an explicit add and are out of scope.
+
+#### `discord.thread_auto_archive_duration`
+
+**Type:** integer — **Default:** `10080` (one week)
+
+Minutes of inactivity before a thread Hermes creates is archived. Discord drops an archived thread out of the channel's active thread list, so this window is what decides how long the thread stays listed and easy to find. Valid values are `60`, `1440`, `4320` and `10080` (one hour, one day, three days and one week); any other value is logged as a warning and replaced by the default.
+
+```yaml
+discord:
+  thread_auto_archive_duration: 4320   # three days instead of the default week
+```
+
+Discord fixes the window when the thread is created, so threads made before a change keep the window they were created with. A post Hermes creates in a forum channel is a post of that forum and takes the forum's own default instead.
 
 #### `discord.free_response_channels`
 
