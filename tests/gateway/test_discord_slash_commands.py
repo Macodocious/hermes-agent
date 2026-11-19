@@ -589,7 +589,7 @@ async def test_auto_create_thread_uses_message_content_as_name(adapter):
     message.create_thread.assert_awaited_once()
     call_kwargs = message.create_thread.await_args[1]
     assert call_kwargs["name"] == "Hello world, how are you?"
-    assert call_kwargs["auto_archive_duration"] == 1440
+    assert call_kwargs["auto_archive_duration"] == 10080
     assert thread._hermes_auto_thread_initial_name == "Hello world, how are you?"
 
 
@@ -670,7 +670,7 @@ async def test_auto_create_thread_falls_back_to_seed_message(adapter):
     message.channel.send.assert_awaited_once_with("🧵 Thread created by Hermes: **Hello**")
     seed_message.create_thread.assert_awaited_once_with(
         name="Hello",
-        auto_archive_duration=1440,
+        auto_archive_duration=10080,
         reason="Auto-threaded from mention by Jezza",
     )
 
