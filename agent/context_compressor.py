@@ -279,6 +279,8 @@ _PRUNED_TOOL_PLACEHOLDER = "[Old tool output cleared to save context space]"
 
 # Chars per token rough estimate
 _CHARS_PER_TOKEN = 4
+# A compaction that frees less than this share of the message estimate buys nothing: it rewrites the window, costs a summary call and leaves the prompt where it was, so the next turn compacts again. Refused instead.
+_MIN_COMPRESSION_SAVINGS_PCT = 5.0
 # Flat token cost per attached image part.  Real cost varies by provider and
 # dimensions (Anthropic ≈ width×height/750, GPT-4o up to ~1700 for
 # high-detail 2048×2048, Gemini 258/tile), but 1600 is a realistic ceiling
@@ -885,6 +887,7 @@ class ContextCompressor(ContextEngine):
         self._last_aux_model_failure_model = None
         self._last_compression_savings_pct = 100.0
         self._ineffective_compression_count = 0
+        self._no_gain_compression_count = 0
         self._fallback_compression_streak = 0
         self._verify_compaction_cleared_threshold = False
         self._last_compression_made_progress = False
@@ -925,6 +928,7 @@ class ContextCompressor(ContextEngine):
         self._last_aux_model_failure_model = None
         self._last_compression_savings_pct = 100.0
         self._ineffective_compression_count = 0
+        self._no_gain_compression_count = 0
         self._fallback_compression_streak = 0
         self._verify_compaction_cleared_threshold = False
         self._last_compression_made_progress = False
@@ -1406,6 +1410,11 @@ class ContextCompressor(ContextEngine):
         # Anti-thrashing: track whether last compression was effective
         self._last_compression_savings_pct: float = 100.0
         self._ineffective_compression_count: int = 0
+        # Sub-floor refusals. Deliberately separate from the count above:
+        # update_from_response() zeroes that one on any comfortable provider
+        # reading — exactly what a refused pass produces — so a shared counter
+        # could never accumulate.
+        self._no_gain_compression_count: int = 0
         # Consecutive completed deterministic-fallback boundaries. Unlike the
         # real-usage effectiveness counter, ordinary fitting responses must not
         # reset this breaker; only a healthy completed summary does.
@@ -1629,15 +1638,17 @@ class ContextCompressor(ContextEngine):
         if (
             self._ineffective_compression_count >= 2
             or self._fallback_compression_streak >= 2
+            or self._no_gain_compression_count >= 2
         ):
             if not self.quiet_mode:
                 logger.warning(
                     "Compression skipped — repeated compaction attempts did not "
                     "restore healthy context. ineffective=%d fallback=%d. "
-                    "Consider /new to start fresh, or /compress <topic> for "
-                    "focused compression.",
+                    "no_gain=%d. Consider /new to start fresh, or /compress "
+                    "<topic> for focused compression.",
                     self._ineffective_compression_count,
                     self._fallback_compression_streak,
+                    self._no_gain_compression_count,
                 )
             return True
         return False
@@ -3365,6 +3376,9 @@ This compaction should PRIORITISE preserving all information related to the focu
         # this, /compress would silently no-op for 30-60s after a failure.
         if force:
             self._clear_compression_failure_cooldown()
+        # A refused pass must hand back exactly the caller's list; the prune
+        # below rebinds `messages`.
+        original_messages = messages
         n_messages = len(messages)
         # Only need head + 3 tail messages minimum (token budget decides the real tail size)
         _min_for_compress = self._protect_head_size(messages) + 3 + 1
@@ -3673,8 +3687,6 @@ This compaction should PRIORITISE preserving all information related to the focu
                 _merge_summary_into_tail = False
             compressed.append(msg)
 
-        self.compression_count += 1
-
         compressed = self._sanitize_tool_pairs(compressed)
 
         # Replace image parts in all compressed messages before the newest
@@ -3700,6 +3712,18 @@ This compaction should PRIORITISE preserving all information related to the focu
         saved_estimate = pre_estimate - new_estimate
         savings_pct = (saved_estimate / pre_estimate * 100) if pre_estimate > 0 else 0
         self._last_compression_savings_pct = savings_pct
+
+        # The floor governs transcripts at or above the compaction threshold,
+        # where a sub-floor pass is pure churn. Below it, a percentage is noise
+        # on a handful of tokens and compaction is still worth doing.
+        if not force and pre_estimate >= self.threshold_tokens and savings_pct < _MIN_COMPRESSION_SAVINGS_PCT:
+            self._no_gain_compression_count += 1
+            if not self.quiet_mode:
+                logger.warning("Compaction refused: freed %.1f%% (floor %.0f%%), transcript unchanged; no_gain=%d",
+                               savings_pct, _MIN_COMPRESSION_SAVINGS_PCT, self._no_gain_compression_count)
+            return original_messages
+        self._no_gain_compression_count = 0
+        self.compression_count += 1
 
         # Message-only savings are diagnostic. The anti-thrashing verdict is
         # owned by the next provider-reported prompt count, which answers the
