@@ -506,6 +506,7 @@ class TodoStore:
             # never silently drop them, so any active user item missing from
             # the new list is re-appended at the tail.
             incoming = [self._validate(t) for t in self._dedupe_by_id(todos)]
+            incoming = self._one_row_per_task(incoming)
             incoming_ids = {item["id"] for item in incoming}
             for item in self._items:
                 if (
@@ -547,6 +548,24 @@ class TodoStore:
                         if isinstance(t.get(reference), str) and str(t[reference]).strip():
                             existing[item_id][reference] = str(t[reference]).strip()
                 else:
+                    holder = self._row_holding_task(self._items, t)
+                    if holder is not None:
+                        # The same task, named under an id the store does not
+                        # hold. Appending it put one task in the list twice, and
+                        # the model had no way to clear the copy but to cancel it
+                        # with a reason — a user-visible line per duplicate. Keep
+                        # the row that is there and take only what it lacks.
+                        row = existing.get(holder)
+                        if row is not None:
+                            for reference in ("plan", "spec"):
+                                value = t.get(reference)
+                                if (
+                                    isinstance(value, str)
+                                    and value.strip()
+                                    and not str(row.get(reference) or "").strip()
+                                ):
+                                    row[reference] = value.strip()
+                        continue
                     # New item -- validate fully, assign the next sequential
                     # id (merge mode keeps existing ids stable so merge-by-id
                     # stays safe), append to end
@@ -1639,6 +1658,46 @@ class TodoStore:
             item_id = str(item.get("id", "")).strip() or f"__new_{i}"
             last_index[item_id] = i
         return [todos[i] for i in sorted(last_index.values())]
+
+    @classmethod
+    def _row_holding_task(cls, items: List[Dict[str, Any]], incoming: Dict[str, Any]) -> Optional[str]:
+        """The id of a live row that already holds ``incoming``'s task, or None.
+
+        A task's identity is the plan and specification pair when both rows
+        carry one — the plan seeder and the post-close review speak that pair —
+        and the content otherwise, which is also the case where only one side
+        carries the pair. A row in a terminal status is not a candidate: work
+        that finished or was set aside may be created again on purpose.
+        """
+        plan = str(incoming.get("plan") or "").strip()
+        spec = str(incoming.get("spec") or "").strip()
+        content = cls._cap_content(str(incoming.get("content") or "").strip())
+        for item in items:
+            if str(item.get("status") or "") not in _OPEN_STATUSES:
+                continue
+            item_plan = str(item.get("plan") or "").strip()
+            item_spec = str(item.get("spec") or "").strip()
+            if plan and spec and item_plan and item_spec:
+                if item_plan == plan and item_spec == spec:
+                    return str(item.get("id") or "")
+                continue
+            if str(item.get("content") or "") == content:
+                return str(item.get("id") or "")
+        return None
+
+    @classmethod
+    def _one_row_per_task(cls, items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Drop the copies that follow the first row of the same task.
+
+        A row ``_validate`` could not read is a placeholder, not a task: two
+        unreadable entries are two entries the caller sent, so they are kept
+        as they are rather than folded into one.
+        """
+        kept: List[Dict[str, Any]] = []
+        for item in items:
+            if str(item.get("id") or "") == "?" or cls._row_holding_task(kept, item) is None:
+                kept.append(item)
+        return kept
 
 
 def _lifecycle_write_violation(todos: List[Any], store: "TodoStore") -> Optional[str]:
